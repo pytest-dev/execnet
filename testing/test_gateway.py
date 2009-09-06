@@ -512,7 +512,7 @@ class TestSocketGateway(SocketGatewaySetup, BasicRemoteExecution):
 
 class TestSshGateway(BasicRemoteExecution):
     def setup_class(cls): 
-        from py.__.conftest import getspecssh
+        from conftest import getspecssh
         cls.sshhost = getspecssh().ssh
         cls.gw = py.execnet.SshGateway(cls.sshhost)
 
