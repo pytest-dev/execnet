@@ -1,10 +1,7 @@
 
 import py
 import sys
-from py.__.thread.pool import queue
-
-WorkerPool = py._thread.WorkerPool
-ThreadOut = py._thread.ThreadOut
+from execnet.threadpool import queue, WorkerPool 
 
 def test_some():
     pool = WorkerPool()

@@ -1,7 +1,7 @@
 """
 (c) 2008-2009, holger krekel 
 """
-import py
+import execnet
 
 class XSpec:
     """ Execution Specification: key1=value1//key2=value2 ... 
@@ -49,16 +49,25 @@ class XSpec:
         return bool(self.popen and not self.chdir)
 
 def makegateway(spec):
+    """ create and configure a gateway to a Python interpreter
+        specified by a 'execution specification' string. 
+        The format of the string generally is::
+            
+            key1=value1//key2=value2//...
+        
+        If you leave out the ``=value`` part a True value is assumed. 
+    """
     if not isinstance(spec, XSpec):
         spec = XSpec(spec)
     if spec.popen:
-        gw = py.execnet.PopenGateway(python=spec.python)
+        gw = execnet.PopenGateway(python=spec.python)
     elif spec.ssh:
-        gw = py.execnet.SshGateway(spec.ssh, remotepython=spec.python)
+        gw = execnet.SshGateway(spec.ssh, remotepython=spec.python)
     elif spec.socket:
-        assert not spec.python, "socket: specifying python executables not supported"
+        assert not spec.python, (
+            "socket: specifying python executables not supported")
         hostport = spec.socket.split(":")
-        gw = py.execnet.SocketGateway(*hostport)
+        gw = execnet.SocketGateway(*hostport)
     else:
         raise ValueError("no gateway type found for %r" % (spec._spec,))
     gw.spec = spec 

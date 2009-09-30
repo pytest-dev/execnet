@@ -1,10 +1,10 @@
 import py
-from py.execnet import RSync
-
+from execnet.rsync import RSync
+import execnet
 
 def pytest_funcarg__gw1(request):
     return request.cached_setup(
-        setup=py.execnet.PopenGateway,
+        setup=execnet.PopenGateway,
         teardown=lambda val: val.exit(),
         scope="module"
     )

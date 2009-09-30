@@ -1,3 +1,6 @@
+"""
+(c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski 
+"""
 def f():
     import os, stat, shutil
     try:

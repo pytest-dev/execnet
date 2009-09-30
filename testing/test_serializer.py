@@ -4,7 +4,8 @@ import os
 import tempfile
 import subprocess
 import py
-from py.__.execnet import serializer
+import execnet
+from execnet import serializer
 
 
 def _find_version(suffix=""):
@@ -23,8 +24,8 @@ def setup_module(mod):
         mod._py3_wrapper = PythonWrapper(_find_version("3"))
         mod._py2_wrapper = PythonWrapper(py.path.local(sys.executable))
     mod._old_pypath = os.environ.get("PYTHONPATH")
-    pylib = str(py.path.local(py.__file__).dirpath().join(".."))
-    os.environ["PYTHONPATH"] = pylib
+    p = os.path.dirname(os.path.dirname(execnet.__file__))
+    os.environ["PYTHONPATH"] = p
 
 def teardown_module(mod):
     TEMPDIR.remove(True)
@@ -40,7 +41,7 @@ class PythonWrapper(object):
     def dump(self, obj_rep):
         script_file = TEMPDIR.join("dump.py")
         script_file.write("""
-from py.__.execnet import serializer
+from execnet import serializer
 import sys
 if sys.version_info > (3, 0): # Need binary output
     sys.stdout = sys.stdout.detach()
@@ -51,7 +52,7 @@ saver.save(%s)""" % (obj_rep,))
     def load(self, data, option_args=""):
         script_file = TEMPDIR.join("load.py")
         script_file.write(r"""
-from py.__.execnet import serializer
+from execnet import serializer
 import sys
 if sys.version_info > (3, 0):
     sys.stdin = sys.stdin.detach()

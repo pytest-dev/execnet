@@ -1,5 +1,7 @@
 """
 Simple marshal format (based on pickle) designed to work across Python versions.
+
+(c) 2006-2009 Benjamin Peterson, Ronny Pfannschmidt and others 
 """
 
 import sys

@@ -1,9 +1,22 @@
+"""
+dispatching execution to threads
+
+(c) 2009, holger krekel 
+"""
 import threading
 import time 
 import sys
-import py
 
-queue = py.builtin._tryimport('queue', 'Queue')
+# py2/py3 compatibility 
+try: 
+    import queue
+except ImportError: 
+    import Queue as queue
+if sys.version_info >= (3,0):
+    exec ("def reraise(cls, val, tb): raise val")
+else:
+    exec ("def reraise(cls, val, tb): raise cls, val, tb")
+
 
 ERRORMARKER = object() 
 
@@ -54,7 +67,7 @@ class Reply(object):
         if result is ERRORMARKER: 
             self._queue = None
             excinfo = self._excinfo 
-            py.builtin._reraise(excinfo[0], excinfo[1], excinfo[2])
+            reraise(excinfo[0], excinfo[1], excinfo[2])
         return result 
 
 class WorkerThread(threading.Thread): 
@@ -206,3 +219,15 @@ class NamedThreadPool:
         thread.start() 
         l.append(thread) 
 
+if __name__ == '__channelexec__':
+    maxthreads = channel.receive()
+    execpool = WorkerPool(maxthreads=maxthreads)
+    gw = channel.gateway
+    while 1:
+        task = gw._execqueue.get()
+        if task is None:
+            gw._stopsend()
+            execpool.shutdown()
+            execpool.join()
+            raise gw._StopExecLoop
+        execpool.dispatch(gw.executetask, task)

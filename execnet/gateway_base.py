@@ -275,7 +275,7 @@ def geterrortext(excinfo):
     return errortext
 
 class RemoteError(EOFError):
-    """ Contains an Exceptions from the other side. """
+    """ Exception containing a stringified error from the other side. """
     def __init__(self, formatted):
         self.formatted = formatted
         EOFError.__init__(self)
@@ -294,7 +294,7 @@ class RemoteError(EOFError):
 NO_ENDMARKER_WANTED = object()
 
 class Channel(object):
-    """Communication channel between two possibly remote threads of code. """
+    """Communication channel between two Python Interpreter execution points."""
     RemoteError = RemoteError
 
     def __init__(self, gateway, id):
@@ -307,11 +307,15 @@ class Channel(object):
         self._remoteerrors = []
 
     def setcallback(self, callback, endmarker=NO_ENDMARKER_WANTED):
-        # we first execute the callback on all already received
-        # items. We need to hold the receivelock to prevent 
-        # race conditions with newly arriving items. 
-        # after having cleared the queue we register 
-        # the callback only if the channel is not closed already.
+        """ set a callback function for receiving items.  
+
+            All already queued items will immediately trigger the callback.  
+            Afterwards the callback will execute in the receiver thread
+            for each received data item and calls to ``receive()`` will 
+            raise an error. 
+            If an endmarker is specified the callback will eventually 
+            be called with the endmarker when the channel closes. 
+        """
         _callbacks = self.gateway._channelfactory._callbacks
         _receivelock = self.gateway._receivelock
         _receivelock.acquire()
@@ -380,9 +384,8 @@ class Channel(object):
 
     def makefile(self, mode='w', proxyclose=False):
         """ return a file-like object.  
-            mode: 'w' for writes, 'r' for reads 
-            proxyclose: if true file.close() will 
-            trigger a channel.close() call. 
+            mode can be 'w' or 'r' for writeable/readable files. 
+            if proxyclose is true file.close() will also close the channel.
         """ 
         if mode == "w":
             return ChannelFileWrite(channel=self, proxyclose=proxyclose)
@@ -391,7 +394,7 @@ class Channel(object):
         raise ValueError("mode %r not availabe" %(mode,))
 
     def close(self, error=None):
-        """ close down this channel on both sides. """
+        """ close down this channel with an optional error message. """ 
         if not self._closed:
             # state transition "opened/sendonly" --> "closed"
             # threads warning: the channel might be closed under our feet,
@@ -414,9 +417,8 @@ class Channel(object):
         """ wait until this channel is closed (or the remote side
         otherwise signalled that no more data was being sent).
         The channel may still hold receiveable items, but not receive
-        more.  waitclose() reraises exceptions from executing code on
-        the other side as channel.RemoteErrors containing a a textual
-        representation of the remote traceback.
+        any more after waitclose() has returned. exceptions from executing 
+        code on the other side are reraised as local channel.RemoteErrors. 
         """
         self._receiveclosed.wait(timeout=timeout)  # wait for non-"opened" state
         if not self._receiveclosed.isSet():

@@ -1,12 +1,13 @@
 """
 gateway code for initiating popen, socket and ssh connections. 
-(c) 2004-2009, Holger Krekel and others
+(c) 2004-2009, Holger Krekel and others 
 """
 
 import sys, os, inspect, socket, atexit, weakref
-import py
-from py.__.execnet.gateway_base import Message, Popen2IO, SocketIO
-from py.__.execnet import gateway_base 
+import textwrap
+import execnet
+from execnet.gateway_base import Message, Popen2IO, SocketIO
+from execnet import gateway_base 
 
 debug = False
 
@@ -29,26 +30,17 @@ class GatewayCleanup:
         for gw in list(self._activegateways):
             gw.exit()
             #gw.join() # should work as well
-
-class ExecnetAPI:
-    def pyexecnet_gateway_init(self, gateway):
-        """ signal initialisation of new gateway. """ 
-    def pyexecnet_gateway_exit(self, gateway):
-        """ signal exitting of gateway. """ 
     
-class InitiatingGateway(gateway_base.BaseGateway):
-    """ initialize gateways on both sides of a inputoutput object. """
+class Gateway(gateway_base.BaseGateway):
+    """ Gateway to a local or remote Python Intepreter. """
     # XXX put the next two global variables into an Execnet object
     #     which intiaties gateways and passes in appropriate values. 
     _cleanup = GatewayCleanup()
-    hook = ExecnetAPI()
 
     def __init__(self, io):
         self._remote_bootstrap_gateway(io)
-        super(InitiatingGateway, self).__init__(io=io, _startcount=1) 
+        super(Gateway, self).__init__(io=io, _startcount=1) 
         self._initreceive()
-        self.hook = py._com.HookRelay(ExecnetAPI, py._com.comregistry)
-        self.hook.pyexecnet_gateway_init(gateway=self)
         self._cleanup.register(self) 
 
     def __repr__(self):
@@ -76,7 +68,6 @@ class InitiatingGateway(gateway_base.BaseGateway):
             return # we assume it's already happened 
         self._stopexec()
         self._stopsend()
-        self.hook.pyexecnet_gateway_exit(gateway=self)
 
     def _remote_bootstrap_gateway(self, io, extra=''):
         """ return Gateway with a asynchronously remotely
@@ -113,7 +104,7 @@ class InitiatingGateway(gateway_base.BaseGateway):
             and has the sister 'channel' object in its global 
             namespace.
         """
-        source = str(py.code.Source(source))
+        source = textwrap.dedent(str(source)) 
         channel = self.newchannel() 
         self._send(Message.CHANNEL_OPEN(channel.id, source))
         return channel 
@@ -125,20 +116,10 @@ class InitiatingGateway(gateway_base.BaseGateway):
         """
         if hasattr(self, '_remotechannelthread'):
             raise IOError("remote threads already running")
-        from py.__.thread import pool
-        source = py.code.Source(pool, """
-            execpool = WorkerPool(maxthreads=%r)
-            gw = channel.gateway
-            while 1:
-                task = gw._execqueue.get()
-                if task is None:
-                    gw._stopsend()
-                    execpool.shutdown()
-                    execpool.join()
-                    raise gw._StopExecLoop
-                execpool.dispatch(gw.executetask, task)
-        """ % num)
+        from execnet import threadpool 
+        source = inspect.getsource(threadpool) 
         self._remotechannelthread = self.remote_exec(source)
+        self._remotechannelthread.send(num)
 
     def _remote_redirect(self, stdout=None, stderr=None): 
         """ return a handle representing a redirection of a remote 
@@ -193,7 +174,7 @@ channel.send(dict(
 ))
 """
 
-class PopenCmdGateway(InitiatingGateway):
+class PopenCmdGateway(Gateway):
     def __init__(self, args):
         from subprocess import Popen, PIPE
         self._popen = p = Popen(args, stdin=PIPE, stdout=PIPE) 
@@ -220,7 +201,7 @@ class PopenGateway(PopenCmdGateway):
 
     def _remote_bootstrap_gateway(self, io, extra=''):
         # have the subprocess use the same PYTHONPATH and py lib 
-        x = py.path.local(py.__file__).dirpath().dirpath()
+        x = os.path.dirname(os.path.dirname(execnet.__file__))
         ppath = os.environ.get('PYTHONPATH', '')
         plist = [str(x)] + ppath.split(':')
         s = "\n".join([extra, 
@@ -232,7 +213,7 @@ class PopenGateway(PopenCmdGateway):
             ])
         super(PopenGateway, self)._remote_bootstrap_gateway(io, s)
 
-class SocketGateway(InitiatingGateway):
+class SocketGateway(Gateway):
     """ This Gateway provides interaction with a remote process
         by connecting to a specified socket.  On the remote
         side you need to manually start a small script 
@@ -262,6 +243,7 @@ class SocketGateway(InitiatingGateway):
             host, port = ('', 0)  # XXX works on all platforms? 
         else:   
             host, port = hostport 
+        import py
         mydir = py.path.local(__file__).dirpath()
         socketserverbootstrap = py.code.Source(
             mydir.join('script', 'socketserver.py').read('r'), """
@@ -277,7 +259,7 @@ class SocketGateway(InitiatingGateway):
         (realhost, realport) = channel.receive()
         #gateway._trace("new_remote received" 
         #               "port=%r, hostname = %r" %(realport, hostname))
-        return py.execnet.SocketGateway(host, realport) 
+        return SocketGateway(host, realport) 
     new_remote = classmethod(new_remote)
 
 class HostNotFound(Exception):
@@ -306,10 +288,8 @@ class SshGateway(PopenCmdGateway):
        
     def _remote_bootstrap_gateway(self, io, s=""): 
         extra = "\n".join([
-            str(py.code.Source(stdouterrin_setnull)), 
-            "stdouterrin_setnull()",
-            s, 
-        ])
+            inspect.getsource(stdouterrin_setnull),
+            "stdouterrin_setnull()"])
         try:
             super(SshGateway, self)._remote_bootstrap_gateway(io, extra)
         except EOFError:
