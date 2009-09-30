@@ -1,4 +1,6 @@
 
+* use sphinx for documentation, improve docs and docstrings
+
 * fixes for standalone usage, adding boilerplate files
 
 * imported py/execnet and related bits 

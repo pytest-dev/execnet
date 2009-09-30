@@ -1,0 +1,108 @@
+==============================================================================
+execnet API in a nutshell
+==============================================================================
+
+execnet allows to create **gateways** which establish 
+a self-bootstrapping connection to another
+local or remote Python interpreter.  
+
+Gateways: connecting to another Python Interpreter
+===================================================
+
+.. currentmodule:: execnet
+
+Gateway classes allow to ad-hoc instantiate local or
+remote Python Interpreters and deploy code to them. 
+
+.. autoclass:: PopenGateway
+
+.. autoclass:: SshGateway
+
+.. autoclass:: SocketGateway
+
+
+
+remote_exec: execute source code remotely 
+===================================================
+
+.. currentmodule:: execnet.gateway
+
+All gateways offer a simple method to execute source code 
+in the connected interpreter:
+
+.. automethod:: Gateway.remote_exec(source)
+
+Here is an self-contained example for reading the process identifier::
+
+  >>> import execnet, os
+  >>> gw = execnet.PopenGateway()
+  >>> channel = gw.remote_exec("""
+  ...     import os
+  ...     channel.send(os.getpid())
+  ... """)
+  >>> remote_pid = channel.receive()
+  >>> remote_pid != os.getpid()
+  True
+
+
+.. _`Channel`: 
+.. _`channel-api`: 
+.. _`exchange data`: 
+
+Exchanging data with Channels 
+=======================================================
+
+.. currentmodule:: execnet.gateway_base
+
+A channel object allows to send and receive data between 
+two asynchronously running programs.  
+
+.. class:: Channel 
+
+   .. automethod:: Channel.send(item)
+   .. automethod:: Channel.receive()
+   .. automethod:: Channel.setcallback(callback, endmarker)
+   .. automethod:: Channel.makefile(mode, proxyclose=False)
+   .. automethod:: Channel.close(error)
+   .. automethod:: Channel.waitclose(timeout)
+   .. autoattribute:: Channel.RemoteError
+
+.. _xspec:
+
+
+creating gateways from a generic string format
+===============================================================
+
+``execnet`` supports a simple extensible format for 
+specifying and configuring Gateways for remote execution.  
+
+.. autofunction:: execnet.makegateway(xspec)
+
+The following paramters are recognized by default:
+
+* ``popen`` for a PopenGateway. 
+* ``ssh=host`` for a SshGateway to the given host. 
+* ``socket=address:port`` for a SocketGateway at the given address. 
+* ``python=executable`` for specifying Python Interpreter executables
+* ``chdir=path`` change remote working dir to given relative or absolute path
+* ``nice=value`` decrease remote nice level if platforms supports it 
+
+You can use a string specification to, for example, 
+instantiate a simple new SshGateway:: 
+
+    gateway = execnet.makegateway("ssh=myhost")
+
+Here are some examples for valid specifications: 
+
+* ``ssh=wyvern//python=python2.4//chdir=mycache`` specifies a Python2.4
+  interpreter on the host wyvern.  The remote process will have 
+  ``mycache`` as its current working directory. 
+
+* ``popen//python=2.5//nice=20`` specification of a python2.5
+  subprocess; running with the lowest CPU priority ("nice" level). 
+  By default current dir will be the current dir of the instantiator.
+
+* ``socket=192.168.1.4:8888`` specifies of a Python Socket server
+  process that listens on 192.168.1.4:8888; current dir will be the
+  'pyexecnet-cache' sub directory which is used a default for all remote
+  processes.
