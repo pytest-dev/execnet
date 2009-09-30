@@ -1,0 +1,49 @@
+==============================================================================
+execnet: Elastic Python Deployment. 
+==============================================================================
+
+the execnet package allows to: 
+
+* ad-hoc instantiate local or remote Python Interpreters
+* send code for execution to one or many Interpreters 
+* send and receive data between Interpreters through channels
+
+execnet uses a **zero-install self-bootstrapping** technique such that
+no manual installation steps are required on remote places.  A 
+basic connection method and a Python executable suffices.  The following
+interpreters can be connected with each other: 
+
+* |cpython| CPython versions, 2.4, 2.5, 2.6, 2.7, 3.0 and 3.1 
+* |jython| Jython 2.5.1  
+* |pypy| PyPy 1.1 and trunk versions
+
+
+.. |jython| image:: _static/jython.png
+    :target: http://jython.org 
+    :align: middle 
+
+.. |cpython| image:: _static/python-powered-h-70x91.png
+    :target: http://python.org 
+    :align: middle 
+
+.. |pypy| image:: _static/py-web1.png
+   :width: 75
+   :height: 55
+   :target: http://pypy.org
+   :align: middle 
+
+Contents:
+
+.. toctree::
+   :maxdepth: 2
+
+   basics
+   examples
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
+
