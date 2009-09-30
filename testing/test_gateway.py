@@ -3,7 +3,8 @@ mostly functional tests of gateways.
 """
 import os, sys, time
 import py
-from py.__.execnet import gateway_base, gateway
+import execnet
+from execnet import gateway_base, gateway
 queue = py.builtin._tryimport('queue', 'Queue')
 
 TESTTIMEOUT = 10.0 # seconds
@@ -389,7 +390,7 @@ class TestChannelFile:
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
 
 def test_join_blocked_execution_gateway(): 
-    gateway = py.execnet.PopenGateway() 
+    gateway = execnet.PopenGateway() 
     channel = gateway.remote_exec("""
         import time
         time.sleep(5.0)
@@ -410,7 +411,7 @@ class TestPopenGateway:
     def test_chdir_separation(self, tmpdir):
         old = tmpdir.chdir()
         try:
-            gw = py.execnet.PopenGateway()
+            gw = execnet.PopenGateway()
         finally:
             waschangedir = old.chdir()
         c = gw.remote_exec("import os ; channel.send(os.getcwd())")
@@ -421,7 +422,7 @@ class TestPopenGateway:
         num = 4
         l = []
         for i in range(num):
-            l.append(py.execnet.PopenGateway())
+            l.append(execnet.PopenGateway())
         channels = []
         for gw in l:
             channel = gw.remote_exec("""channel.send(42)""")
@@ -448,18 +449,9 @@ class TestPopenGateway:
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info == py.std.sys.version_info
 
-    def test_gateway_init_event(self, _pytest):
-        rec = _pytest.gethookrecorder(gateway.ExecnetAPI)
-        gw = py.execnet.PopenGateway()
-        call = rec.popcall("pyexecnet_gateway_init") 
-        assert call.gateway == gw
-        gw.exit()
-        call = rec.popcall("pyexecnet_gateway_exit")
-        assert call.gateway == gw
-            
     @py.test.mark.xfail # "fix needed: dying remote process does not cause waitclose() to fail"
     def test_waitclose_on_remote_killed(self):
-        gw = py.execnet.PopenGateway()
+        gw = execnet.PopenGateway()
         channel = gw.remote_exec("""
             import os
             import time
@@ -477,7 +469,7 @@ class TestPopenGateway:
 def test_endmarker_delivery_on_remote_killterm():
     if not hasattr(py.std.os, 'kill'):
         py.test.skip("no os.kill()")
-    gw = py.execnet.PopenGateway()
+    gw = execnet.PopenGateway()
     try:
         q = queue.Queue()
         channel = gw.remote_exec(source='''
@@ -495,8 +487,8 @@ def test_endmarker_delivery_on_remote_killterm():
 
 
 def test_socket_gw_host_not_found(gw):
-    py.test.raises(py.execnet.HostNotFound, 
-            'py.execnet.SocketGateway("qowieuqowe", 9000)'
+    py.test.raises(execnet.HostNotFound, 
+            'execnet.SocketGateway("qowieuqowe", 9000)'
     )
 
 class TestSshPopenGateway:
@@ -508,7 +500,7 @@ class TestSshPopenGateway:
         monkeypatch.setattr(subprocess, 'Popen', 
             lambda *args, **kwargs: l.append(args[0]))
         py.test.raises(AttributeError,  
-            """py.execnet.SshGateway("xyz", ssh_config='qwe')""")
+            """execnet.SshGateway("xyz", ssh_config='qwe')""")
         assert len(l) == 1
         popen_args = l[0]
         i = popen_args.index('-F')
@@ -518,12 +510,12 @@ class TestSshPopenGateway:
         assert gw.remoteaddress == specssh.ssh
 
     def test_host_not_found(self):
-        py.test.raises(py.execnet.HostNotFound, 
-            "py.execnet.SshGateway('nowhere.codespeak.net')")
+        py.test.raises(execnet.HostNotFound, 
+            "execnet.SshGateway('nowhere.codespeak.net')")
 
 class TestThreads:
     def test_threads(self):
-        gw = py.execnet.PopenGateway()
+        gw = execnet.PopenGateway()
         gw.remote_init_threads(3)
         c1 = gw.remote_exec("channel.send(channel.receive())")
         c2 = gw.remote_exec("channel.send(channel.receive())")
@@ -535,11 +527,11 @@ class TestThreads:
         assert res == 42
 
     def test_threads_twice(self):
-        gw = py.execnet.PopenGateway()
+        gw = execnet.PopenGateway()
         gw.remote_init_threads(3)
         py.test.raises(IOError, gw.remote_init_threads, 3)
 
 
 def test_nodebug():
-    from py.__.execnet import gateway_base
+    from execnet import gateway_base
     assert not gateway_base.debug

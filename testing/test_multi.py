@@ -4,6 +4,7 @@
 
 """
 
+import execnet
 import py
 
 class TestMultiChannelAndGateway:
@@ -14,7 +15,7 @@ class TestMultiChannelAndGateway:
 
         pc1 = pseudochannel()
         pc2 = pseudochannel()
-        multichannel = py.execnet.MultiChannel([pc1, pc2])
+        multichannel = execnet.MultiChannel([pc1, pc2])
         l = multichannel.receive_each(withchannel=True)
         assert len(l) == 2
         assert l == [(pc1, 12), (pc2, 12)]
@@ -22,8 +23,8 @@ class TestMultiChannelAndGateway:
         assert l == [12,12]
 
     def test_multichannel_send_each(self):
-        l = [py.execnet.PopenGateway() for x in range(2)]
-        gm = py.execnet.MultiGateway(l)
+        l = [execnet.PopenGateway() for x in range(2)]
+        gm = execnet.MultiGateway(l)
         mc = gm.remote_exec("""
             import os
             channel.send(channel.receive() + 1)
@@ -33,8 +34,8 @@ class TestMultiChannelAndGateway:
         assert l == [42,42]
        
     def test_multichannel_receive_queue_for_two_subprocesses(self):
-        l = [py.execnet.PopenGateway() for x in range(2)]
-        gm = py.execnet.MultiGateway(l)
+        l = [execnet.PopenGateway() for x in range(2)]
+        gm = execnet.MultiGateway(l)
         mc = gm.remote_exec("""
             import os
             channel.send(os.getpid())
@@ -52,7 +53,7 @@ class TestMultiChannelAndGateway:
         class pseudochannel:
             def waitclose(self):
                 l.append(0)
-        multichannel = py.execnet.MultiChannel([pseudochannel(), pseudochannel()])
+        multichannel = execnet.MultiChannel([pseudochannel(), pseudochannel()])
         multichannel.waitclose()
         assert len(l) == 2
 

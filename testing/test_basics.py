@@ -1,8 +1,8 @@
 
 import py
 import sys, os, subprocess, inspect
-from py.__.execnet import gateway_base, gateway
-from py.__.execnet.gateway_base import Message, Channel, ChannelFactory
+from execnet import gateway_base, gateway
+from execnet.gateway_base import Message, Channel, ChannelFactory
 
 def test_subprocess_interaction(anypython):
     line = gateway.popen_bootstrapline
@@ -145,8 +145,7 @@ def test_geterrortext(anypython, tmpdir):
 
 def test_stdouterrin_setnull():
     cap = py.io.StdCaptureFD()
-    from py.__.execnet.gateway import stdouterrin_setnull
-    stdouterrin_setnull()
+    gateway.stdouterrin_setnull()
     import os
     os.write(1, "hello".encode('ascii'))
     if os.name == "nt":

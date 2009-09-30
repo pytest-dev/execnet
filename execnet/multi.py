@@ -3,7 +3,6 @@ Support for working with multiple channels and gateways
 
 (c) 2008-2009, Holger Krekel and others
 """
-import py
 try:
     import queue 
 except ImportError:
@@ -64,8 +63,6 @@ class MultiChannel:
                 ch.waitclose()
             except ch.RemoteError:
                 if first is None:
-                    first = py.std.sys.exc_info()
+                    first = sys.exc_info()
         if first:
             py.builtin._reraise(first[0], first[1], first[2])
-
-

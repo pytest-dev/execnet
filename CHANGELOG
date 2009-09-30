@@ -1,0 +1,4 @@
+
+* fixes for standalone usage, adding boilerplate files
+
+* imported py/execnet and related bits 
