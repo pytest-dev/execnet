@@ -3,10 +3,20 @@
 
 (c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
-import py, os, stat
+import os, stat
 
-md5 = py.builtin._tryimport('hashlib', 'md5').md5
-Queue = py.builtin._tryimport('queue', 'Queue').Queue
+try:
+    from hashlib import md5
+except ImportError:
+    from md5 import md5
+
+try:
+    from queue import Queue
+except ImportError:
+    from Queue import Queue
+
+remote_file = os.path.join(os.path.dirname(__file__), 'rsync_remote.py')
+REMOTE_SOURCE = open(remote_file, 'r').read() + "\nf()"
 
 class RSync(object):
     """ This class allows to send a directory structure (recursively)
@@ -20,7 +30,7 @@ class RSync(object):
     def __init__(self, sourcedir, callback=None, verbose=True):
         self._sourcedir = str(sourcedir)
         self._verbose = verbose
-        assert callback is None or py.builtin.callable(callback)
+        assert callback is None or hasattr(callback, '__call__')
         self._callback = callback
         self._channels = {}
         self._receivequeue = Queue()
@@ -134,10 +144,9 @@ class RSync(object):
 
     def add_target(self, gateway, destdir,
                    finishedcallback=None, **options):
-        """ Adds a remote target specified via a 'gateway'
+        """ Adds a remote target specified via a gateway
             and a remote destination directory.
         """
-        assert finishedcallback is None or py.builtin.callable(finishedcallback)
         for name in options:
             assert name in ('delete',)
         def itemcallback(req):
@@ -195,7 +204,4 @@ class RSync(object):
             self._send_link_structure(path)
         else:
             raise ValueError("cannot sync %r" % (path,))
-
-REMOTE_SOURCE = py.path.local(__file__).dirpath().\
-                join('rsync_remote.py').open().read() + "\nf()"
 

@@ -74,7 +74,7 @@ exclude_trees = ['_build']
 
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
-#add_module_names = True
+add_module_names = True
 
 # If true, sectionauthor and moduleauthor directives will be shown in the
 # output. They are ignored by default.
@@ -92,6 +92,12 @@ pygments_style = 'sphinx'
 # The theme to use for HTML and HTML Help pages.  Major themes that come with
 # Sphinx are currently 'default' and 'sphinxdoc'.
 html_theme = 'sphinxdoc'
+
+#html_index = 'index.html'
+#html_sidebars = {'index': 'indexsidebar.html',
+#                 'basics': 'indexsidebar.html',
+#}
+#html_additional_pages = {'index': 'index.html'}
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -130,15 +136,8 @@ html_static_path = ['_static']
 # typographically correct entities.
 #html_use_smartypants = True
 
-# Custom sidebar templates, maps document names to template names.
-#html_sidebars = {}
-
-# Additional templates that should be rendered to pages, maps page names to
-# template names.
-#html_additional_pages = {}
-
 # If false, no module index is generated.
-html_use_modindex = True
+html_use_modindex = False
 
 # If false, no index is generated.
 #html_use_index = True
@@ -147,7 +146,7 @@ html_use_modindex = True
 #html_split_index = False
 
 # If true, links to the reST sources are added to the pages.
-#html_show_sourcelink = True
+html_show_sourcelink = False
 
 # If true, an OpenSearch description file will be output, and all pages will
 # contain a <link> tag referring to it.  The value of this option must be the

@@ -236,24 +236,24 @@ class SocketGateway(Gateway):
         super(SocketGateway, self).__init__(io=io)
 
     def new_remote(cls, gateway, hostport=None):
-        """ return a new (connected) socket gateway, instatiated
-            indirectly through the given 'gateway'.
+        """ return a new (connected) socket gateway, 
+            instantiated through the given 'gateway'.
         """
         if hostport is None:
             host, port = ('', 0)  # XXX works on all platforms?
         else:
             host, port = hostport
-        import py
-        mydir = py.path.local(__file__).dirpath()
-        socketserverbootstrap = py.code.Source(
-            mydir.join('script', 'socketserver.py').read('r'), """
+        
+        mydir = os.path.dirname(__file__)
+        socketserver = os.path.join(mydir, 'script', 'socketserver.py')
+        socketserverbootstrap = "\n".join([
+            open(socketserver, 'r').read(), """if 1:
             import socket
             sock = bind_and_listen((%r, %r))
             port = sock.getsockname()
             channel.send(port)
             startserver(sock)
-            """ % (host, port)
-        )
+        """ % (host, port)])
         # execute the above socketserverbootstrap on the other side
         channel = gateway.remote_exec(socketserverbootstrap)
         (realhost, realport) = channel.receive()

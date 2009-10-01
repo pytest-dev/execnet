@@ -1,6 +1,11 @@
 
-* use sphinx for documentation, improve docs and docstrings
+1.0.0alpha1 
+----------------------------
+
+* improve documentation, new website
+
+* use sphinx for documentation, added boilerplate files and setup.py 
 
 * fixes for standalone usage, adding boilerplate files
 
-* imported py/execnet and related bits 
+* imported py/execnet and made it work standalone

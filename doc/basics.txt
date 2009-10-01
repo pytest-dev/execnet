@@ -4,7 +4,11 @@ execnet API in a nutshell
 
 execnet allows to create **gateways** which establish 
 a self-bootstrapping connection to another
-local or remote Python interpreter.  
+local or remote Python interpreter.  Through this
+connection you can execute code on the other side
+and maintain a data exchange via channels.
+
+.. image:: _static/basic1.png
 
 Gateways: connecting to another Python Interpreter
 ===================================================
@@ -49,7 +53,7 @@ Here is an self-contained example for reading the process identifier::
 .. _`channel-api`: 
 .. _`exchange data`: 
 
-Exchanging data with Channels 
+Channels: exchanging data with remote code
 =======================================================
 
 .. currentmodule:: execnet.gateway_base
@@ -106,3 +110,20 @@ Here are some examples for valid specifications:
   process that listens on 192.168.1.4:8888; current dir will be the
   'pyexecnet-cache' sub directory which is used a default for all remote
   processes.
+
+rsync: synchronise filesystem with remote
+===============================================================
+
+``execnet`` implements a simple efficient rsyncing protocol. 
+Here is a basic example::
+
+    rsync = execnet.RSync('/tmp/source')
+    gw = execnet.PopenGateway()
+    rsync.add_target(gw, '/tmp/dest')
+    rsync.send()
+
+More info on the RSync class: 
+
+.. currentmodule:: execnet
+.. autoclass:: RSync
+    :members: add_target,send

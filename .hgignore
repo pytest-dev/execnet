@@ -1,1 +1,4 @@
 doc/_build
+build/
+execnet.egg-info/
+dist/
