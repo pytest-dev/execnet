@@ -1,5 +1,5 @@
 import py
-from execnet.rsync import RSync
+from execnet import RSync
 import execnet
 
 def pytest_funcarg__gw1(request):

@@ -1,49 +1,57 @@
-==============================================================================
-execnet: Elastic Python Deployment. 
-==============================================================================
+.. image:: _static/pythonring.png
+   :align: right
 
-the execnet package allows to: 
+Welcome to execnet!
+=========================
 
-* ad-hoc instantiate local or remote Python Interpreters
+The execnet package allows to: 
+
+* instantiate local/remote Python Interpreters
 * send code for execution to one or many Interpreters 
-* send and receive data between Interpreters through channels
+* send and receive data between codeInterpreters through channels
 
-execnet uses a **zero-install self-bootstrapping** technique such that
-no manual installation steps are required on remote places.  A 
-basic connection method and a Python executable suffices.  The following
-interpreters can be connected with each other: 
+execnet performs **zero-install bootstrapping** into other interpreters; 
+package installation is only required at the initiating side.  execnet enables
+interoperation between CPython 2.4-3.1, Jython 2.5 and PyPy 1.1 and works
+well on Windows, Linux and OSX systems.
 
-* |cpython| CPython versions, 2.4, 2.5, 2.6, 2.7, 3.0 and 3.1 
-* |jython| Jython 2.5.1  
-* |pypy| PyPy 1.1 and trunk versions
+execnet was written and is maintained by Holger Krekel with contributions from many others.  The package is licensed under the GPL Version 2 or later, at your choice.  Contributions and some parts of the package are licensed under the MIT license. 
 
+Getting Started
+====================
 
-.. |jython| image:: _static/jython.png
-    :target: http://jython.org 
-    :align: middle 
+To install a public `pypi release`_ via `easy_install`_::
 
-.. |cpython| image:: _static/python-powered-h-70x91.png
-    :target: http://python.org 
-    :align: middle 
+    easy_install -U execnet
 
-.. |pypy| image:: _static/py-web1.png
-   :width: 75
-   :height: 55
-   :target: http://pypy.org
-   :align: middle 
+To work from the development tree checkout the `execnet mercurial repository`_.
 
-Contents:
+Next checkout the basic api and examples:
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    basics
    examples
+   changelog
 
-Indices and tables
-==================
+Contact channels 
+===========================
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+You are welcome to:
+
+* join and post to the `execnet-dev`_ mailing list or `open an issue`_ 
+* join the #pylib IRC channel on Freenode
+* subscribe to the `execnet-commit`_ mailing list
+
+.. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
+.. _`execnet-commit`: http://codespeak.net/mailman/listinfo/execnet-commit
+.. _`open an issue`: http://bitbucket.org/hpk42/execnet/issues/
+
+.. _`easy_install`: http://peak.telecommunity.com/DevCenter/EasyInstall
+.. _`execnet mercurial repository`: http://bitbucket.org/hpk42/execnet/
+.. _`pypi release`: http://pypi.python.org/pypi/execnet
+
+
+
 

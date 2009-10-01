@@ -1,0 +1,14 @@
+{% extends "!layout.html" %}
+
+{% block rootrellink %}
+        <li><a href="{{ pathto('index') }}">home</a>&nbsp;|&nbsp;</li>
+        <li><a href="http://bitbucket.org/hpk42/execnet/issues/">issues</a>&nbsp;|&nbsp;</li>
+        <li><a href="http://pypi.python.org/pypi/execnet/">pypi</a>&nbsp;|&nbsp;</li>
+        <li><a href="{{ pathto('index') }}">Documentation</a>&raquo;</li>
+{% endblock %}
+
+{% block header %}
+<div style="background-color: white; text-align: left; padding: 10px 10px 15px 15px">
+<img src="{{ pathto("_static/execnet.png", 1) }}" target="http://codespeak.net/execnet" alt="execnet" />
+</div>
+{% endblock %}

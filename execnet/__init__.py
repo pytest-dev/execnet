@@ -12,3 +12,4 @@ from execnet.gateway import PopenGateway, SocketGateway, SshGateway
 from execnet.gateway import HostNotFound
 from execnet.xspec import makegateway, XSpec
 from execnet.multi import MultiGateway,MultiChannel
+from execnet.rsync import RSync

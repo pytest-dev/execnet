@@ -20,8 +20,6 @@ if debug: #  and not os.isatty(sys.stdin.fileno()):
     f = open('/tmp/execnet-socket-pyout.log', 'w')
     old = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = f
-    #import py
-    #compile = py.code.compile
 
 def print_(*args):
     print(" ".join(str(arg) for arg in args))
