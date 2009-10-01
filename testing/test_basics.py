@@ -12,7 +12,7 @@ def test_subprocess_interaction(anypython):
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     def send(line):
         popen.stdin.write(line.encode('ascii'))
-        if sys.version_info > (3,0): # 3k still buffers 
+        if sys.version_info > (3,0): # 3k still buffers
             popen.stdin.flush()
     def receive():
         return popen.stdout.readline().decode('ascii')
@@ -21,7 +21,7 @@ def test_subprocess_interaction(anypython):
         source = py.code.Source(read_write_loop, "read_write_loop()")
         repr_source = repr(str(source)) + "\n"
         sendline = repr_source
-        send(sendline)    
+        send(sendline)
         s = receive()
         assert s == "ok\n"
         send("hello\n")
@@ -53,7 +53,7 @@ def pytest_generate_tests(metafunc):
             metafunc.addcall(id=name, param=name)
 
 def pytest_funcarg__anypython(request):
-    name = request.param  
+    name = request.param
     executable = py.path.local.sysfind(name)
     if executable is None:
         py.test.skip("no %s found" % (name,))
@@ -63,7 +63,7 @@ def test_io_message(anypython, tmpdir):
     check = tmpdir.join("check.py")
     check.write(py.code.Source(gateway_base, """
         try:
-            from io import BytesIO 
+            from io import BytesIO
         except ImportError:
             from StringIO import StringIO as BytesIO
         import tempfile

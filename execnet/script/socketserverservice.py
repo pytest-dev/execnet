@@ -48,9 +48,9 @@ class SocketServerService(win32serviceutil.ServiceFramework):
 
 
     def SvcDoRun(self):
-        # Redirect stdout and stderr to prevent "IOError: [Errno 9] 
+        # Redirect stdout and stderr to prevent "IOError: [Errno 9]
         # Bad file descriptor". Windows services don't have functional
-        # output streams. 
+        # output streams.
         sys.stdout = sys.stderr = open('nul', 'w')
 
         # Write a 'started' event to the event log...
@@ -64,7 +64,7 @@ class SocketServerService(win32serviceutil.ServiceFramework):
         hostport = ':8888'
         print('Starting py.execnet SocketServer on %s' % hostport)
         serversock = socketserver.bind_and_listen(hostport)
-        thread = threading.Thread(target=socketserver.startserver, 
+        thread = threading.Thread(target=socketserver.startserver,
                                     args=(serversock,),
                                     kwargs={'loop':True})
         thread.setDaemon(True)
@@ -76,7 +76,7 @@ class SocketServerService(win32serviceutil.ServiceFramework):
                     self.WAIT_TIME)
             if result == win32event.WAIT_OBJECT_0:
                 break
-                
+
         # write a 'stopped' event to the event log.
         win32evtlogutil.ReportEvent(self._svc_display_name_,
                                     servicemanager.PYS_SERVICE_STOPPED,

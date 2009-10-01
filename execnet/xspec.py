@@ -1,15 +1,15 @@
 """
-(c) 2008-2009, holger krekel 
+(c) 2008-2009, holger krekel
 """
 import execnet
 
 class XSpec:
-    """ Execution Specification: key1=value1//key2=value2 ... 
-        * keys need to be unique within the specification scope 
+    """ Execution Specification: key1=value1//key2=value2 ...
+        * keys need to be unique within the specification scope
         * neither key nor value are allowed to contain "//"
-        * keys are not allowed to contain "=" 
-        * keys are not allowed to start with underscore 
-        * if no "=value" is given, assume a boolean True value 
+        * keys are not allowed to contain "="
+        * keys are not allowed to start with underscore
+        * if no "=value" is given, assume a boolean True value
     """
     # XXX allow customization, for only allow specific key names
     popen = ssh = socket = python = chdir = nice = None
@@ -36,7 +36,7 @@ class XSpec:
     def __repr__(self):
         return "<XSpec %r>" %(self._spec,)
     def __str__(self):
-        return self._spec 
+        return self._spec
 
     def __hash__(self):
         return hash(self._spec)
@@ -50,12 +50,12 @@ class XSpec:
 
 def makegateway(spec):
     """ create and configure a gateway to a Python interpreter
-        specified by a 'execution specification' string. 
+        specified by a 'execution specification' string.
         The format of the string generally is::
-            
+
             key1=value1//key2=value2//...
-        
-        If you leave out the ``=value`` part a True value is assumed. 
+
+        If you leave out the ``=value`` part a True value is assumed.
     """
     if not isinstance(spec, XSpec):
         spec = XSpec(spec)
@@ -70,7 +70,7 @@ def makegateway(spec):
         gw = execnet.SocketGateway(*hostport)
     else:
         raise ValueError("no gateway type found for %r" % (spec._spec,))
-    gw.spec = spec 
+    gw.spec = spec
     if spec.chdir or spec.nice:
         channel = gw.remote_exec("""
             import os

@@ -2,10 +2,10 @@ import execnet
 import py
 
 pytest_plugins = ['pytester']
-# configuration information for tests 
+# configuration information for tests
 def pytest_addoption(parser):
     group = parser.addgroup("pylib", "py lib testing options")
-    group.addoption('--gx', 
+    group.addoption('--gx',
            action="append", dest="gspecs", default=None,
            help=("add a global test environment, XSpec-syntax. "))
 
@@ -16,7 +16,7 @@ def pytest_funcarg__specsocket(request):
 def getgspecs(config=None):
     if config is None:
         config = py.test.config
-    return [execnet.XSpec(spec) 
+    return [execnet.XSpec(spec)
                 for spec in config.getvalueorskip("gspecs")]
 
 def getspecssh(config=None):
@@ -54,7 +54,7 @@ def pytest_funcarg__gw(request):
                 scope=scope)
     elif request.param == "socket":
         return request.cached_setup(
-            setup=setup_socket_gateway, 
+            setup=setup_socket_gateway,
             teardown=teardown_socket_gateway,
             extrakey=request.param,
             scope=scope)
@@ -66,8 +66,8 @@ def pytest_funcarg__gw(request):
             scope=scope)
 
 def setup_socket_gateway():
-    proxygw = execnet.PopenGateway() 
-    gw = execnet.SocketGateway.new_remote(proxygw, ("127.0.0.1", 0)) 
+    proxygw = execnet.PopenGateway()
+    gw = execnet.SocketGateway.new_remote(proxygw, ("127.0.0.1", 0))
     gw.proxygw = proxygw
     return gw
 

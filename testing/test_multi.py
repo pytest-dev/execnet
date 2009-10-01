@@ -1,6 +1,6 @@
-""" 
-    tests for 
-    - multi channels and multi gateways 
+"""
+    tests for
+    - multi channels and multi gateways
 
 """
 
@@ -30,9 +30,9 @@ class TestMultiChannelAndGateway:
             channel.send(channel.receive() + 1)
         """)
         mc.send_each(41)
-        l = mc.receive_each() 
+        l = mc.receive_each()
         assert l == [42,42]
-       
+
     def test_multichannel_receive_queue_for_two_subprocesses(self):
         l = [execnet.PopenGateway() for x in range(2)]
         gm = execnet.MultiGateway(l)

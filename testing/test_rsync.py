@@ -29,22 +29,22 @@ class TestRSync:
         dest2 = dirs.dest2
         source = dirs.source
 
-        for s in ('content1', 'content2', 'content2-a-bit-longer'): 
-            source.ensure('subdir', 'file1').write(s) 
+        for s in ('content1', 'content2', 'content2-a-bit-longer'):
+            source.ensure('subdir', 'file1').write(s)
             rsync = RSync(dirs.source)
             rsync.add_target(gw1, dest)
             rsync.add_target(gw2, dest2)
             rsync.send()
             assert dest.join('subdir').check(dir=1)
             assert dest.join('subdir', 'file1').check(file=1)
-            assert dest.join('subdir', 'file1').read() == s 
+            assert dest.join('subdir', 'file1').read() == s
             assert dest2.join('subdir').check(dir=1)
             assert dest2.join('subdir', 'file1').check(file=1)
-            assert dest2.join('subdir', 'file1').read() == s 
+            assert dest2.join('subdir', 'file1').read() == s
             for x in dest, dest2:
                 fn = x.join("subdir", "file1")
                 fn.setmtime(0)
-        
+
         source.join('subdir').remove('file1')
         rsync = RSync(source)
         rsync.add_target(gw2, dest2)
@@ -56,8 +56,8 @@ class TestRSync:
         rsync.add_target(gw1, dest, delete=True)
         rsync.add_target(gw2, dest2)
         rsync.send()
-        assert not dest.join('subdir', 'file1').check() 
-        assert dest2.join('subdir', 'file1').check() 
+        assert not dest.join('subdir', 'file1').check()
+        assert dest2.join('subdir', 'file1').check()
 
     def test_dirsync_twice(self, dirs, gw1, gw2):
         source = dirs.source
@@ -101,11 +101,11 @@ class TestRSync:
         dirs.source.ensure("existant")
         source.join("rellink").mksymlinkto(source.join("existant"), absolute=0)
         source.join('abslink').mksymlinkto(source.join("existant"))
-        
+
         rsync = RSync(source)
         rsync.add_target(gw1, dest)
         rsync.send()
-        
+
         assert dest.join('rellink').readlink() == dest.join("existant")
         assert dest.join('abslink').readlink() == dest.join("existant")
 
@@ -127,7 +127,7 @@ class TestRSync:
 
     def test_file_disappearing(self, dirs, gw1):
         dest = dirs.dest1
-        source = dirs.source 
+        source = dirs.source
         source.ensure("ex").write("a" * 100)
         source.ensure("ex2").write("a" * 100)
 
@@ -145,4 +145,4 @@ class TestRSync:
         assert rsync.x == 1
         assert len(dest.listdir()) == 1
         assert len(source.listdir()) == 1
-        
+

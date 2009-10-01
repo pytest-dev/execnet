@@ -1,7 +1,7 @@
 """
-1:N rsync implemenation on top of execnet. 
+1:N rsync implemenation on top of execnet.
 
-(c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski 
+(c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
 import py, os, stat
 
@@ -15,11 +15,11 @@ class RSync(object):
         There is limited support for symlinks, which means that symlinks
         pointing to the sourcetree will be send "as is" while external
         symlinks will be just copied (regardless of existance of such
-        a path on remote side). 
+        a path on remote side).
     """
-    def __init__(self, sourcedir, callback=None, verbose=True): 
+    def __init__(self, sourcedir, callback=None, verbose=True):
         self._sourcedir = str(sourcedir)
-        self._verbose = verbose 
+        self._verbose = verbose
         assert callback is None or py.builtin.callable(callback)
         self._callback = callback
         self._channels = {}
@@ -132,10 +132,10 @@ class RSync(object):
                 else:
                     assert "Unknown command %s" % command
 
-    def add_target(self, gateway, destdir, 
+    def add_target(self, gateway, destdir,
                    finishedcallback=None, **options):
         """ Adds a remote target specified via a 'gateway'
-            and a remote destination directory. 
+            and a remote destination directory.
         """
         assert finishedcallback is None or py.builtin.callable(finishedcallback)
         for name in options:
@@ -150,7 +150,7 @@ class RSync(object):
     def _broadcast(self, msg):
         for channel in self._channels:
             channel.send(msg)
-    
+
     def _send_link(self, basename, linkpoint):
         self._links.append(("link", basename, linkpoint))
 

@@ -8,7 +8,7 @@ from execnet import gateway_base, gateway
 queue = py.builtin._tryimport('queue', 'Queue')
 
 TESTTIMEOUT = 10.0 # seconds
-        
+
 class TestBasicRemoteExecution:
     def test_correct_setup(self, gw):
         assert gw._receiverthread.isAlive()
@@ -19,16 +19,16 @@ class TestBasicRemoteExecution:
     def test_attribute__name__(self, gw):
         channel = gw.remote_exec("channel.send(__name__)")
         name = channel.receive()
-        assert name == "__channelexec__" 
+        assert name == "__channelexec__"
 
     def test_correct_setup_no_py(self, gw):
         channel = gw.remote_exec("""
             import sys
             channel.send(list(sys.modules))
-        """) 
-        remotemodules = channel.receive() 
+        """)
+        remotemodules = channel.receive()
         assert 'py' not in remotemodules, (
-                "py should not be imported on remote side") 
+                "py should not be imported on remote side")
 
     def test_remote_exec_waitclose(self, gw):
         channel = gw.remote_exec('pass')
@@ -62,12 +62,12 @@ class TestChannelBasicBehaviour:
         py.test.raises(channel.RemoteError, channel.receive)
 
     def test_channel_finish_and_then_EOFError(self, gw):
-        channel = gw.remote_exec('channel.send(42)') 
+        channel = gw.remote_exec('channel.send(42)')
         x = channel.receive()
         assert x == 42
-        py.test.raises(EOFError, channel.receive) 
-        py.test.raises(EOFError, channel.receive) 
-        py.test.raises(EOFError, channel.receive) 
+        py.test.raises(EOFError, channel.receive)
+        py.test.raises(EOFError, channel.receive)
+        py.test.raises(EOFError, channel.receive)
 
     def test_channel_close_and_then_receive_error_multiple(self, gw):
         channel = gw.remote_exec('channel.send(42) ; raise ValueError')
@@ -110,10 +110,10 @@ class TestChannelBasicBehaviour:
 
     def test_channel_iter(self, gw):
         channel = gw.remote_exec("""
-              for x in range(3): 
+              for x in range(3):
                 channel.send(x)
-        """) 
-        l = list(channel) 
+        """)
+        l = list(channel)
         assert l == [0, 1, 2]
 
     def test_channel_passing_over_channel(self, gw):
@@ -135,20 +135,20 @@ class TestChannelBasicBehaviour:
         newchan.waitclose(TESTTIMEOUT)
         assert channel.id not in gw._channelfactory._channels
 
-    def test_channel_receiver_callback(self, gw): 
+    def test_channel_receiver_callback(self, gw):
         l = []
         #channel = gw.newchannel(receiver=l.append)
         channel = gw.remote_exec(source='''
             channel.send(42)
             channel.send(13)
             channel.send(channel.gateway.newchannel())
-            ''') 
+            ''')
         channel.setcallback(callback=l.append)
         py.test.raises(IOError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 3
         assert l[:2] == [42,13]
-        assert isinstance(l[2], channel.__class__) 
+        assert isinstance(l[2], channel.__class__)
 
     def test_channel_callback_after_receive(self, gw):
         l = []
@@ -156,15 +156,15 @@ class TestChannelBasicBehaviour:
             channel.send(42)
             channel.send(13)
             channel.send(channel.gateway.newchannel())
-            ''') 
+            ''')
         x = channel.receive()
         assert x == 42
         channel.setcallback(callback=l.append)
         py.test.raises(IOError, channel.receive)
-        channel.waitclose(TESTTIMEOUT) 
+        channel.waitclose(TESTTIMEOUT)
         assert len(l) == 2
         assert l[0] == 13
-        assert isinstance(l[1], channel.__class__) 
+        assert isinstance(l[1], channel.__class__)
 
     def test_waiting_for_callbacks(self, gw):
         l = []
@@ -175,7 +175,7 @@ class TestChannelBasicBehaviour:
             channel.send(42)
             ''')
         channel.setcallback(callback)
-        channel.waitclose(TESTTIMEOUT) 
+        channel.waitclose(TESTTIMEOUT)
         assert l == [42]
 
     def test_channel_callback_stays_active(self, gw):
@@ -218,7 +218,7 @@ class TestChannelBasicBehaviour:
     def test_channel_callback_remote_freed(self, gw):
         channel = self.check_channel_callback_stays_active(gw, earlyfree=False)
         # freed automatically at the end of producer()
-        channel.waitclose(TESTTIMEOUT) 
+        channel.waitclose(TESTTIMEOUT)
 
     def test_channel_endmarker_callback(self, gw):
         l = []
@@ -226,20 +226,20 @@ class TestChannelBasicBehaviour:
             channel.send(42)
             channel.send(13)
             channel.send(channel.gateway.newchannel())
-            ''') 
+            ''')
         channel.setcallback(l.append, 999)
         py.test.raises(IOError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 4
         assert l[:2] == [42,13]
-        assert isinstance(l[2], channel.__class__) 
+        assert isinstance(l[2], channel.__class__)
         assert l[3] == 999
 
     def test_channel_endmarker_callback_error(self, gw):
         q = queue.Queue()
         channel = gw.remote_exec(source='''
             raise ValueError()
-        ''') 
+        ''')
         channel.setcallback(q.put, endmarker=999)
         val = q.get(TESTTIMEOUT)
         assert val == 999
@@ -248,89 +248,89 @@ class TestChannelBasicBehaviour:
         assert str(err).find("ValueError") != -1
 
     @py.test.mark.xfail
-    def test_remote_redirect_stdout(self, gw): 
-        out = py.io.TextIO() 
-        handle = gw._remote_redirect(stdout=out) 
+    def test_remote_redirect_stdout(self, gw):
+        out = py.io.TextIO()
+        handle = gw._remote_redirect(stdout=out)
         c = gw.remote_exec("print 42")
         c.waitclose(TESTTIMEOUT)
-        handle.close() 
-        s = out.getvalue() 
-        assert s.strip() == "42" 
+        handle.close()
+        s = out.getvalue()
+        assert s.strip() == "42"
 
     @py.test.mark.xfail
-    def test_remote_exec_redirect_multi(self, gw): 
+    def test_remote_exec_redirect_multi(self, gw):
         num = 3
         l = [[] for x in range(num)]
-        channels = [gw.remote_exec("print %d" % i, 
+        channels = [gw.remote_exec("print %d" % i,
                                         stdout=l[i].append)
                         for i in range(num)]
-        for x in channels: 
-            x.waitclose(TESTTIMEOUT) 
+        for x in channels:
+            x.waitclose(TESTTIMEOUT)
 
-        for i in range(num): 
-            subl = l[i] 
-            assert subl 
+        for i in range(num):
+            subl = l[i]
+            assert subl
             s = subl[0]
             assert s.strip() == str(i)
 
 class TestChannelFile:
-    def test_channel_file_write(self, gw): 
+    def test_channel_file_write(self, gw):
         channel = gw.remote_exec("""
-            f = channel.makefile() 
+            f = channel.makefile()
             f.write("hello world\\n")
-            f.close() 
-            channel.send(42) 
+            f.close()
+            channel.send(42)
         """)
-        first = channel.receive() 
-        assert first.strip() == 'hello world' 
-        second = channel.receive() 
-        assert second == 42 
+        first = channel.receive()
+        assert first.strip() == 'hello world'
+        second = channel.receive()
+        assert second == 42
 
-    def test_channel_file_write_error(self, gw): 
-        channel = gw.remote_exec("pass") 
-        f = channel.makefile() 
+    def test_channel_file_write_error(self, gw):
+        channel = gw.remote_exec("pass")
+        f = channel.makefile()
         channel.waitclose(TESTTIMEOUT)
         py.test.raises(IOError, f.write, 'hello')
 
-    def test_channel_file_proxyclose(self, gw): 
+    def test_channel_file_proxyclose(self, gw):
         channel = gw.remote_exec("""
-            f = channel.makefile(proxyclose=True) 
+            f = channel.makefile(proxyclose=True)
             f.write("hello world")
-            f.close() 
-            channel.send(42) 
+            f.close()
+            channel.send(42)
         """)
-        first = channel.receive() 
-        assert first.strip() == 'hello world' 
+        first = channel.receive()
+        assert first.strip() == 'hello world'
         py.test.raises(EOFError, channel.receive)
 
-    def test_channel_file_read(self, gw): 
+    def test_channel_file_read(self, gw):
         channel = gw.remote_exec("""
-            f = channel.makefile(mode='r') 
+            f = channel.makefile(mode='r')
             s = f.read(2)
-            channel.send(s) 
+            channel.send(s)
             s = f.read(5)
-            channel.send(s) 
+            channel.send(s)
         """)
         channel.send("xyabcde")
         s1 = channel.receive()
         s2 = channel.receive()
-        assert s1 == "xy" 
+        assert s1 == "xy"
         assert s2 == "abcde"
 
-    def test_channel_file_read_empty(self, gw): 
-        channel = gw.remote_exec("pass") 
-        f = channel.makefile(mode="r") 
-        s = f.read(3) 
+    def test_channel_file_read_empty(self, gw):
+        channel = gw.remote_exec("pass")
+        f = channel.makefile(mode="r")
+        s = f.read(3)
         assert s == ""
-        s = f.read(5) 
+        s = f.read(5)
         assert s == ""
 
-    def test_channel_file_readline_remote(self, gw): 
+    def test_channel_file_readline_remote(self, gw):
         channel = gw.remote_exec("""
             channel.send('123\\n45')
         """)
         channel.waitclose(TESTTIMEOUT)
-        f = channel.makefile(mode="r") 
+        f = channel.makefile(mode="r")
         s = f.readline()
         assert s == "123\n"
         s = f.readline()
@@ -370,10 +370,10 @@ class TestChannelFile:
 
     def test__rinfo(self, gw):
         rinfo = gw._rinfo()
-        assert rinfo.executable 
-        assert rinfo.cwd 
-        assert rinfo.version_info 
-        s = repr(rinfo) 
+        assert rinfo.executable
+        assert rinfo.cwd
+        assert rinfo.version_info
+        s = repr(rinfo)
         old = gw.remote_exec("""
             import os.path
             cwd = os.getcwd()
@@ -389,21 +389,21 @@ class TestChannelFile:
             gw._cache_rinfo = rinfo
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
 
-def test_join_blocked_execution_gateway(): 
-    gateway = execnet.PopenGateway() 
+def test_join_blocked_execution_gateway():
+    gateway = execnet.PopenGateway()
     channel = gateway.remote_exec("""
         import time
         time.sleep(5.0)
     """)
-    def doit(): 
-        gateway.exit() 
-        gateway.join(joinexec=True) 
-        return 17 
+    def doit():
+        gateway.exit()
+        gateway.join(joinexec=True)
+        return 17
 
-    pool = py._thread.WorkerPool() 
-    reply = pool.dispatch(doit) 
-    x = reply.get(timeout=1.0) 
-    assert x == 17 
+    pool = py._thread.WorkerPool()
+    reply = pool.dispatch(doit)
+    x = reply.get(timeout=1.0)
+    assert x == 17
 
 class TestPopenGateway:
     gwtype = 'popen'
@@ -445,7 +445,7 @@ class TestPopenGateway:
 
     def test_rinfo_popen(self, gw):
         rinfo = gw._rinfo()
-        assert rinfo.executable == py.std.sys.executable 
+        assert rinfo.executable == py.std.sys.executable
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info == py.std.sys.version_info
 
@@ -475,7 +475,7 @@ def test_endmarker_delivery_on_remote_killterm():
         channel = gw.remote_exec(source='''
             import os
             os.kill(os.getpid(), 15)
-        ''') 
+        ''')
         channel.setcallback(q.put, endmarker=999)
         val = q.get(TESTTIMEOUT)
         assert val == 999
@@ -487,7 +487,7 @@ def test_endmarker_delivery_on_remote_killterm():
 
 
 def test_socket_gw_host_not_found(gw):
-    py.test.raises(execnet.HostNotFound, 
+    py.test.raises(execnet.HostNotFound,
             'execnet.SocketGateway("qowieuqowe", 9000)'
     )
 
@@ -497,9 +497,9 @@ class TestSshPopenGateway:
     def test_sshconfig_config_parsing(self, monkeypatch):
         import subprocess
         l = []
-        monkeypatch.setattr(subprocess, 'Popen', 
+        monkeypatch.setattr(subprocess, 'Popen',
             lambda *args, **kwargs: l.append(args[0]))
-        py.test.raises(AttributeError,  
+        py.test.raises(AttributeError,
             """execnet.SshGateway("xyz", ssh_config='qwe')""")
         assert len(l) == 1
         popen_args = l[0]
@@ -510,7 +510,7 @@ class TestSshPopenGateway:
         assert gw.remoteaddress == specssh.ssh
 
     def test_host_not_found(self):
-        py.test.raises(execnet.HostNotFound, 
+        py.test.raises(execnet.HostNotFound,
             "execnet.SshGateway('nowhere.codespeak.net')")
 
 class TestThreads:

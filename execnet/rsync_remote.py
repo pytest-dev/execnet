@@ -1,5 +1,5 @@
 """
-(c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski 
+(c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
 def f():
     import os, stat, shutil
@@ -7,7 +7,7 @@ def f():
         from hashlib import md5
     except ImportError:
         from md5 import md5
-    destdir, options = channel.receive() 
+    destdir, options = channel.receive()
     modifiedfiles = []
 
     def remove(path):
@@ -35,7 +35,7 @@ def f():
                 receive_directory_structure(os.path.join(path, entryname),
                     relcomponents + [entryname])
                 entrynames[entryname] = True
-            if options.get('delete'): 
+            if options.get('delete'):
                 for othername in os.listdir(path):
                     if othername not in entrynames:
                         otherpath = os.path.join(path, othername)
