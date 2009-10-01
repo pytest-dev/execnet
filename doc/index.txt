@@ -8,14 +8,14 @@ The execnet package allows to:
 
 * instantiate local/remote Python Interpreters
 * send code for execution to one or many Interpreters 
-* send and receive data between codeInterpreters through channels
+* send and receive data through channels
 
 execnet performs **zero-install bootstrapping** into other interpreters; 
 package installation is only required at the initiating side.  execnet enables
 interoperation between CPython 2.4-3.1, Jython 2.5 and PyPy 1.1 and works
 well on Windows, Linux and OSX systems.
 
-execnet was written and is maintained by Holger Krekel with contributions from many others.  The package is licensed under the GPL Version 2 or later, at your choice.  Contributions and some parts of the package are licensed under the MIT license. 
+execnet was written and is maintained by `Holger Krekel`_ with contributions from many others.  The package is licensed under the GPL Version 2 or later, at your choice.  Contributions and some parts of the package are licensed under the MIT license. 
 
 Getting Started
 ====================
@@ -44,6 +44,7 @@ You are welcome to:
 * join the #pylib IRC channel on Freenode
 * subscribe to the `execnet-commit`_ mailing list
 
+.. _`Holger Krekel`: http://tetamap.wordpress.com
 .. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
 .. _`execnet-commit`: http://codespeak.net/mailman/listinfo/execnet-commit
 .. _`open an issue`: http://bitbucket.org/hpk42/execnet/issues/

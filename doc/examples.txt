@@ -2,6 +2,33 @@
 execnet examples
 ==============================================================================
 
+Work with Java objects from CPython
+----------------------------------------
+
+Use your CPython interpreter to connect to a Jython_ interpreter
+and work with Java types::
+
+    import execnet
+    gw = execnet.PopenGateway("jython")
+    channel = gw.remote_exec("""
+        from java.util import Vector
+        v = Vector()
+        v.add('aaa')
+        v.add('bbb')
+        for val in v:
+            channel.send(val)
+    """)
+
+    for item in channel:
+        print (item)
+
+will print on the CPython side::
+
+    aaa
+    bbb
+
+.. _Jython: http://www.jython.org
+
 Compare cwd() of Popen Gateways
 ----------------------------------------
 
