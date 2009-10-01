@@ -20,8 +20,8 @@ if debug: #  and not os.isatty(sys.stdin.fileno()):
     f = open('/tmp/execnet-socket-pyout.log', 'w')
     old = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = f
-    #import py 
-    #compile = py.code.compile 
+    #import py
+    #compile = py.code.compile
 
 def print_(*args):
     print(" ".join(str(arg) for arg in args))
@@ -66,27 +66,27 @@ def bind_and_listen(hostport):
     # allow the address to be re-used in a reasonable amount of time
     if os.name == 'posix' and sys.platform != 'cygwin':
         serversock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
+
     serversock.bind(hostport)
     serversock.listen(5)
     return serversock
 
 def startserver(serversock, loop=False):
     try:
-        while 1: 
-            try: 
+        while 1:
+            try:
                 exec_from_one_connection(serversock)
-            except (KeyboardInterrupt, SystemExit): 
-                raise 
-            except: 
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except:
                 if debug:
                     import traceback
                     traceback.print_exc()
                 else:
                     excinfo = sys.exc_info()
                     print_("got exception", excinfo[1])
-            if not loop: 
-                break 
+            if not loop:
+                break
     finally:
         print_("leaving socketserver execloop")
         serversock.shutdown(2)

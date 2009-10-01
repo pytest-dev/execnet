@@ -1,42 +1,42 @@
 """
-base execnet gateway code, a quick overview. 
+base execnet gateway code, a quick overview.
 
 the code of this module is sent to the "other side"
 as a means of bootstrapping a Gateway object
 capable of receiving and executing code,
-and routing data through channels. 
+and routing data through channels.
 
 Gateways operate on InputOutput objects offering
 a write and a read(n) method.
 
-Once bootstrapped a higher level protocol 
+Once bootstrapped a higher level protocol
 based on Messages is used.  Messages are serialized
-to and from InputOutput objects.  The details of this protocol 
-are locally defined in this module.  There is no need 
-for standardizing or versioning the protocol.   
+to and from InputOutput objects.  The details of this protocol
+are locally defined in this module.  There is no need
+for standardizing or versioning the protocol.
 
-After bootstrapping the BaseGateway opens a receiver thread which 
-accepts encoded messages and triggers actions to interpret them. 
+After bootstrapping the BaseGateway opens a receiver thread which
+accepts encoded messages and triggers actions to interpret them.
 Sending of channel data items happens directly through
 write operations to InputOutput objects so there is no
-separate thread.  
+separate thread.
 
 Code execution messages are put into an execqueue from
-which they will be taken for execution.  gateway.serve() 
+which they will be taken for execution.  gateway.serve()
 will take and execute such items, one by one.  This means
-that by incoming default execution is single-threaded. 
+that by incoming default execution is single-threaded.
 
-The receiver thread terminates if the remote side sends 
-a gateway termination message or if the IO-connection drops. 
-It puts an end symbol into the execqueue so 
-that serve() can cleanly finish as well.  
+The receiver thread terminates if the remote side sends
+a gateway termination message or if the IO-connection drops.
+It puts an end symbol into the execqueue so
+that serve() can cleanly finish as well.
 
 (C) 2004-2009 Holger Krekel, Armin Rigo and others
 """
 import sys, os, weakref
 import threading, traceback, socket, struct
 try:
-    import queue 
+    import queue
 except ImportError:
     import Queue as queue
 
@@ -118,7 +118,7 @@ sys.stdin = tempfile.TemporaryFile('r')
     error = (IOError, OSError, EOFError)
 
     def __init__(self, outfile, infile):
-        # we need raw byte streams 
+        # we need raw byte streams
         self.outfile, self.infile = outfile, infile
         if sys.platform == "win32":
             import msvcrt
@@ -137,7 +137,7 @@ sys.stdin = tempfile.TemporaryFile('r')
         return data
 
     def write(self, data):
-        """write out all data bytes. """ 
+        """write out all data bytes. """
         assert isinstance(data, bytes)
         try:
             self.outfile.buffer.write(data)
@@ -178,7 +178,7 @@ class Message:
         # XXX marshal.dumps doesn't work for exchanging data across Python
         # version :-(((  XXX check this statement wrt python2.4 through 3.1
         data = self.data
-        if isinstance(data, bytes): 
+        if isinstance(data, bytes):
             dataformat = 1 + int(is3k)
         else:
             if isinstance(data, unicode):
@@ -197,8 +197,8 @@ class Message:
          senderid, stringlen) = struct.unpack(HDR_FORMAT, header)
         data = io.read(stringlen)
         if dataformat == 1:
-            if is3k: 
-                # remote was python2-str, we are 3k-text 
+            if is3k:
+                # remote was python2-str, we are 3k-text
                 data = data.decode(default_encoding)
         elif dataformat == 2:
             # remote was python3-bytes
@@ -206,7 +206,7 @@ class Message:
         else:
             data = data.decode(default_encoding)
             if dataformat == 3:
-                pass 
+                pass
             elif dataformat == 4:
                 data = eval(data, {})   # reversed argh
             else:
@@ -253,9 +253,9 @@ def _setupmessages():
         def received(self, gateway):
             gateway._channelfactory._local_close(self.channelid, sendonly=True)
 
-    classes = [CHANNEL_OPEN, CHANNEL_NEW, CHANNEL_DATA, 
+    classes = [CHANNEL_OPEN, CHANNEL_NEW, CHANNEL_DATA,
                CHANNEL_CLOSE, CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE]
-           
+
     for i, cls in enumerate(classes):
         Message._types[i] = cls
         cls.msgtype = i
@@ -307,14 +307,14 @@ class Channel(object):
         self._remoteerrors = []
 
     def setcallback(self, callback, endmarker=NO_ENDMARKER_WANTED):
-        """ set a callback function for receiving items.  
+        """ set a callback function for receiving items.
 
-            All already queued items will immediately trigger the callback.  
+            All already queued items will immediately trigger the callback.
             Afterwards the callback will execute in the receiver thread
-            for each received data item and calls to ``receive()`` will 
-            raise an error. 
-            If an endmarker is specified the callback will eventually 
-            be called with the endmarker when the channel closes. 
+            for each received data item and calls to ``receive()`` will
+            raise an error.
+            If an endmarker is specified the callback will eventually
+            be called with the endmarker when the channel closes.
         """
         _callbacks = self.gateway._channelfactory._callbacks
         _receivelock = self.gateway._receivelock
@@ -335,13 +335,13 @@ class Channel(object):
                     if olditem is ENDMARKER:
                         items.put(olditem) # for other receivers
                         if endmarker is not NO_ENDMARKER_WANTED:
-                            callback(endmarker) 
+                            callback(endmarker)
                         break
                     else:
                         callback(olditem)
         finally:
             _receivelock.release()
-         
+
     def __repr__(self):
         flag = self.isclosed() and "closed" or "open"
         return "<Channel id=%d %s>" % (self.id, flag)
@@ -374,19 +374,19 @@ class Channel(object):
             return None
 
     #
-    # public API for channel objects 
+    # public API for channel objects
     #
     def isclosed(self):
-        """ return True if the channel is closed. A closed 
-            channel may still hold items. 
-        """ 
+        """ return True if the channel is closed. A closed
+            channel may still hold items.
+        """
         return self._closed
 
     def makefile(self, mode='w', proxyclose=False):
-        """ return a file-like object.  
-            mode can be 'w' or 'r' for writeable/readable files. 
+        """ return a file-like object.
+            mode can be 'w' or 'r' for writeable/readable files.
             if proxyclose is true file.close() will also close the channel.
-        """ 
+        """
         if mode == "w":
             return ChannelFileWrite(channel=self, proxyclose=proxyclose)
         elif mode == "r":
@@ -394,12 +394,12 @@ class Channel(object):
         raise ValueError("mode %r not availabe" %(mode,))
 
     def close(self, error=None):
-        """ close down this channel with an optional error message. """ 
+        """ close down this channel with an optional error message. """
         if not self._closed:
             # state transition "opened/sendonly" --> "closed"
             # threads warning: the channel might be closed under our feet,
             # but it's never damaging to send too many CHANNEL_CLOSE messages
-            put = self.gateway._send 
+            put = self.gateway._send
             if error is not None:
                 put(Message.CHANNEL_CLOSE_ERROR(self.id, error))
             else:
@@ -417,8 +417,8 @@ class Channel(object):
         """ wait until this channel is closed (or the remote side
         otherwise signalled that no more data was being sent).
         The channel may still hold receiveable items, but not receive
-        any more after waitclose() has returned. exceptions from executing 
-        code on the other side are reraised as local channel.RemoteErrors. 
+        any more after waitclose() has returned. exceptions from executing
+        code on the other side are reraised as local channel.RemoteErrors.
         """
         self._receiveclosed.wait(timeout=timeout)  # wait for non-"opened" state
         if not self._receiveclosed.isSet():
@@ -432,7 +432,7 @@ class Channel(object):
         possibly blocking if the sender queue is full.
         Note that an item needs to be marshallable.
         """
-        if self.isclosed(): 
+        if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
         if isinstance(item, Channel):
             data = Message.CHANNEL_NEW(self.id, item.id)
@@ -451,23 +451,23 @@ class Channel(object):
         if queue is None:
             raise IOError("calling receive() on channel with receiver callback")
         x = queue.get()
-        if x is ENDMARKER: 
-            queue.put(x)  # for other receivers 
+        if x is ENDMARKER:
+            queue.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()
-        else: 
+        else:
             return x
-    
-    def __iter__(self):
-        return self 
 
-    def next(self): 
+    def __iter__(self):
+        return self
+
+    def next(self):
         try:
             return self.receive()
-        except EOFError: 
-            raise StopIteration 
+        except EOFError:
+            raise StopIteration
     __next__ = next
 
-ENDMARKER = object() 
+ENDMARKER = object()
 
 class ChannelFactory(object):
     RemoteError = RemoteError
@@ -499,7 +499,7 @@ class ChannelFactory(object):
         return list(self._channels.values())
 
     #
-    # internal methods, called from the receiver thread 
+    # internal methods, called from the receiver thread
     #
     def _no_longer_opened(self, id):
         try:
@@ -532,7 +532,7 @@ class ChannelFactory(object):
                 queue.put(ENDMARKER)
         self._no_longer_opened(id)
 
-    def _local_receive(self, id, data): 
+    def _local_receive(self, id, data):
         # executes in receiver thread
         try:
             callback, endmarker = self._callbacks[id]
@@ -560,15 +560,15 @@ class ChannelFactory(object):
 class ChannelFile(object):
     def __init__(self, channel, proxyclose=True):
         self.channel = channel
-        self._proxyclose = proxyclose 
+        self._proxyclose = proxyclose
 
     def close(self):
-        if self._proxyclose: 
+        if self._proxyclose:
             self.channel.close()
 
     def __repr__(self):
         state = self.channel.isclosed() and 'closed' or 'open'
-        return '<ChannelFile %d %s>' %(self.channel.id, state) 
+        return '<ChannelFile %d %s>' %(self.channel.id, state)
 
 class ChannelFileWrite(ChannelFile):
     def write(self, out):
@@ -587,11 +587,11 @@ class ChannelFileRead(ChannelFile):
             try:
                 self._buffer += self.channel.receive()
             except EOFError:
-                self.close() 
+                self.close()
                 break
         ret = self._buffer[:n]
         self._buffer = self._buffer[n:]
-        return ret 
+        return ret
 
     def readline(self):
         i = self._buffer.find("\n")
@@ -604,25 +604,25 @@ class ChannelFileRead(ChannelFile):
                 break
             line += c
         return line
-        
-class BaseGateway(object):
-    exc_info = sys.exc_info 
 
-    class _StopExecLoop(Exception): 
+class BaseGateway(object):
+    exc_info = sys.exc_info
+
+    class _StopExecLoop(Exception):
         pass
 
-    def __init__(self, io, _startcount=2): 
-        """ initialize core gateway, using the given inputoutput object. 
+    def __init__(self, io, _startcount=2):
+        """ initialize core gateway, using the given inputoutput object.
         """
         self._io = io
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
 
     def _initreceive(self):
-        self._receiverthread = threading.Thread(name="receiver", 
+        self._receiverthread = threading.Thread(name="receiver",
                                  target=self._thread_receiver)
         self._receiverthread.setDaemon(1)
-        self._receiverthread.start() 
+        self._receiverthread.start()
 
     def _trace(self, msg):
         if debug:
@@ -654,15 +654,15 @@ class BaseGateway(object):
                     break
                 except:
                     self._trace(geterrortext(self.exc_info()))
-                    break 
+                    break
         finally:
             # XXX we need to signal fatal error states to
-            #     channels/callbacks, particularly ones 
-            #     where the other side just died. 
+            #     channels/callbacks, particularly ones
+            #     where the other side just died.
             self._stopexec()
             try:
                 self._stopsend()
-            except IOError: 
+            except IOError:
                 self._trace('IOError on _stopsend()')
             self._channelfactory._finished_receiving()
             if threading: # might be None during shutdown/finalization
@@ -673,8 +673,8 @@ class BaseGateway(object):
             self._io.close_write()
         else:
             try:
-                msg.writeto(self._io) 
-            except: 
+                msg.writeto(self._io)
+            except:
                 excinfo = self.exc_info()
                 self._trace(geterrortext(excinfo))
             else:
@@ -694,13 +694,13 @@ class BaseGateway(object):
     # High Level Interface
     # _____________________________________________________________________
     #
-    def newchannel(self): 
-        """ return new channel object.  """ 
+    def newchannel(self):
+        """ return new channel object.  """
         return self._channelfactory.new()
 
     def join(self, joinexec=True):
-        """ Wait for all IO (and by default all execution activity) 
-            to stop. the joinexec parameter is obsolete. 
+        """ Wait for all IO (and by default all execution activity)
+            to stop. the joinexec parameter is obsolete.
         """
         current = threading.currentThread()
         if self._receiverthread.isAlive():
@@ -712,7 +712,7 @@ class SlaveGateway(BaseGateway):
         self._execqueue.put(None)
 
     def _local_schedulexec(self, channel, sourcetask):
-        self._execqueue.put((channel, sourcetask)) 
+        self._execqueue.put((channel, sourcetask))
 
     def serve(self, joining=True):
         self._execqueue = queue.Queue()
@@ -728,13 +728,13 @@ class SlaveGateway(BaseGateway):
                 except self._StopExecLoop:
                     break
         finally:
-            self._trace("serve") 
+            self._trace("serve")
         if joining:
             self.join()
 
     def executetask(self, item):
         """ execute channel/source items. """
-        channel, source = item 
+        channel, source = item
         try:
             loc = { 'channel' : channel, '__name__': '__channelexec__'}
             #open("task.py", 'w').write(source)
@@ -745,7 +745,7 @@ class SlaveGateway(BaseGateway):
             finally:
                 self._trace("execution finished")
         except sysex:
-            pass 
+            pass
         except self._StopExecLoop:
             channel.close()
             raise

@@ -4,7 +4,7 @@ Support for working with multiple channels and gateways
 (c) 2008-2009, Holger Krekel and others
 """
 try:
-    import queue 
+    import queue
 except ImportError:
     import Queue as queue
 
@@ -39,7 +39,7 @@ class MultiChannel:
                 l.append((ch, obj))
             else:
                 l.append(obj)
-        return l 
+        return l
 
     def make_receive_queue(self, endmarker=NO_ENDMARKER_WANTED):
         try:

@@ -1,8 +1,8 @@
 """
-execnet: Elastic Python Deployment. 
+execnet: Elastic Python Deployment.
 package for connecting to local and remote Python Interpreters.
 
-(c) 2009, Holger Krekel and others 
+(c) 2009, Holger Krekel and others
 """
 
 __version__ = "1.0.0alpha"

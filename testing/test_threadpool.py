@@ -1,19 +1,19 @@
 
 import py
 import sys
-from execnet.threadpool import queue, WorkerPool 
+from execnet.threadpool import queue, WorkerPool
 
 def test_some():
     pool = WorkerPool()
     q = queue.Queue()
     num = 4
 
-    def f(i): 
-        q.put(i) 
-        while q.qsize(): 
-            py.std.time.sleep(0.01) 
+    def f(i):
+        q.put(i)
+        while q.qsize():
+            py.std.time.sleep(0.01)
     for i in range(num):
-        pool.dispatch(f, i) 
+        pool.dispatch(f, i)
     for i in range(num):
         q.get()
     assert len(pool._alive) == 4
@@ -30,27 +30,27 @@ def test_some():
 
 def test_get():
     pool = WorkerPool()
-    def f(): 
+    def f():
         return 42
-    reply = pool.dispatch(f) 
-    result = reply.get() 
-    assert result == 42 
+    reply = pool.dispatch(f)
+    result = reply.get()
+    assert result == 42
 
 def test_get_timeout():
     pool = WorkerPool()
-    def f(): 
-        py.std.time.sleep(0.2) 
+    def f():
+        py.std.time.sleep(0.2)
         return 42
-    reply = pool.dispatch(f) 
-    py.test.raises(IOError, "reply.get(timeout=0.01)") 
+    reply = pool.dispatch(f)
+    py.test.raises(IOError, "reply.get(timeout=0.01)")
 
 def test_get_excinfo():
     pool = WorkerPool()
-    def f(): 
-        raise ValueError("42") 
-    reply = pool.dispatch(f) 
-    excinfo = py.test.raises(ValueError, "reply.get(1.0)") 
-    py.test.raises(EOFError, "reply.get(1.0)") 
+    def f():
+        raise ValueError("42")
+    reply = pool.dispatch(f)
+    excinfo = py.test.raises(ValueError, "reply.get(1.0)")
+    py.test.raises(EOFError, "reply.get(1.0)")
 
 def test_maxthreads():
     pool = WorkerPool(maxthreads=1)
@@ -66,16 +66,16 @@ def test_join_timeout():
     pool = WorkerPool()
     q = queue.Queue()
     def f():
-        q.get() 
+        q.get()
     reply = pool.dispatch(f)
     pool.shutdown()
     py.test.raises(IOError, pool.join, 0.01)
     q.put(None)
-    reply.get(timeout=1.0) 
-    pool.join(timeout=0.1) 
+    reply.get(timeout=1.0)
+    pool.join(timeout=0.1)
 
 def test_pool_clean_shutdown():
-    capture = py.io.StdCaptureFD() 
+    capture = py.io.StdCaptureFD()
     pool = WorkerPool()
     def f():
         pass
