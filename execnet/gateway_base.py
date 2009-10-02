@@ -41,14 +41,13 @@ except ImportError:
     import Queue as queue
 
 if sys.version_info > (3, 0):
-    exec("""def do_exec(co, loc):
-    exec(co, loc)""")
+    exec("def do_exec(co, loc): exec(co, loc)\n"
+         "def reraise(cls, val, tb): raise val\n")
     unicode = str
 else:
-    exec("""def do_exec(co, loc):
-    exec co in loc""")
+    exec("def do_exec(co, loc): exec co in loc\n"
+         "def reraise(cls, val, tb): raise cls, val, tb\n")
     bytes = str
-
 
 def str(*args):
     raise EnvironmentError(
