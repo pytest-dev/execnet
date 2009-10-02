@@ -3,10 +3,9 @@ Support for working with multiple channels and gateways
 
 (c) 2008-2009, Holger Krekel and others
 """
-try:
-    import queue
-except ImportError:
-    import Queue as queue
+
+import sys
+from execnet.gateway_base import queue, reraise
 
 NO_ENDMARKER_WANTED = object()
 
@@ -65,4 +64,4 @@ class MultiChannel:
                 if first is None:
                     first = sys.exc_info()
         if first:
-            py.builtin._reraise(first[0], first[1], first[2])
+            reraise(*first)

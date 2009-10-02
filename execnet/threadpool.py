@@ -17,7 +17,6 @@ if sys.version_info >= (3,0):
 else:
     exec ("def reraise(cls, val, tb): raise cls, val, tb")
 
-
 ERRORMARKER = object()
 
 class Reply(object):
