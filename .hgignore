@@ -4,4 +4,4 @@ execnet.egg-info/
 dist/
 
 syntax:glob
-.py
+*.pyc
