@@ -5,6 +5,7 @@ import os, sys, time
 import py
 import execnet
 from execnet import gateway_base, gateway
+from execnet.threadpool import WorkerPool
 queue = py.builtin._tryimport('queue', 'Queue')
 
 TESTTIMEOUT = 10.0 # seconds
@@ -400,7 +401,7 @@ def test_join_blocked_execution_gateway():
         gateway.join(joinexec=True)
         return 17
 
-    pool = py._thread.WorkerPool()
+    pool = WorkerPool()
     reply = pool.dispatch(doit)
     x = reply.get(timeout=1.0)
     assert x == 17
