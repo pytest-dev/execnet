@@ -12,10 +12,15 @@ The execnet package allows to:
 
 execnet performs **zero-install bootstrapping** into other interpreters; 
 package installation is only required at the initiating side.  execnet enables
-interoperation between CPython 2.4-3.1, Jython 2.5 and PyPy 1.1 and works
-well on Windows, Linux and OSX systems.
+interoperation between CPython 2.4-3.1, Jython 2.5.1, PyPy 1.1 and IronPython 
+and works well on Windows, Linux and OSX systems.
 
 execnet was written and is maintained by `Holger Krekel`_ with contributions from many others.  The package is licensed under the GPL Version 2 or later, at your choice.  Contributions and some parts of the package are licensed under the MIT license. 
+
+.. note::
+   Support of Jython and IronPython are experimental at this point.
+   Feedback and help with testing welcome. 
+
 
 Getting Started
 ====================
