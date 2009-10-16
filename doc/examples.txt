@@ -29,6 +29,35 @@ will print on the CPython side::
 
 .. _Jython: http://www.jython.org
 
+Work with C# objects from CPython
+----------------------------------------
+
+(Experimental) use your CPython interpreter to connect to a IronPython_ interpreter
+which can work with C# classes.  Here is an example for instantiating
+a CLR Array instance and sending back its representation::
+
+    import execnet
+    gw = execnet.PopenGateway("ipy")
+
+    channel = gw.remote_exec("""
+        import clr
+        clr.AddReference("System")
+        from System import Array
+        array = Array[float]([1,2])
+        channel.send(str(array))
+    """)
+    print (channel.receive())
+
+using Mono 2.0 and IronPython-1.1 this will print on the CPython side::
+
+    System.Double[](1.0, 2.0)
+
+.. note:: 
+   Using IronPython needs more testing, likely newer versions
+   will work better.  please feedback if you have information. 
+
+.. _IronPython: http://www.IronPython.org
+
 Compare cwd() of Popen Gateways
 ----------------------------------------
 
