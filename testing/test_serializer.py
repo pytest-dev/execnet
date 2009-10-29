@@ -12,6 +12,11 @@ def _find_version(suffix=""):
     name = "python" + suffix
     executable = py.path.local.sysfind(name)
     if executable is None:
+        if sys.platform == "win32" and suffix == "3":
+            for name in ('python31', 'python30'):
+                executable = py.path.local(r"c:\\%s\python.exe" % (name,))
+                if executable.check():
+                    return executable
         py.test.skip("can't find a %r executable" % (name,))
     return executable
 
