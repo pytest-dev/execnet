@@ -79,7 +79,7 @@ class Serializer(object):
     def save_bytes(self, bytes_):
         self.stream.write(BYTES)
         self._write_byte_sequence(bytes_)
-    dispatch[bytes] = save_bytes
+    dispatch[type("".encode('ascii'))] = save_bytes
 
     if _INPY3:
         def save_string(self, s):

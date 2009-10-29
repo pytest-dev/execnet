@@ -510,7 +510,7 @@ class TestSshPopenGateway:
     def test_sshaddress(self, gw, specssh):
         assert gw.remoteaddress == specssh.ssh
 
-    def test_host_not_found(self):
+    def test_host_not_found(self, gw):
         py.test.raises(execnet.HostNotFound,
             "execnet.SshGateway('nowhere.codespeak.net')")
 

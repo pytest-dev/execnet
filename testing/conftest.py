@@ -1,10 +1,12 @@
 import execnet
 import py
 
+rsyncdirs = ['../execnet', '.']
+
 pytest_plugins = ['pytester']
 # configuration information for tests
 def pytest_addoption(parser):
-    group = parser.addgroup("pylib", "py lib testing options")
+    group = parser.getgroup("pylib", "py lib testing options")
     group.addoption('--gx',
            action="append", dest="gspecs", default=None,
            help=("add a global test environment, XSpec-syntax. "))
