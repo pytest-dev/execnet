@@ -119,7 +119,7 @@ simple_tests = {
     'float':'3.25',
     'list': '[1, 2, 3]',
     'tuple': '(1, 2, 3)',
-    'dict': '{6: 2, (1, 2, 3): 32}',
+    'dict': '{(1, 2, 3): 32}',
 }
 
 def test_simple(tp_name, repr, dump, load):
