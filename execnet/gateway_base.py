@@ -71,9 +71,9 @@ class SocketIO:
     def __init__(self, sock):
         self.sock = sock
         try:
-            sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
             sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x10)# IPTOS_LOWDELAY
-        except socket.error:
+            sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
+        except (AttributeError, socket.error):
             e = sys.exc_info()[1]
             sys.stderr.write("WARNING: cannot set socketoption")
         self.readable = self.writeable = True

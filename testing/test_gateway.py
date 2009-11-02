@@ -9,6 +9,7 @@ from execnet.threadpool import WorkerPool
 queue = py.builtin._tryimport('queue', 'Queue')
 
 TESTTIMEOUT = 10.0 # seconds
+skiponjython = py.test.mark.skipif("sys.platform.startswith('java')")
 
 class TestBasicRemoteExecution:
     def test_correct_setup(self, gw):
@@ -216,6 +217,7 @@ class TestChannelBasicBehaviour:
         assert l == [0, 100, 200, 300, 400]
         return subchannel
 
+    @skiponjython
     def test_channel_callback_remote_freed(self, gw):
         channel = self.check_channel_callback_stays_active(gw, earlyfree=False)
         # freed automatically at the end of producer()
@@ -341,6 +343,7 @@ class TestChannelFile:
         channel = gw.newchannel()
         py.test.raises(ValueError, 'channel.makefile("rw")')
 
+    @skiponjython
     def test_confusion_from_os_write_stdout(self, gw):
         channel = gw.remote_exec("""
             import os
@@ -355,6 +358,7 @@ class TestChannelFile:
         res = channel.receive()
         assert res == 42
 
+    @skiponjython
     def test_confusion_from_os_write_stderr(self, gw):
         channel = gw.remote_exec("""
             import os
@@ -394,16 +398,16 @@ def test_join_blocked_execution_gateway():
     gateway = execnet.PopenGateway()
     channel = gateway.remote_exec("""
         import time
-        time.sleep(5.0)
+        time.sleep(10.0)
     """)
     def doit():
         gateway.exit()
-        gateway.join(joinexec=True)
+        gateway.join()
         return 17
 
     pool = WorkerPool()
     reply = pool.dispatch(doit)
-    x = reply.get(timeout=1.0)
+    x = reply.get(timeout=5.0)
     assert x == 17
 
 class TestPopenGateway:
