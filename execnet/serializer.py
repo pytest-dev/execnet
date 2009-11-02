@@ -35,8 +35,8 @@ else:
 
 FOUR_BYTE_INT_MAX = 2147483647
 
-_int4_format = struct.Struct("!i")
-_float_format = struct.Struct("!d")
+FLOAT_FORMAT = "!d"
+FLOAT_FORMAT_SIZE = struct.calcsize(FLOAT_FORMAT)
 
 # Protocol constants
 VERSION_NUMBER = 1
@@ -114,14 +114,14 @@ class Serializer(object):
 
     def save_float(self, flt):
         self.stream.write(FLOAT)
-        self.stream.write(_float_format.pack(flt))
+        self.stream.write(struct.pack(FLOAT_FORMAT, flt))
     dispatch[float] = save_float
 
     def _write_int4(self, i, error="int must be less than %i" %
                     (FOUR_BYTE_INT_MAX,)):
         if i > FOUR_BYTE_INT_MAX:
             raise SerializationError(error)
-        self.stream.write(_int4_format.pack(i))
+        self.stream.write(struct.pack("!i", i))
 
     def save_list(self, L):
         self.stream.write(NEWLIST)
@@ -206,12 +206,12 @@ class Unserializer(object):
     opcodes[INT] = load_int
 
     def load_float(self):
-        binary = self.stream.read(_float_format.size)
-        self.stack.append(_float_format.unpack(binary)[0])
+        binary = self.stream.read(FLOAT_FORMAT_SIZE)
+        self.stack.append(struct.unpack(FLOAT_FORMAT, binary)[0])
     opcodes[FLOAT] = load_float
 
     def _read_int4(self):
-        return _int4_format.unpack(self.stream.read(4))[0]
+        return struct.unpack("!i", self.stream.read(4))[0]
 
     def _read_byte_string(self):
         length = self._read_int4()
