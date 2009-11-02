@@ -1,35 +1,7 @@
 """
-base execnet gateway code, a quick overview.
+base execnet gateway code send to the other side for bootstrapping.
 
-the code of this module is sent to the "other side"
-as a means of bootstrapping a Gateway object
-capable of receiving and executing code,
-and routing data through channels.
-
-Gateways operate on InputOutput objects offering
-a write and a read(n) method.
-
-Once bootstrapped a higher level protocol
-based on Messages is used.  Messages are serialized
-to and from InputOutput objects.  The details of this protocol
-are locally defined in this module.  There is no need
-for standardizing or versioning the protocol.
-
-After bootstrapping the BaseGateway opens a receiver thread which
-accepts encoded messages and triggers actions to interpret them.
-Sending of channel data items happens directly through
-write operations to InputOutput objects so there is no
-separate thread.
-
-Code execution messages are put into an execqueue from
-which they will be taken for execution.  gateway.serve()
-will take and execute such items, one by one.  This means
-that by incoming default execution is single-threaded.
-
-The receiver thread terminates if the remote side sends
-a gateway termination message or if the IO-connection drops.
-It puts an end symbol into the execqueue so
-that serve() can cleanly finish as well.
+NOTE: compatible to Python2.3-3.1, Jython and IronPython!
 
 (C) 2004-2009 Holger Krekel, Armin Rigo and others
 """
@@ -611,8 +583,6 @@ class BaseGateway(object):
         pass
 
     def __init__(self, io, _startcount=2):
-        """ initialize core gateway, using the given inputoutput object.
-        """
         self._io = io
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
@@ -634,7 +604,6 @@ class BaseGateway(object):
                 sys.stderr.write("exception during tracing\n")
 
     def _thread_receiver(self):
-        """ thread to read and handle Messages half-sync-half-async. """
         self._trace("starting to receive")
         try:
             while 1:
@@ -694,7 +663,6 @@ class BaseGateway(object):
     # _____________________________________________________________________
     #
     def newchannel(self):
-        """ return new channel object.  """
         return self._channelfactory.new()
 
     def join(self, joinexec=True):
@@ -732,11 +700,9 @@ class SlaveGateway(BaseGateway):
             self.join()
 
     def executetask(self, item):
-        """ execute channel/source items. """
         channel, source = item
         try:
-            loc = { 'channel' : channel, '__name__': '__channelexec__'}
-            #open("task.py", 'w').write(source)
+            loc = {'channel' : channel, '__name__': '__channelexec__'}
             self._trace("execution starts: %s" % repr(source)[:50])
             try:
                 co = compile(source+'\n', '', 'exec')
