@@ -8,6 +8,7 @@ import textwrap
 import execnet
 from execnet.gateway_base import Message, Popen2IO, SocketIO
 from execnet import gateway_base
+ModuleType = type(os)
 
 debug = False
 
@@ -104,7 +105,10 @@ class Gateway(gateway_base.BaseGateway):
             and has the sister 'channel' object in its global
             namespace.
         """
-        source = textwrap.dedent(str(source))
+        if isinstance(source, ModuleType):
+            source = inspect.getsource(source)
+        else:
+            source = textwrap.dedent(str(source))
         channel = self.newchannel()
         self._send(Message.CHANNEL_OPEN(channel.id, source))
         return channel

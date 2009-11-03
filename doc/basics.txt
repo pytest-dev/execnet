@@ -48,6 +48,12 @@ Here is an self-contained example for reading the process identifier::
   >>> remote_pid != os.getpid()
   True
 
+If you'd like to avoid inlining source strings take a look
+at the channelexec_ and command_ example.
+
+
+.. _channelexec: examples.html#channelexec
+.. _command: examples.html#command
 
 .. _`Channel`: 
 .. _`channel-api`: 

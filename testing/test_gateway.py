@@ -23,6 +23,15 @@ class TestBasicRemoteExecution:
         name = channel.receive()
         assert name == "__channelexec__"
 
+    def test_remote_exec_module(self, tmpdir, gw):
+        p = tmpdir.join("remotetest.py")
+        p.write("channel.send(1)")
+        mod = type(os)("remotetest")
+        mod.__file__ = str(p)
+        channel = gw.remote_exec(mod)
+        name = channel.receive()
+        assert name == 1
+
     def test_correct_setup_no_py(self, gw):
         channel = gw.remote_exec("""
             import sys
