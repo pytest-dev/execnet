@@ -34,9 +34,7 @@ class TestRSync:
             rsync = RSync(dirs.source)
             rsync.add_target(gw1, dest)
             rsync.add_target(gw2, dest2)
-            print "now sending", rsync
             rsync.send()
-            print "did send", rsync
             assert dest.join('subdir').check(dir=1)
             assert dest.join('subdir', 'file1').check(file=1)
             assert dest.join('subdir', 'file1').read() == s
