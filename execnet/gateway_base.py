@@ -133,13 +133,11 @@ class Message:
         self.channelid = channelid
         self.data = data
 
-    def writeto(self, io):
-        ser = Serializer(io)  
-        ser.save((self.msgtype, self.channelid, self.data))
+    def writeto(self, serializer):
+        serializer.save((self.msgtype, self.channelid, self.data))
 
-    def readfrom(cls, io):
-        unser = Unserializer(io)
-        msgtype, senderid, data = unser.load()
+    def readfrom(cls, unserializer):
+        msgtype, senderid, data = unserializer.load()
         return cls._types[msgtype](senderid, data)
     readfrom = classmethod(readfrom)
 
@@ -544,6 +542,7 @@ class BaseGateway(object):
         self._io = io
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
+        self._serializer = Serializer(io)
 
     def _initreceive(self):
         self._receiverthread = threading.Thread(name="receiver",
@@ -563,10 +562,11 @@ class BaseGateway(object):
 
     def _thread_receiver(self):
         self._trace("starting to receive")
+        unserializer = Unserializer(self._io)
         try:
             while 1:
                 try:
-                    msg = Message.readfrom(self._io)
+                    msg = Message.readfrom(unserializer)
                     self._trace("received <- %r" % msg)
                     _receivelock = self._receivelock
                     _receivelock.acquire()
@@ -596,7 +596,7 @@ class BaseGateway(object):
 
     def _send(self, msg):
         assert isinstance(msg, Message)
-        msg.writeto(self._io)
+        msg.writeto(self._serializer)
         self._trace('sent -> %r' % msg)
 
     def _stopsend(self):
