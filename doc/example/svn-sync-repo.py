@@ -7,7 +7,7 @@ uses execnet.
 
 """
 
-import py
+import execnet
 import sys, os
 
 def usage():
@@ -84,7 +84,7 @@ def main(args):
 def svn_load(repo, dumpchannel, maxcount=100):
     # every maxcount we will send an ACK to the other
     # side in order to synchronise and avoid our side
-    # growing buffers  (py.execnet does not control 
+    # growing buffers  (execnet does not control 
     # RAM usage or receive queue sizes)
     dumpchannel.send(maxcount)
     f = os.popen("svnadmin load -q %s" %(repo, ), "w")

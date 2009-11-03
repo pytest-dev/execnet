@@ -2,6 +2,47 @@
 execnet examples
 ==============================================================================
 
+execnet is under active development.  If you have questions
+or ideas or otherwise want to contribute please feel welcome
+to join the `execnet-dev`_ mailing list.
+
+.. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
+
+Connect to Python2/Numpy from Python3 
+----------------------------------------
+
+Here we run a Python3 interpreter to connect to a Python2.6 interpreter
+that has numpy installed. We send items to be added to an array and
+receive back the remote "repr" of the array::
+
+    import execnet
+    gw = execnet.PopenGateway("python2.6")
+    channel = gw.remote_exec("""
+        import numpy
+        array = numpy.array([1,2,3])
+        while 1:
+            x = channel.receive()
+            if x is None:
+                break
+            array = numpy.append(array, x)
+        channel.send(repr(array))
+    """)
+    for x in range(10):
+        channel.send(x)
+    channel.send(None)
+    print (channel.receive())
+
+will print on the CPython3.1 side::
+
+    array([1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+A more refined real-life example of python3/python2 interaction 
+is the anyvc_ project which uses version-control bindings in 
+a Python2 subprocess in order to offer Python3-based library
+functionality.
+
+.. _anyvc: http://bitbucket.org/RonnyPfannschmidt/anyvc/overview/
+
 Work with Java objects from CPython
 ----------------------------------------
 
@@ -68,7 +109,66 @@ A PopenGateway has the same working directory as the instantiatior::
     >>> ch = gw.remote_exec("import os; channel.send(os.getcwd())")
     >>> res = ch.receive()
     >>> assert res == os.getcwd()
-    >>> gw.exit()
+
+.. _channelexec:
+
+Sending modules with remote_exec 
+--------------------------------------------------------------
+
+You can pass a module object to ``remote_exec`` in which case
+its source code will be sent.  No dependencies will be transferred
+so the module must be self-contained or only use modules that are 
+installed on the "other" side.   Module code can detect if it is 
+running in a remote_exec situation by checking for the special 
+``__name__`` attribute::
+
+    # content of a module remote1.py 
+
+    if __name__ == '__channelexec__':
+        channel.send('initialization complete')
+
+You can now send the module like this::
+
+    >>> import execnet, remote1
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec(remote1)
+    >>> print (ch.receive())
+
+which will print the 'initialization complete' string. 
+
+.. _command:
+
+A simple command pattern 
+--------------------------------------------------------------
+
+If you want the remote side to serve a number 
+of synchronous function calls, here is a base
+implementation::
+
+    # contents of: remotecmd.py 
+    def simple(arg): 
+        return arg + 1
+
+    if __name__ == '__channelexec__':
+        for item in channel:
+            funcname = item[0]
+            func = globals()[funcname]
+            args = item[1:]
+            result = func(*args)
+            channel.send(result)
+
+Then on the local side you can do::
+
+    >>> import execnet, remotecmd
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec(remotecmd) 
+    >>> ch.send(('simple', 10)) # execute func-call remotely
+    >>> ch.receive()
+    11
+
+It's straight forward to build a proxy-object
+that would hide the details and perform remote
+function calls with basic input and output values.
 
 Synchronously receive results from two sub processes 
 -----------------------------------------------------
@@ -144,20 +244,4 @@ socketserver::
     socketgw = execnet.SocketGateway.new_remote(popengw, ("127.0.0.1", 0))
 
     print socketgw._rinfo() # print some info about the remote environment
-
-
-Sending a module / checking if run through remote_exec 
---------------------------------------------------------------
-
-You can pass a module object to ``remote_exec`` in which case
-its source code will be sent.  No dependencies will be transferred
-so the module must be self-contained or only use modules that are 
-installed on the "other" side.  Module code can detect if it is 
-running in a remote_exec situation by checking for the special 
-``__name__`` attribute like this::
-
-    if __name__ == '__channelexec__':
-        # ... call module functions ... 
-        
-
 
