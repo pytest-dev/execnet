@@ -5,7 +5,7 @@ import tempfile
 import subprocess
 import py
 import execnet
-from execnet import serializer
+from execnet import gateway_base as serializer
 
 
 def _find_version(suffix=""):
@@ -46,7 +46,7 @@ class PythonWrapper(object):
     def dump(self, obj_rep):
         script_file = TEMPDIR.join("dump.py")
         script_file.write("""
-from execnet import serializer
+from execnet import gateway_base as serializer
 import sys
 if sys.version_info > (3, 0): # Need binary output
     sys.stdout = sys.stdout.detach()
@@ -57,7 +57,7 @@ saver.save(%s)""" % (obj_rep,))
     def load(self, data, option_args=""):
         script_file = TEMPDIR.join("load.py")
         script_file.write(r"""
-from execnet import serializer
+from execnet import gateway_base as serializer
 import sys
 if sys.version_info > (3, 0):
     sys.stdin = sys.stdin.detach()
@@ -158,7 +158,7 @@ def test_string(py2, py3):
     assert tp == "str"
     assert s == "'xyz'"
     tp, s = py3.load(p)
-    assert tp == "bytes"
+    assert tp == "bytes"   # depends on unserialization defaults
     assert s == "b'xyz'"
     tp, s = py3.load(p, "True")
     assert tp == "str"
@@ -181,5 +181,5 @@ def test_unicode(py2, py3):
     assert tp == "str"
     assert s == "'hi'"
     tp, s = py2.load(p)
-    assert tp == "unicode"
+    assert tp == "unicode" # depends on unserialization defaults
     assert s == "u'hi'"
