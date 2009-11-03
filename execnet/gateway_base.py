@@ -292,7 +292,10 @@ class Channel(object):
                 Msg = Message.CHANNEL_LAST_MESSAGE
             else:
                 Msg = Message.CHANNEL_CLOSE
-            self.gateway._send(Msg(self.id))
+            try:
+                self.gateway._send(Msg(self.id))
+            except ValueError: # XXX IO operation on closed file, why? 
+                pass
 
     def _getremoteerror(self):
         try:
