@@ -70,18 +70,20 @@ def test_io_message(anypython, tmpdir):
         temp_out = BytesIO()
         temp_in = BytesIO()
         io = Popen2IO(temp_out, temp_in)
+        serializer = Serializer(io)
+        unserializer = Unserializer(io)
         for i, msg_cls in Message._types.items():
             print ("checking %s %s" %(i, msg_cls))
             for data in "hello", "hello".encode('ascii'):
                 msg1 = msg_cls(i, data)
-                msg1.writeto(io)
+                msg1.writeto(serializer)
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
                 io.outfile.seek(0)
                 io.infile.seek(0)
                 io.infile.write(x)
                 io.infile.seek(0)
-                msg2 = Message.readfrom(io)
+                msg2 = Message.readfrom(unserializer)
                 assert msg1.channelid == msg2.channelid, (msg1, msg2)
                 assert msg1.data == msg2.data
         print ("all passed")
@@ -160,10 +162,12 @@ class TestMessage:
     def test_wire_protocol(self):
         for cls in Message._types.values():
             one = py.io.BytesIO()
+            serializer = gateway_base.Serializer(one)
             data = '23'.encode('ascii')
-            cls(42, data).writeto(one)
+            cls(42, data).writeto(serializer)
             two = py.io.BytesIO(one.getvalue())
-            msg = Message.readfrom(two)
+            unserializer = gateway_base.Unserializer(two)
+            msg = Message.readfrom(unserializer)
             assert isinstance(msg, cls)
             assert msg.channelid == 42
             assert msg.data == data
