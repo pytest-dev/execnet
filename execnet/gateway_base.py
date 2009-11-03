@@ -595,19 +595,13 @@ class BaseGateway(object):
                 self._trace('leaving %r' % threading.currentThread())
 
     def _send(self, msg):
-        if msg is None:
-            self._io.close_write()
-        else:
-            try:
-                msg.writeto(self._io)
-            except:
-                excinfo = self.exc_info()
-                self._trace(geterrortext(excinfo))
-            else:
-                self._trace('sent -> %r' % msg)
+        assert isinstance(msg, Message)
+        msg.writeto(self._io)
+        self._trace('sent -> %r' % msg)
 
     def _stopsend(self):
-        self._send(None)
+        self._io.close_write()
+        self._trace('closing IO')
 
     def _stopexec(self):
         pass
