@@ -1,4 +1,13 @@
 
+1.0.0b1
+----------------------------
+
+* added new examples for NumPy, Jython, IronPython
+* improved documentation
+* include apipkg.py for lazy-importing
+* integrated new serializer code from Benjamin Peterson
+* improved support for Jython-2.5.1
+
 1.0.0alpha2 
 ----------------------------
 

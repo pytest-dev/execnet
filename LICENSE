@@ -3,15 +3,15 @@ License (GPL), version 2 or later.
 
 See http://www.fsf.org/licensing/licenses/ for more information.
 
-This package contains code and contributions from 
+This package contains some code and contributions from 
 
     Armin Rigo, Benjamin Peterson, Carl Friedrich Bolz, 
     Maciej Fijalkowski, Ronny Pfannschmidt and others 
 
-which is useable under the MIT license. 
+which are useable under the MIT license. 
 
 If you have questions and/or want to use parts of 
 the code under a different license than the GPL 
-please don't hesitate to contact me. 
+please contact me. 
 
-holger krekel, October 2009, holger at merlinux eu 
+holger krekel, November 2009, holger at merlinux eu 
