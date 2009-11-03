@@ -837,10 +837,10 @@ def _buildopcodes():
 _buildopcodes()
         
 class Serializer(object):
-    dispatch = {}
 
     def __init__(self, stream):
         self.stream = stream
+        self.dispatch = {}
 
     def save(self, obj):
         self._save(obj)
@@ -851,40 +851,38 @@ class Serializer(object):
         try:
             dispatch = self.dispatch[tp]
         except KeyError:
-            raise SerializationError("can't serialize %s" % (tp,))
-        dispatch(self, obj)
+            methodname = 'save_' + tp.__name__.lower()
+            meth = getattr(self, methodname, None)
+            if meth is None:
+                raise SerializationError("can't serialize %s" % (tp,))
+            dispatch = self.dispatch[tp] = meth
+        dispatch(obj)
 
-
-    def save_none(self, non):
+    def save_nonetype(self, non):
         self.stream.write(opcode.NONE)
-    dispatch[type(None)] = save_none
 
     def save_bool(self, boolean):
         if boolean:
             self.stream.write(opcode.TRUE)
         else:
             self.stream.write(opcode.FALSE)
-    dispatch[bool] = save_bool
 
     def save_bytes(self, bytes_):
         self.stream.write(opcode.BYTES)
         self._write_byte_sequence(bytes_)
-    dispatch[type("".encode('ascii'))] = save_bytes
 
     if ISPY3:
-        def save_string(self, s):
+        def save_str(self, s):
             self.stream.write(opcode.PY3STRING)
             self._write_unicode_string(s)
     else:
-        def save_string(self, s):
+        def save_str(self, s):
             self.stream.write(opcode.PY2STRING)
             self._write_byte_sequence(s)
 
         def save_unicode(self, s):
             self.stream.write(opcode.UNICODE)
             self._write_unicode_string(s)
-        dispatch[unicode] = save_unicode
-    dispatch[str] = save_string
 
     def _write_unicode_string(self, s):
         try:
@@ -900,14 +898,11 @@ class Serializer(object):
     def save_int(self, i):
         self.stream.write(opcode.INT)
         self._write_int4(i)
-    dispatch[int] = save_int
-    if not ISPY3:
-        dispatch[long] = save_int
+    save_long = save_int # only used from python2
 
     def save_float(self, flt):
         self.stream.write(opcode.FLOAT)
         self.stream.write(struct.pack(FLOAT_FORMAT, flt))
-    dispatch[float] = save_float
 
     def _write_int4(self, i, error="int must be less than %i" %
                     (FOUR_BYTE_INT_MAX,)):
@@ -920,7 +915,6 @@ class Serializer(object):
         self._write_int4(len(L), "list is too long")
         for i, item in enumerate(L):
             self._write_setitem(i, item)
-    dispatch[list] = save_list
 
     def _write_setitem(self, key, value):
         self._save(key)
@@ -931,12 +925,9 @@ class Serializer(object):
         self.stream.write(opcode.NEWDICT)
         for key, value in d.items():
             self._write_setitem(key, value)
-    dispatch[dict] = save_dict
 
     def save_tuple(self, tup):
         for item in tup:
             self._save(item)
         self.stream.write(opcode.BUILDTUPLE)
         self._write_int4(len(tup), "tuple is too long")
-    dispatch[tuple] = save_tuple
-
