@@ -158,14 +158,7 @@ def test_string(py2, py3):
     assert tp == "str"
     assert s == "'xyz'"
     tp, s = py3.load(p)
-    assert tp == "bytes"   # depends on unserialization defaults
-    assert s == "b'xyz'"
-    tp, s = py3.load(p, "True")
-    assert tp == "str"
-    assert s == "'xyz'"
-    p = py3.dump("'xyz'")
-    tp, s = py2.load(p, True)
-    assert tp == "str"
+    assert tp == "str" # depends on unserialization defaults
     assert s == "'xyz'"
 
 def test_unicode(py2, py3):
@@ -183,3 +176,29 @@ def test_unicode(py2, py3):
     tp, s = py2.load(p)
     assert tp == "unicode" # depends on unserialization defaults
     assert s == "u'hi'"
+
+def test_long(py2, py3):
+    p = py2.dump("123L")
+    tp, s = py2.load(p)
+    assert s == "123"
+    tp, s = py3.load(p)
+    assert s == "123"
+
+def test_bool(py2, py3):
+    p = py2.dump("True")
+    tp, s = py2.load(p)
+    assert tp == "bool"
+    assert s == "True"
+    tp, s = py3.load(p)
+    assert s == "True"
+    assert tp == "bool"
+    p = py2.dump("False")
+    tp, s = py2.load(p)
+    assert s == "False"
+
+def test_none(py2, py3):
+    p = py2.dump("None")
+    tp, s = py2.load(p)
+    assert s == "None"
+    tp, s = py3.load(p)
+    assert s == "None"

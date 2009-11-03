@@ -838,7 +838,7 @@ class _Py2UnserializationOptions(_UnserializationOptions):
 
 class _Py3UnserializationOptions(_UnserializationOptions):
 
-    def __init__(self, py2_strings_as_str=False):
+    def __init__(self, py2_strings_as_str=True): 
         self.py2_strings_as_str = py2_strings_as_str
 
 if ISPY3:
