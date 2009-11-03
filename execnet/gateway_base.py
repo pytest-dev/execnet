@@ -1,7 +1,7 @@
 """
-base execnet gateway bootstrapping code. 
+base execnet gateway code send to the other side for bootstrapping.
 
-NOTE: below code is to be compatible to Python 2.3-3.1, Jython and IronPython
+NOTE: aims to be compatible to Python 2.3-3.1, Jython and IronPython
 
 (C) 2004-2009 Holger Krekel, Armin Rigo, Benjamin Peterson, and others
 """
@@ -124,11 +124,6 @@ sys.stdin = tempfile.TemporaryFile('r')
         except EnvironmentError:
             pass
         self.writeable = None
-
-# ___________________________________________________________________________
-#
-# Messages
-# ___________________________________________________________________________
 
 class Message:
     """ encapsulates Messages and their wire protocol. """
@@ -712,6 +707,8 @@ FLOAT_FORMAT_SIZE = struct.calcsize(FLOAT_FORMAT)
 # Protocol constants
 VERSION_NUMBER = 1
 VERSION = b(chr(VERSION_NUMBER))
+NONE = b('n')
+NONE = b('n')
 PY2STRING = b('s')
 PY3STRING = b('t')
 UNICODE = b('u')
@@ -722,6 +719,8 @@ SETITEM = b('m')
 NEWDICT = b('d')
 INT = b('i')
 FLOAT = b('f')
+TRUE = b('1')
+FALSE = b('0')
 STOP = b('S')
 
 class Serializer(object):
@@ -743,6 +742,17 @@ class Serializer(object):
         dispatch(self, obj)
 
     dispatch = {}
+
+    def save_none(self, non):
+        self.stream.write(NONE)
+    dispatch[type(None)] = save_none
+
+    def save_bool(self, boolean):
+        if boolean:
+            self.stream.write(TRUE)
+        else:
+            self.stream.write(FALSE)
+    dispatch[bool] = save_bool
 
     def save_bytes(self, bytes_):
         self.stream.write(BYTES)
@@ -779,6 +789,8 @@ class Serializer(object):
         self.stream.write(INT)
         self._write_int4(i)
     dispatch[int] = save_int
+    if not ISPY3:
+        dispatch[long] = save_int
 
     def save_float(self, flt):
         self.stream.write(FLOAT)
@@ -867,6 +879,17 @@ class Unserializer(object):
             raise UnserializationError("didn't get STOP")
 
     opcodes = {}
+
+    def load_none(self):
+        self.stack.append(None)
+    opcodes[NONE] = load_none
+
+    def load_true(self):
+        self.stack.append(True)
+    opcodes[TRUE] = load_true
+    def load_false(self):
+        self.stack.append(False)
+    opcodes[FALSE] = load_false
 
     def load_int(self):
         i = self._read_int4()
