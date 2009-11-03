@@ -698,130 +698,6 @@ FOUR_BYTE_INT_MAX = 2147483647
 FLOAT_FORMAT = "!d"
 FLOAT_FORMAT_SIZE = struct.calcsize(FLOAT_FORMAT)
 
-# Protocol constants
-VERSION_NUMBER = 1
-VERSION = b(chr(VERSION_NUMBER))
-NONE = b('n')
-NONE = b('n')
-PY2STRING = b('s')
-PY3STRING = b('t')
-UNICODE = b('u')
-BYTES = b('b')
-NEWLIST = b('l')
-BUILDTUPLE = b('T')
-SETITEM = b('m')
-NEWDICT = b('d')
-INT = b('i')
-FLOAT = b('f')
-TRUE = b('1')
-FALSE = b('0')
-STOP = b('S')
-
-class Serializer(object):
-
-    def __init__(self, stream):
-        self.stream = stream
-
-    def save(self, obj):
-        self.stream.write(VERSION)
-        self._save(obj)
-        self.stream.write(STOP)
-
-    def _save(self, obj):
-        tp = type(obj)
-        try:
-            dispatch = self.dispatch[tp]
-        except KeyError:
-            raise SerializationError("can't serialize %s" % (tp,))
-        dispatch(self, obj)
-
-    dispatch = {}
-
-    def save_none(self, non):
-        self.stream.write(NONE)
-    dispatch[type(None)] = save_none
-
-    def save_bool(self, boolean):
-        if boolean:
-            self.stream.write(TRUE)
-        else:
-            self.stream.write(FALSE)
-    dispatch[bool] = save_bool
-
-    def save_bytes(self, bytes_):
-        self.stream.write(BYTES)
-        self._write_byte_sequence(bytes_)
-    dispatch[type("".encode('ascii'))] = save_bytes
-
-    if ISPY3:
-        def save_string(self, s):
-            self.stream.write(PY3STRING)
-            self._write_unicode_string(s)
-    else:
-        def save_string(self, s):
-            self.stream.write(PY2STRING)
-            self._write_byte_sequence(s)
-
-        def save_unicode(self, s):
-            self.stream.write(UNICODE)
-            self._write_unicode_string(s)
-        dispatch[unicode] = save_unicode
-    dispatch[str] = save_string
-
-    def _write_unicode_string(self, s):
-        try:
-            as_bytes = s.encode("utf-8")
-        except UnicodeEncodeError:
-            raise SerializationError("strings must be utf-8 encodable")
-        self._write_byte_sequence(as_bytes)
-
-    def _write_byte_sequence(self, bytes_):
-        self._write_int4(len(bytes_), "string is too long")
-        self.stream.write(bytes_)
-
-    def save_int(self, i):
-        self.stream.write(INT)
-        self._write_int4(i)
-    dispatch[int] = save_int
-    if not ISPY3:
-        dispatch[long] = save_int
-
-    def save_float(self, flt):
-        self.stream.write(FLOAT)
-        self.stream.write(struct.pack(FLOAT_FORMAT, flt))
-    dispatch[float] = save_float
-
-    def _write_int4(self, i, error="int must be less than %i" %
-                    (FOUR_BYTE_INT_MAX,)):
-        if i > FOUR_BYTE_INT_MAX:
-            raise SerializationError(error)
-        self.stream.write(struct.pack("!i", i))
-
-    def save_list(self, L):
-        self.stream.write(NEWLIST)
-        self._write_int4(len(L), "list is too long")
-        for i, item in enumerate(L):
-            self._write_setitem(i, item)
-    dispatch[list] = save_list
-
-    def _write_setitem(self, key, value):
-        self._save(key)
-        self._save(value)
-        self.stream.write(SETITEM)
-
-    def save_dict(self, d):
-        self.stream.write(NEWDICT)
-        for key, value in d.items():
-            self._write_setitem(key, value)
-    dispatch[dict] = save_dict
-
-    def save_tuple(self, tup):
-        for item in tup:
-            self._save(item)
-        self.stream.write(BUILDTUPLE)
-        self._write_int4(len(tup), "tuple is too long")
-    dispatch[tuple] = save_tuple
-
 class _UnserializationOptions(object):
     pass
 
@@ -844,6 +720,7 @@ class _Stop(Exception):
     pass
 
 class Unserializer(object):
+    num2func = {} # is filled after this class definition
 
     def __init__(self, stream, options=UnserializationOptions()):
         self.stream = stream
@@ -851,17 +728,13 @@ class Unserializer(object):
 
     def load(self):
         self.stack = []
-        version = ord(self.stream.read(1))
-        if version != VERSION_NUMBER:
-            raise UnserializationError(
-                "version mismatch: %i != %i" % (version, VERSION_NUMBER))
         try:
             while True:
                 opcode = self.stream.read(1)
                 if not opcode:
                     raise EOFError
                 try:
-                    loader = self.opcodes[opcode]
+                    loader = self.num2func[opcode]
                 except KeyError:
                     raise UnserializationError("unkown opcode %s" % (opcode,))
                 loader(self)
@@ -872,28 +745,22 @@ class Unserializer(object):
         else:
             raise UnserializationError("didn't get STOP")
 
-    opcodes = {}
-
     def load_none(self):
         self.stack.append(None)
-    opcodes[NONE] = load_none
 
     def load_true(self):
         self.stack.append(True)
-    opcodes[TRUE] = load_true
+
     def load_false(self):
         self.stack.append(False)
-    opcodes[FALSE] = load_false
 
     def load_int(self):
         i = self._read_int4()
         self.stack.append(i)
-    opcodes[INT] = load_int
 
     def load_float(self):
         binary = self.stream.read(FLOAT_FORMAT_SIZE)
         self.stack.append(struct.unpack(FLOAT_FORMAT, binary)[0])
-    opcodes[FLOAT] = load_float
 
     def _read_int4(self):
         return struct.unpack("!i", self.stream.read(4))[0]
@@ -910,7 +777,6 @@ class Unserializer(object):
             self.stack.append(as_bytes)
         else:
             self.stack.append(as_bytes.decode("utf-8"))
-    opcodes[PY3STRING] = load_py3string
 
     def load_py2string(self):
         as_bytes = self._read_byte_string()
@@ -919,21 +785,17 @@ class Unserializer(object):
         else:
             s = as_bytes
         self.stack.append(s)
-    opcodes[PY2STRING] = load_py2string
 
     def load_bytes(self):
         s = self._read_byte_string()
         self.stack.append(s)
-    opcodes[BYTES] = load_bytes
 
     def load_unicode(self):
         self.stack.append(self._read_byte_string().decode("utf-8"))
-    opcodes[UNICODE] = load_unicode
 
     def load_newlist(self):
         length = self._read_int4()
         self.stack.append([None] * length)
-    opcodes[NEWLIST] = load_newlist
 
     def load_setitem(self):
         if len(self.stack) < 3:
@@ -941,19 +803,140 @@ class Unserializer(object):
         value = self.stack.pop()
         key = self.stack.pop()
         self.stack[-1][key] = value
-    opcodes[SETITEM] = load_setitem
 
     def load_newdict(self):
         self.stack.append({})
-    opcodes[NEWDICT] = load_newdict
 
     def load_buildtuple(self):
         length = self._read_int4()
         tup = tuple(self.stack[-length:])
         del self.stack[-length:]
         self.stack.append(tup)
-    opcodes[BUILDTUPLE] = load_buildtuple
 
     def load_stop(self):
         raise _Stop
-    opcodes[STOP] = load_stop
+
+# automatically build opcodes and byte-encoding 
+
+class opcode:
+    """ container for name -> num mappings. """ 
+
+def _buildopcodes():
+    l = []
+    for name, func in Unserializer.__dict__.items():
+        if name.startswith("load_"):
+            opname = name[5:].upper()
+            l.append((opname, func))
+    l.sort()
+    for i,(opname, func) in enumerate(l):
+        assert i < 26, "xxx"
+        i = b(chr(64+i))
+        Unserializer.num2func[i] = func 
+        setattr(opcode, opname, i)
+
+_buildopcodes()
+        
+class Serializer(object):
+    dispatch = {}
+
+    def __init__(self, stream):
+        self.stream = stream
+
+    def save(self, obj):
+        self._save(obj)
+        self.stream.write(opcode.STOP)
+
+    def _save(self, obj):
+        tp = type(obj)
+        try:
+            dispatch = self.dispatch[tp]
+        except KeyError:
+            raise SerializationError("can't serialize %s" % (tp,))
+        dispatch(self, obj)
+
+
+    def save_none(self, non):
+        self.stream.write(opcode.NONE)
+    dispatch[type(None)] = save_none
+
+    def save_bool(self, boolean):
+        if boolean:
+            self.stream.write(opcode.TRUE)
+        else:
+            self.stream.write(opcode.FALSE)
+    dispatch[bool] = save_bool
+
+    def save_bytes(self, bytes_):
+        self.stream.write(opcode.BYTES)
+        self._write_byte_sequence(bytes_)
+    dispatch[type("".encode('ascii'))] = save_bytes
+
+    if ISPY3:
+        def save_string(self, s):
+            self.stream.write(opcode.PY3STRING)
+            self._write_unicode_string(s)
+    else:
+        def save_string(self, s):
+            self.stream.write(opcode.PY2STRING)
+            self._write_byte_sequence(s)
+
+        def save_unicode(self, s):
+            self.stream.write(opcode.UNICODE)
+            self._write_unicode_string(s)
+        dispatch[unicode] = save_unicode
+    dispatch[str] = save_string
+
+    def _write_unicode_string(self, s):
+        try:
+            as_bytes = s.encode("utf-8")
+        except UnicodeEncodeError:
+            raise SerializationError("strings must be utf-8 encodable")
+        self._write_byte_sequence(as_bytes)
+
+    def _write_byte_sequence(self, bytes_):
+        self._write_int4(len(bytes_), "string is too long")
+        self.stream.write(bytes_)
+
+    def save_int(self, i):
+        self.stream.write(opcode.INT)
+        self._write_int4(i)
+    dispatch[int] = save_int
+    if not ISPY3:
+        dispatch[long] = save_int
+
+    def save_float(self, flt):
+        self.stream.write(opcode.FLOAT)
+        self.stream.write(struct.pack(FLOAT_FORMAT, flt))
+    dispatch[float] = save_float
+
+    def _write_int4(self, i, error="int must be less than %i" %
+                    (FOUR_BYTE_INT_MAX,)):
+        if i > FOUR_BYTE_INT_MAX:
+            raise SerializationError(error)
+        self.stream.write(struct.pack("!i", i))
+
+    def save_list(self, L):
+        self.stream.write(opcode.NEWLIST)
+        self._write_int4(len(L), "list is too long")
+        for i, item in enumerate(L):
+            self._write_setitem(i, item)
+    dispatch[list] = save_list
+
+    def _write_setitem(self, key, value):
+        self._save(key)
+        self._save(value)
+        self.stream.write(opcode.SETITEM)
+
+    def save_dict(self, d):
+        self.stream.write(opcode.NEWDICT)
+        for key, value in d.items():
+            self._write_setitem(key, value)
+    dispatch[dict] = save_dict
+
+    def save_tuple(self, tup):
+        for item in tup:
+            self._save(item)
+        self.stream.write(opcode.BUILDTUPLE)
+        self._write_int4(len(tup), "tuple is too long")
+    dispatch[tuple] = save_tuple
+
