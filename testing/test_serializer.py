@@ -28,16 +28,11 @@ def setup_module(mod):
     else:
         mod._py3_wrapper = PythonWrapper(_find_version("3"))
         mod._py2_wrapper = PythonWrapper(py.path.local(sys.executable))
-    mod._old_pypath = os.environ.get("PYTHONPATH")
-    p = os.path.dirname(os.path.dirname(execnet.__file__))
-    os.environ["PYTHONPATH"] = p
 
 def teardown_module(mod):
     TEMPDIR.remove(True)
-    if _old_pypath is not None:
-        os.environ["PYTHONPATH"] = _old_pypath
 
-
+pyimportdir = str(py.path.local(execnet.__file__).dirpath().dirpath())
 class PythonWrapper(object):
 
     def __init__(self, executable):
@@ -46,26 +41,28 @@ class PythonWrapper(object):
     def dump(self, obj_rep):
         script_file = TEMPDIR.join("dump.py")
         script_file.write("""
-from execnet import gateway_base as serializer
 import sys
+sys.path.insert(0, %r)
+from execnet import gateway_base as serializer
 if sys.version_info > (3, 0): # Need binary output
     sys.stdout = sys.stdout.detach()
 saver = serializer.Serializer(sys.stdout)
-saver.save(%s)""" % (obj_rep,))
+saver.save(%s)""" % (pyimportdir, obj_rep,))
         return self.executable.sysexec(script_file)
 
-    def load(self, data, option_args=""):
+    def load(self, data, option_args="__class__"):
         script_file = TEMPDIR.join("load.py")
         script_file.write(r"""
-from execnet import gateway_base as serializer
 import sys
+sys.path.insert(0, %r)
+from execnet import gateway_base as serializer
 if sys.version_info > (3, 0):
     sys.stdin = sys.stdin.detach()
-options = serializer.UnserializationOptions(%s)
-loader = serializer.Unserializer(sys.stdin, options)
+loader = serializer.Unserializer(sys.stdin)
+loader.%s
 obj = loader.load()
 sys.stdout.write(type(obj).__name__ + "\n")
-sys.stdout.write(repr(obj))""" % (option_args,))
+sys.stdout.write(repr(obj))""" % (pyimportdir, option_args,))
         popen = subprocess.Popen([str(self.executable), str(script_file)],
                                  stdin=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
@@ -152,14 +149,17 @@ def test_bytes(py2, py3):
     assert tp == "bytes"
     assert v == "b'hi'"
 
-def test_string(py2, py3):
+def test_str(py2, py3):
     p = py2.dump("'xyz'")
     tp, s = py2.load(p)
     assert tp == "str"
     assert s == "'xyz'"
-    tp, s = py3.load(p)
-    assert tp == "str" # depends on unserialization defaults
+    tp, s = py3.load(p, "py2str_as_py3str=True")
+    assert tp == "str" 
     assert s == "'xyz'"
+    tp, s = py3.load(p, "py2str_as_py3str=False")
+    assert s == "b'xyz'"
+    assert tp == "bytes" 
 
 def test_unicode(py2, py3):
     p = py2.dump("u'hi'")
