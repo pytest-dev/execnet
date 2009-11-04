@@ -202,3 +202,9 @@ def test_none(py2, py3):
     assert s == "None"
     tp, s = py3.load(p)
     assert s == "None"
+
+def test_tuple_nested_with_empty_in_between(py2):
+    p = py2.dump("(1, (), 3)")
+    tp, s = py2.load(p)
+    assert tp == 'tuple'
+    assert s == "(1, (), 3)"

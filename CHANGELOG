@@ -1,5 +1,8 @@
 1.0.0b2
 --------------------------------
+* fix a seralization bug with nested tuples containing empty tuples
+  (thanks to ronny for discovering it)
+
 * setting the environment variable EXECNET_DEBUG will generate per
   process trace-files for debugging
 
