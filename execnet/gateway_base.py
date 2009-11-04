@@ -828,14 +828,23 @@ def _buildopcodes():
 _buildopcodes()
         
 class Serializer(object):
+    WRITE_ON_SUCCESS=True # more robust against serialize failures
 
     def __init__(self, stream):
-        self.stream = stream
         self.dispatch = {}
+        self._stream = stream
 
     def save(self, obj):
+        if self.WRITE_ON_SUCCESS:
+            self.streamlist = []
+            self._write = self.streamlist.append
+        else:
+            self._write = self.stream.write
         self._save(obj)
-        self.stream.write(opcode.STOP)
+        self._write(opcode.STOP)
+        if self.WRITE_ON_SUCCESS:
+            for x in self.streamlist:
+                self._stream.write(x)
 
     def _save(self, obj):
         tp = type(obj)
@@ -850,29 +859,29 @@ class Serializer(object):
         dispatch(obj)
 
     def save_nonetype(self, non):
-        self.stream.write(opcode.NONE)
+        self._write(opcode.NONE)
 
     def save_bool(self, boolean):
         if boolean:
-            self.stream.write(opcode.TRUE)
+            self._write(opcode.TRUE)
         else:
-            self.stream.write(opcode.FALSE)
+            self._write(opcode.FALSE)
 
     def save_bytes(self, bytes_):
-        self.stream.write(opcode.BYTES)
+        self._write(opcode.BYTES)
         self._write_byte_sequence(bytes_)
 
     if ISPY3:
         def save_str(self, s):
-            self.stream.write(opcode.PY3STRING)
+            self._write(opcode.PY3STRING)
             self._write_unicode_string(s)
     else:
         def save_str(self, s):
-            self.stream.write(opcode.PY2STRING)
+            self._write(opcode.PY2STRING)
             self._write_byte_sequence(s)
 
         def save_unicode(self, s):
-            self.stream.write(opcode.UNICODE)
+            self._write(opcode.UNICODE)
             self._write_unicode_string(s)
 
     def _write_unicode_string(self, s):
@@ -884,25 +893,25 @@ class Serializer(object):
 
     def _write_byte_sequence(self, bytes_):
         self._write_int4(len(bytes_), "string is too long")
-        self.stream.write(bytes_)
+        self._write(bytes_)
 
     def save_int(self, i):
-        self.stream.write(opcode.INT)
+        self._write(opcode.INT)
         self._write_int4(i)
     save_long = save_int # only used from python2
 
     def save_float(self, flt):
-        self.stream.write(opcode.FLOAT)
-        self.stream.write(struct.pack(FLOAT_FORMAT, flt))
+        self._write(opcode.FLOAT)
+        self._write(struct.pack(FLOAT_FORMAT, flt))
 
     def _write_int4(self, i, error="int must be less than %i" %
                     (FOUR_BYTE_INT_MAX,)):
         if i > FOUR_BYTE_INT_MAX:
             raise SerializationError(error)
-        self.stream.write(struct.pack("!i", i))
+        self._write(struct.pack("!i", i))
 
     def save_list(self, L):
-        self.stream.write(opcode.NEWLIST)
+        self._write(opcode.NEWLIST)
         self._write_int4(len(L), "list is too long")
         for i, item in enumerate(L):
             self._write_setitem(i, item)
@@ -910,15 +919,15 @@ class Serializer(object):
     def _write_setitem(self, key, value):
         self._save(key)
         self._save(value)
-        self.stream.write(opcode.SETITEM)
+        self._write(opcode.SETITEM)
 
     def save_dict(self, d):
-        self.stream.write(opcode.NEWDICT)
+        self._write(opcode.NEWDICT)
         for key, value in d.items():
             self._write_setitem(key, value)
 
     def save_tuple(self, tup):
         for item in tup:
             self._save(item)
-        self.stream.write(opcode.BUILDTUPLE)
+        self._write(opcode.BUILDTUPLE)
         self._write_int4(len(tup), "tuple is too long")

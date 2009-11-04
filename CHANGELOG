@@ -1,5 +1,8 @@
 1.0.0b2
 --------------------------------
+
+* make internal protocols more robust against serialization failures
+
 * fix a seralization bug with nested tuples containing empty tuples
   (thanks to ronny for discovering it)
 

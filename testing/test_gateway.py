@@ -11,6 +11,11 @@ queue = py.builtin._tryimport('queue', 'Queue')
 TESTTIMEOUT = 10.0 # seconds
 skiponjython = py.test.mark.skipif("sys.platform.startswith('java')")
 
+def test_serialize_error(gw):
+    ch = gw.remote_exec("channel.send(ValueError(42))")
+    excinfo = py.test.raises(ch.RemoteError, "ch.receive()")
+    assert "can't serialize" in str(excinfo.value)
+
 class TestBasicRemoteExecution:
     def test_correct_setup(self, gw):
         assert gw._receiverthread.isAlive()
