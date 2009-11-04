@@ -157,6 +157,22 @@ def test_stdouterrin_setnull():
     assert not out
     assert not err
 
+class PseudoChannel:
+    def __init__(self):
+        self._sent = []
+        self._closed = []
+    def send(self, obj):
+        self._sent.append(obj)
+    def close(self, errortext=None):
+        self._closed.append(errortext)
+    
+def test_exectask():
+    io = py.io.BytesIO()
+    gw = gateway_base.SlaveGateway(io)
+    ch = PseudoChannel()
+    gw.executetask((ch, "raise ValueError()"))
+    assert "ValueError" in str(ch._closed[0]) 
+
 
 class TestMessage:
     def test_wire_protocol(self):
