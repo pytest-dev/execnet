@@ -703,33 +703,16 @@ FOUR_BYTE_INT_MAX = 2147483647
 FLOAT_FORMAT = "!d"
 FLOAT_FORMAT_SIZE = struct.calcsize(FLOAT_FORMAT)
 
-class _UnserializationOptions(object):
-    pass
-
-class _Py2UnserializationOptions(_UnserializationOptions):
-
-    def __init__(self, py3_strings_as_str=False):
-        self.py3_strings_as_str = py3_strings_as_str
-
-class _Py3UnserializationOptions(_UnserializationOptions):
-
-    def __init__(self, py2_strings_as_str=True): 
-        self.py2_strings_as_str = py2_strings_as_str
-
-if ISPY3:
-    UnserializationOptions = _Py3UnserializationOptions
-else:
-    UnserializationOptions = _Py2UnserializationOptions
-
 class _Stop(Exception):
     pass
 
 class Unserializer(object):
     num2func = {} # is filled after this class definition
+    py2str_as_py3str = False # True
+    py3str_as_py2str = False  # false means py2 will get unicode
 
-    def __init__(self, stream, options=UnserializationOptions()):
+    def __init__(self, stream):
         self.stream = stream
-        self.options = options
 
     def load(self):
         self.stack = []
@@ -777,7 +760,7 @@ class Unserializer(object):
 
     def load_py3string(self):
         as_bytes = self._read_byte_string()
-        if not ISPY3 and self.options.py3_strings_as_str:
+        if not ISPY3 and self.py3str_as_py2str:
             # XXX Should we try to decode into latin-1?
             self.stack.append(as_bytes)
         else:
@@ -785,7 +768,7 @@ class Unserializer(object):
 
     def load_py2string(self):
         as_bytes = self._read_byte_string()
-        if ISPY3 and self.options.py2_strings_as_str:
+        if ISPY3 and self.py2str_as_py3str:
             s = as_bytes.decode("latin-1")
         else:
             s = as_bytes
