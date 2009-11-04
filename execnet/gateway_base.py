@@ -814,8 +814,11 @@ class Unserializer(object):
 
     def load_buildtuple(self):
         length = self._read_int4()
-        tup = tuple(self.stack[-length:])
-        del self.stack[-length:]
+        if length:
+            tup = tuple(self.stack[-length:])
+            del self.stack[-length:]
+        else:
+            tup = ()
         self.stack.append(tup)
 
     def load_stop(self):
