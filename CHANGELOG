@@ -1,3 +1,7 @@
+1.0.0b2
+--------------------------------
+* setting the environment variable EXECNET_DEBUG will generate per
+  process trace-files for debugging
 
 1.0.0b1
 ----------------------------

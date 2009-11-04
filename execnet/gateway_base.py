@@ -22,10 +22,21 @@ else:
          "def reraise(cls, val, tb): raise cls, val, tb\n")
     bytes = str
 
-default_encoding = "UTF-8"
 sysex = (KeyboardInterrupt, SystemExit)
 
-debug = 0 # open('/tmp/execnet-debug-%d' % os.getpid()  , 'w')
+if os.environ.get('EXECNET_DEBUG'):
+    debugfile = open('/tmp/execnet-debug-%d' % os.getpid()  , 'w')
+    def trace(msg):
+        try:
+            debugfile.write(unicode(msg) + "\n")
+            debugfile.flush()
+        except sysex:
+            raise
+        except:
+            sys.stderr.write("exception during tracing\n")
+else:
+    def trace(msg): 
+        pass
 
 
 # ___________________________________________________________________________
@@ -546,22 +557,13 @@ class BaseGateway(object):
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
         self._serializer = Serializer(io)
+        self._trace = trace  # globals may be NONE at process-termination
 
     def _initreceive(self):
         self._receiverthread = threading.Thread(name="receiver",
                                  target=self._thread_receiver)
         self._receiverthread.setDaemon(1)
         self._receiverthread.start()
-
-    def _trace(self, msg):
-        if debug:
-            try:
-                debug.write(unicode(msg) + "\n")
-                debug.flush()
-            except sysex:
-                raise
-            except:
-                sys.stderr.write("exception during tracing\n")
 
     def _thread_receiver(self):
         self._trace("starting to receive")
@@ -650,7 +652,7 @@ class SlaveGateway(BaseGateway):
                 except self._StopExecLoop:
                     break
         finally:
-            self._trace("serve")
+            self._trace("serving execution finished")
         if joining:
             self.join()
 

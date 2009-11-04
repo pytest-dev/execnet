@@ -545,7 +545,13 @@ class TestThreads:
         gw.remote_init_threads(3)
         py.test.raises(IOError, gw.remote_init_threads, 3)
 
+def test_debug(monkeypatch):
+    monkeypatch.setenv('EXECNET_DEBUG', "1")
+    source = py.std.inspect.getsource(gateway_base)
+    d = {}
+    gateway_base.do_exec(source, d) 
+    assert 'debugfile' in d 
 
 def test_nodebug():
     from execnet import gateway_base
-    assert not gateway_base.debug
+    assert not hasattr(gateway_base, 'debugfile')

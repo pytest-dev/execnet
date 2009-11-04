@@ -39,8 +39,8 @@ class Gateway(gateway_base.BaseGateway):
     _cleanup = GatewayCleanup()
 
     def __init__(self, io):
-        self._remote_bootstrap_gateway(io)
         super(Gateway, self).__init__(io=io, _startcount=1)
+        self._remote_bootstrap_gateway(io)
         self._initreceive()
         self._cleanup.register(self)
 
@@ -51,15 +51,14 @@ class Gateway(gateway_base.BaseGateway):
         else:
             addr = ''
         try:
-            r = (self._receiverthread.isAlive() and "receiving" or
+            r = (self._receiverthread.isAlive() and "receiver-alive" or
                  "not receiving")
-            s = "sending" # XXX
             i = len(self._channelfactory.channels())
         except AttributeError:
-            r = s = "uninitialized"
+            r = "uninitialized"
             i = "no"
-        return "<%s%s %s/%s (%s active channels)>" %(
-                self.__class__.__name__, addr, r, s, i)
+        return "<%s%s %s (%s active channels)>" %(
+                self.__class__.__name__, addr, r, i)
 
     def exit(self):
         """ Try to stop all exec and IO activity. """
@@ -261,7 +260,7 @@ class SocketGateway(Gateway):
         # execute the above socketserverbootstrap on the other side
         channel = gateway.remote_exec(socketserverbootstrap)
         (realhost, realport) = channel.receive()
-        #gateway._trace("new_remote received"
+        #self._trace("new_remote received"
         #               "port=%r, hostname = %r" %(realport, hostname))
         return SocketGateway(host, realport)
     new_remote = classmethod(new_remote)
