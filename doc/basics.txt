@@ -133,3 +133,12 @@ More info on the RSync class:
 .. currentmodule:: execnet
 .. autoclass:: RSync
     :members: add_target,send
+
+
+Debugging execnet
+===============================================================
+
+If you set the enviornment variable ``EXECNET_DEBUG`` to any value
+trace-files will be written to ``execnet-debug-PID`` files in
+the system temporary directory.  ``NUM`` will be the process id. 
+
