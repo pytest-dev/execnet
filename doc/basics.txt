@@ -2,11 +2,9 @@
 execnet API in a nutshell
 ==============================================================================
 
-execnet allows to create **gateways** which establish 
-a self-bootstrapping connection to another
-local or remote Python interpreter.  Through this
-connection you can execute code on the other side
-and maintain a data exchange via channels.
+execnet ad-hoc instantiates **gateways** to Python 
+interpreter processes with which you can **remote execute
+code** and exchange basic python objects through **channels**.
 
 .. image:: _static/basic1.png
 
@@ -71,7 +69,7 @@ two asynchronously running programs.
 
    .. automethod:: Channel.send(item)
    .. automethod:: Channel.receive()
-   .. automethod:: Channel.setcallback(callback, endmarker)
+   .. automethod:: Channel.setcallback(callback, endmarker=_NOENDMARKER)
    .. automethod:: Channel.makefile(mode, proxyclose=False)
    .. automethod:: Channel.close(error)
    .. automethod:: Channel.waitclose(timeout)
