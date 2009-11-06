@@ -40,22 +40,23 @@ Next checkout the basic api and examples:
    examples
    changelog
 
-Contact channels 
+Issues / Contact channels 
 ===========================
 
-You are welcome to:
+If you have a questions, issues or suggestions you are welcome to join 
+and post to the `execnet-dev`_ mailing list. Alternatively you 
+you get see to help on the #pylib IRC channel on Freenode.
 
-* join and post to the `execnet-dev`_ mailing list or `open an issue`_ 
-* join the #pylib IRC channel on Freenode
-* subscribe to the `execnet-commit`_ mailing list
+There also is the `execnet-commit`_ mailing list
+which relays commit mails to the `bitbucket repository`_.
 
 .. _`Holger Krekel`: http://twitter.com/hpk42
 .. _`blog`: http://tetamap.wordpress.com
 .. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
 .. _`execnet-commit`: http://codespeak.net/mailman/listinfo/execnet-commit
-.. _`open an issue`: http://bitbucket.org/hpk42/execnet/issues/
 
 .. _`easy_install`: http://peak.telecommunity.com/DevCenter/EasyInstall
+.. _`bitbucket repository`: http://bitbucket.org/hpk42/execnet/
 .. _`execnet mercurial repository`: http://bitbucket.org/hpk42/execnet/
 .. _`pypi release`: http://pypi.python.org/pypi/execnet
 
