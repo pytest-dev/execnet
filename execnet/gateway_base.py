@@ -234,6 +234,7 @@ NO_ENDMARKER_WANTED = object()
 class Channel(object):
     """Communication channel between two Python Interpreter execution points."""
     RemoteError = RemoteError
+    _executing = False
 
     def __init__(self, gateway, id):
         assert isinstance(id, int)
@@ -335,7 +336,14 @@ class Channel(object):
         raise ValueError("mode %r not availabe" %(mode,))
 
     def close(self, error=None):
-        """ close down this channel with an optional error message. """
+        """ close down this channel with an optional error message. 
+            Note that closing of a channel tied to remote_exec happens 
+            automatically at the end of execution and cannot be done explicitely. 
+        """
+        if self._executing:
+            raise IOError("cannot explicitly close channel within remote_exec")
+        if self._closed:
+            trace("%r channel already closed, close() called." % (self, ))
         if not self._closed:
             # state transition "opened/sendonly" --> "closed"
             # threads warning: the channel might be closed under our feet,
@@ -345,6 +353,7 @@ class Channel(object):
                 put(Message.CHANNEL_CLOSE_ERROR(self.id, error))
             else:
                 put(Message.CHANNEL_CLOSE(self.id))
+            trace("%r: sent channel close message" %(self,))
             if isinstance(error, RemoteError):
                 self._remoteerrors.append(error)
             self._closed = True         # --> "closed"
@@ -584,7 +593,8 @@ class BaseGateway(object):
                 except EOFError:
                     break
                 except:
-                    self._trace(geterrortext(self.exc_info()))
+                    self._trace("RECEIVERTHREAD: %s " %(
+                        geterrortext(self.exc_info()), ))
                     break
         finally:
             # XXX we need to signal fatal error states to
@@ -606,7 +616,7 @@ class BaseGateway(object):
 
     def _stopsend(self):
         self._io.close_write()
-        self._trace('closing IO')
+        self._trace('closed IO write pipe')
 
     def _stopexec(self):
         pass
@@ -622,14 +632,15 @@ class BaseGateway(object):
     def newchannel(self):
         return self._channelfactory.new()
 
-    def join(self, joinexec=True):
-        """ Wait for all IO (and by default all execution activity)
-            to stop. the joinexec parameter is obsolete.
-        """
+    def join(self, timeout=None):
+        """ Wait for receiverthread to terminate. """
         current = threading.currentThread()
         if self._receiverthread.isAlive():
             self._trace("joining receiver thread")
-            self._receiverthread.join()
+            self._receiverthread.join(timeout)
+        else:
+            self._trace("gateway.join() called while receiverthread "
+                        "already finished")
 
 class SlaveGateway(BaseGateway):
     def _stopexec(self):
@@ -652,7 +663,7 @@ class SlaveGateway(BaseGateway):
                 except self._StopExecLoop:
                     break
         finally:
-            self._trace("serving execution finished")
+            self._trace("slavegateway.serve finished")
         if joining:
             self.join()
 
@@ -661,19 +672,19 @@ class SlaveGateway(BaseGateway):
         try:
             loc = {'channel' : channel, '__name__': '__channelexec__'}
             self._trace("execution starts: %s" % repr(source)[:50])
+            channel._executing = True
             try:
                 co = compile(source+'\n', '', 'exec')
                 do_exec(co, loc)
             finally:
+                channel._executing = False
                 self._trace("execution finished")
-        except sysex:
-            pass
         except self._StopExecLoop:
             channel.close()
             raise
         except:
             excinfo = self.exc_info()
-            self._trace("got exception %s" % excinfo[1])
+            self._trace("got exception: %s" % (excinfo[1],))
             errortext = geterrortext(excinfo)
             channel.close(errortext)
         else:
