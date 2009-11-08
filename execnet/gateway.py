@@ -61,13 +61,15 @@ class Gateway(gateway_base.BaseGateway):
                 self.__class__.__name__, addr, r, i)
 
     def exit(self):
-        """ Try to stop all exec and IO activity. """
+        """ exit gateway (stop local execution, stop sending)"""
+        self._trace("exiting gateway")
         try:
             self._cleanup.unregister(self)
         except KeyError:
             return # we assume it's already happened
         self._stopexec()
         self._stopsend()
+        #self.join(timeout=timeout) # receiverthread receive close() messages
 
     def _remote_bootstrap_gateway(self, io, extra=''):
         """ return Gateway with a asynchronously remotely
@@ -186,6 +188,7 @@ class PopenCmdGateway(Gateway):
 
     def exit(self):
         super(PopenCmdGateway, self).exit()
+        self._trace("polling Popen subprocess")
         self._popen.poll()
 
 popen_bootstrapline = "import sys ; exec(eval(sys.stdin.readline()))"

@@ -63,6 +63,12 @@ class TestBasicRemoteExecution:
         channel.waitclose(TESTTIMEOUT)
         py.test.raises(IOError, channel.send, 0)
 
+    def test_remote_exec_no_explicit_close(self, gw):
+        channel = gw.remote_exec('channel.close()')
+        excinfo = py.test.raises(channel.RemoteError, 
+            "channel.waitclose(TESTTIMEOUT)")
+        assert "explicit" in excinfo.value.formatted
+
     def test_remote_exec_channel_anonymous(self, gw):
         channel = gw.remote_exec('''
            obj = channel.receive()
@@ -408,7 +414,7 @@ class TestChannelFile:
             gw._cache_rinfo = rinfo
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
 
-def test_join_blocked_execution_gateway():
+def test_join_blocked_slave_execution_gateway():
     gateway = execnet.PopenGateway()
     channel = gateway.remote_exec("""
         import time
@@ -416,7 +422,7 @@ def test_join_blocked_execution_gateway():
     """)
     def doit():
         gateway.exit()
-        gateway.join()
+        gateway.join(timeout=3.0)
         return 17
 
     pool = WorkerPool()

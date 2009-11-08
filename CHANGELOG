@@ -1,3 +1,9 @@
+1.0.0b3
+--------------------------------
+
+* disallow explicit close in remote_exec situation
+* perform some more detailed tracing with EXECNET_DEBUG
+
 1.0.0b2
 --------------------------------
 
