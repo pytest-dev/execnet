@@ -1,6 +1,8 @@
 1.0.0b3
 --------------------------------
 
+* introduce remote_status() method which on the low level gives
+  information about the remote side of a gateway
 * disallow explicit close in remote_exec situation
 * perform some more detailed tracing with EXECNET_DEBUG
 

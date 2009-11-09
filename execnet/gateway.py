@@ -100,6 +100,15 @@ class Gateway(gateway_base.BaseGateway):
             self._cache_rinfo = RInfo(ch.receive())
         return self._cache_rinfo
 
+    def remote_status(self):
+        channel = self.newchannel()
+        self._send(Message.STATUS(channel.id))
+        statusdict = channel.receive()
+        # the other side didn't actually instantiate a channel
+        # so we just delete the internal id/channel mapping
+        self._channelfactory._no_longer_opened(channel.id)
+        return RemoteStatus(statusdict)
+
     def remote_exec(self, source):
         """ return channel object and connect it to a remote
             execution thread where the given 'source' executes
@@ -159,7 +168,6 @@ class Gateway(gateway_base.BaseGateway):
         return Handle()
 
 
-
 class RInfo:
     def __init__(self, kwargs):
         self.__dict__.update(kwargs)
@@ -167,6 +175,8 @@ class RInfo:
         info = ", ".join(["%s=%s" % item
                 for item in self.__dict__.items()])
         return "<RInfo %r>" % info
+
+RemoteStatus = RInfo
 
 rinfo_source = """
 import sys, os
