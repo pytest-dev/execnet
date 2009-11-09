@@ -823,14 +823,23 @@ class Unserializer(object):
     def load_newdict(self):
         self.stack.append({})
 
-    def load_buildtuple(self):
+    def _load_tuple(self):
         length = self._read_int4()
         if length:
             tup = tuple(self.stack[-length:])
             del self.stack[-length:]
         else:
             tup = ()
-        self.stack.append(tup)
+        return tup
+
+    def load_buildtuple(self):
+        self.stack.append(self._load_tuple())
+
+    def load_set(self):
+        self.stack.append(set(self._load_tuple()))
+
+    def load_frozenset(self):
+        self.stack.append(frozenset(self._load_tuple()))
 
     def load_stop(self):
         raise _Stop
@@ -960,3 +969,15 @@ class Serializer(object):
             self._save(item)
         self._write(opcode.BUILDTUPLE)
         self._write_int4(len(tup), "tuple is too long")
+
+    def _write_set(self, s, op):
+        for item in s:
+            self._save(item)
+        self._write(op)
+        self._write_int4(len(s), "set is too long")
+
+    def save_set(self, s):
+        self._write_set(s, opcode.SET)
+
+    def save_frozenset(self, s):
+        self._write_set(s, opcode.FROZENSET)
