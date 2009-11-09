@@ -48,7 +48,15 @@ if sys.version_info > (3, 0): # Need binary output
     sys.stdout = sys.stdout.detach()
 saver = serializer.Serializer(sys.stdout)
 saver.save(%s)""" % (pyimportdir, obj_rep,))
-        return self.executable.sysexec(script_file)
+        popen = subprocess.Popen([str(self.executable), str(script_file)],
+                                 stdin=subprocess.PIPE,
+                                 stderr=subprocess.PIPE,
+                                 stdout=subprocess.PIPE)
+        ret = popen.wait()
+        if ret:
+            raise py.process.cmdexec.Error(ret, ret, str(self.executable),
+                                           stdout, stderr)
+        return popen.stdout.read()
 
     def load(self, data, option_args="__class__"):
         script_file = TEMPDIR.join("load.py")
@@ -67,7 +75,7 @@ sys.stdout.write(repr(obj))""" % (pyimportdir, option_args,))
                                  stdin=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
                                  stdout=subprocess.PIPE)
-        stdout, stderr = popen.communicate(data.encode("latin-1"))
+        stdout, stderr = popen.communicate(data)
         ret = popen.returncode
         if ret:
             raise py.process.cmdexec.Error(ret, ret, str(self.executable),
@@ -159,6 +167,31 @@ def test_frozenset(py2, py3):
         assert tp == "frozenset"
         assert v == "frozenset()"
 
+def test_long(py2, py3):
+    really_big = "9223372036854775807324234"
+    p = py2.dump(really_big)
+    tp, v = py2.load(p)
+    assert tp == "long"
+    assert v == really_big + "L"
+    tp, v = py3.load(p)
+    assert tp == "int"
+    assert v == really_big
+    p = py3.dump(really_big)
+    tp, v == py3.load(p)
+    assert tp == "int"
+    assert v == really_big
+    tp, v = py2.load(p)
+    assert tp == "long"
+    assert v == really_big + "L"
+
+def test_small_long(py2, py3):
+    p = py2.dump("123L")
+    tp, s = py2.load(p)
+    assert s == "123L"
+    tp, s = py3.load(p)
+    assert s == "123"
+
+
 @py.test.mark.xfail
 # I'm not sure if we need the complexity.
 def test_recursive_list(py2, py3):
@@ -167,11 +200,6 @@ def test_recursive_list(py2, py3):
     p = py2.dump(l)
     tp, rep = py2.load(l)
     assert tp == "list"
-
-def test_bigint_should_fail():
-    py.test.raises(serializer.SerializationError,
-                   serializer.Serializer(py.io.BytesIO()).save,
-                   123456678900)
 
 def test_bytes(py2, py3):
     p = py3.dump("b'hi'")
@@ -209,13 +237,6 @@ def test_unicode(py2, py3):
     tp, s = py2.load(p)
     assert tp == "unicode" # depends on unserialization defaults
     assert s == "u'hi'"
-
-def test_long(py2, py3):
-    p = py2.dump("123L")
-    tp, s = py2.load(p)
-    assert s == "123"
-    tp, s = py3.load(p)
-    assert s == "123"
 
 def test_bool(py2, py3):
     p = py2.dump("True")
