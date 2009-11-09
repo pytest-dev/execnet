@@ -125,6 +125,39 @@ def test_simple(tp_name, repr, dump, load):
     assert tp == tp_name
     assert v == repr
 
+def test_set(py2, py3):
+    for dump in py2.dump, py3.dump:
+        p = dump("set((1, 2, 3))")
+        tp, v = py2.load(p)
+        assert tp == "set"
+        assert v == "set([1, 2, 3])"
+        tp, v = py3.load(p)
+        assert tp == "set"
+        assert v == "{1, 2, 3}"
+        p = dump("set()")
+        tp, v = py2.load(p)
+        assert tp == "set"
+        assert v == "set([])"
+        tp, v = py3.load(p)
+        assert tp == "set"
+        assert v == "set()"
+
+def test_frozenset(py2, py3):
+    for dump in py2.dump, py3.dump:
+        p = dump("frozenset((1, 2, 3))")
+        tp, v = py2.load(p)
+        assert tp == "frozenset"
+        assert v == "frozenset([1, 2, 3])"
+        tp, v = py3.load(p)
+        assert tp == "frozenset"
+        assert v == "frozenset({1, 2, 3})"
+        p = dump("frozenset()")
+        tp, v = py2.load(p)
+        assert tp == "frozenset"
+        assert v == "frozenset([])"
+        tp, v = py3.load(p)
+        assert tp == "frozenset"
+        assert v == "frozenset()"
 
 @py.test.mark.xfail
 # I'm not sure if we need the complexity.
