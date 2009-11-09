@@ -101,6 +101,7 @@ class Gateway(gateway_base.BaseGateway):
         return self._cache_rinfo
 
     def remote_status(self):
+        """ return information object about remote execution status. """
         channel = self.newchannel()
         self._send(Message.STATUS(channel.id))
         statusdict = channel.receive()

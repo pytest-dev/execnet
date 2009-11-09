@@ -75,8 +75,22 @@ two asynchronously running programs.
    .. automethod:: Channel.waitclose(timeout)
    .. autoattribute:: Channel.RemoteError
 
-.. _xspec:
 
+remote_status: get low-level execution info 
+===================================================
+
+.. currentmodule:: execnet.gateway
+
+All gateways offer a simple method to obtain some status
+information from the remote side. 
+
+.. automethod:: Gateway.remote_status(source)
+
+Calling this method tells you e.g. how many execution 
+tasks are queued, how many are executing and how many
+channels are active. 
+
+.. _xspec:
 
 creating gateways from a generic string format
 ===============================================================
