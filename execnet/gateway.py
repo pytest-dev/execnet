@@ -106,7 +106,7 @@ class Gateway(gateway_base.BaseGateway):
         statusdict = channel.receive()
         # the other side didn't actually instantiate a channel
         # so we just delete the internal id/channel mapping
-        self._channelfactory._no_longer_opened(channel.id)
+        self._channelfactory._local_close(channel.id)
         return RemoteStatus(statusdict)
 
     def remote_exec(self, source):

@@ -161,6 +161,7 @@ class PseudoChannel:
     def __init__(self):
         self._sent = []
         self._closed = []
+        self.id = 1000
     def send(self, obj):
         self._sent.append(obj)
     def close(self, errortext=None):

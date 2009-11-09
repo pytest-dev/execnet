@@ -38,6 +38,9 @@ class TestBasicRemoteExecution:
         numchan = gw._channelfactory.channels()
         st = gw.remote_status()
         numchan2 = gw._channelfactory.channels()
+        # note that on CPython this can not really
+        # fail because refcounting leads to immediate
+        # closure of temporary channels
         assert numchan2 == numchan
 
     def test_gateway_status_busy(self, gw):
@@ -581,6 +584,24 @@ class TestThreads:
         c1.send(42)
         res = c1.receive()
         assert res == 42
+
+    def test_status_with_threads(self):
+        gw = execnet.PopenGateway()
+        gw.remote_init_threads(3)
+        c1 = gw.remote_exec("channel.send(1) ; channel.receive()")
+        c2 = gw.remote_exec("channel.send(2) ; channel.receive()")
+        c1.receive()
+        c2.receive()
+        rstatus = gw.remote_status()
+        assert rstatus.numexecuting == 2 + 1
+        assert rstatus.execqsize == 0
+        c1.send(1)
+        c2.send(1)
+        c1.waitclose()
+        c2.waitclose()
+        rstatus = gw.remote_status()
+        assert rstatus.numexecuting == 0 + 1
+        assert rstatus.execqsize == 0
 
     def test_threads_twice(self):
         gw = execnet.PopenGateway()
