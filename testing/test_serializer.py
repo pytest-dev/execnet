@@ -52,11 +52,12 @@ saver.save(%s)""" % (pyimportdir, obj_rep,))
                                  stdin=subprocess.PIPE,
                                  stderr=subprocess.PIPE,
                                  stdout=subprocess.PIPE)
-        ret = popen.wait()
+        stdout, stderr = popen.communicate()
+        ret = popen.returncode
         if ret:
             raise py.process.cmdexec.Error(ret, ret, str(self.executable),
                                            stdout, stderr)
-        return popen.stdout.read()
+        return stdout
 
     def load(self, data, option_args="__class__"):
         script_file = TEMPDIR.join("load.py")
