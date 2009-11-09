@@ -1,6 +1,7 @@
 1.0.0b3
 --------------------------------
 
+* fix EXECNET_DEBUG to work with win32 
 * add support for serializing longs, sets and frozensets  (thanks
   Benjamin Peterson) 
 * introduce remote_status() method which on the low level gives
