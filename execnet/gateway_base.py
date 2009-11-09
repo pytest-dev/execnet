@@ -162,6 +162,22 @@ class Message:
                         self.channelid, self.data)
 
 def _setupmessages():
+    class STATUS(Message):
+        def received(self, gateway):
+            # we use self.channelid to send back information
+            # but don't instantiate a channel object
+            active_channels = gateway._channelfactory.channels()
+            numexec = 0
+            for ch in active_channels:
+                if getattr(ch, '_executing', False):
+                    numexec += 1
+            d = {'receiving': True, 
+                 'execqsize': gateway._execqueue.qsize(),
+                 'numchannels': len(active_channels),
+                 'numexecuting': numexec
+            }
+            gateway._send(Message.CHANNEL_DATA(self.channelid, d))
+
     class CHANNEL_OPEN(Message):
         def received(self, gateway):
             channel = gateway._channelfactory.new(self.channelid)
@@ -191,7 +207,7 @@ def _setupmessages():
         def received(self, gateway):
             gateway._channelfactory._local_close(self.channelid, sendonly=True)
 
-    classes = [CHANNEL_OPEN, CHANNEL_NEW, CHANNEL_DATA,
+    classes = [STATUS, CHANNEL_OPEN, CHANNEL_NEW, CHANNEL_DATA,
                CHANNEL_CLOSE, CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE]
 
     for i, cls in enumerate(classes):

@@ -28,6 +28,37 @@ class TestBasicRemoteExecution:
         name = channel.receive()
         assert name == "__channelexec__"
 
+    def test_gateway_status_simple(self, gw):
+        status = gw.remote_status()
+        assert status.receiving
+        assert not status.execqsize
+        assert status.numexecuting == 0
+
+    def test_gateway_status_no_real_channel(self, gw):
+        numchan = gw._channelfactory.channels()
+        st = gw.remote_status()
+        numchan2 = gw._channelfactory.channels()
+        assert numchan2 == numchan
+
+    def test_gateway_status_busy(self, gw):
+        ch1 = gw.remote_exec("channel.send(1); channel.receive()")
+        ch2 = gw.remote_exec("channel.receive()")
+        ch1.receive()
+        status = gw.remote_status()
+        assert status.receiving
+        assert status.numexecuting == 1 # number of active execution threads
+        assert status.execqsize == 1 # one more queued
+        assert status.numchannels == 2
+        ch1.send(None)
+        ch2.send(None)
+        ch1.waitclose()
+        ch2.waitclose()
+        status = gw.remote_status()
+        assert status.receiving
+        assert status.execqsize == 0
+        assert status.numexecuting == 0
+        assert status.numchannels == 0
+
     def test_remote_exec_module(self, tmpdir, gw):
         p = tmpdir.join("remotetest.py")
         p.write("channel.send(1)")
