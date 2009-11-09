@@ -687,7 +687,7 @@ class SlaveGateway(BaseGateway):
         channel, source = item
         try:
             loc = {'channel' : channel, '__name__': '__channelexec__'}
-            self._trace("execution starts: %s" % repr(source)[:50])
+            self._trace("execution starts[%s]: %s" % (channel.id, repr(source)[:50]))
             channel._executing = True
             try:
                 co = compile(source+'\n', '', 'exec')
@@ -751,7 +751,8 @@ class Unserializer(object):
                 try:
                     loader = self.num2func[opcode]
                 except KeyError:
-                    raise UnserializationError("unkown opcode %s" % (opcode,))
+                    raise UnserializationError("unkown opcode %r - "
+                        "wire protocol corruption?" % (opcode,))
                 loader(self)
         except _Stop:
             if len(self.stack) != 1:
@@ -870,8 +871,9 @@ class Serializer(object):
         self._save(obj)
         self._write(opcode.STOP)
         if self.WRITE_ON_SUCCESS:
-            for x in self.streamlist:
-                self._stream.write(x)
+            # atomic write! (compatible to python3 and python2)
+            s = type(self.streamlist[0])().join(self.streamlist)
+            self._stream.write(s)
 
     def _save(self, obj):
         tp = type(obj)

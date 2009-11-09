@@ -222,11 +222,15 @@ if __name__ == '__channelexec__':
     maxthreads = channel.receive()
     execpool = WorkerPool(maxthreads=maxthreads)
     gw = channel.gateway
+    gw._trace("instantiated thread work pool maxthreads=%s" %(maxthreads,))
     while 1:
+        gw._trace("waiting for new exec task")
         task = gw._execqueue.get()
         if task is None:
-            gw._stopsend()
+            gw._trace("thread-dispatcher got None, exiting")
             execpool.shutdown()
             execpool.join()
+            gw._stopsend()
             raise gw._StopExecLoop
+        gw._trace("dispatching exec task to thread pool")
         execpool.dispatch(gw.executetask, task)
