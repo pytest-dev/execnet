@@ -6,7 +6,7 @@ NOTE: aims to be compatible to Python 2.3-3.1, Jython and IronPython
 (C) 2004-2009 Holger Krekel, Armin Rigo, Benjamin Peterson, and others
 """
 import sys, os, weakref
-import threading, traceback, socket, struct
+import threading, traceback, socket, struct, binascii
 try:
     import queue
 except ImportError:
@@ -17,10 +17,12 @@ if ISPY3:
     exec("def do_exec(co, loc): exec(co, loc)\n"
          "def reraise(cls, val, tb): raise val\n")
     unicode = str
+    _long_type = int
 else:
     exec("def do_exec(co, loc): exec co in loc\n"
          "def reraise(cls, val, tb): raise cls, val, tb\n")
     bytes = str
+    _long_type = long
 
 sysex = (KeyboardInterrupt, SystemExit)
 
@@ -721,7 +723,7 @@ class UnserializationError(SerializeError):
 
 if ISPY3:
     def b(s):
-        return s.encode("ascii")
+        return s.encode("latin-1")
 else:
     b = str
 
@@ -773,6 +775,22 @@ class Unserializer(object):
     def load_int(self):
         i = self._read_int4()
         self.stack.append(i)
+
+    def load_longint(self):
+        l = _decode_long(self._read_byte_string())
+        self.stack.append(int(l))
+
+    if ISPY3:
+        load_long = load_int
+        load_longlong = load_longint
+    else:
+        def load_long(self):
+            i = self._read_int4()
+            self.stack.append(long(i))
+
+        def load_longlong(self):
+            l = _decode_long(self._read_byte_string())
+            self.stack.append(l)
 
     def load_float(self):
         binary = self.stream.read(FLOAT_FORMAT_SIZE)
@@ -863,7 +881,59 @@ def _buildopcodes():
         setattr(opcode, opname, i)
 
 _buildopcodes()
-        
+
+# Copied straight from pickle.py.
+def _encode_long(x):
+    """Encode a long to a two's complement little-endian binary string."""
+    if x > 0:
+        ashex = hex(x)
+        assert ashex.startswith("0x")
+        njunkchars = 2 + ashex.endswith('L')
+        nibbles = len(ashex) - njunkchars
+        if nibbles & 1:
+            # need an even # of nibbles for unhexlify
+            ashex = "0x0" + ashex[2:]
+        elif int(ashex[2], 16) >= 8:
+            # "looks negative", so need a byte of sign bits
+            ashex = "0x00" + ashex[2:]
+    else:
+        # Build the 256's-complement:  (1L << nbytes) + x.  The trick is
+        # to find the number of bytes in linear time (although that should
+        # really be a constant-time task).
+        ashex = hex(-x)
+        njunkchars = 2 + ashex.endswith('L')
+        nibbles = len(ashex) - njunkchars
+        if nibbles & 1:
+            # Extend to a full byte.
+            nibbles += 1
+        nbits = nibbles * 4
+        x += 1 << nbits
+        ashex = hex(x)
+        njunkchars = 2 + ashex.endswith('L')
+        newnibbles = len(ashex) - njunkchars
+        if newnibbles < nibbles:
+            ashex = "0x" + "0" * (nibbles - newnibbles) + ashex[2:]
+        if int(ashex[2], 16) < 8:
+            # "looks positive", so need a byte of sign bits
+            ashex = "0xff" + ashex[2:]
+
+    if ashex.endswith('L'):
+        ashex = ashex[2:-1]
+    else:
+        ashex = ashex[2:]
+    binary = binascii.unhexlify(ashex)
+    return binary[::-1]
+
+def _decode_long(data):
+    """Decode a long from a two's complement little-endian binary string."""
+    nbytes = len(data)
+    ashex = binascii.hexlify(data[::-1])
+    n = _long_type(ashex, 16) # quadratic time before Python 2.3; linear now
+    if data[-1:] >= b('\x80'):
+        n -= 1 << (nbytes * 8)
+    return n
+
+
 class Serializer(object):
     WRITE_ON_SUCCESS=True # more robust against serialize failures
 
@@ -933,10 +1003,19 @@ class Serializer(object):
         self._write_int4(len(bytes_), "string is too long")
         self._write(bytes_)
 
+    def _save_integral(self, i, short_op, long_op):
+        if i <= FOUR_BYTE_INT_MAX:
+            self._write(short_op)
+            self._write_int4(i)
+        else:
+            self._write(long_op)
+            self._write_byte_sequence(_encode_long(i))
+
     def save_int(self, i):
-        self._write(opcode.INT)
-        self._write_int4(i)
-    save_long = save_int # only used from python2
+        self._save_integral(i, opcode.INT, opcode.LONGINT)
+
+    def save_long(self, l):
+        self._save_integral(l, opcode.LONG, opcode.LONGLONG)
 
     def save_float(self, flt):
         self._write(opcode.FLOAT)
