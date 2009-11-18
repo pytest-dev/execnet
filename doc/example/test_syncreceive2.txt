@@ -1,0 +1,14 @@
+
+Synchronously receive results from two sub processes 
+-----------------------------------------------------
+
+Use MultiChannels for receiving multiple results from remote code::
+
+    >>> import execnet
+    >>> ch1 = execnet.PopenGateway().remote_exec("channel.send(1)")
+    >>> ch2 = execnet.PopenGateway().remote_exec("channel.send(2)")
+    >>> mch = execnet.MultiChannel([ch1, ch2])
+    >>> l = mch.receive_each()
+    >>> assert len(l) == 2
+    >>> assert 1 in l 
+    >>> assert 2 in l 

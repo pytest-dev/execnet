@@ -51,13 +51,13 @@ class Gateway(gateway_base.BaseGateway):
         else:
             addr = ''
         try:
-            r = (self._receiverthread.isAlive() and "receiver-alive" or
-                 "not receiving")
+            r = (self._receiverthread.isAlive() and "receive-live" or
+                 "not-receiving")
             i = len(self._channelfactory.channels())
         except AttributeError:
             r = "uninitialized"
             i = "no"
-        return "<%s%s %s (%s active channels)>" %(
+        return "<%s%s %s, %s active channels>" %(
                 self.__class__.__name__, addr, r, i)
 
     def exit(self):

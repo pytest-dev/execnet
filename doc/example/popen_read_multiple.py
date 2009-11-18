@@ -3,7 +3,7 @@ example
 
 reading results from possibly blocking code running in sub processes. 
 """
-import py
+import execnet
 
 NUM_PROCESSES = 5
 
