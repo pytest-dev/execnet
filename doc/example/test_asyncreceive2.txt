@@ -1,0 +1,21 @@
+
+Asynchronously receive results from two sub processes 
+-----------------------------------------------------
+
+Use ``MultiChannel.make_receive_queue()`` for asynchronously receiving 
+multiple results from remote code.  This standard Queue provides 
+``(channel, result)`` tuples which allows to determine where 
+a result comes from::
+
+    >>> import execnet
+    >>> ch1 = execnet.PopenGateway().remote_exec("channel.send(1)")
+    >>> ch2 = execnet.PopenGateway().remote_exec("channel.send(2)")
+    >>> mch = execnet.MultiChannel([ch1, ch2])
+    >>> queue = mch.make_receive_queue()
+    >>> chan1, res1 = queue.get()  # you may also specify a timeout 
+    >>> chan2, res2 = queue.get()
+    >>> res1 + res2 
+    3
+    >>> assert chan1 in (ch1, ch2)
+    >>> assert chan2 in (ch1, ch2)
+    >>> assert chan1 != chan2

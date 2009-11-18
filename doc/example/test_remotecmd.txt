@@ -1,0 +1,24 @@
+A simple command pattern
+--------------------------------------------------------------
+
+If you want the remote side to serve a number
+of synchronous function you can setup a serving 
+loop and invent your own local protocol
+
+.. include:: remotecmd.py
+    :literal:
+
+Then on the local side you can do::
+
+    >>> import execnet, remotecmd
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec(remotecmd)
+    >>> ch.send('simple(10)') # execute func-call remotely
+    >>> ch.receive()
+    11
+
+Our remotecmd module starts up remote serving
+through the ``for item in channel`` loop which
+will terminate when the channel closes. It evaluates
+all incoming requests in the global name space and
+sends back the results.  
