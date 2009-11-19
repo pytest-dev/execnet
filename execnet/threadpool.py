@@ -230,7 +230,6 @@ if __name__ == '__channelexec__':
             gw._trace("thread-dispatcher got None, exiting")
             execpool.shutdown()
             execpool.join()
-            gw._stopsend()
             raise gw._StopExecLoop
         gw._trace("dispatching exec task to thread pool")
         execpool.dispatch(gw.executetask, task)
