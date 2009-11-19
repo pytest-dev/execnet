@@ -33,7 +33,10 @@ class Group:
         return self._id2gateway[key]
 
     def __contains__(self, key):
-        return key in self._id2gateway
+        return key in self._id2gateway or key in self._activegateways
+
+    def __len__(self):
+        return len(self._activegateways)
 
     def __iter__(self):
         return iter(list(self._activegateways))
