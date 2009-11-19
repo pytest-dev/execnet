@@ -1,6 +1,8 @@
 1.0.0b4
 --------------------------------
 
+* cleanup gateway termination a bit 
+
 * deprecate execnet.XYZGateway in favour of direct makegateway()
   Use makegateway() intead of the Popen/Socket/Ssh classes in examples.
 

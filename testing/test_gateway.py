@@ -616,6 +616,20 @@ class TestThreads:
         gw.remote_init_threads(3)
         py.test.raises(IOError, gw.remote_init_threads, 3)
 
+def test_close_initiating_remote_no_error(testdir):
+    import subprocess
+    p = testdir.makepyfile("""
+        import execnet
+        gw = execnet.makegateway("popen")
+        gw.remote_init_threads(num=2)
+        ch = gw.remote_exec("channel.receive()")
+        ch.close()
+    """)
+    popen = subprocess.Popen([sys.executable, str(p)], 
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = popen.communicate()
+    assert not stderr
+        
 def test_debug(monkeypatch):
     monkeypatch.setenv('EXECNET_DEBUG', "1")
     source = py.std.inspect.getsource(gateway_base)

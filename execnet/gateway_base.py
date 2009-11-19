@@ -363,17 +363,20 @@ class Channel(object):
         if self._executing:
             raise IOError("cannot explicitly close channel within remote_exec")
         if self._closed:
-            trace("%r channel already closed, close() called." % (self, ))
+            trace("%r redundant call to close(), ignoring" %(self,))
         if not self._closed:
             # state transition "opened/sendonly" --> "closed"
             # threads warning: the channel might be closed under our feet,
             # but it's never damaging to send too many CHANNEL_CLOSE messages
-            put = self.gateway._send
-            if error is not None:
-                put(Message.CHANNEL_CLOSE_ERROR(self.id, error))
-            else:
-                put(Message.CHANNEL_CLOSE(self.id))
-            trace("%r: sent channel close message" %(self,))
+            # however, if the other side triggered a close already, we
+            # do not send back a closed message.
+            if not self._receiveclosed.isSet():
+                put = self.gateway._send
+                if error is not None:
+                    put(Message.CHANNEL_CLOSE_ERROR(self.id, error))
+                else:
+                    put(Message.CHANNEL_CLOSE(self.id))
+                trace("%r: sent channel close message" %(self,))
             if isinstance(error, RemoteError):
                 self._remoteerrors.append(error)
             self._closed = True         # --> "closed"
