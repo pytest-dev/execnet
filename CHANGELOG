@@ -1,6 +1,10 @@
 1.0.0
 --------------------------------
 
+
+* refine socketserver-examples, experimentally introduce a
+  way to indirectly setup a SocketServer ("installvia")
+
 * introduce execnet.Group for grouping gateways, scoping termination. 
   introduce execnet.default_group through which all "global" calls
   are routed.  Use makegateway() intead of the Popen/Socket/Ssh classes

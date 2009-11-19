@@ -17,6 +17,8 @@ class Group:
     def __init__(self, xspecs=()):
         """ initialize group and make gateways as specified. """
         self._activegateways = weakref.WeakKeyDictionary()
+        self._id2gateway = weakref.WeakValueDictionary()
+        self._autoidcounter = 1
         for xspec in xspecs:
             self.makegateway(xspec)
         atexit.register(self._cleanup_atexit)
@@ -46,9 +48,14 @@ class Group:
             gw = gateway.SshGateway(spec.ssh, remotepython=spec.python, ssh_config=spec.ssh_config)
         elif spec.socket:
             assert not spec.python, (
-                "socket: specifying python executables not supported")
-            hostport = spec.socket.split(":")
-            gw = gateway.SocketGateway(*hostport)
+                "socket: specifying python executables not yet supported")
+            gateway_id = spec.installvia
+            if gateway_id:
+                viagw = self._id2gateway[gateway_id]
+                return gateway.SocketGateway.new_remote(viagw)
+            else:
+                hostport = spec.socket.split(":")
+                gw = gateway.SocketGateway(*hostport)
         else:
             raise ValueError("no gateway type found for %r" % (spec._spec,))
         gw.spec = spec
@@ -69,11 +76,18 @@ class Group:
             channel.waitclose()
         return gw
 
-    def _register(self, gateway):
-        assert gateway not in self._activegateways
+    def _register(self, gateway, id=None):
         assert not hasattr(gateway, '_group')
+        if id is None:
+            id = self._autoidcounter
+            self._autoidcounter += 1
+        id = str(id)
+        assert id not in self._id2gateway
+        assert gateway not in self._activegateways
         self._activegateways[gateway] = True
+        self._id2gateway[id] = gateway
         gateway._group = self
+        gateway.id = id
 
     def _unregister(self, gateway):
         del self._activegateways[gateway]
