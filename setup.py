@@ -13,8 +13,10 @@ well on Windows, Linux and OSX systems.
 execnet was written and is maintained by Holger Krekel with contributions from many others.  The package is licensed under the GPL Version 2 or later, at your choice.  Contributions and some parts of the package are licensed under the MIT license.
 """
 
-import os, sys
-from distutils.core import setup
+try:
+    from setuptools import setup
+except ImportError:
+    from distutils.core import setup
 
 from execnet import __version__
 
