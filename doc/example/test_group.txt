@@ -14,6 +14,8 @@ termination of Gateways.  Example usage::
     <Group ['1', '2']>
     >>> list(group) # list all member gateways
     [<PopenGateway id='1' receive-live, 0 active channels>, <PopenGateway id='2' receive-live, 0 active channels>]
+    >>> len(group)
+    2
     >>> group.terminate() # exit all member gateways
 
 Acessing Gateways on a group by ID  
@@ -31,6 +33,14 @@ in an gateway URL as passed to ``group.makegateway``. Example::
     >>> group['sub1']
     <PopenGateway id='sub1' receive-live, 0 active channels>
 
-Using the default_group
+
+Gateways live in a default_group
 ------------------------------------------------------
 
+Each time you create a gateway with ``execnet.makegateway()``
+you actually use the ``execnet.default_group``::
+
+    >>> import execnet
+    >>> gw = execnet.makegateway("popen")
+    >>> gw in execnet.default_group
+    True

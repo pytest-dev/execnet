@@ -82,13 +82,15 @@ class TestGroup:
         group._cleanup_atexit()
         assert not group._activegateways
 
-    def test_gateway_id(self):
+    def test_gateway_and_id(self):
         group = Group()
         gw = group.makegateway("popen//id=hello")
         assert group["hello"] == gw
         py.test.raises(AttributeError, "del group['hello']")
         py.test.raises(AttributeError, "group['hello'] = 5")
         assert 'hello' in group
+        assert gw in group
+        assert len(group) == 1
         gw.exit()
         assert 'hello' not in group
         py.test.raises(KeyError, "group['hello']")
