@@ -1,7 +1,5 @@
 """
-    tests for
-    - multi channels and multi gateways
-
+    tests for multi channels and gateway Groups
 """
 
 import execnet
@@ -57,28 +55,40 @@ class TestMultiChannelAndGateway:
 
 
 from execnet.multi import Group
-def test_basic_group(monkeypatch):
-    import atexit
-    atexitlist = []
-    monkeypatch.setattr(atexit, 'register', atexitlist.append)
-    group = Group()
-    assert atexitlist == [group._cleanup_atexit]
-    exitlist = []
-    class PseudoGW:
-        def exit(self):
-            exitlist.append(self)
-    gw = PseudoGW()
-    group._register(gw)
-    assert len(exitlist) == 0
-    group._cleanup_atexit()
-    assert len(exitlist) == 1
-    assert exitlist == [gw]
-    group._cleanup_atexit()
-    assert len(exitlist) == 1
+class TestGroup:
+    def test_basic_group(self, monkeypatch):
+        import atexit
+        atexitlist = []
+        monkeypatch.setattr(atexit, 'register', atexitlist.append)
+        group = Group()
+        assert atexitlist == [group._cleanup_atexit]
+        exitlist = []
+        class PseudoGW:
+            def exit(self):
+                exitlist.append(self)
+        gw = PseudoGW()
+        group._register(gw)
+        assert len(exitlist) == 0
+        group._cleanup_atexit()
+        assert len(exitlist) == 1
+        assert exitlist == [gw]
+        group._cleanup_atexit()
+        assert len(exitlist) == 1
 
-def test_group_PopenGateway():
-    group = Group()
-    gw = group.makegateway("popen")
-    assert list(group._activegateways) == [gw]
-    group._cleanup_atexit()
-    assert not group._activegateways
+    def test_group_PopenGateway(self, ):
+        group = Group()
+        gw = group.makegateway("popen")
+        assert list(group._activegateways) == [gw]
+        group._cleanup_atexit()
+        assert not group._activegateways
+
+    def test_gateway_id(self):
+        group = Group()
+        gw = group.makegateway("popen//id=hello")
+        assert group["hello"] == gw
+        py.test.raises(AttributeError, "del group['hello']")
+        py.test.raises(AttributeError, "group['hello'] = 5")
+        assert 'hello' in group
+        gw.exit()
+        assert 'hello' not in group
+        py.test.raises(KeyError, "group['hello']")
