@@ -1,6 +1,7 @@
-1.0.0
+1.0.0b4
 --------------------------------
 
+* deprecate execnet.XYZGateway in favour of makegateway()
 
 * refine socketserver-examples, experimentally introduce a
   way to indirectly setup a SocketServer ("installvia")
