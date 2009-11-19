@@ -1,0 +1,21 @@
+
+
+Creation and termination of of grouped Gateways
+------------------------------------------------------
+
+::
+
+    >>> import execnet
+    >>> group = execnet.Group()
+    >>> group.makegateway("popen")
+    <PopenGateway receive-live, 0 active channels>
+    >>> group.makegateway("popen")
+    <PopenGateway receive-live, 0 active channels>
+    >>> group
+    <Group [<PopenGateway receive-live, 0 active channels>, <PopenGateway receive-live, 0 active channels>]>
+    >>> group.makegateway("popen")
+    <PopenGateway receive-live, 0 active channels>
+    >>> group
+    <Group with 3 gateways>
+    >>> group.terminate()
+

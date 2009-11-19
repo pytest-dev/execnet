@@ -1,0 +1,18 @@
+
+Here is an self-contained example for reading the process identifier.
+
+  >>> import execnet, os
+  >>> gw = execnet.makegateway("popen")
+  >>> channel = gw.remote_exec("""
+  ...     import os
+  ...     channel.send(os.getpid())
+  ... """)
+  >>> remote_pid = channel.receive()
+  >>> remote_pid != os.getpid()
+  True
+
+If you'd like to avoid inlining source strings take a look
+at the channelexec_ and command_ example.
+
+.. _channelexec: examples.html#channelexec
+.. _command: examples.html#command

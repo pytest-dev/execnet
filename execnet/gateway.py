@@ -3,46 +3,19 @@ gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2009, Holger Krekel and others
 """
 
-import sys, os, inspect, socket, atexit, weakref
+import sys, os, inspect, socket, types
 import textwrap
 import execnet
 from execnet.gateway_base import Message, Popen2IO, SocketIO
 from execnet import gateway_base
-ModuleType = type(os)
-
-debug = False
-
-class GatewayCleanup:
-    def __init__(self):
-        self._activegateways = weakref.WeakKeyDictionary()
-        atexit.register(self.cleanup_atexit)
-
-    def register(self, gateway):
-        assert gateway not in self._activegateways
-        self._activegateways[gateway] = True
-
-    def unregister(self, gateway):
-        del self._activegateways[gateway]
-
-    def cleanup_atexit(self):
-        if debug:
-            debug.writeslines(["="*20, "cleaning up", "=" * 20])
-            debug.flush()
-        for gw in list(self._activegateways):
-            gw.exit()
-            #gw.join() # should work as well
 
 class Gateway(gateway_base.BaseGateway):
     """ Gateway to a local or remote Python Intepreter. """
-    # XXX put the next two global variables into an Execnet object
-    #     which intiaties gateways and passes in appropriate values.
-    _cleanup = GatewayCleanup()
 
     def __init__(self, io):
         super(Gateway, self).__init__(io=io, _startcount=1)
         self._remote_bootstrap_gateway(io)
         self._initreceive()
-        self._cleanup.register(self)
 
     def __repr__(self):
         """ return string representing gateway type and status. """
@@ -61,12 +34,13 @@ class Gateway(gateway_base.BaseGateway):
                 self.__class__.__name__, addr, r, i)
 
     def exit(self):
-        """ exit gateway (stop local execution, stop sending)"""
-        self._trace("exiting gateway")
+        """ trigger gateway exit. """
+        self._trace("trigger gateway exit")
         try:
-            self._cleanup.unregister(self)
+            self._group._unregister(self)
         except KeyError:
             return # we assume it's already happened
+        self._trace("stopping exec and closing write connection")
         self._stopexec()
         self._stopsend()
         #self.join(timeout=timeout) # receiverthread receive close() messages
@@ -116,7 +90,7 @@ class Gateway(gateway_base.BaseGateway):
             and has the sister 'channel' object in its global
             namespace.
         """
-        if isinstance(source, ModuleType):
+        if isinstance(source, types.ModuleType):
             source = inspect.getsource(source)
         else:
             source = textwrap.dedent(str(source))
@@ -276,7 +250,7 @@ class SocketGateway(Gateway):
         (realhost, realport) = channel.receive()
         #self._trace("new_remote received"
         #               "port=%r, hostname = %r" %(realport, hostname))
-        return SocketGateway(host, realport)
+        return gateway._group.makegateway("socket=%s:%s" %(host, realport))
     new_remote = classmethod(new_remote)
 
 class HostNotFound(Exception):

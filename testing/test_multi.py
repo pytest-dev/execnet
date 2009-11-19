@@ -23,8 +23,7 @@ class TestMultiChannelAndGateway:
         assert l == [12,12]
 
     def test_multichannel_send_each(self):
-        l = [execnet.PopenGateway() for x in range(2)]
-        gm = execnet.MultiGateway(l)
+        gm = execnet.Group(["popen"] * 2)
         mc = gm.remote_exec("""
             import os
             channel.send(channel.receive() + 1)
@@ -34,8 +33,7 @@ class TestMultiChannelAndGateway:
         assert l == [42,42]
 
     def test_multichannel_receive_queue_for_two_subprocesses(self):
-        l = [execnet.PopenGateway() for x in range(2)]
-        gm = execnet.MultiGateway(l)
+        gm = execnet.Group(["popen"] * 2)
         mc = gm.remote_exec("""
             import os
             channel.send(os.getpid())
@@ -57,3 +55,30 @@ class TestMultiChannelAndGateway:
         multichannel.waitclose()
         assert len(l) == 2
 
+
+from execnet.multi import Group
+def test_basic_group(monkeypatch):
+    import atexit
+    atexitlist = []
+    monkeypatch.setattr(atexit, 'register', atexitlist.append)
+    group = Group()
+    assert atexitlist == [group._cleanup_atexit]
+    exitlist = []
+    class PseudoGW:
+        def exit(self):
+            exitlist.append(self)
+    gw = PseudoGW()
+    group._register(gw)
+    assert len(exitlist) == 0
+    group._cleanup_atexit()
+    assert len(exitlist) == 1
+    assert exitlist == [gw]
+    group._cleanup_atexit()
+    assert len(exitlist) == 1
+
+def test_group_PopenGateway():
+    group = Group()
+    gw = group.makegateway("popen")
+    assert list(group._activegateways) == [gw]
+    group._cleanup_atexit()
+    assert not group._activegateways
