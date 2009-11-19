@@ -18,4 +18,5 @@ execnet.apipkg.initpkg(__name__, {
     'Group':            '.multi:Group',
     'MultiChannel':     '.multi:MultiChannel',
     'RSync':            '.rsync:RSync',
+    'default_group':    '.multi:default_group',
 })

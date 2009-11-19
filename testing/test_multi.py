@@ -75,10 +75,10 @@ class TestGroup:
         group._cleanup_atexit()
         assert len(exitlist) == 1
 
-    def test_group_PopenGateway(self, ):
+    def test_group_PopenGateway(self):
         group = Group()
         gw = group.makegateway("popen")
-        assert list(group._activegateways) == [gw]
+        assert list(group) == [gw]
         group._cleanup_atexit()
         assert not group._activegateways
 
@@ -92,3 +92,12 @@ class TestGroup:
         gw.exit()
         assert 'hello' not in group
         py.test.raises(KeyError, "group['hello']")
+
+    def test_default_group(self):
+        oldlist = list(execnet.default_group)
+        gw = execnet.makegateway("popen")
+        newlist = list(execnet.default_group)
+        assert len(newlist) == len(oldlist) + 1
+        assert gw in newlist
+        assert gw not in oldlist
+

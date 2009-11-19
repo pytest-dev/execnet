@@ -16,6 +16,7 @@ class Group:
     """ Gateway Groups. """
     def __init__(self, xspecs=()):
         """ initialize group and make gateways as specified. """
+        # Gateways may evolve to become GC-collectable
         self._activegateways = weakref.WeakKeyDictionary()
         self._id2gateway = weakref.WeakValueDictionary()
         self._autoidcounter = 1
@@ -24,18 +25,18 @@ class Group:
         atexit.register(self._cleanup_atexit)
 
     def __repr__(self):
-        numgw = len(self._activegateways)
-        if numgw > 2:
-            return "<Group with %d gateways>" %(len(self._activegateways))
-        else:
-            gws = ", ".join([repr(x) for x in self._activegateways])
-            return "<Group [%s]>" %(gws,)
+        keys = self._id2gateway.keys()
+        keys.sort()
+        return "<Group %r>" %(keys,)
 
     def __getitem__(self, key):
         return self._id2gateway[key]
 
     def __contains__(self, key):
         return key in self._id2gateway
+
+    def __iter__(self):
+        return iter(list(self._activegateways))
 
     def makegateway(self, spec):
         """ create and configure a gateway to a Python interpreter
