@@ -3,7 +3,7 @@ import py
 
 rsyncdirs = ['../execnet', '.']
 
-pytest_plugins = ['pytester']
+pytest_plugins = ['pytester', 'doctest']
 # configuration information for tests
 def pytest_addoption(parser):
     group = parser.getgroup("pylib", "py lib testing options")
@@ -69,7 +69,8 @@ def pytest_funcarg__gw(request):
 
 def setup_socket_gateway():
     proxygw = execnet.PopenGateway()
-    gw = execnet.SocketGateway.new_remote(proxygw, ("127.0.0.1", 0))
+    from execnet.gateway import SocketGateway
+    gw = SocketGateway.new_remote(proxygw, ("127.0.0.1", 0))
     gw.proxygw = proxygw
     return gw
 

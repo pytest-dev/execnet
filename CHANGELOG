@@ -1,3 +1,13 @@
+1.0.0
+--------------------------------
+
+* introduce execnet.Group for grouping gateways, scoping termination. 
+  introduce execnet.default_group through which all "global" calls
+  are routed.  Use makegateway() intead of the Popen/Socket/Ssh classes
+  in examples.
+
+* refine and automatically test some documentation examples 
+
 1.0.0b3
 --------------------------------
 
