@@ -19,6 +19,10 @@ class Gateway(gateway_base.BaseGateway):
 
     def __repr__(self):
         """ return string representing gateway type and status. """
+        if hasattr(self, 'id'):
+            id = self.id
+        else:
+            id = "???"
         if hasattr(self, 'remoteaddress'):
             addr = '[%s]' % (self.remoteaddress,)
         else:
@@ -30,8 +34,8 @@ class Gateway(gateway_base.BaseGateway):
         except AttributeError:
             r = "uninitialized"
             i = "no"
-        return "<%s%s %s, %s active channels>" %(
-                self.__class__.__name__, addr, r, i)
+        return "<%s%s id=%r %s, %s active channels>" %(
+                self.__class__.__name__, addr, id, r, i)
 
     def exit(self):
         """ trigger gateway exit. """

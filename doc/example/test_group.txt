@@ -8,14 +8,30 @@ Creation and termination of of grouped Gateways
     >>> import execnet
     >>> group = execnet.Group()
     >>> group.makegateway("popen")
-    <PopenGateway receive-live, 0 active channels>
+    <PopenGateway id='1' receive-live, 0 active channels>
     >>> group.makegateway("popen")
-    <PopenGateway receive-live, 0 active channels>
+    <PopenGateway id='2' receive-live, 0 active channels>
     >>> group
-    <Group [<PopenGateway receive-live, 0 active channels>, <PopenGateway receive-live, 0 active channels>]>
+    <Group [<PopenGateway id='1' receive-live, 0 active channels>, <PopenGateway id='2' receive-live, 0 active channels>]>
     >>> group.makegateway("popen")
-    <PopenGateway receive-live, 0 active channels>
+    <PopenGateway id='3' receive-live, 0 active channels>
     >>> group
     <Group with 3 gateways>
     >>> group.terminate()
 
+Group termination will cause all member Gateways to exit.
+
+Working with Groups and Gateway IDs
+------------------------------------------------------
+
+All gateways are created as part of a group and receive
+a per-group unique ``id`` after successful initialization.  
+This identification string can be set via an ``id=...`` part 
+in an gateway URL as passed to ``group.makegateway``. Example::
+
+    >>> import execnet
+    >>> group = execnet.Group()
+    >>> gw = group.makegateway("popen//id=sub1")
+    >>> assert gw.id == "sub1"
+    >>> group['sub1']
+    <PopenGateway id='sub1' receive-live, 0 active channels>

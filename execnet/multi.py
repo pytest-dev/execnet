@@ -31,6 +31,12 @@ class Group:
             gws = ", ".join([repr(x) for x in self._activegateways])
             return "<Group [%s]>" %(gws,)
 
+    def __getitem__(self, key):
+        return self._id2gateway[key]
+
+    def __contains__(self, key):
+        return key in self._id2gateway
+
     def makegateway(self, spec):
         """ create and configure a gateway to a Python interpreter
             specified by a 'execution specification' string.
@@ -59,7 +65,7 @@ class Group:
         else:
             raise ValueError("no gateway type found for %r" % (spec._spec,))
         gw.spec = spec
-        self._register(gw)
+        self._register(gw, id=spec.id)
         if spec.chdir or spec.nice:
             channel = gw.remote_exec("""
                 import os
@@ -91,6 +97,7 @@ class Group:
 
     def _unregister(self, gateway):
         del self._activegateways[gateway]
+        del self._id2gateway[gateway.id]
 
     def _cleanup_atexit(self):
         trace("=== atexit cleanup %r ===" %(self,))
