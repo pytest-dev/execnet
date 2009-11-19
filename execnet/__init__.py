@@ -4,7 +4,7 @@ package for connecting to local and remote Python Interpreters.
 
 (c) 2009, Holger Krekel and others
 """
-__version__ = "1.0.0b3"
+__version__ = "1.0.0b4"
 
 import execnet.apipkg
 
