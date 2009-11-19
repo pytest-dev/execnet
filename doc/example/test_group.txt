@@ -1,9 +1,8 @@
-
-
 Creation and termination of of grouped Gateways
 ------------------------------------------------------
 
-::
+You can use ``execnet.Group`` to manage creation and 
+termination of Gateways.  Example usage::
 
     >>> import execnet
     >>> group = execnet.Group()
@@ -12,16 +11,12 @@ Creation and termination of of grouped Gateways
     >>> group.makegateway("popen")
     <PopenGateway id='2' receive-live, 0 active channels>
     >>> group
-    <Group [<PopenGateway id='1' receive-live, 0 active channels>, <PopenGateway id='2' receive-live, 0 active channels>]>
-    >>> group.makegateway("popen")
-    <PopenGateway id='3' receive-live, 0 active channels>
-    >>> group
-    <Group with 3 gateways>
-    >>> group.terminate()
+    <Group ['1', '2']>
+    >>> list(group) # list all member gateways
+    [<PopenGateway id='1' receive-live, 0 active channels>, <PopenGateway id='2' receive-live, 0 active channels>]
+    >>> group.terminate() # exit all member gateways
 
-Group termination will cause all member Gateways to exit.
-
-Working with Groups and Gateway IDs
+Acessing Gateways on a group by ID  
 ------------------------------------------------------
 
 All gateways are created as part of a group and receive
@@ -35,3 +30,7 @@ in an gateway URL as passed to ``group.makegateway``. Example::
     >>> assert gw.id == "sub1"
     >>> group['sub1']
     <PopenGateway id='sub1' receive-live, 0 active channels>
+
+Using the default_group
+------------------------------------------------------
+
