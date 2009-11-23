@@ -86,8 +86,8 @@ class TestGroup:
         group = Group()
         gw = group.makegateway("popen//id=hello")
         assert group["hello"] == gw
-        py.test.raises(AttributeError, "del group['hello']")
-        py.test.raises(AttributeError, "group['hello'] = 5")
+        py.test.raises((TypeError, AttributeError), "del group['hello']")
+        py.test.raises((TypeError, AttributeError), "group['hello'] = 5")
         assert 'hello' in group
         assert gw in group
         assert len(group) == 1

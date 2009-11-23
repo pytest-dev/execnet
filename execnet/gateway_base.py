@@ -742,7 +742,7 @@ class _Stop(Exception):
 
 class Unserializer(object):
     num2func = {} # is filled after this class definition
-    py2str_as_py3str = False # True
+    py2str_as_py3str = True # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
     def __init__(self, stream):

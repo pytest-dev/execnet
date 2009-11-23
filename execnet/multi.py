@@ -25,7 +25,7 @@ class Group:
         atexit.register(self._cleanup_atexit)
 
     def __repr__(self):
-        keys = self._id2gateway.keys()
+        keys = list(self._id2gateway)
         keys.sort()
         return "<Group %r>" %(keys,)
 
