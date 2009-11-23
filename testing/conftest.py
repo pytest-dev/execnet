@@ -50,7 +50,7 @@ def pytest_funcarg__gw(request):
     scope = "session"
     if request.param == "popen":
         return request.cached_setup(
-                setup=execnet.PopenGateway,
+                setup=lambda: execnet.makegateway("popen"),
                 teardown=lambda gw: gw.exit(),
                 extrakey=request.param,
                 scope=scope)
@@ -68,9 +68,8 @@ def pytest_funcarg__gw(request):
             scope=scope)
 
 def setup_socket_gateway():
-    proxygw = execnet.PopenGateway()
-    from execnet.gateway import SocketGateway
-    gw = SocketGateway.new_remote(proxygw, ("127.0.0.1", 0))
+    proxygw = execnet.makegateway("popen")
+    gw = execnet.makegateway("socket//installvia=%s" % proxygw.id)
     gw.proxygw = proxygw
     return gw
 
@@ -80,5 +79,5 @@ def teardown_socket_gateway(gw):
 
 def setup_ssh_gateway(request):
     sshhost = request.getfuncargvalue('specssh').ssh
-    gw = execnet.SshGateway(sshhost)
+    gw = execnet.makegateway("ssh=%s" %(sshhost,))
     return gw
