@@ -1,17 +1,15 @@
-1.0.0b4
+1.0.0
 --------------------------------
-
-* cleanup gateway termination a bit 
-
-* deprecate execnet.XYZGateway in favour of direct makegateway()
-  Use makegateway() intead of the Popen/Socket/Ssh classes in examples.
-
-* refine socketserver-examples, experimentally introduce a
-  way to indirectly setup a socket server ("installvia")
 
 * introduce execnet.Group for managing gateway creation 
   and termination.  Introduce execnet.default_group through which 
-  all "global" calls are routed.  
+  all "global" calls are routed.  cleanup gateway termination a bit.
+
+* deprecate execnet.XYZGateway in favour of direct makegateway() calls.
+
+* refine socketserver-examples, experimentally introduce a
+  way to indirectly setup a socket server ("installvia")
+  through a gateway url.
 
 * refine and automatically test documentation examples 
 
