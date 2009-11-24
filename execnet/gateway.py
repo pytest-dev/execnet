@@ -255,7 +255,9 @@ class SocketGateway(Gateway):
         (realhost, realport) = channel.receive()
         #self._trace("new_remote received"
         #               "port=%r, hostname = %r" %(realport, hostname))
-        return gateway._group.makegateway("socket=%s:%s" %(host, realport))
+        if not realhost or realhost=="0.0.0.0":
+            realhost = "localhost"
+        return gateway._group.makegateway("socket=%s:%s" %(realhost, realport))
     new_remote = classmethod(new_remote)
 
 class HostNotFound(Exception):
