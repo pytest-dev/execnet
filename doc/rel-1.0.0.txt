@@ -1,0 +1,19 @@
+Hi all,
+
+execnet enables zero-install ad-hoc instantiation of local or remote
+Python processes.  It establishes channels for basic data communication.
+Data Serialization is independent from Pickle and is tested between 
+Python2.4, 2.5, 2.6, 3.1 and Jython interpreters.  
+
+execnet-1.0.0 (compared to 1.0.0b3) has bug fixes, new tested
+examples and introduces execnet.Group for managing a dynamic
+bunch of hosts.  See the improved docs
+
+    http://codespeak.net/execnet/
+
+and below the changelog.  I am set to improve and develop
+execnet further and thus am very interested in feedback
+and suggestions. 
+
+cheers,
+holger 

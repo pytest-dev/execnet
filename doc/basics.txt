@@ -74,7 +74,6 @@ in the connected interpreter:
 
 .. _`Channel`: 
 .. _`channel-api`: 
-.. _`exchange data`: 
 
 .. _`exchange data`:
 
@@ -130,17 +129,20 @@ or at process termination (each group registers with Python's
 rsync: synchronise filesystem with remote
 ===============================================================
 
+.. currentmodule:: execnet
+
+
 ``execnet`` implements a simple efficient rsyncing protocol. 
-Here is a basic example::
+Here is a basic example for using RSync::
 
     rsync = execnet.RSync('/tmp/source')
     gw = execnet.makegateway("popen")
     rsync.add_target(gw, '/tmp/dest')
     rsync.send()
 
-More info on the RSync class: 
 
-.. currentmodule:: execnet
+And here is API info about the RSync class.
+
 .. autoclass:: RSync
     :members: add_target,send
 

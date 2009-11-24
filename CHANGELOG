@@ -3,7 +3,9 @@
 
 * introduce execnet.Group for managing gateway creation 
   and termination.  Introduce execnet.default_group through which 
-  all "global" calls are routed.  cleanup gateway termination a bit.
+  all "global" calls are routed.  cleanup gateway termination.
+  All Gateways get an id through which they can be 
+  retrieved from a group object.
 
 * deprecate execnet.XYZGateway in favour of direct makegateway() calls.
 
