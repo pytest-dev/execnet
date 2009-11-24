@@ -1,0 +1,58 @@
+1.0.0
+--------------------------------
+
+* introduce execnet.Group for managing gateway creation 
+  and termination.  Introduce execnet.default_group through which 
+  all "global" calls are routed.  cleanup gateway termination.
+  All Gateways get an id through which they can be 
+  retrieved from a group object.
+
+* deprecate execnet.XYZGateway in favour of direct makegateway() calls.
+
+* refine socketserver-examples, experimentally introduce a
+  way to indirectly setup a socket server ("installvia")
+  through a gateway url.
+
+* refine and automatically test documentation examples 
+
+1.0.0b3
+--------------------------------
+
+* fix EXECNET_DEBUG to work with win32 
+* add support for serializing longs, sets and frozensets  (thanks
+  Benjamin Peterson) 
+* introduce remote_status() method which on the low level gives
+  information about the remote side of a gateway
+* disallow explicit close in remote_exec situation
+* perform some more detailed tracing with EXECNET_DEBUG
+
+1.0.0b2
+--------------------------------
+
+* make internal protocols more robust against serialization failures
+
+* fix a seralization bug with nested tuples containing empty tuples
+  (thanks to ronny for discovering it)
+
+* setting the environment variable EXECNET_DEBUG will generate per
+  process trace-files for debugging
+
+1.0.0b1
+----------------------------
+
+* added new examples for NumPy, Jython, IronPython
+* improved documentation
+* include apipkg.py for lazy-importing
+* integrated new serializer code from Benjamin Peterson
+* improved support for Jython-2.5.1
+
+1.0.0alpha2 
+----------------------------
+
+* improve documentation, new website
+
+* use sphinx for documentation, added boilerplate files and setup.py 
+
+* fixes for standalone usage, adding boilerplate files
+
+* imported py/execnet and made it work standalone

@@ -1,0 +1,23 @@
+
+remote execute modules using their __name__
+--------------------------------------------------------------
+
+You can pass a module object to ``remote_exec`` in which case
+its source code will be sent.  No dependencies will be transferred
+so the module must be self-contained or only use modules that are 
+installed on the "other" side.   Module code can detect if it is 
+running in a remote_exec situation by checking for the special 
+``__name__`` attribute.
+
+.. include:: remote1.py
+    :literal:
+
+You can now remote-execute the module like this::
+
+    >>> import execnet, remote1
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec(remote1)
+    >>> print (ch.receive())
+    initialization complete
+
+which will print the 'initialization complete' string. 

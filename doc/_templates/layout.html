@@ -1,0 +1,29 @@
+{% extends "!layout.html" %}
+
+{% block rootrellink %}
+        <li><a href="{{ pathto('index') }}">home</a>&nbsp;|&nbsp;</li>
+        <li><a href="{{ pathto('basics') }}">basics</a>&nbsp;|&nbsp;</li>
+        <li><a href="{{ pathto('examples') }}">examples</a>&nbsp;|&nbsp;</li>
+        <li><a href="http://codespeak.net/mailman/listinfo/execnet-dev">mailing-list</a>&nbsp;|&nbsp;</li>
+        <li><a href="http://pypi.python.org/pypi/execnet/">pypi-home</a>&nbsp;|&nbsp;</li>
+        <li><a href="{{ pathto('docindex') }}">docindex</a>&raquo;</li>
+{% endblock %}
+
+{% block header %}
+<div style="background-color: white; text-align: left; padding: 10px 10px 15px 15px">
+<img src="{{ pathto("_static/execnet.png", 1) }}" target="http://codespeak.net/execnet" alt="execnet" />
+</div>
+{% endblock %}
+
+{% block footer %}
+{{ super() }}
+<script type="text/javascript">
+var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
+document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
+</script>
+<script type="text/javascript">
+try {
+var pageTracker = _gat._getTracker("UA-7597274-7");
+pageTracker._trackPageview();
+} catch(err) {}</script>
+{% endblock %}

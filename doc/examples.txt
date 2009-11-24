@@ -1,0 +1,161 @@
+==============================================================================
+execnet examples
+==============================================================================
+
+execnet is under active development.  If you have questions
+or ideas or otherwise want to contribute please feel welcome
+to join the `execnet-dev`_ mailing list.
+
+.. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
+
+Connect to Python2/Numpy from Python3 
+----------------------------------------
+
+Here we run a Python3 interpreter to connect to a Python2.6 interpreter
+that has numpy installed. We send items to be added to an array and
+receive back the remote "repr" of the array::
+
+    import execnet
+    gw = execnet.makegateway("popen//python=python2.6")
+    channel = gw.remote_exec("""
+        import numpy
+        array = numpy.array([1,2,3])
+        while 1:
+            x = channel.receive()
+            if x is None:
+                break
+            array = numpy.append(array, x)
+        channel.send(repr(array))
+    """)
+    for x in range(10):
+        channel.send(x)
+    channel.send(None)
+    print (channel.receive())
+
+will print on the CPython3.1 side::
+
+    array([1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+A more refined real-life example of python3/python2 interaction 
+is the anyvc_ project which uses version-control bindings in 
+a Python2 subprocess in order to offer Python3-based library
+functionality.
+
+.. _anyvc: http://bitbucket.org/RonnyPfannschmidt/anyvc/overview/
+
+Work with Java objects from CPython
+----------------------------------------
+
+Use your CPython interpreter to connect to a Jython_ interpreter
+and work with Java types::
+
+    import execnet
+    gw = execnet.makegateway("popen//python=jython")
+    channel = gw.remote_exec("""
+        from java.util import Vector
+        v = Vector()
+        v.add('aaa')
+        v.add('bbb')
+        for val in v:
+            channel.send(val)
+    """)
+
+    for item in channel:
+        print (item)
+
+will print on the CPython side::
+
+    aaa
+    bbb
+
+.. _Jython: http://www.jython.org
+
+Work with C# objects from CPython
+----------------------------------------
+
+(Experimental) use your CPython interpreter to connect to a IronPython_ interpreter
+which can work with C# classes.  Here is an example for instantiating
+a CLR Array instance and sending back its representation::
+
+    import execnet
+    gw = execnet.makegateway("popen//python=ipy")
+
+    channel = gw.remote_exec("""
+        import clr
+        clr.AddReference("System")
+        from System import Array
+        array = Array[float]([1,2])
+        channel.send(str(array))
+    """)
+    print (channel.receive())
+
+using Mono 2.0 and IronPython-1.1 this will print on the CPython side::
+
+    System.Double[](1.0, 2.0)
+
+.. note:: 
+   Using IronPython needs more testing, likely newer versions
+   will work better.  please feedback if you have information. 
+
+.. _IronPython: http://www.IronPython.org
+
+
+.. include example/test_cwd.txt
+
+.. _channelexec:
+
+.. include:: example/test_channelexec.txt
+
+.. _command:
+
+.. include:: example/test_remotecmd.txt
+
+.. _group:
+
+.. include:: example/test_group.txt
+
+.. include:: example/test_syncreceive2.txt
+
+.. include:: example/test_asyncreceive2.txt
+   
+
+Receive file contents from remote SSH account 
+-----------------------------------------------------
+
+Here is a small program that you can use to retrieve
+contents of remote files::
+
+    import execnet
+    # open a gateway to a fresh child process 
+    gw = execnet.makegateway("ssh=codespeak.net")
+    channel = gw.remote_exec("""
+            for fn in channel:
+                f = open(fn, 'rb')
+                channel.send(f.read())
+                f.close()
+    """) 
+
+    for fn in somefilelist: 
+        channel.send(fn) 
+        content = channel.receive()
+        # process content 
+     
+    # later you can exit / close down the gateway
+    gw.exit()
+
+
+Instantiate a socket server in a new subprocess 
+-----------------------------------------------------
+
+(experimental) The following example opens a PopenGateway, i.e. a python
+child process, and starts a socket server within that process 
+and then opens a second gateway to the freshly started
+socketserver::
+                
+    import execnet 
+
+    popengw = execnet.PopenGateway()
+    socketgw = execnet.SocketGateway.new_remote(popengw, ("127.0.0.1", 0))
+
+    print socketgw.remote_status() # print some info about the remote environment
+

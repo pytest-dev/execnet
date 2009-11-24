@@ -1,0 +1,10 @@
+Compare cwd() of Popen Gateways
+----------------------------------------
+
+A PopenGateway has the same working directory as the instantiatior::
+
+    >>> import execnet, os
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec("import os; channel.send(os.getcwd())")
+    >>> res = ch.receive()
+    >>> assert res == os.getcwd()

@@ -1,0 +1,44 @@
+Instantiate a Socket Gateway 
+-----------------------------------------------------
+
+Sometimes there is no direct access method towards a 
+machine.  If you have a trusted network (like a internal
+developer LAN) you can use a simplistic `socketserver script`_ 
+which listens on a socket ("8888" by default) and executes
+incoming strings.  Download it and run it on the target
+machine like this::
+
+    python socketserver.py localhost:8888
+
+After which you can initiate a Gateway to the socket-server 
+running machine like this::
+
+    >>> import execnet 
+    >>> gw = execnet.makegateway("socket=localhost:8888") # doctest: +SKIP
+    <SocketGateway[:49581] id='1' receive-live, 0 active channels>
+
+
+.. _`socketserver script`: http://bitbucket.org/hpk42/execnet/raw/493fc337a1f1/execnet/script/socketserver.py
+
+Instantiate a socket server through an existing Gateway
+--------------------------------------------------------
+
+.. note:: 
+    Experimental, please send a note if you are using 
+    the following feature.
+
+The following example shows a special method to open up 
+a SocketServer gateway through another existing gateway.
+
+    >>> import execnet 
+    >>> group = execnet.Group() 
+    >>> gw = group.makegateway("popen")
+    >>> gw.id
+    '1'
+    >>> group.makegateway("socket//installvia=1") # doctest: +SKIP
+    <SocketGateway[:49581] id='2' receive-live, 0 active channels>
+
+
+This method will instantiate a Socket based Gateway 
+whose remote counterpart will be run via the
+given ``installvia`` specified gateway. 

@@ -1,0 +1,156 @@
+==============================================================================
+execnet API in a nutshell
+==============================================================================
+
+execnet ad-hoc instantiates **gateways** to Python 
+interpreter processes with which you can **remote execute
+code** and exchange basic python objects through **channels**.
+
+.. image:: _static/basic1.png
+
+
+Gateways: connecting to another Python Interpreter
+===================================================
+
+.. currentmodule:: execnet
+
+All Gateways are instantiated via a call to ``makegateway()`` 
+passing it a gateway specification or URL. 
+
+.. autofunction:: execnet.makegateway(xspec)
+
+Here is an example to instantiate a simple Python subprocess::
+
+    >>> gateway = execnet.makegateway("popen")
+
+You can then use this gateway object to `remote execute code`_ and 
+`exchange data`_ bidirectionally. 
+
+examples for valid gateway specifications
+-------------------------------------------
+
+* ``ssh=wyvern//python=python2.4//chdir=mycache`` specifies a Python2.4
+  interpreter on the host ``wyvern``.  The remote process will have 
+  ``mycache`` as its current working directory. 
+
+* ``popen//python=2.5//nice=20`` specification of a python2.5
+  subprocess; running with the lowest CPU priority ("nice" level). 
+  By default current dir will be the current dir of the instantiator.
+
+* ``socket=192.168.1.4:8888`` specifies of a Python Socket server
+  process that listens on 192.168.1.4:8888; current dir will be the
+  'pyexecnet-cache' sub directory which is used a default for all remote
+  processes.
+
+.. _xspec:
+
+recognized Gateway URL parts
+---------------------------------------
+
+The following parameters are recognized as part of a gateway specification::
+
+* ``popen`` for a PopenGateway. 
+* ``ssh=host`` for a SshGateway to the given host. 
+* ``socket=address:port`` for a SocketGateway at the given address. 
+* ``id=NAME`` set the ``id`` of the gateway, must be unique within Group_
+* ``python=executable`` for specifying Python Interpreter executables
+* ``chdir=path`` change remote working dir to given relative or absolute path
+* ``nice=value`` decrease remote nice level if platforms supports it 
+
+
+.. _`remote execute code`:
+
+remote_exec: execute source code remotely 
+===================================================
+
+.. currentmodule:: execnet.gateway
+
+All gateways offer a simple method to execute source code 
+in the connected interpreter:
+
+.. automethod:: Gateway.remote_exec(source)
+
+.. include:: example/test_pid.txt
+
+.. _`Channel`: 
+.. _`channel-api`: 
+
+.. _`exchange data`:
+
+Channels: exchanging data with remote code
+=======================================================
+
+.. currentmodule:: execnet.gateway_base
+
+A channel object allows to send and receive data between 
+two asynchronously running programs.  
+
+.. class:: Channel 
+
+   .. automethod:: Channel.send(item)
+   .. automethod:: Channel.receive()
+   .. automethod:: Channel.setcallback(callback, endmarker=_NOENDMARKER)
+   .. automethod:: Channel.makefile(mode, proxyclose=False)
+   .. automethod:: Channel.close(error)
+   .. automethod:: Channel.waitclose(timeout)
+   .. autoattribute:: Channel.RemoteError
+
+
+remote_status: get low-level execution info 
+===================================================
+
+.. currentmodule:: execnet.gateway
+
+All gateways offer a simple method to obtain some status
+information from the remote side. 
+
+.. automethod:: Gateway.remote_status(source)
+
+Calling this method tells you e.g. how many execution 
+tasks are queued, how many are executing and how many
+channels are active. 
+
+
+.. _Group:
+
+Grouping Gateways 
+============================
+
+All created gateway instances are part of a group.  Gateways made
+through the global ``execnet.makegateway()`` will become a 
+member of the ``default_group``::
+
+A Group instance can terminate its gateways explicitely
+or at process termination (each group registers with Python's
+``atexit`` mechanism).  See the `group examples`_ for details.
+
+.. _`group examples`: examples#group
+
+rsync: synchronise filesystem with remote
+===============================================================
+
+.. currentmodule:: execnet
+
+
+``execnet`` implements a simple efficient rsyncing protocol. 
+Here is a basic example for using RSync::
+
+    rsync = execnet.RSync('/tmp/source')
+    gw = execnet.makegateway("popen")
+    rsync.add_target(gw, '/tmp/dest')
+    rsync.send()
+
+
+And here is API info about the RSync class.
+
+.. autoclass:: RSync
+    :members: add_target,send
+
+
+Debugging execnet
+===============================================================
+
+If you set the enviornment variable ``EXECNET_DEBUG`` to any value
+trace-files will be written to ``execnet-debug-PID`` files in
+the system temporary directory.  ``NUM`` will be the process id. 
+

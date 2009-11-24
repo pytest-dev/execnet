@@ -1,0 +1,46 @@
+Creation and termination of of grouped Gateways
+------------------------------------------------------
+
+You can use ``execnet.Group`` to manage creation and 
+termination of Gateways.  Example usage::
+
+    >>> import execnet
+    >>> group = execnet.Group()
+    >>> group.makegateway("popen")
+    <PopenGateway id='1' receive-live, 0 active channels>
+    >>> group.makegateway("popen")
+    <PopenGateway id='2' receive-live, 0 active channels>
+    >>> group
+    <Group ['1', '2']>
+    >>> list(group) # list all member gateways
+    [<PopenGateway id='1' receive-live, 0 active channels>, <PopenGateway id='2' receive-live, 0 active channels>]
+    >>> len(group)
+    2
+    >>> group.terminate() # exit all member gateways
+
+Acessing Gateways on a group by ID  
+------------------------------------------------------
+
+All gateways are created as part of a group and receive
+a per-group unique ``id`` after successful initialization.  
+This identification string can be set via an ``id=...`` part 
+in an gateway URL as passed to ``group.makegateway``. Example::
+
+    >>> import execnet
+    >>> group = execnet.Group()
+    >>> gw = group.makegateway("popen//id=sub1")
+    >>> assert gw.id == "sub1"
+    >>> group['sub1']
+    <PopenGateway id='sub1' receive-live, 0 active channels>
+
+
+Gateways live in a default_group
+------------------------------------------------------
+
+Each time you create a gateway with ``execnet.makegateway()``
+you actually use the ``execnet.default_group``::
+
+    >>> import execnet
+    >>> gw = execnet.makegateway("popen")
+    >>> gw in execnet.default_group
+    True
