@@ -139,10 +139,15 @@ def test_set(py2, py3):
         p = dump("set((1, 2, 3))")
         tp, v = py2.load(p)
         assert tp == "set"
-        assert v == "set([1, 2, 3])"
+        #assert v == "set([1, 2, 3])" # ordering prevents this assertion
+        assert v.startswith("set([") and v.endswith("])")
+        assert '1' in v and '2' in v and '3' in v
+
         tp, v = py3.load(p)
         assert tp == "set"
-        assert v == "{1, 2, 3}"
+        #assert v == "{1, 2, 3}" # ordering prevents this assertion
+        assert v.startswith("{") and v.endswith("}")
+        assert '1' in v and '2' in v and '3' in v
         p = dump("set()")
         tp, v = py2.load(p)
         assert tp == "set"

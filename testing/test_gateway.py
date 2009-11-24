@@ -13,7 +13,7 @@ skiponjython = py.test.mark.skipif("sys.platform.startswith('java')")
 
 def test_serialize_error(gw):
     ch = gw.remote_exec("channel.send(ValueError(42))")
-    excinfo = py.test.raises(ch.RemoteError, "ch.receive()")
+    excinfo = py.test.raises(ch.RemoteError, ch.receive)
     assert "can't serialize" in str(excinfo.value)
 
 def test_deprecation(recwarn):
