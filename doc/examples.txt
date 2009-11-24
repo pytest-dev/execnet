@@ -147,7 +147,7 @@ contents of remote files::
 Instantiate a socket server in a new subprocess 
 -----------------------------------------------------
 
-The following example opens a PopenGateway, i.e. a python
+(experimental) The following example opens a PopenGateway, i.e. a python
 child process, and starts a socket server within that process 
 and then opens a second gateway to the freshly started
 socketserver::
