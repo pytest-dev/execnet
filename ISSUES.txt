@@ -1,0 +1,35 @@
+report back errors when calling callbacks 
+---------------------------------------------------
+
+tags: 1.0.1 1.1
+bb: http://bitbucket.org/hpk42/py-trunk/issue/37/
+path: execnet/gateway_base.py
+
+Callbacks are invoked in the receiver-thread
+and any exception will kill the whole receiver-thread. 
+This is especially bad if it happens remotely as 
+it leaves the other side inaccesssible. 
+
+Control-C behaviour / best practises
+-------------------------------------------
+
+tags: 1.1
+bb: http://bitbucket.org/hpk42/py-trunk/issue/36
+path: execnet/gateway_base.py
+
+currently calling channel.receive() in the
+main thread will prevent Control-C from passing.
+Consider an internal timeout so that signals
+get a chance to propagate.  
+
+
+rsync links from posix to windows 
+-----------------------------------------
+
+tags: 1.1 
+bb: http://bitbucket.org/hpk42/py-trunk/issue/35
+path: execnet/rsync.py 
+
+currently rsyncing bails out with a strange message when trying to rsync
+links. should provide better message or even some support for doing it.
+
