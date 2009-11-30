@@ -1,20 +1,26 @@
 
-execnet: connect your execution environments 
+Welcome to rapid python deployment
 ========================================================
 
 .. image:: _static/pythonring.png
    :align: right
 
-Execnet allows to ad-hoc connect to Python interpreters across version, platform and network barriers.  It provides a minimal, fast and robust API for the following uses:
+Python_ is a mature dynamic language whose interpreters can interact with 
+all major computing platforms today.  Execnet provides carefully tested 
+means to ad-hoc connect to Python interpreters across version, platform 
+and network barriers.  It provides a minimal, fast and robust API for 
+the following uses:
 
 * distribute tasks to multiple CPUs
-* deploy hybrid applications 
-* manage local and remote execution environments
+* write and deploy hybrid multi-process applications 
+* write scripts to interact a bunch of exec environments
+
+.. _Python: http://www.python.org
 
 Features
 ------------------
 
-* zero-install bootstrapping: no remote installation required!
+* zero-install bootstrapping: no manual remote installation!
 
 * flexible communication: send/receive as well as 
   callback/queue mechanisms supported
@@ -28,15 +34,18 @@ Features
 
 * fully interoperable between Windows and Unix-ish systems. 
 
-Known users 
+* many tested :doc:`examples`
+
+Known uses
 -------------------
 
 * `py.test`_ uses it for its `distributed testing`_ mechanism. 
 
 * Jacob Perkins uses it for his `Distributed NTLK with execnet`_ 
-  project. 
+  project to launch computation processes through ssh. 
 
 * Ronny Pfannschmidt uses it for his `anyvc`_ VCS-abstraction project
+  to bridge the Python2/Python3 version gap. 
 
 * sysadmins and developers are using it for ad-hoc custom scripting 
 
@@ -48,7 +57,7 @@ Known users
 Project status
 --------------------------
 
-The current 1.0 series aims at `basic API`_ stabilization, improved tracing and robust termination.
+The current 1.0 series aims at :doc:`basic API <basics>` stabilization, improved tracing and robust termination.
 
 The 1.1 series will target setting up permanent networks and offering unix-shell-like capabilities to spawn processes and applications.
 
@@ -60,3 +69,12 @@ are MIT-licensed.
 .. _`basic API`: basics.html
 .. _`actively developed`: http://bitbucket.org/hpk42/execnet/changesets
 .. _`Holger Krekel`: http://twitter.com/hpk42
+
+.. toctree::
+   :hidden:
+
+   support
+   implnotes
+   install 
+   rel-1.0.0
+   docindex
