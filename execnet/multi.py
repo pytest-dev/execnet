@@ -39,7 +39,10 @@ class Group:
         return len(self._activegateways)
 
     def __iter__(self):
-        return iter(list(self._activegateways))
+        l = list(self._id2gateway.items())
+        l.sort()
+        for id, gw in l:
+            yield gw
 
     def makegateway(self, spec):
         """ create and configure a gateway to a Python interpreter
