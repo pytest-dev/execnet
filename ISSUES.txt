@@ -1,7 +1,7 @@
 report back errors when calling callbacks 
 ---------------------------------------------------
 
-tags: 1.0.1 1.1
+tags: 1.0 
 bb: http://bitbucket.org/hpk42/py-trunk/issue/37/
 path: execnet/gateway_base.py
 
@@ -12,7 +12,6 @@ it leaves the other side inaccesssible.
 
 Control-C behaviour / best practises
 -------------------------------------------
-
 tags: 1.1
 bb: http://bitbucket.org/hpk42/py-trunk/issue/36
 path: execnet/gateway_base.py
@@ -25,11 +24,60 @@ get a chance to propagate.
 
 rsync links from posix to windows 
 -----------------------------------------
-
-tags: 1.1 
+tags: 1.1 feature
 bb: http://bitbucket.org/hpk42/py-trunk/issue/35
 path: execnet/rsync.py 
 
 currently rsyncing bails out with a strange message when trying to rsync
 links. should provide better message or even some support for doing it.
 
+PopenGateway imports local execnet package
+-------------------------------------------------
+tags: 1.0 feature 
+
+For gateway processes instantiated on the same
+machine the local execnet package could be 
+imported instead of the current serialization
+of source code. This should result in faster
+sub process creation and better traceback-printing.
+
+a process keeping state across invoactions
+--------------------------------------------------
+tags: 1.1 feature newdist 
+
+A building block for keeping permanent network 
+connections would be a started-on-first-access process 
+that keeps state. Considered:
+
+- PopenGateway imports local execnet package
+  and avoids parse/compile code strings
+
+- a rendevouz process that starts threads for each
+  incoming connection.  On each such connection
+  a SocketGateway can be instantiated but it 
+  will re-use the already-imported gateway base code
+  so again avoid parse/compile on arbitrary strings.
+
+a channel-IO based gateway
+--------------------------------------------------
+tags: 1.1 feature newdist 
+
+A building block for establishing a permanent hierarchy
+of processes is a Gateway that operates on a Channel object.
+This way a gateway can be instantiated through another
+intermediating gateway which bi-directionallry forwads 
+Messages through a existing channel.
+
+fix group termination
+---------------------------
+tags: 1.0 bug 
+
+This session does not close down gateways like expected:
+
+>>> execnet.makegateway("popen")
+>>> execnet.makegateway("popen")
+>>> execnet.default_group.terminate()
+>>> execnet.default_group
+<Group ['1', '2']>
+>>> execnet.default_group['1'].remote_exec("channel.send(1)").receive()
+1
