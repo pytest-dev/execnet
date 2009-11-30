@@ -1,12 +1,12 @@
 ==============================================================================
-execnet API in a nutshell
+API in a nutshell
 ==============================================================================
 
-execnet ad-hoc instantiates **gateways** to Python 
-interpreter processes though which you can **remote execute
-code** and exchange basic python objects through **channels**.
-All gateways are created as part of a **group** which is responsible
-for managing membership and **proper termination**.
+execnet ad-hoc instantiates local and remote Python interpreters.   
+Each interpreter is accessible through a **Gateway** which manages
+code and data communication.  **Channels** allow to exchange
+data between the local and the remote end.  **Groups**
+help to manage creation and termination of sub interpreters. 
 
 .. image:: _static/basic1.png
 
@@ -106,14 +106,13 @@ two asynchronously running programs.
 Grouped Gateways and robust termination
 ===============================================
 
-.. _`group examples`: examples.html#group
 .. currentmodule:: execnet.multi
 
 All created gateway instances are part of a group.  If you
 call ``execnet.makegateway`` it actually is forwarded to
 the ``execnet.default_group``. Group objects are container 
-objects (see `group examples`_) and manage the final 
-termination procedure:
+objects (see :doc:`group examples <example/test_group>>`_) 
+and manage the final termination procedure:
 
 .. automethod:: Group.terminate(timeout=None)
 

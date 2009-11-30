@@ -1,4 +1,4 @@
-1.0.1 (pending)
+1.0.1
 --------------------------------
 
 - new method: gateway.hasreceiver() returns True 

@@ -26,7 +26,5 @@ Here is an self-contained example for reading a remote process identifier.
   True
 
 If you'd like to avoid inlining source strings take a look
-at the channelexec_ and command_ example.
-
-.. _channelexec: examples.html#channelexec
-.. _command: examples.html#command
+at the :doc:`channelexec <test_channelexec>` 
+and the :doc:`command pattern<test_remotecmd>` examples.
