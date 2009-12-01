@@ -17,6 +17,8 @@ termination of Gateways.  Example usage::
     >>> len(group)
     2
     >>> group.terminate() # exit all member gateways
+    >>> group
+    <Group []>
 
 Acessing Gateways on a group by ID  
 ------------------------------------------------------
