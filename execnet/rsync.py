@@ -15,8 +15,7 @@ try:
 except ImportError:
     from Queue import Queue
 
-remote_file = os.path.join(os.path.dirname(__file__), 'rsync_remote.py')
-REMOTE_SOURCE = open(remote_file, 'r').read() + "\nf()"
+import execnet.rsync_remote
 
 class RSync(object):
     """ This class allows to send a directory structure (recursively)
@@ -151,7 +150,7 @@ class RSync(object):
             assert name in ('delete',)
         def itemcallback(req):
             self._receivequeue.put((channel, req))
-        channel = gateway.remote_exec(REMOTE_SOURCE)
+        channel = gateway.remote_exec(execnet.rsync_remote)
         channel.setcallback(itemcallback, endmarker = None)
         channel.send((str(destdir), options))
         self._channels[channel] = finishedcallback
