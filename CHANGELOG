@@ -7,6 +7,11 @@
 
 - fix group.terminate() termination to work (more reliably)
 
+- EOFError on channel.receive/waitclose if the other
+  side unexpectedly went away.  When a gateway exits 
+  it now internally sends an explicit termination message
+  instead of abruptly closing.  
+
 1.0.0
 --------------------------------
 

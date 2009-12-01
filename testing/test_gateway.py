@@ -496,41 +496,43 @@ class TestPopenGateway:
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info == py.std.sys.version_info
 
-    @py.test.mark.xfail # "fix needed: dying remote process does not cause waitclose() to fail"
     def test_waitclose_on_remote_killed(self):
         gw = execnet.makegateway('popen')
         channel = gw.remote_exec("""
             import os
             import time
             channel.send(os.getpid())
-            while 1:
-                channel.send("#" * 100)
+            time.sleep(100)
         """)
         remotepid = channel.receive()
         py.process.kill(remotepid)
-        py.test.raises(channel.RemoteError, "channel.waitclose(TESTTIMEOUT)")
-        py.test.raises(EOFError, channel.send, None)
+        py.test.raises(EOFError, "channel.waitclose(TESTTIMEOUT)")
+        py.test.raises(IOError, channel.send, None)
         py.test.raises(EOFError, channel.receive)
 
-@py.test.mark.xfail
+    def test_receive_on_remote_io_closed(self):
+        gw = execnet.makegateway('popen')
+        channel = gw.remote_exec("""
+            raise SystemExit()
+        """)
+        py.test.raises(EOFError, channel.receive)
+
+@py.test.mark.skipif("not hasattr(os, 'kill')")
+@py.test.mark.xfail("sys.platform.startswith('java')") 
 def test_endmarker_delivery_on_remote_killterm():
-    if not hasattr(py.std.os, 'kill'):
-        py.test.skip("no os.kill()")
     gw = execnet.makegateway('popen')
-    try:
-        q = queue.Queue()
-        channel = gw.remote_exec(source='''
-            import os
-            os.kill(os.getpid(), 15)
-        ''')
-        channel.setcallback(q.put, endmarker=999)
-        val = q.get(TESTTIMEOUT)
-        assert val == 999
-        err = channel._getremoteerror()
-    finally:
-        gw.exit()
-    assert "killed" in str(err)
-    assert "15" in str(err)
+    q = queue.Queue()
+    channel = gw.remote_exec(source='''
+        import os
+        os.kill(os.getpid(), 15)
+    ''')
+    channel.setcallback(q.put, endmarker=999)
+    val = q.get(TESTTIMEOUT)
+    assert val == 999
+    # XXX jython does not get its io-read pipe closed
+    #     when the remote side died?!
+    err = channel._getremoteerror()
+    assert isinstance(err, EOFError)
 
 
 def test_socket_gw_host_not_found(gw):

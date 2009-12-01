@@ -203,9 +203,15 @@ def _setupmessages():
         def received(self, gateway):
             gateway._channelfactory._local_close(self.channelid, sendonly=True)
 
-    classes = [STATUS, CHANNEL_OPEN, CHANNEL_NEW, CHANNEL_DATA,
-               CHANNEL_CLOSE, CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE]
+    class GATEWAY_TERMINATE(Message):
+        def received(self, gateway):
+            gateway._io.close_read()
+            raise SystemExit(0)
 
+    classes = [
+        STATUS, CHANNEL_OPEN, CHANNEL_NEW, CHANNEL_DATA, CHANNEL_CLOSE, 
+        CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE, GATEWAY_TERMINATE
+    ]
     for i, cls in enumerate(classes):
         Message._types[i] = cls
         cls.msgtype = i
@@ -318,13 +324,17 @@ class Channel(object):
                 Msg = Message.CHANNEL_CLOSE
             try:
                 self.gateway._send(Msg(self.id))
-            except (IOError, ValueError): # ignore problems with sending
+            except IOError: # ignore problems with sending
                 pass
 
     def _getremoteerror(self):
         try:
             return self._remoteerrors.pop(0)
         except IndexError:
+            try:
+                return self.gateway._error
+            except AttributeError:
+                pass
             return None
 
     #
@@ -382,8 +392,10 @@ class Channel(object):
         """ wait until this channel is closed (or the remote side
         otherwise signalled that no more data was being sent).
         The channel may still hold receiveable items, but not receive
-        any more after waitclose() has returned. exceptions from executing
+        any more after waitclose() has returned.  Exceptions from executing 
         code on the other side are reraised as local channel.RemoteErrors.
+        EOFError is raised if the reading-connection was prematurely closed, 
+        which often indicates a dying process. 
         """
         self._receiveclosed.wait(timeout=timeout)  # wait for non-"opened" state
         if not self._receiveclosed.isSet():
@@ -395,7 +407,9 @@ class Channel(object):
     def send(self, item):
         """sends the given item to the other side of the channel,
         possibly blocking if the sender queue is full.
-        Note that an item needs to be marshallable.
+        The item must be a simple python type and will be 
+        copied to the other side by value.  IOError is 
+        raised if the write pipe was prematurely closed. 
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
@@ -606,20 +620,14 @@ class BaseGateway(object):
                 except sysex:
                     break
                 except EOFError:
+                    self._error = sys.exc_info()[1]
                     break
                 except:
                     self._trace("RECEIVERTHREAD: %s " %(
                         geterrortext(self.exc_info()), ))
                     break
         finally:
-            # XXX we need to signal fatal error states to
-            #     channels/callbacks, particularly ones
-            #     where the other side just died.
             self._stopexec()
-            try:
-                self._stopsend()
-            except IOError:
-                self._trace('IOError on _stopsend()')
             self._channelfactory._finished_receiving()
             if threading: # might be None during shutdown/finalization
                 self._trace('leaving %r' % threading.currentThread())
@@ -628,10 +636,6 @@ class BaseGateway(object):
         assert isinstance(msg, Message)
         msg.writeto(self._serializer)
         self._trace('sent -> %r' % msg)
-
-    def _stopsend(self):
-        self._io.close_write()
-        self._trace('closed IO write pipe')
 
     def _stopexec(self):
         pass
@@ -671,7 +675,7 @@ class SlaveGateway(BaseGateway):
             while 1:
                 item = self._execqueue.get()
                 if item is None:
-                    self._stopsend()
+                    self._io.close_write()
                     break
                 try:
                     self.executetask(item)
