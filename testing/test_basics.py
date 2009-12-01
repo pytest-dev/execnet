@@ -12,7 +12,7 @@ def test_subprocess_interaction(anypython):
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     def send(line):
         popen.stdin.write(line.encode('ascii'))
-        if sys.version_info > (3,0): # 3k still buffers
+        if sys.version_info > (3,0) or sys.platform.startswith("java"):
             popen.stdin.flush()
     def receive():
         return popen.stdout.readline().decode('ascii')
@@ -96,7 +96,7 @@ def test_io_message(anypython, tmpdir):
 def test_popen_io(anypython, tmpdir):
     check = tmpdir.join("check.py")
     check.write(py.code.Source(gateway_base, """
-        do_exec(Popen2IO.server_stmt, globals())
+        do_exec("io = init_popen_io()", globals())
         io.write("hello".encode('ascii'))
         s = io.read(1)
         assert s == "x".encode('ascii')
@@ -145,9 +145,10 @@ def test_geterrortext(anypython, tmpdir):
     print (out)
     assert "all passed" in out
 
+@py.test.mark.skipif("not hasattr(os, 'dup')")
 def test_stdouterrin_setnull():
     cap = py.io.StdCaptureFD()
-    gateway.stdouterrin_setnull()
+    io = gateway_base.init_popen_io()
     import os
     os.write(1, "hello".encode('ascii'))
     if os.name == "nt":

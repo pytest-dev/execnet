@@ -8,6 +8,7 @@ import textwrap
 import execnet
 from execnet.gateway_base import Message, Popen2IO, SocketIO
 from execnet import gateway_base
+importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
 class Gateway(gateway_base.BaseGateway):
     """ Gateway to a local or remote Python Intepreter. """
@@ -49,25 +50,16 @@ class Gateway(gateway_base.BaseGateway):
         self._stopsend()
         #self.join(timeout=timeout) # receiverthread receive close() messages
 
-    def _remote_bootstrap_gateway(self, io, extra=''):
-        """ return Gateway with a asynchronously remotely
-            initialized counterpart Gateway (which may or may not succeed).
-            Note that the other sides gateways starts enumerating
-            its channels with even numbers while the sender
-            gateway starts with odd numbers.  This allows to
-            uniquely identify channels across both sides.
+    def _remote_bootstrap_gateway(self, io):
+        """ send gateway bootstrap code to a remote Python interpreter
+            endpoint, which reads from io for a string to execute. 
         """
-        bootstrap = [extra]
-        bootstrap += [inspect.getsource(gateway_base)]
-        bootstrap += [io.server_stmt,
-                      "io.write('1'.encode('ascii'))",
-                      "SlaveGateway(io=io, _startcount=2).serve()",
-                     ]
-        source = "\n".join(bootstrap)
-        self._trace("sending gateway bootstrap code")
-        #open("/tmp/bootstrap.py", 'w').write(source)
-        repr_source = repr(source) + "\n"
-        io.write(repr_source.encode('ascii'))
+        sendexec(io, 
+            inspect.getsource(gateway_base), 
+            self._remotesetup,
+            "io.write('1'.encode('ascii'))",
+            "serve(io)"
+        )
         s = io.read(1)
         assert s == "1".encode('ascii')
 
@@ -170,6 +162,7 @@ channel.send(dict(
 """
 
 class PopenCmdGateway(Gateway):
+    _remotesetup = "io = init_popen_io()"
     def __init__(self, args):
         from subprocess import Popen, PIPE
         self._popen = p = Popen(args, stdin=PIPE, stdout=PIPE)
@@ -195,19 +188,23 @@ class PopenGateway(PopenCmdGateway):
         args = [str(python), '-c', popen_bootstrapline]
         super(PopenGateway, self).__init__(args)
 
-    def _remote_bootstrap_gateway(self, io, extra=''):
-        # have the subprocess use the same PYTHONPATH and py lib
-        x = os.path.dirname(os.path.dirname(execnet.__file__))
-        ppath = os.environ.get('PYTHONPATH', '')
-        plist = [str(x)] + ppath.split(':')
-        s = "\n".join([extra,
-            "import sys ; sys.path[:0] = %r" % (plist,),
-            "import os ; os.environ['PYTHONPATH'] = %r" % ppath,
-            inspect.getsource(stdouterrin_setnull),
-            "stdouterrin_setnull()",
-            ""
-            ])
-        super(PopenGateway, self)._remote_bootstrap_gateway(io, s)
+    def _remote_bootstrap_gateway(self, io):
+        sendexec(io, 
+                 "import sys",
+                 "sys.stdout.write('1'.encode('ascii'))",
+                 "sys.stdout.flush()",
+                 popen_bootstrapline)
+        sendexec(io, 
+            "import sys ; sys.path.insert(0, %r)" % importdir,
+            "from execnet.gateway_base import serve, init_popen_io",
+            "serve(init_popen_io())",
+        )
+        s = io.read(1)
+        assert s == "1".encode('ascii')
+
+def sendexec(io, *sources):
+    source = "\n".join(sources)
+    io.write((repr(source)+ "\n").encode('ascii'))
 
 class SocketGateway(Gateway):
     """ This Gateway provides interaction with a remote process
@@ -216,6 +213,8 @@ class SocketGateway(Gateway):
         (py/execnet/script/socketserver.py) that accepts
         SocketGateway connections.
     """
+    _remotesetup = "io = SocketIO(clientsock)" 
+
     def __init__(self, host, port):
         """ instantiate a gateway to a process accessed
             via a host/port specified socket.
@@ -236,7 +235,7 @@ class SocketGateway(Gateway):
             instantiated through the given 'gateway'.
         """
         if hostport is None:
-            host, port = ('', 0)  # XXX works on all platforms?
+            host, port = ('localhost', 0)
         else:
             host, port = hostport
         
@@ -268,7 +267,6 @@ class SshGateway(PopenCmdGateway):
         established via the 'ssh' command line binary.
         The remote side needs to have a Python interpreter executable.
     """
-
     def __init__(self, sshaddress, remotepython=None, ssh_config=None):
         """ instantiate a remote ssh process with the
             given 'sshaddress' and remotepython version.
@@ -284,49 +282,10 @@ class SshGateway(PopenCmdGateway):
         args.extend([sshaddress, remotecmd])
         super(SshGateway, self).__init__(args)
 
-    def _remote_bootstrap_gateway(self, io, s=""):
-        extra = "\n".join([
-            inspect.getsource(stdouterrin_setnull),
-            "stdouterrin_setnull()"])
+    def _remote_bootstrap_gateway(self, io):
         try:
-            super(SshGateway, self)._remote_bootstrap_gateway(io, extra)
+            super(SshGateway, self)._remote_bootstrap_gateway(io)
         except EOFError:
             ret = self._popen.wait()
             if ret == 255:
                 raise HostNotFound(self.remoteaddress)
-
-def stdouterrin_setnull():
-    """ redirect file descriptors 0 and 1 (and possibly 2) to /dev/null.
-        note that this function may run remotely without py lib support.
-    """
-    # complete confusion (this is independent from the sys.stdout
-    # and sys.stderr redirection that gateway.remote_exec() can do)
-    # note that we redirect fd 2 on win too, since for some reason that
-    # blocks there, while it works (sending to stderr if possible else
-    # ignoring) on *nix
-    import sys, os
-    if not hasattr(os, 'dup'): # jython
-        return
-    try:
-        devnull = os.devnull
-    except AttributeError:
-        if os.name == 'nt':
-            devnull = 'NUL'
-        else:
-            devnull = '/dev/null'
-    # stdin
-    sys.stdin  = os.fdopen(os.dup(0), 'r', 1)
-    fd = os.open(devnull, os.O_RDONLY)
-    os.dup2(fd, 0)
-    os.close(fd)
-
-    # stdout
-    sys.stdout = os.fdopen(os.dup(1), 'w', 1)
-    fd = os.open(devnull, os.O_WRONLY)
-    os.dup2(fd, 1)
-
-    # stderr for win32
-    if os.name == 'nt':
-        sys.stderr = os.fdopen(os.dup(2), 'w', 1)
-        os.dup2(fd, 2)
-    os.close(fd)

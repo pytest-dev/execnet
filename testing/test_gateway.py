@@ -485,6 +485,11 @@ class TestPopenGateway:
         x = c.receive()
         assert x == str(waschangedir)
 
+    def test_remoteerror_readable_traceback(self, gw):
+        e = py.test.raises(gateway_base.RemoteError, 
+            'gw.remote_exec("x y").waitclose()')
+        assert "gateway_base" in e.value.formatted 
+
     def test_many_popen(self):
         num = 4
         l = []
@@ -618,15 +623,18 @@ class TestThreads:
 
 def test_close_initiating_remote_no_error(testdir):
     import subprocess
+    dir = py.path.local(execnet.__file__).dirpath().dirpath()
     p = testdir.makepyfile("""
+        import sys
+        sys.path.insert(0, %r)
         import execnet
         gw = execnet.makegateway("popen")
         gw.remote_init_threads(num=2)
         ch = gw.remote_exec("channel.receive()")
         ch.close()
-    """)
+    """ % str(dir))
     popen = subprocess.Popen([sys.executable, str(p)], 
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
     stdout, stderr = popen.communicate()
     assert not stderr
         

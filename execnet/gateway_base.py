@@ -49,8 +49,6 @@ else:
 # ___________________________________________________________________________
 
 class SocketIO:
-    server_stmt = "io = SocketIO(clientsock)"
-
     error = (socket.error, EOFError)
     def __init__(self, sock):
         self.sock = sock
@@ -92,12 +90,6 @@ class SocketIO:
             self.writeable = None
 
 class Popen2IO:
-    server_stmt = """
-import os, sys, tempfile
-io = Popen2IO(sys.stdout, sys.stdin)
-sys.stdout = tempfile.TemporaryFile('w')
-sys.stdin = tempfile.TemporaryFile('r')
-"""
     error = (IOError, OSError, EOFError)
 
     def __init__(self, outfile, infile):
@@ -326,7 +318,7 @@ class Channel(object):
                 Msg = Message.CHANNEL_CLOSE
             try:
                 self.gateway._send(Msg(self.id))
-            except ValueError: # XXX IO operation on closed file, why? 
+            except (IOError, ValueError): # ignore problems with sending
                 pass
 
     def _getremoteerror(self):
@@ -1013,3 +1005,42 @@ class Serializer(object):
 
     def save_frozenset(self, s):
         self._write_set(s, opcode.FROZENSET)
+
+def init_popen_io():
+    if not hasattr(os, 'dup'): # jython
+        io = Popen2IO(sys.stdout, sys.stdin)
+        import tempfile
+        sys.stdin = tempfile.TemporaryFile('r')
+        sys.stdout = tempfile.TemporaryFile('w')
+    else:
+        try:
+            devnull = os.devnull
+        except AttributeError:
+            if os.name == 'nt':
+                devnull = 'NUL'
+            else:
+                devnull = '/dev/null'
+        # stdin
+        stdin  = os.fdopen(os.dup(0), 'r', 1)
+        fd = os.open(devnull, os.O_RDONLY)
+        os.dup2(fd, 0)
+        os.close(fd)
+
+        # stdout
+        stdout = os.fdopen(os.dup(1), 'w', 1)
+        fd = os.open(devnull, os.O_WRONLY)
+        os.dup2(fd, 1)
+
+        # stderr for win32
+        if os.name == 'nt':
+            sys.stderr = os.fdopen(os.dup(2), 'w', 1)
+            os.dup2(fd, 2)
+        os.close(fd)
+        io = Popen2IO(stdout, stdin)
+        sys.stdin = os.fdopen(0, 'r', 1)
+        sys.stdout = os.fdopen(1, 'w', 1)
+    return io
+
+def serve(io):
+    trace("creating slavegateway on %r" %(io,))
+    SlaveGateway(io=io, _startcount=2).serve()
