@@ -8,7 +8,7 @@ def test_subprocess_interaction(anypython):
     line = gateway.popen_bootstrapline
     compile(line, 'xyz', 'exec')
     args = [str(anypython), '-c', line]
-    popen = subprocess.Popen(args, bufsize=0, stderr=subprocess.STDOUT,
+    popen = subprocess.Popen(args, bufsize=0, 
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     def send(line):
         popen.stdin.write(line.encode('ascii'))
@@ -30,6 +30,7 @@ def test_subprocess_interaction(anypython):
         send("world\n")
         s = receive()
         assert s == "received: world\n"
+        send('\n') # terminate loop
     finally:
         popen.stdin.close()
         popen.stdout.close()
@@ -42,6 +43,8 @@ def read_write_loop():
     while 1:
         try:
             line = sys.stdin.readline()
+            if not line.strip():
+                break
             sys.stdout.write("received: %s" % line)
             sys.stdout.flush()
         except (IOError, EOFError):
@@ -49,7 +52,8 @@ def read_write_loop():
 
 def pytest_generate_tests(metafunc):
     if 'anypython' in metafunc.funcargnames:
-        for name in 'python3.1', 'python2.4', 'python2.5', 'python2.6':
+        for name in ('python3.1', 'python2.4', 'python2.5', 'python2.6', 
+                     'pypy-c', 'jython'):
             metafunc.addcall(id=name, param=name)
 
 def pytest_funcarg__anypython(request):
