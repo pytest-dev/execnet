@@ -31,16 +31,6 @@ path: execnet/rsync.py
 currently rsyncing bails out with a strange message when trying to rsync
 links. should provide better message or even some support for doing it.
 
-PopenGateway imports local execnet package
--------------------------------------------------
-tags: 1.0 feature 
-
-For gateway processes instantiated on the same
-machine the local execnet package could be 
-imported instead of the current serialization
-of source code. This should result in faster
-sub process creation and better traceback-printing.
-
 a process keeping state across invoactions
 --------------------------------------------------
 tags: 1.1 feature newdist 
