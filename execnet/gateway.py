@@ -40,14 +40,15 @@ class Gateway(gateway_base.BaseGateway):
 
     def exit(self):
         """ trigger gateway exit. """
-        self._trace("trigger gateway exit")
+        self._trace("gateway.exit() called")
         try:
             self._group._unregister(self)
         except KeyError:
             return # we assume it's already happened
-        self._trace("stopping exec and closing write connection")
+        self._trace("--> stopping exec and sending GATEWAY_TERMINATE")
         self._stopexec()
-        self._stopsend()
+        self._send(Message.GATEWAY_TERMINATE(0, ''))
+        self._io.close_write()
         #self.join(timeout=timeout) # receiverthread receive close() messages
 
     def _remote_bootstrap_gateway(self, io):
