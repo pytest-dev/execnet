@@ -58,16 +58,3 @@ This way a gateway can be instantiated through another
 intermediating gateway which bi-directionallry forwads 
 Messages through a existing channel.
 
-fix group termination
----------------------------
-tags: 1.0 bug 
-
-This session does not close down gateways like expected:
-
->>> execnet.makegateway("popen")
->>> execnet.makegateway("popen")
->>> execnet.default_group.terminate()
->>> execnet.default_group
-<Group ['1', '2']>
->>> execnet.default_group['1'].remote_exec("channel.send(1)").receive()
-1

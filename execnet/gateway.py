@@ -191,7 +191,7 @@ class PopenGateway(PopenCmdGateway):
     def _remote_bootstrap_gateway(self, io):
         sendexec(io, 
                  "import sys",
-                 "sys.stdout.write('1'.encode('ascii'))",
+                 "sys.stdout.write('1')",
                  "sys.stdout.flush()",
                  popen_bootstrapline)
         sendexec(io, 

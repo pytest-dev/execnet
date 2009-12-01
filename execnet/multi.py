@@ -103,8 +103,8 @@ class Group:
         gateway.id = id
 
     def _unregister(self, gateway):
-        del self._activegateways[gateway]
         del self._id2gateway[gateway.id]
+        del self._activegateways[gateway]
 
     def _cleanup_atexit(self):
         trace("=== atexit cleanup %r ===" %(self,))

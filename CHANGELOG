@@ -5,6 +5,8 @@
   also improves debugging/tracebacks, as a side effect
   popen-gateway startup can be substantially faster (>30%)
 
+- fix group.terminate() termination to work (more reliably)
+
 1.0.0
 --------------------------------
 
