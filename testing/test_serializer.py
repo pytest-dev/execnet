@@ -197,16 +197,6 @@ def test_small_long(py2, py3):
     tp, s = py3.load(p)
     assert s == "123"
 
-
-@py.test.mark.xfail
-# I'm not sure if we need the complexity.
-def test_recursive_list(py2, py3):
-    l = [1, 2, 3]
-    l.append(l)
-    p = py2.dump(l)
-    tp, rep = py2.load(l)
-    assert tp == "list"
-
 def test_bytes(py2, py3):
     p = py3.dump("b'hi'")
     tp, v = py2.load(p)

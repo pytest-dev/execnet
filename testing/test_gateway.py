@@ -313,32 +313,6 @@ class TestChannelBasicBehaviour:
         assert err
         assert str(err).find("ValueError") != -1
 
-    @py.test.mark.xfail
-    def test_remote_redirect_stdout(self, gw):
-        out = py.io.TextIO()
-        handle = gw._remote_redirect(stdout=out)
-        c = gw.remote_exec("print 42")
-        c.waitclose(TESTTIMEOUT)
-        handle.close()
-        s = out.getvalue()
-        assert s.strip() == "42"
-
-    @py.test.mark.xfail
-    def test_remote_exec_redirect_multi(self, gw):
-        num = 3
-        l = [[] for x in range(num)]
-        channels = [gw.remote_exec("print %d" % i,
-                                        stdout=l[i].append)
-                        for i in range(num)]
-        for x in channels:
-            x.waitclose(TESTTIMEOUT)
-
-        for i in range(num):
-            subl = l[i]
-            assert subl
-            s = subl[0]
-            assert s.strip() == str(i)
-
 class TestChannelFile:
     def test_channel_file_write(self, gw):
         channel = gw.remote_exec("""

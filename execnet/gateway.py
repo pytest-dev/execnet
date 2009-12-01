@@ -106,39 +106,6 @@ class Gateway(gateway_base.BaseGateway):
         self._remotechannelthread = self.remote_exec(source)
         self._remotechannelthread.send(num)
 
-    def _remote_redirect(self, stdout=None, stderr=None):
-        """ return a handle representing a redirection of a remote
-            end's stdout to a local file object.  with handle.close()
-            the redirection will be reverted.
-        """
-        # XXX implement a remote_exec_in_globals(...)
-        #     to send ThreadOut implementation over
-        clist = []
-        for name, out in ('stdout', stdout), ('stderr', stderr):
-            if out:
-                outchannel = self.newchannel()
-                outchannel.setcallback(getattr(out, 'write', out))
-                channel = self.remote_exec("""
-                    import sys
-                    outchannel = channel.receive()
-                    ThreadOut(sys, %r).setdefaultwriter(outchannel.send)
-                """ % name)
-                channel.send(outchannel)
-                clist.append(channel)
-        for c in clist:
-            c.waitclose()
-        class Handle:
-            def close(_):
-                for name, out in ('stdout', stdout), ('stderr', stderr):
-                    if out:
-                        c = self.remote_exec("""
-                            import sys
-                            channel.gateway._ThreadOut(sys, %r).resetdefault()
-                        """ % name)
-                        c.waitclose()
-        return Handle()
-
-
 class RInfo:
     def __init__(self, kwargs):
         self.__dict__.update(kwargs)
