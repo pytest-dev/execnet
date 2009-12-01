@@ -1,7 +1,7 @@
 """
 (c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
-def f():
+def serve_rsync(channel):
     import os, stat, shutil
     try:
         from hashlib import md5
@@ -79,7 +79,7 @@ def f():
     channel.send(("links", None))
 
     msg = channel.receive()
-    while msg is not 42:
+    while msg != 42:
         # we get symlink
         _type, relpath, linkpoint = msg
         assert _type == "link"
@@ -93,3 +93,5 @@ def f():
         msg = channel.receive()
     channel.send(("done", None))
 
+if __name__ == '__channelexec__':
+    serve_rsync(channel)
