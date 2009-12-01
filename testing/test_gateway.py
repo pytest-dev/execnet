@@ -9,7 +9,8 @@ from execnet.threadpool import WorkerPool
 queue = py.builtin._tryimport('queue', 'Queue')
 
 TESTTIMEOUT = 10.0 # seconds
-skiponjython = py.test.mark.skipif("sys.platform.startswith('java')")
+needs_early_gc = py.test.mark.skipif("not hasattr(sys, 'getrefcount')")
+needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 
 def test_serialize_error(gw):
     ch = gw.remote_exec("channel.send(ValueError(42))")
@@ -279,7 +280,7 @@ class TestChannelBasicBehaviour:
         assert l == [0, 100, 200, 300, 400]
         return subchannel
 
-    @skiponjython
+    @needs_early_gc
     def test_channel_callback_remote_freed(self, gw):
         channel = self.check_channel_callback_stays_active(gw, earlyfree=False)
         # freed automatically at the end of producer()
@@ -405,7 +406,7 @@ class TestChannelFile:
         channel = gw.newchannel()
         py.test.raises(ValueError, 'channel.makefile("rw")')
 
-    @skiponjython
+    @needs_osdup
     def test_confusion_from_os_write_stdout(self, gw):
         channel = gw.remote_exec("""
             import os
@@ -420,7 +421,7 @@ class TestChannelFile:
         res = channel.receive()
         assert res == 42
 
-    @skiponjython
+    @needs_osdup
     def test_confusion_from_os_write_stderr(self, gw):
         channel = gw.remote_exec("""
             import os

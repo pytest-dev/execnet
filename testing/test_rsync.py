@@ -4,7 +4,7 @@ import execnet
 
 def pytest_funcarg__gw1(request):
     return request.cached_setup(
-        setup=execnet.PopenGateway,
+        setup=lambda: execnet.makegateway("popen"),
         teardown=lambda val: val.exit(),
         scope="module"
     )
