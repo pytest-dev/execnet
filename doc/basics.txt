@@ -150,7 +150,9 @@ And here is API info about the RSync class.
 Debugging execnet
 ===============================================================
 
-If you set the enviornment variable ``EXECNET_DEBUG`` to any value
-trace-files will be written to ``execnet-debug-PID`` files in
-the system temporary directory.  ``NUM`` will be the process id. 
+By setting the environment variable ``EXECNET_DEBUG`` you can
+configure a tracing mechanism: 
+
+:EXECNET_DEBUG=1:  write per-process trace-files to ``execnet-debug-PID`` 
+:EXECNET_DEUBG=2:  perform tracing to stderr (popen-gateway slaves will send this to their instantiator)
 
