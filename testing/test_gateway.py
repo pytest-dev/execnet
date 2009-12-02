@@ -626,13 +626,37 @@ def test_close_initiating_remote_no_error(testdir):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
     stdout, stderr = popen.communicate()
     assert not stderr
-        
-def test_debug(monkeypatch):
-    monkeypatch.setenv('EXECNET_DEBUG', "1")
-    source = py.std.inspect.getsource(gateway_base)
-    d = {}
-    gateway_base.do_exec(source, d) 
-    assert 'debugfile' in d 
+
+class TestTracing:        
+    def test_debug(self, monkeypatch):
+        monkeypatch.setenv('EXECNET_DEBUG', "1")
+        source = py.std.inspect.getsource(gateway_base)
+        d = {}
+        gateway_base.do_exec(source, d) 
+        assert 'debugfile' in d 
+
+    def test_popen_filetracing(self, monkeypatch):
+        monkeypatch.setenv('EXECNET_DEBUG', "1")
+        gw = execnet.makegateway("popen")
+        pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
+        tmpdir = py.path.local(py.std.tempfile.gettempdir())
+        slavefile = tmpdir.join("execnet-debug-%s" % pid)
+        slave_line = "creating slavegateway"
+        for line in slavefile.readlines():
+            if slave_line in line:
+                break
+        else:
+            py.test.fail("did not find %r in tracefile" %(slave_line,))
+        gw.exit()
+
+    def test_popen_stderr_tracing(self, capfd, monkeypatch):
+        monkeypatch.setenv('EXECNET_DEBUG', "2")
+        gw = execnet.makegateway("popen")
+        pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
+        out, err = capfd.readouterr()
+        slave_line = "[%s] creating slavegateway" % pid
+        assert slave_line in err
+        gw.exit()
 
 def test_nodebug():
     from execnet import gateway_base

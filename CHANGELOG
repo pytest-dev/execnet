@@ -16,6 +16,11 @@
   and default to periodically internally wake up
   to let KeyboardInterrupts pass through.
 
+- EXECNET_DEBUG=2 will cause tracing to go to stderr,
+  which with popen slave gateways will relay back 
+  tracing to the instantiator process.
+  
+
 1.0.0
 --------------------------------
 

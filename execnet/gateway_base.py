@@ -26,7 +26,13 @@ else:
 
 sysex = (KeyboardInterrupt, SystemExit)
 
-if os.environ.get('EXECNET_DEBUG'):
+DEBUG = os.environ.get('EXECNET_DEBUG')
+if DEBUG == '2':
+    pid = os.getpid()
+    def trace(msg):
+        sys.stderr.write("[%s] %s\n" % (pid, msg))
+        sys.stderr.flush()
+elif DEBUG:
     import tempfile, os.path
     fn = os.path.join(tempfile.gettempdir(), 'execnet-debug-%d' % os.getpid())
     debugfile = open(fn, 'w')
