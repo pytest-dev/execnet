@@ -134,6 +134,18 @@ class TestChannelBasicBehaviour:
         py.test.raises(EOFError, channel.receive)
         py.test.raises(EOFError, channel.receive)
 
+    def test_waitclose_timeouterror(self, gw):
+        channel = gw.remote_exec("channel.receive()")
+        py.test.raises(channel.TimeoutError, channel.waitclose, 0.02)
+        channel.send(1)
+        channel.waitclose(timeout=TESTTIMEOUT)
+
+    def test_channel_receive_timeout(self, gw):
+        channel = gw.remote_exec('channel.send(channel.receive())')
+        py.test.raises(channel.TimeoutError, "channel.receive(timeout=0.2)")
+        channel.send(1)
+        x = channel.receive(timeout=0.1)
+
     def test_channel_close_and_then_receive_error_multiple(self, gw):
         channel = gw.remote_exec('channel.send(42) ; raise ValueError')
         x = channel.receive()
