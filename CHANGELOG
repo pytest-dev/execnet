@@ -12,6 +12,10 @@
   it now internally sends an explicit termination message
   instead of abruptly closing.  
 
+- introduce a timeout parameter to channel.receive() 
+  and default to periodically internally wake up
+  to let KeyboardInterrupts pass through.
+
 1.0.0
 --------------------------------
 

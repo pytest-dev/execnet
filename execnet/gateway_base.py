@@ -246,12 +246,16 @@ class RemoteError(EOFError):
         # XXX do this better
         sys.stderr.write("Warning: unhandled %r\n" % (self,))
 
+class TimeoutError(IOError):
+    """ Exception indicating that a timeout was reached. """
+
 
 NO_ENDMARKER_WANTED = object()
 
 class Channel(object):
     """Communication channel between two Python Interpreter execution points."""
     RemoteError = RemoteError
+    TimeoutError = TimeoutError
     _executing = False
 
     def __init__(self, gateway, id):
@@ -396,10 +400,12 @@ class Channel(object):
         code on the other side are reraised as local channel.RemoteErrors.
         EOFError is raised if the reading-connection was prematurely closed, 
         which often indicates a dying process. 
+        self.TimeoutError is raised after the specified number of seconds
+        (default is None, i.e. wait indefinitely).
         """
-        self._receiveclosed.wait(timeout=timeout)  # wait for non-"opened" state
+        self._receiveclosed.wait(timeout=timeout) # wait for non-"opened" state
         if not self._receiveclosed.isSet():
-            raise IOError("Timeout")
+            raise self.TimeoutError("Timeout after %r seconds" % timeout)
         error = self._getremoteerror()
         if error:
             raise error
@@ -419,19 +425,34 @@ class Channel(object):
             data = Message.CHANNEL_DATA(self.id, item)
         self.gateway._send(data)
 
-    def receive(self):
-        """receives an item that was sent from the other side,
-        possibly blocking if there is none.
-        Note that exceptions from the other side will be
+    def receive(self, timeout=-1):
+        """receive a data item that was sent from the other side.
+        timeout: -1 [default] blocked waiting, but wake up periodically 
+        to let CTRL-C through.  A positive number indicates the
+        number of seconds after which a channel.TimeoutError exception
+        will be raised if no item was received. 
+        Note that exceptions from the remotely executing code will be
         reraised as channel.RemoteError exceptions containing
         a textual representation of the remote traceback.
         """
-        queue = self._items
-        if queue is None:
-            raise IOError("calling receive() on channel with receiver callback")
-        x = queue.get()
+        itemqueue = self._items
+        if itemqueue is None:
+            raise IOError("cannot receive(), channel has receiver callback")
+        if timeout < 0:
+            internal_timeout = 1000
+        else:
+            internal_timeout = timeout
+           
+        while 1: 
+            try:
+                x = itemqueue.get(timeout=internal_timeout)
+                break
+            except queue.Empty:
+                if internal_timeout < 0:
+                    continue
+                raise self.TimeoutError("no item after %r seconds" %(timeout))
         if x is ENDMARKER:
-            queue.put(x)  # for other receivers
+            itemqueue.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()
         else:
             return x
