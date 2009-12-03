@@ -65,6 +65,7 @@ class TestGroup:
         exitlist = []
         joinlist = []
         class PseudoGW:
+            id = "9999"
             def exit(self):
                 exitlist.append(self)
                 group._unregister(self)
