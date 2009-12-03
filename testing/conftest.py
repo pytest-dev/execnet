@@ -40,7 +40,9 @@ def getsocketspec(config=None):
 def pytest_generate_tests(metafunc):
     if 'gw' in metafunc.funcargnames:
         assert 'anypython' not in metafunc.funcargnames, "need combine?"
-        if hasattr(metafunc.cls, 'gwtype'):
+        if hasattr(metafunc.function, 'gwtypes'):
+            gwtypes = metafunc.function.gwtypes
+        elif hasattr(metafunc.cls, 'gwtype'):
             gwtypes = [metafunc.cls.gwtype]
         else:
             gwtypes = ['popen', 'socket', 'ssh']
@@ -60,37 +62,27 @@ def pytest_funcarg__anypython(request):
 
 def pytest_funcarg__gw(request):
     scope = "session"
-    if request.param == "popen":
-        return request.cached_setup(
-                setup=lambda: execnet.makegateway("popen"),
-                teardown=lambda gw: gw.exit(),
-                extrakey=request.param,
-                scope=scope)
-    elif request.param == "socket":
-        return request.cached_setup(
-            setup=setup_socket_gateway,
-            teardown=teardown_socket_gateway,
-            extrakey=request.param,
-            scope=scope)
-    elif request.param == "ssh":
-        return request.cached_setup(
-            setup=lambda: setup_ssh_gateway(request),
-            teardown=lambda gw: gw.exit(),
-            extrakey=request.param,
-            scope=scope)
-
-def setup_socket_gateway():
-    proxygw = execnet.makegateway("popen")
-    gw = execnet.makegateway("socket//installvia=%s" % proxygw.id)
-    gw.proxygw = proxygw
-    return gw
-
-def teardown_socket_gateway(gw):
-    gw.exit()
-    gw.proxygw.exit()
-
-def setup_ssh_gateway(request):
-    sshhost = request.getfuncargvalue('specssh').ssh
-    gw = execnet.makegateway("ssh=%s" %(sshhost,))
-    return gw
-
+    group = request.cached_setup(
+        setup=execnet.Group, 
+        teardown=lambda group: group.terminate(timeout=1),
+        extrakey="testgroup",
+        scope=scope,
+    )
+    try:
+        return group[request.param]
+    except KeyError:
+        if request.param == "popen": 
+            gw = group.makegateway("popen//id=popen")
+        elif request.param == "socket":
+            pname = 'sproxy1'
+            if pname not in group:
+                proxygw = group.makegateway("popen//id=%s" % pname)
+            #assert group['proxygw'].remote_status().receiving
+            gw = group.makegateway("socket//id=socket//installvia=%s" % pname)
+            gw.proxygw = proxygw
+            assert pname in group
+            
+        elif request.param == "ssh":
+            sshhost = request.getfuncargvalue('specssh').ssh
+            gw = group.makegateway("ssh=%s//id=ssh" %(sshhost,))
+        return gw
