@@ -1,3 +1,4 @@
+.. _channelexec:
 
 remote execute modules using their __name__
 --------------------------------------------------------------
