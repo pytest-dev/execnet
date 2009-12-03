@@ -226,7 +226,7 @@ class SocketGateway(Gateway):
         #               "port=%r, hostname = %r" %(realport, hostname))
         if not realhost or realhost=="0.0.0.0":
             realhost = "localhost"
-        return gateway._group.makegateway("socket=%s:%s" %(realhost, realport))
+        return cls(realhost, realport)
     new_remote = classmethod(new_remote)
 
 class HostNotFound(Exception):
