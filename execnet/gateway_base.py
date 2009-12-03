@@ -613,8 +613,9 @@ class BaseGateway(object):
     class _StopExecLoop(Exception):
         pass
 
-    def __init__(self, io, _startcount=2):
+    def __init__(self, io, id, _startcount=2):
         self._io = io
+        self.id = id
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
         self._serializer = Serializer(io)
@@ -1064,4 +1065,4 @@ def init_popen_io():
 
 def serve(io):
     trace("creating slavegateway on %r" %(io,))
-    SlaveGateway(io=io, _startcount=2).serve()
+    SlaveGateway(io=io, id="slave", _startcount=2).serve()

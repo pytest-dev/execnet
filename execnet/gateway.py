@@ -13,8 +13,8 @@ importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 class Gateway(gateway_base.BaseGateway):
     """ Gateway to a local or remote Python Intepreter. """
 
-    def __init__(self, io):
-        super(Gateway, self).__init__(io=io, _startcount=1)
+    def __init__(self, io, id):
+        super(Gateway, self).__init__(io=io, id=id, _startcount=1)
         self._remote_bootstrap_gateway(io)
         self._initreceive()
 
@@ -138,25 +138,25 @@ channel.send(dict(
 
 class PopenCmdGateway(Gateway):
     _remotesetup = "io = init_popen_io()"
-    def __init__(self, args):
+    def __init__(self, args, id):
         from subprocess import Popen, PIPE
         self._popen = p = Popen(args, stdin=PIPE, stdout=PIPE)
         io = Popen2IO(p.stdin, p.stdout)
-        super(PopenCmdGateway, self).__init__(io=io)
+        super(PopenCmdGateway, self).__init__(io=io, id=id)
 
 popen_bootstrapline = "import sys ; exec(eval(sys.stdin.readline()))"
 class PopenGateway(PopenCmdGateway):
     """ This Gateway provides interaction with a newly started
         python subprocess.
     """
-    def __init__(self, python=None):
+    def __init__(self, id, python=None):
         """ instantiate a gateway to a subprocess
             started with the given 'python' executable.
         """
         if not python:
             python = sys.executable
         args = [str(python), '-c', popen_bootstrapline]
-        super(PopenGateway, self).__init__(args)
+        super(PopenGateway, self).__init__(args, id=id)
 
     def _remote_bootstrap_gateway(self, io):
         sendexec(io, 
@@ -185,7 +185,7 @@ class SocketGateway(Gateway):
     """
     _remotesetup = "io = SocketIO(clientsock)" 
 
-    def __init__(self, host, port):
+    def __init__(self, host, port, id):
         """ instantiate a gateway to a process accessed
             via a host/port specified socket.
         """
@@ -198,9 +198,9 @@ class SocketGateway(Gateway):
         except socket.gaierror:
             raise HostNotFound(str(sys.exc_info()[1]))
         io = SocketIO(sock)
-        super(SocketGateway, self).__init__(io=io)
+        super(SocketGateway, self).__init__(io=io, id=id)
 
-    def new_remote(cls, gateway, hostport=None):
+    def new_remote(cls, gateway, id, hostport=None):
         """ return a new (connected) socket gateway, 
             instantiated through the given 'gateway'.
         """
@@ -226,7 +226,7 @@ class SocketGateway(Gateway):
         #               "port=%r, hostname = %r" %(realport, hostname))
         if not realhost or realhost=="0.0.0.0":
             realhost = "localhost"
-        return cls(realhost, realport)
+        return cls(realhost, realport, id=id)
     new_remote = classmethod(new_remote)
 
 class HostNotFound(Exception):
@@ -237,7 +237,7 @@ class SshGateway(PopenCmdGateway):
         established via the 'ssh' command line binary.
         The remote side needs to have a Python interpreter executable.
     """
-    def __init__(self, sshaddress, remotepython=None, ssh_config=None):
+    def __init__(self, sshaddress, id, remotepython=None, ssh_config=None):
         """ instantiate a remote ssh process with the
             given 'sshaddress' and remotepython version.
             you may specify an ssh_config file.
@@ -250,7 +250,7 @@ class SshGateway(PopenCmdGateway):
             args.extend(['-F', str(ssh_config)])
         remotecmd = '%s -c "%s"' %(remotepython, popen_bootstrapline)
         args.extend([sshaddress, remotecmd])
-        super(SshGateway, self).__init__(args)
+        super(SshGateway, self).__init__(args, id=id)
 
     def _remote_bootstrap_gateway(self, io):
         try:
