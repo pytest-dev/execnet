@@ -78,6 +78,10 @@ class Gateway(gateway_base.BaseGateway):
             self._cache_rinfo = RInfo(ch.receive())
         return self._cache_rinfo
 
+    def hasreceiver(self):
+        """ return True if gateway is able to receive data. """
+        return self._receiverthread.isAlive() # approxmimation
+
     def remote_status(self):
         """ return information object about remote execution status. """
         channel = self.newchannel()

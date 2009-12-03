@@ -168,8 +168,7 @@ def _setupmessages():
             for ch in active_channels:
                 if getattr(ch, '_executing', False):
                     numexec += 1
-            d = {'receiving': True, 
-                 'execqsize': gateway._execqueue.qsize(),
+            d = {'execqsize': gateway._execqueue.qsize(),
                  'numchannels': len(active_channels),
                  'numexecuting': numexec
             }
