@@ -1,8 +1,9 @@
-Creation and termination of of grouped Gateways
+Creating and working with grouped Gateways
 ------------------------------------------------------
 
-You can use ``execnet.Group`` to manage creation and 
-termination of Gateways.  Example usage::
+Use ``execnet.Group`` to manage the lifetime of multiple 
+gateways and perform iteration and membership
+checks::
 
     >>> import execnet
     >>> group = execnet.Group()
@@ -12,21 +13,25 @@ termination of Gateways.  Example usage::
     <PopenGateway id='2' receive-live, 0 active channels>
     >>> group
     <Group ['1', '2']>
-    >>> list(group) # list all member gateways
+    >>> list(group) 
     [<PopenGateway id='1' receive-live, 0 active channels>, <PopenGateway id='2' receive-live, 0 active channels>]
     >>> len(group)
     2
+    >>> '1' in group and '2' in group
+    True
+    >>> group['1']
+    <PopenGateway id='1' receive-live, 0 active channels>
+
     >>> group.terminate() # exit all member gateways
     >>> group
     <Group []>
 
-Acessing Gateways on a group by ID  
+Assigning Gateway IDs 
 ------------------------------------------------------
 
 All gateways are created as part of a group and receive
 a per-group unique ``id`` after successful initialization.  
-This identification string can be set via an ``id=...`` part 
-in an gateway URL as passed to ``group.makegateway``. Example::
+Pass an ``id=MYNAME`` part to ``group.makegateway``. Example::
 
     >>> import execnet
     >>> group = execnet.Group()
@@ -46,3 +51,22 @@ you actually use the ``execnet.default_group``::
     >>> gw = execnet.makegateway("popen")
     >>> gw in execnet.default_group
     True
+
+Timely termination
+-------------------------
+
+Use ``group.terminate(timeout)`` if you want to terminate 
+member gateways and wait a limited time for proper termination
+of all execution and IO activity::
+
+    >>> import execnet
+    >>> mygroup = execnet.Group()
+    >>> gw = mygroup.makegateway("popen")
+    >>> ch = gw.remote_exec("import time ; time.sleep(2.0)")
+    >>> try: 
+    ...     mygroup.terminate(timeout=1.0)
+    ... except IOError: 
+    ...     pass # subprocess-execution still sleeping
+    ... else: 
+    ...     print ("fail")
+    >>>

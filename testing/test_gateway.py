@@ -5,7 +5,6 @@ import os, sys, time
 import py
 import execnet
 from execnet import gateway_base, gateway
-from execnet.threadpool import WorkerPool
 queue = py.builtin._tryimport('queue', 'Queue')
 
 TESTTIMEOUT = 10.0 # seconds
@@ -443,22 +442,6 @@ class TestChannelFile:
             gw._cache_rinfo = rinfo
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
 
-def test_join_blocked_slave_execution_gateway():
-    gateway = execnet.makegateway('popen')
-    channel = gateway.remote_exec("""
-        import time
-        time.sleep(10.0)
-    """)
-    def doit():
-        gateway.exit()
-        gateway.join(timeout=3.0)
-        return 17
-
-    pool = WorkerPool()
-    reply = pool.dispatch(doit)
-    x = reply.get(timeout=5.0)
-    assert x == 17
-
 class TestPopenGateway:
     gwtype = 'popen'
 
@@ -529,24 +512,6 @@ class TestPopenGateway:
         """)
         py.test.raises(EOFError, channel.receive)
 
-@py.test.mark.skipif("not hasattr(os, 'kill')")
-@py.test.mark.xfail("sys.platform.startswith('java')") 
-def test_endmarker_delivery_on_remote_killterm():
-    gw = execnet.makegateway('popen')
-    q = queue.Queue()
-    channel = gw.remote_exec(source='''
-        import os
-        os.kill(os.getpid(), 15)
-    ''')
-    channel.setcallback(q.put, endmarker=999)
-    val = q.get(TESTTIMEOUT)
-    assert val == 999
-    # XXX jython does not get its io-read pipe closed
-    #     when the remote side died?!
-    err = channel._getremoteerror()
-    assert isinstance(err, EOFError)
-
-
 def test_socket_gw_host_not_found(gw):
     py.test.raises(execnet.HostNotFound,
             'execnet.makegateway("socket=qwepoipqwe:9000")'
@@ -610,22 +575,6 @@ class TestThreads:
         gw.remote_init_threads(3)
         py.test.raises(IOError, gw.remote_init_threads, 3)
 
-def test_close_initiating_remote_no_error(testdir):
-    import subprocess
-    dir = py.path.local(execnet.__file__).dirpath().dirpath()
-    p = testdir.makepyfile("""
-        import sys
-        sys.path.insert(0, %r)
-        import execnet
-        gw = execnet.makegateway("popen")
-        gw.remote_init_threads(num=2)
-        ch = gw.remote_exec("channel.receive()")
-        ch.close()
-    """ % str(dir))
-    popen = subprocess.Popen([sys.executable, str(p)], 
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
-    stdout, stderr = popen.communicate()
-    assert not stderr
 
 class TestTracing:        
     def test_debug(self, monkeypatch):
@@ -649,6 +598,7 @@ class TestTracing:
             py.test.fail("did not find %r in tracefile" %(slave_line,))
         gw.exit()
 
+    @needs_osdup
     def test_popen_stderr_tracing(self, capfd, monkeypatch):
         monkeypatch.setenv('EXECNET_DEBUG', "2")
         gw = execnet.makegateway("popen")

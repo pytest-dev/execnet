@@ -39,12 +39,24 @@ def getsocketspec(config=None):
 
 def pytest_generate_tests(metafunc):
     if 'gw' in metafunc.funcargnames:
+        assert 'anypython' not in metafunc.funcargnames, "need combine?"
         if hasattr(metafunc.cls, 'gwtype'):
             gwtypes = [metafunc.cls.gwtype]
         else:
             gwtypes = ['popen', 'socket', 'ssh']
         for gwtype in gwtypes:
             metafunc.addcall(id=gwtype, param=gwtype)
+    elif 'anypython' in metafunc.funcargnames:
+        for name in ('python3.1', 'python2.4', 'python2.5', 'python2.6', 
+                     'pypy-c', 'jython'):
+            metafunc.addcall(id=name, param=name)
+
+def pytest_funcarg__anypython(request):
+    name = request.param
+    executable = py.path.local.sysfind(name)
+    if executable is None:
+        py.test.skip("no %s found" % (name,))
+    return executable
 
 def pytest_funcarg__gw(request):
     scope = "session"
@@ -81,3 +93,4 @@ def setup_ssh_gateway(request):
     sshhost = request.getfuncargvalue('specssh').ssh
     gw = execnet.makegateway("ssh=%s" %(sshhost,))
     return gw
+

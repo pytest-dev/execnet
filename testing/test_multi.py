@@ -63,17 +63,25 @@ class TestGroup:
         group = Group()
         assert atexitlist == [group._cleanup_atexit]
         exitlist = []
+        joinlist = []
         class PseudoGW:
             def exit(self):
                 exitlist.append(self)
+                group._unregister(self)
+            def join(self):
+                joinlist.append(self)
         gw = PseudoGW()
         group._register(gw)
         assert len(exitlist) == 0
+        assert len(joinlist) == 0
         group._cleanup_atexit()
         assert len(exitlist) == 1
         assert exitlist == [gw]
+        assert len(joinlist) == 1
+        assert joinlist == [gw]
         group._cleanup_atexit()
         assert len(exitlist) == 1
+        assert len(joinlist) == 1
 
     def test_group_PopenGateway(self):
         group = Group()

@@ -27,8 +27,8 @@ else:
 sysex = (KeyboardInterrupt, SystemExit)
 
 DEBUG = os.environ.get('EXECNET_DEBUG')
+pid = os.getpid()
 if DEBUG == '2':
-    pid = os.getpid()
     def trace(msg):
         sys.stderr.write("[%s] %s\n" % (pid, msg))
         sys.stderr.flush()
@@ -38,12 +38,17 @@ elif DEBUG:
     debugfile = open(fn, 'w')
     def trace(msg):
         try:
-            debugfile.write(unicode(msg) + "\n")
+            debugfile.write(msg + "\n")
             debugfile.flush()
         except sysex:
             raise
         except:
-            sys.stderr.write("exception during tracing\n")
+            v = sys.exc_info()[1]
+            try:
+                sys.stderr.write(
+                    "[%d] exception during tracing: %r\n" % (pid, v))
+            except (IOError,ValueError):
+                pass # nothing we can do anymore
 else:
     def trace(msg): 
         pass
@@ -64,7 +69,6 @@ class SocketIO:
         except (AttributeError, socket.error):
             e = sys.exc_info()[1]
             sys.stderr.write("WARNING: cannot set socketoption")
-        self.readable = self.writeable = True
 
     def read(self, numbytes):
         "Read exactly 'bytes' bytes from the socket."
@@ -81,19 +85,15 @@ class SocketIO:
         self.sock.sendall(data)
 
     def close_read(self):
-        if self.readable:
-            try:
-                self.sock.shutdown(0)
-            except socket.error:
-                pass
-            self.readable = None
+        try:
+            self.sock.shutdown(0)
+        except socket.error:
+            pass
     def close_write(self):
-        if self.writeable:
-            try:
-                self.sock.shutdown(1)
-            except socket.error:
-                pass
-            self.writeable = None
+        try:
+            self.sock.shutdown(1)
+        except socket.error:
+            pass
 
 class Popen2IO:
     error = (IOError, OSError, EOFError)
@@ -105,7 +105,6 @@ class Popen2IO:
             import msvcrt
             msvcrt.setmode(infile.fileno(), os.O_BINARY)
             msvcrt.setmode(outfile.fileno(), os.O_BINARY)
-        self.readable = self.writeable = True
 
     def read(self, numbytes):
         """Read exactly 'numbytes' bytes from the pipe. """
@@ -127,16 +126,12 @@ class Popen2IO:
         self.outfile.flush()
 
     def close_read(self):
-        if self.readable:
-            self.infile.close()
-            self.readable = None
+        trace("popen-io.close_read()")
+        self.infile.close()
 
     def close_write(self):
-        try:
-            self.outfile.close()
-        except EnvironmentError:
-            pass
-        self.writeable = None
+        trace("popen-io.close_write()")
+        self.outfile.close()
 
 class Message:
     """ encapsulates Messages and their wire protocol. """
@@ -211,7 +206,8 @@ def _setupmessages():
 
     class GATEWAY_TERMINATE(Message):
         def received(self, gateway):
-            gateway._io.close_read()
+            gateway._trace("putting None to execqueue")
+            gateway._execqueue.put(None)
             raise SystemExit(0)
 
     classes = [
@@ -334,7 +330,7 @@ class Channel(object):
                 Msg = Message.CHANNEL_CLOSE
             try:
                 self.gateway._send(Msg(self.id))
-            except IOError: # ignore problems with sending
+            except (IOError, ValueError): # ignore problems with sending
                 pass
 
     def _getremoteerror(self):
@@ -645,6 +641,7 @@ class BaseGateway(object):
                     finally:
                         _receivelock.release()
                 except sysex:
+                    self._io.close_read()
                     break
                 except EOFError:
                     self._error = sys.exc_info()[1]
@@ -654,7 +651,6 @@ class BaseGateway(object):
                         geterrortext(self.exc_info()), ))
                     break
         finally:
-            self._stopexec()
             self._channelfactory._finished_receiving()
             if threading: # might be None during shutdown/finalization
                 self._trace('leaving %r' % threading.currentThread())
@@ -663,9 +659,6 @@ class BaseGateway(object):
         assert isinstance(msg, Message)
         msg.writeto(self._serializer)
         self._trace('sent -> %r' % msg)
-
-    def _stopexec(self):
-        pass
 
     def _local_schedulexec(self, channel, sourcetask):
         channel.close("execution disallowed")
@@ -689,9 +682,6 @@ class BaseGateway(object):
                         "already finished")
 
 class SlaveGateway(BaseGateway):
-    def _stopexec(self):
-        self._execqueue.put(None)
-
     def _local_schedulexec(self, channel, sourcetask):
         self._execqueue.put((channel, sourcetask))
 
@@ -702,13 +692,13 @@ class SlaveGateway(BaseGateway):
             while 1:
                 item = self._execqueue.get()
                 if item is None:
-                    self._io.close_write()
                     break
                 try:
                     self.executetask(item)
                 except self._StopExecLoop:
                     break
         finally:
+            self._io.close_write()
             self._trace("slavegateway.serve finished")
         if joining:
             self.join()

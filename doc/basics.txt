@@ -95,6 +95,26 @@ two asynchronously running programs.
    .. automethod:: Channel.waitclose(timeout)
    .. autoattribute:: Channel.RemoteError
 
+.. _Group:
+
+Grouping Gateways and guaranteed termination
+===============================================
+
+.. _`group examples`: examples.html#group
+.. currentmodule:: execnet.multi
+
+All created gateway instances are part of a group.  Group objects 
+are container-like objects (see `group examples`_) and manage 
+the final termination procedure:
+
+.. automethod:: Group.terminate(timeout=None)
+
+This method is implicitely called for each gateway group at 
+process-exit, using a small timeout.  This is fine
+for interactive sessions or random scripts which
+you rather like to error out than hang.  If you start many
+processes then you often want to call ``group.terminate()``
+yourself and specify a larger or not timeout.
 
 remote_status: get low-level execution info 
 ===================================================
@@ -108,23 +128,10 @@ information from the remote side.
 
 Calling this method tells you e.g. how many execution 
 tasks are queued, how many are executing and how many
-channels are active. 
-
-
-.. _Group:
-
-Grouping Gateways 
-============================
-
-All created gateway instances are part of a group.  Gateways made
-through the global ``execnet.makegateway()`` will become a 
-member of the ``default_group``::
-
-A Group instance can terminate its gateways explicitely
-or at process termination (each group registers with Python's
-``atexit`` mechanism).  See the `group examples`_ for details.
-
-.. _`group examples`: examples#group
+channels are active.  Note that remote_status()
+works even if the other side's execution thread
+is blocked and can thus be used to query status
+in a non-blocking manner.
 
 rsync: synchronise filesystem with remote
 ===============================================================

@@ -50,19 +50,6 @@ def read_write_loop():
         except (IOError, EOFError):
             break
 
-def pytest_generate_tests(metafunc):
-    if 'anypython' in metafunc.funcargnames:
-        for name in ('python3.1', 'python2.4', 'python2.5', 'python2.6', 
-                     'pypy-c', 'jython'):
-            metafunc.addcall(id=name, param=name)
-
-def pytest_funcarg__anypython(request):
-    name = request.param
-    executable = py.path.local.sysfind(name)
-    if executable is None:
-        py.test.skip("no %s found" % (name,))
-    return executable
-
 def test_io_message(anypython, tmpdir):
     check = tmpdir.join("check.py")
     check.write(py.code.Source(gateway_base, """
