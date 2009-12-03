@@ -36,21 +36,6 @@ class Reply(object):
         self._excinfo = excinfo
         self._queue.put(ERRORMARKER)
 
-    def _get_with_timeout(self, timeout):
-        # taken from python2.3's Queue.get()
-        # we want to run on python2.2 here
-        delay = 0.0005 # 500 us -> initial delay of 1 ms
-        endtime = time.time() + timeout
-        while 1:
-            try:
-                return self._queue.get_nowait()
-            except queue.Empty:
-                remaining = endtime - time.time()
-                if remaining <= 0:  #time is over and no element arrived
-                    raise IOError("timeout waiting for task %r" %(self.task,))
-                delay = min(delay * 2, remaining, .05)
-                time.sleep(delay)       #reduce CPU usage by using a sleep
-
     def get(self, timeout=None):
         """ get the result object from an asynchronous function execution.
             if the function execution raised an exception,
@@ -59,10 +44,10 @@ class Reply(object):
         """
         if self._queue is None:
             raise EOFError("reply has already been delivered")
-        if timeout is not None:
-            result = self._get_with_timeout(timeout)
-        else:
-            result = self._queue.get()
+        try:
+            result = self._queue.get(timeout=timeout)
+        except queue.Empty:
+            raise IOError("timeout waiting for %r" %(self.task, ))
         if result is ERRORMARKER:
             self._queue = None
             excinfo = self._excinfo
