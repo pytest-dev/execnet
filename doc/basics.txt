@@ -70,8 +70,6 @@ in the connected interpreter:
 
 .. automethod:: Gateway.remote_exec(source)
 
-.. include:: example/test_pid.txt
-
 .. _`Channel`: 
 .. _`channel-api`: 
 

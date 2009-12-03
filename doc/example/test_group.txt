@@ -1,3 +1,5 @@
+.. _group:
+
 Creating and working with grouped Gateways
 ------------------------------------------------------
 
