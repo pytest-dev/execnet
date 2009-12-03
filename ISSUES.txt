@@ -46,11 +46,3 @@ This way a gateway can be instantiated through another
 intermediating gateway which bi-directionallry forwads 
 Messages through a existing channel.
 
-cleanup remote_status / receive status
-----------------------------------------
-tags: 1.0.1 feature
-
-remote_status() will only return a result object
-if the other side could receive so the "receiving"
-bit is redundant.  Rather a gateway needs a
-gateway.isreceiving() method. 

@@ -20,23 +20,14 @@ class Gateway(gateway_base.BaseGateway):
 
     def __repr__(self):
         """ return string representing gateway type and status. """
-        if hasattr(self, 'id'):
-            id = self.id
-        else:
-            id = "???"
-        if hasattr(self, 'remoteaddress'):
-            addr = '[%s]' % (self.remoteaddress,)
-        else:
-            addr = ''
         try:
-            r = (self._receiverthread.isAlive() and "receive-live" or
-                 "not-receiving")
+            r = (self.hasreceiver() and 'receive-live' or 'not-receiving')
             i = len(self._channelfactory.channels())
         except AttributeError:
             r = "uninitialized"
             i = "no"
-        return "<%s%s id=%r %s, %s active channels>" %(
-                self.__class__.__name__, addr, id, r, i)
+        return "<%s id=%r %s, %s active channels>" %(
+                self.__class__.__name__, self.id, r, i)
 
     def exit(self):
         """ trigger gateway exit.  Defer waiting for finishing
