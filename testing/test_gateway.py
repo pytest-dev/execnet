@@ -21,7 +21,7 @@ def test_deprecation(recwarn, monkeypatch):
 
 class TestBasicGateway:
     def test_correct_setup(self, gw):
-        assert gw._receiverthread.isAlive()
+        assert gw.hasreceiver()
         assert gw in gw._group 
         assert gw.id in gw._group 
         assert gw.spec 
@@ -36,7 +36,6 @@ class TestBasicGateway:
 
     def test_gateway_status_simple(self, gw):
         status = gw.remote_status()
-        assert status.receiving
         assert not status.execqsize
         assert status.numexecuting == 0
 
@@ -54,7 +53,6 @@ class TestBasicGateway:
         ch2 = gw.remote_exec("channel.receive()")
         ch1.receive()
         status = gw.remote_status()
-        assert status.receiving
         assert status.numexecuting == 1 # number of active execution threads
         assert status.execqsize == 1 # one more queued
         assert status.numchannels == 2
@@ -63,7 +61,6 @@ class TestBasicGateway:
         ch1.waitclose()
         ch2.waitclose()
         status = gw.remote_status()
-        assert status.receiving
         assert status.execqsize == 0
         assert status.numexecuting == 0
         assert status.numchannels == 0
