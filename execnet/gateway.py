@@ -39,17 +39,24 @@ class Gateway(gateway_base.BaseGateway):
                 self.__class__.__name__, addr, id, r, i)
 
     def exit(self):
-        """ trigger gateway exit. """
+        """ trigger gateway exit.  Defer waiting for finishing
+        of receiver-thread and subprocess activity to when
+        group.terminate() is called. 
+        """
         self._trace("gateway.exit() called")
         try:
             self._group._unregister(self)
         except KeyError:
-            return # we assume it's already happened
-        self._trace("--> stopping exec and sending GATEWAY_TERMINATE")
-        self._stopexec()
-        self._send(Message.GATEWAY_TERMINATE(0, ''))
-        self._io.close_write()
-        #self.join(timeout=timeout) # receiverthread receive close() messages
+            self._trace("gateway already unregistered with group")
+            return 
+        self._trace("--> sending GATEWAY_TERMINATE")
+        try:
+            self._send(Message.GATEWAY_TERMINATE(0, ''))
+            self._io.close_write()
+        except IOError:
+            v = sys.exc_info()[1]
+            self._trace("io-error: could not send termination sequence")
+            self._trace(" exception: %r" % v)
 
     def _remote_bootstrap_gateway(self, io):
         """ send gateway bootstrap code to a remote Python interpreter
@@ -136,11 +143,6 @@ class PopenCmdGateway(Gateway):
         self._popen = p = Popen(args, stdin=PIPE, stdout=PIPE)
         io = Popen2IO(p.stdin, p.stdout)
         super(PopenCmdGateway, self).__init__(io=io)
-
-    def exit(self):
-        super(PopenCmdGateway, self).exit()
-        self._trace("polling Popen subprocess")
-        self._popen.poll()
 
 popen_bootstrapline = "import sys ; exec(eval(sys.stdin.readline()))"
 class PopenGateway(PopenCmdGateway):

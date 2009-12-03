@@ -4,7 +4,7 @@ Managing Gateway Groups and interactions with multiple channels.
 (c) 2008-2009, Holger Krekel and others
 """
 
-import sys, weakref, atexit
+import sys, weakref, atexit, time
 import execnet
 from execnet import XSpec
 from execnet import gateway
@@ -20,6 +20,7 @@ class Group:
         self._activegateways = weakref.WeakKeyDictionary()
         self._id2gateway = weakref.WeakValueDictionary()
         self._autoidcounter = 1
+        self._gateways_to_join = []
         for xspec in xspecs:
             self.makegateway(xspec)
         atexit.register(self._cleanup_atexit)
@@ -105,24 +106,33 @@ class Group:
     def _unregister(self, gateway):
         del self._id2gateway[gateway.id]
         del self._activegateways[gateway]
+        self._gateways_to_join.append(gateway)
 
     def _cleanup_atexit(self):
         trace("=== atexit cleanup %r ===" %(self,))
-        self.terminate()
+        self.terminate(timeout=2.0)
 
-    def terminate(self):
-        """ trigger exit of all gateways. """
-        gwlist = []
-        while 1:
-            try:
-                gw, _ = self._activegateways.popitem()
-            except KeyError:
-                break
-            else:
-                gw.exit()
-                gwlist.append(gw)
-        #for gw in gwlist:
-        #    gw.join(timeout=1.0)
+    def terminate(self, timeout=None):
+        """ trigger exit of member gateways and and wait for completion
+        of receiver-threads of previously exited member gateways and any 
+        started subprocesses.  If after timeout seconds (None for no-timeout) 
+        waiting does not finish a TimeoutError will be raised.
+        """
+        endtime = timeout and (time.time() + timeout) or None
+        for gw in self:
+            gw.exit() 
+        def join_receiver_and_wait_for_subprocesses():
+            for gw in self._gateways_to_join:
+                gw.join()
+            while self._gateways_to_join:
+                gw = self._gateways_to_join.pop(0)
+                if hasattr(gw, '_popen'):
+                    gw._popen.wait()
+            self._gateways_to_join[:] = []
+        from execnet.threadpool import WorkerPool
+        pool = WorkerPool(1)
+        reply = pool.dispatch(join_receiver_and_wait_for_subprocesses)
+        reply.get(timeout=timeout)
 
     def remote_exec(self, source):
         channels = []
