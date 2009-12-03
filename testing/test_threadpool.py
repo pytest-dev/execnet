@@ -74,6 +74,7 @@ def test_join_timeout():
     reply.get(timeout=1.0)
     pool.join(timeout=0.1)
 
+@py.test.mark.skipif("not hasattr(os, 'dup')")
 def test_pool_clean_shutdown():
     capture = py.io.StdCaptureFD()
     pool = WorkerPool()
