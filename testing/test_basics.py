@@ -161,7 +161,7 @@ class PseudoChannel:
     
 def test_exectask():
     io = py.io.BytesIO()
-    gw = gateway_base.SlaveGateway(io)
+    gw = gateway_base.SlaveGateway(io, id="something")
     ch = PseudoChannel()
     gw.executetask((ch, "raise ValueError()"))
     assert "ValueError" in str(ch._closed[0]) 

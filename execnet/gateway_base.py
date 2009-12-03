@@ -29,16 +29,18 @@ sysex = (KeyboardInterrupt, SystemExit)
 DEBUG = os.environ.get('EXECNET_DEBUG')
 pid = os.getpid()
 if DEBUG == '2':
-    def trace(msg):
-        sys.stderr.write("[%s] %s\n" % (pid, msg))
+    def trace(*msg):
+        line = " ".join(map(str, msg))
+        sys.stderr.write("[%s] %s\n" % (pid, line))
         sys.stderr.flush()
 elif DEBUG:
     import tempfile, os.path
     fn = os.path.join(tempfile.gettempdir(), 'execnet-debug-%d' % os.getpid())
     debugfile = open(fn, 'w')
-    def trace(msg):
+    def trace(*msg):
+        line = " ".join(map(str, msg))
         try:
-            debugfile.write(msg + "\n")
+            debugfile.write(line + "\n")
             debugfile.flush()
         except sysex:
             raise
@@ -50,7 +52,7 @@ elif DEBUG:
             except (IOError,ValueError):
                 pass # nothing we can do anymore
 else:
-    def trace(msg): 
+    def trace(*msg): 
         pass
 
 
@@ -126,11 +128,9 @@ class Popen2IO:
         self.outfile.flush()
 
     def close_read(self):
-        trace("popen-io.close_read()")
         self.infile.close()
 
     def close_write(self):
-        trace("popen-io.close_write()")
         self.outfile.close()
 
 class Message:
@@ -269,6 +269,9 @@ class Channel(object):
         self._receiveclosed = threading.Event()
         self._remoteerrors = []
 
+    def _trace(self, *msg):
+        self.gateway._trace(self.id, *msg)
+
     def setcallback(self, callback, endmarker=NO_ENDMARKER_WANTED):
         """ set a callback function for receiving items.
 
@@ -312,7 +315,7 @@ class Channel(object):
     def __del__(self):
         if self.gateway is None:   # can be None in tests
             return
-        self.gateway._trace("Channel(%d).__del__" % self.id)
+        self._trace("channel.__del__")
         # no multithreading issues here, because we have the last ref to 'self'
         if self._closed:
             # state transition "closed" --> "deleted"
@@ -371,7 +374,7 @@ class Channel(object):
         if self._executing:
             raise IOError("cannot explicitly close channel within remote_exec")
         if self._closed:
-            trace("%r redundant call to close(), ignoring" %(self,))
+            self.gateway._trace(self, "ignoring redundant call to close()")
         if not self._closed:
             # state transition "opened/sendonly" --> "closed"
             # threads warning: the channel might be closed under our feet,
@@ -384,7 +387,7 @@ class Channel(object):
                     put(Message.CHANNEL_CLOSE_ERROR(self.id, error))
                 else:
                     put(Message.CHANNEL_CLOSE(self.id))
-                trace("%r: sent channel close message" %(self,))
+                self._trace("sent channel close message")
             if isinstance(error, RemoteError):
                 self._remoteerrors.append(error)
             self._closed = True         # --> "closed"
@@ -609,6 +612,7 @@ class ChannelFileRead(ChannelFile):
 
 class BaseGateway(object):
     exc_info = sys.exc_info
+    id = "<slave>"
 
     class _StopExecLoop(Exception):
         pass
@@ -619,7 +623,10 @@ class BaseGateway(object):
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
         self._serializer = Serializer(io)
-        self._trace = trace  # globals may be NONE at process-termination
+        self._globaltrace = trace  # globals may be NONE at process-termination
+
+    def _trace(self, *msg):
+        self._globaltrace(self.id, *msg)
 
     def _initreceive(self):
         self._receiverthread = threading.Thread(name="receiver",
@@ -634,7 +641,7 @@ class BaseGateway(object):
             while 1:
                 try:
                     msg = Message.readfrom(unserializer)
-                    self._trace("received <- %r" % msg)
+                    self._trace("received", msg)
                     _receivelock = self._receivelock
                     _receivelock.acquire()
                     try:
@@ -642,24 +649,25 @@ class BaseGateway(object):
                     finally:
                         _receivelock.release()
                 except sysex:
+                    self._trace("io.close_read()")
                     self._io.close_read()
                     break
                 except EOFError:
                     self._error = sys.exc_info()[1]
                     break
                 except:
-                    self._trace("RECEIVERTHREAD: %s " %(
-                        geterrortext(self.exc_info()), ))
+                    self._trace("RECEIVERTHREAD", 
+                        geterrortext(self.exc_info()))
                     break
         finally:
             self._channelfactory._finished_receiving()
             if threading: # might be None during shutdown/finalization
-                self._trace('leaving %r' % threading.currentThread())
+                self._trace('leaving', threading.currentThread())
 
     def _send(self, msg):
         assert isinstance(msg, Message)
         msg.writeto(self._serializer)
-        self._trace('sent -> %r' % msg)
+        self._trace('sent', msg)
 
     def _local_schedulexec(self, channel, sourcetask):
         channel.close("execution disallowed")
@@ -699,6 +707,7 @@ class SlaveGateway(BaseGateway):
                 except self._StopExecLoop:
                     break
         finally:
+            self._trace("io.close_write()")
             self._io.close_write()
             self._trace("slavegateway.serve finished")
         if joining:
@@ -1063,6 +1072,6 @@ def init_popen_io():
         sys.stdout = os.fdopen(1, 'w', 1)
     return io
 
-def serve(io):
+def serve(io, id):
     trace("creating slavegateway on %r" %(io,))
-    SlaveGateway(io=io, id="slave", _startcount=2).serve()
+    SlaveGateway(io=io, id=id, _startcount=2).serve()

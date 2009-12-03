@@ -96,7 +96,6 @@ class Group:
         if id is None:
             id = str(self._autoidcounter)
             self._autoidcounter += 1
-        assert not callable(id)
         assert id not in self._id2gateway
         return id
 

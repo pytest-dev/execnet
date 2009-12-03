@@ -66,7 +66,7 @@ class Gateway(gateway_base.BaseGateway):
             inspect.getsource(gateway_base), 
             self._remotesetup,
             "io.write('1'.encode('ascii'))",
-            "serve(io)"
+            "serve(io, id='%s-slave')" % self.id,
         )
         s = io.read(1)
         assert s == "1".encode('ascii')
@@ -167,7 +167,7 @@ class PopenGateway(PopenCmdGateway):
         sendexec(io, 
             "import sys ; sys.path.insert(0, %r)" % importdir,
             "from execnet.gateway_base import serve, init_popen_io",
-            "serve(init_popen_io())",
+            "serve(init_popen_io(), id='%s-slave')" % self.id,
         )
         s = io.read(1)
         assert s == "1".encode('ascii')
