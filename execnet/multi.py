@@ -56,24 +56,26 @@ class Group:
         """
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
+        id = self._allocate_id(spec.id)
         if spec.popen:
-            gw = gateway.PopenGateway(python=spec.python)
+            gw = gateway.PopenGateway(python=spec.python, id=id)
         elif spec.ssh:
-            gw = gateway.SshGateway(spec.ssh, remotepython=spec.python, ssh_config=spec.ssh_config)
+            gw = gateway.SshGateway(spec.ssh, remotepython=spec.python, 
+                                    ssh_config=spec.ssh_config, id=id)
         elif spec.socket:
             assert not spec.python, (
                 "socket: specifying python executables not yet supported")
             gateway_id = spec.installvia
             if gateway_id:
                 viagw = self._id2gateway[gateway_id]
-                gw = gateway.SocketGateway.new_remote(viagw)
+                gw = gateway.SocketGateway.new_remote(viagw, id=id)
             else:
-                hostport = spec.socket.split(":")
-                gw = gateway.SocketGateway(*hostport)
+                host, port = spec.socket.split(":")
+                gw = gateway.SocketGateway(host, port, id=id)
         else:
             raise ValueError("no gateway type found for %r" % (spec._spec,))
         gw.spec = spec
-        self._register(gw, id=spec.id)
+        self._register(gw)
         if spec.chdir or spec.nice:
             channel = gw.remote_exec("""
                 import os
@@ -90,18 +92,22 @@ class Group:
             channel.waitclose()
         return gw
 
-    def _register(self, gateway, id=None):
-        assert not hasattr(gateway, '_group')
+    def _allocate_id(self, id=None):
         if id is None:
-            id = self._autoidcounter
+            id = str(self._autoidcounter)
             self._autoidcounter += 1
-        id = str(id)
+        assert not callable(id)
+        assert id not in self._id2gateway
+        return id
+
+    def _register(self, gateway):
+        assert not hasattr(gateway, '_group')
+        assert gateway.id
         assert id not in self._id2gateway
         assert gateway not in self._activegateways
         self._activegateways[gateway] = True
-        self._id2gateway[id] = gateway
+        self._id2gateway[gateway.id] = gateway
         gateway._group = self
-        gateway.id = id
 
     def _unregister(self, gateway):
         del self._id2gateway[gateway.id]
