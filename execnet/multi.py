@@ -66,7 +66,7 @@ class Group:
             gateway_id = spec.installvia
             if gateway_id:
                 viagw = self._id2gateway[gateway_id]
-                return gateway.SocketGateway.new_remote(viagw)
+                gw = gateway.SocketGateway.new_remote(viagw)
             else:
                 hostport = spec.socket.split(":")
                 gw = gateway.SocketGateway(*hostport)

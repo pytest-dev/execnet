@@ -129,8 +129,9 @@ class TestMakegateway:
 
     def test_ssh(self, specssh):
         sshhost = specssh.ssh
-        gw = execnet.makegateway("ssh=%s" % sshhost)
+        gw = execnet.makegateway("ssh=%s//id=ssh1" % sshhost)
         rinfo = gw._rinfo()
+        assert gw.id == 'ssh1'
         gw2 = execnet.SshGateway(sshhost)
         rinfo2 = gw2._rinfo()
         assert rinfo.executable == rinfo2.executable
@@ -138,11 +139,12 @@ class TestMakegateway:
         assert rinfo.version_info == rinfo2.version_info
 
     def test_socket(self, specsocket):
-        gw = execnet.makegateway("socket=%s" % specsocket.socket)
+        gw = execnet.makegateway("socket=%s//id=sock1" % specsocket.socket)
         rinfo = gw._rinfo()
         assert rinfo.executable
         assert rinfo.cwd
         assert rinfo.version_info
+        assert gw.id == "sock1"
         # we cannot instantiate a second gateway
 
         #gw2 = execnet.SocketGateway(*specsocket.socket.split(":"))
@@ -150,3 +152,11 @@ class TestMakegateway:
         #assert rinfo.executable == rinfo2.executable
         #assert rinfo.cwd == rinfo2.cwd
         #assert rinfo.version_info == rinfo2.version_info
+
+    def test_socket_installvia(self):
+        group = execnet.Group()
+        group.makegateway("popen//id=p1")
+        gw = group.makegateway("socket//installvia=p1//id=s1")
+        assert gw.id == "s1"
+        assert gw.remote_status()
+        group.terminate()
