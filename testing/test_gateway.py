@@ -16,11 +16,13 @@ def test_serialize_error(gw):
     excinfo = py.test.raises(ch.RemoteError, ch.receive)
     assert "can't serialize" in str(excinfo.value)
 
-def test_deprecation(recwarn):
+def test_deprecation(recwarn, monkeypatch):
     execnet.PopenGateway()
     assert recwarn.pop(DeprecationWarning)
-    py.test.raises(Exception, 'execnet.SocketGateway("localhost", 8888)')
+    monkeypatch.setattr(py.std.socket, 'socket', lambda *args: 0/0)
+    py.test.raises(Exception, 'execnet.SocketGateway("localhost", 8811)')
     assert recwarn.pop(DeprecationWarning)
+    monkeypatch.setattr(py.std.subprocess, 'Popen', lambda *args,**kwargs: 0/0)
     py.test.raises(Exception, 'execnet.SshGateway("not-existing")')
     assert recwarn.pop(DeprecationWarning)
 
