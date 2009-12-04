@@ -1,9 +1,17 @@
 import execnet
 import py
+import sys
 
 collect_ignore = ['build', 'doc/_build']
 
 rsyncdirs = ['conftest.py', 'execnet', 'testing', 'doc']
+
+winpymap = {
+    'python2.6': r'C:\Python26\python.exe',
+    'python2.5': r'C:\Python25\python.exe',
+    'python2.4': r'C:\Python24\python.exe',
+    'python3.1': r'C:\Python31\python.exe',
+}
 
 pytest_plugins = ['pytester', 'doctest']
 # configuration information for tests
@@ -59,6 +67,12 @@ def pytest_funcarg__anypython(request):
     name = request.param
     executable = py.path.local.sysfind(name)
     if executable is None:
+        if sys.platform == "win32":
+            executable = winpymap.get(name, None)
+            if executable:
+                executable = py.path.local(executable)
+                if executable.check():
+                    return executable
         py.test.skip("no %s found" % (name,))
     return executable
 
