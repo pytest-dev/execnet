@@ -1,7 +1,9 @@
 import execnet
 import py
 
-rsyncdirs = ['../execnet', '.']
+collect_ignore = ['build', 'doc/_build']
+
+rsyncdirs = ['conftest.py', 'execnet', 'testing', 'doc']
 
 pytest_plugins = ['pytester', 'doctest']
 # configuration information for tests
