@@ -1,65 +1,62 @@
+
+execnet: connect your execution environments 
+========================================================
+
 .. image:: _static/pythonring.png
    :align: right
 
-Welcome to execnet!
-=========================
+Execnet allows to ad-hoc connect to Python interpreters across version, platform and network barriers.  It provides a minimal, fast and robust API for the following uses:
 
-The execnet package allows to: 
+* distribute tasks to multiple CPUs
+* deploy hybrid applications 
+* manage local and remote execution environments
 
-* instantiate local/remote Python Interpreters
-* send code for execution to one or many Interpreters 
-* send and receive data through channels
+Features
+------------------
 
-execnet performs **zero-install bootstrapping** into other interpreters; 
-package installation is only required at the initiating side.  execnet enables
-interoperation between CPython 2.4-3.1, Jython 2.5.1, PyPy 1.1 and IronPython 
-and works well on Windows, Linux and OSX systems.
+* zero-install bootstrapping: no remote installation required!
 
-execnet was written and is maintained by `Holger Krekel`_ (blog_) with contributions from many others.  The package is licensed under the GPL Version 2 or later, at your choice.  Contributions and some parts of the package are licensed under the MIT license. 
+* flexible communication: send/receive as well as 
+  callback/queue mechanisms supported
 
-.. note::
-   Support of Jython and IronPython are experimental at this point.
-   Feedback and help with testing welcome. 
+* simple serialization of python builtin types (no pickling)
 
+* grouped creation and robust termination of processes
 
-Getting Started
-====================
+* well tested between CPython 2.4-3.1, Jython 2.5.1 and PyPy 1.1
+  interpreters.
 
-Install a public `pypi release`_ via `easy_install`_ or ``pip``::
+* fully interoperable between Windows and Unix-ish systems. 
 
-    easy_install -U execnet
+Known users 
+-------------------
 
-To work from the development tree checkout the `execnet mercurial repository`_.
+* `py.test`_ uses it for its `distributed testing`_ mechanism. 
 
-Next checkout the basic api and examples:
+* Jacob Perkins uses it for his `Distributed NTLK with execnet`_ 
+  project. 
 
-.. toctree::
-   :maxdepth: 1
+* Ronny Pfannschmidt uses it for his `anyvc`_ VCS-abstraction project
 
-   basics
-   examples
-   changelog
+* sysadmins and developers are using it for ad-hoc custom scripting 
 
-Issues / Contact channels 
-===========================
+.. _`py.test`: http://pytest.org
+.. _`distributed testing`: http://codespeak.net/py/dist/test/dist.html
+.. _`Distributed NTLK with execnet`: http://streamhacker.com/2009/11/29/distributed-nltk-execnet/
+.. _`anyvc`: http://bitbucket.org/RonnyPfannschmidt/anyvc/
 
-If you have a questions, issues or suggestions you are welcome to join 
-and post to the `execnet-dev`_ mailing list. Alternatively you 
-you get see to help on the #pylib IRC channel on Freenode.
+Project status
+--------------------------
 
-There also is the `execnet-commit`_ mailing list
-which relays commit mails to the `bitbucket repository`_.
+The current 1.0 series aims at `basic API`_ stabilization, improved tracing and robust termination.
 
+The 1.1 series will target setting up permanent networks and offering unix-shell-like capabilities to spawn processes and applications.
+
+execnet was conceived and is `actively developed`_ by `Holger Krekel`_.  
+The package is licensed under the GPL Version 2 or later, at your choice.  
+Armin Rigo and Benjamin Peterson have done major contributions which
+are MIT-licensed. 
+
+.. _`basic API`: basics.html
+.. _`actively developed`: http://bitbucket.org/hpk42/execnet/changesets
 .. _`Holger Krekel`: http://twitter.com/hpk42
-.. _`blog`: http://tetamap.wordpress.com
-.. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
-.. _`execnet-commit`: http://codespeak.net/mailman/listinfo/execnet-commit
-
-.. _`easy_install`: http://peak.telecommunity.com/DevCenter/EasyInstall
-.. _`bitbucket repository`: http://bitbucket.org/hpk42/execnet/
-.. _`execnet mercurial repository`: http://bitbucket.org/hpk42/execnet/
-.. _`pypi release`: http://pypi.python.org/pypi/execnet
-
-
-
-
