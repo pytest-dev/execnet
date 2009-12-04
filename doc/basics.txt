@@ -3,11 +3,12 @@ execnet API in a nutshell
 ==============================================================================
 
 execnet ad-hoc instantiates **gateways** to Python 
-interpreter processes with which you can **remote execute
+interpreter processes though which you can **remote execute
 code** and exchange basic python objects through **channels**.
+All gateways are created as part of a **group** which is responsible
+for managing membership and **proper termination**.
 
 .. image:: _static/basic1.png
-
 
 Gateways: connecting to another Python Interpreter
 ===================================================
@@ -19,12 +20,12 @@ passing it a gateway specification or URL.
 
 .. autofunction:: execnet.makegateway(xspec)
 
-Here is an example to instantiate a simple Python subprocess::
+Here is an example which instantiates a simple Python subprocess::
 
     >>> gateway = execnet.makegateway("popen")
 
-You can then use this gateway object to `remote execute code`_ and 
-`exchange data`_ bidirectionally. 
+You can use a gateway to `remote execute code`_ and 
+`exchange data`_ bidirectionally.  
 
 examples for valid gateway specifications
 -------------------------------------------
@@ -70,6 +71,12 @@ in the connected interpreter:
 
 .. automethod:: Gateway.remote_exec(source)
 
+It is allowed to pass a module object as source code 
+in which case it's source code will be obtained and 
+get sent for remote execution.  ``remote_exec`` returns
+a channel object whose symmetric counterpart channel 
+is available to the remotely executing source. 
+
 .. _`Channel`: 
 .. _`channel-api`: 
 
@@ -86,24 +93,27 @@ two asynchronously running programs.
 .. class:: Channel 
 
    .. automethod:: Channel.send(item)
-   .. automethod:: Channel.receive()
+   .. automethod:: Channel.receive(timeout)
    .. automethod:: Channel.setcallback(callback, endmarker=_NOENDMARKER)
    .. automethod:: Channel.makefile(mode, proxyclose=False)
    .. automethod:: Channel.close(error)
    .. automethod:: Channel.waitclose(timeout)
    .. autoattribute:: Channel.RemoteError
+   .. autoattribute:: Channel.TimeoutError
 
 .. _Group:
 
-Grouping Gateways and guaranteed termination
+Grouped Gateways and robust termination
 ===============================================
 
 .. _`group examples`: examples.html#group
 .. currentmodule:: execnet.multi
 
-All created gateway instances are part of a group.  Group objects 
-are container-like objects (see `group examples`_) and manage 
-the final termination procedure:
+All created gateway instances are part of a group.  If you
+call ``execnet.makegateway`` it actually is forwarded to
+the ``execnet.default_group``. Group objects are container 
+objects (see `group examples`_) and manage the final 
+termination procedure:
 
 .. automethod:: Group.terminate(timeout=None)
 

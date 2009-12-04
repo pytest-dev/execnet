@@ -1,16 +1,32 @@
 """
-the execnet package allows to: 
+execnet: connect your execution environments 
+========================================================
 
-* instantiate local/remote Python Interpreters
-* send code for execution to one or many Interpreters 
-* send and receive data between codeInterpreters through channels
+.. image:: _static/pythonring.png
+   :align: right
 
-execnet performs **zero-install bootstrapping** into other interpreters; 
-package installation is only required at the initiating side.  execnet enables
-interoperation between CPython 2.4-3.1, Jython 2.5 and PyPy 1.1 and works
-well on Windows, Linux and OSX systems.
+Execnet allows to ad-hoc connect to Python interpreters across version, platform and network barriers.  It provides a minimal, fast and robust API for the following uses:
 
-execnet was written and is maintained by Holger Krekel with contributions from many others.  The package is licensed under the GPL Version 2 or later, at your choice.  Contributions and some parts of the package are licensed under the MIT license.
+* distribute tasks to multiple CPUs
+* deploy hybrid applications 
+* manage local and remote execution environments
+
+Features
+------------------
+
+* zero-install bootstrapping: no remote installation required!
+
+* flexible communication: send/receive as well as 
+  callback/queue mechanisms supported
+
+* simple serialization of python builtin types (no pickling)
+
+* grouped creation and robust termination of processes
+
+* well tested between CPython 2.4-3.1, Jython 2.5.1 and PyPy 1.1
+  interpreters.
+
+* fully interoperable between Windows and Unix-ish systems. 
 """
 
 try:
@@ -23,7 +39,7 @@ from execnet import __version__
 def main():
     setup(
         name='execnet',
-        description='execnet: elastic Python deployment',
+        description='execnet: connect your execution environments',
         long_description = __doc__,
         version= __version__,
         url='http://codespeak.net/execnet',
