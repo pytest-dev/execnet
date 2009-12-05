@@ -1,0 +1,104 @@
+basic local and remote communication
+=========================================
+
+Comparing current working directories
+----------------------------------------
+
+A popen gateway has the same working directory as the instantiatior::
+
+    >>> import execnet, os
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec("import os; channel.send(os.getcwd())")
+    >>> res = ch.receive()
+    >>> assert res == os.getcwd()
+
+"ssh" gateways default to the login home directory.
+
+Getting information from remote ssh account
+--------------------------------------------
+
+Use simple execution to obtain information from remote environments::
+
+  >>> import execnet, os
+  >>> gw = execnet.makegateway("ssh=codespeak.net")
+  >>> channel = gw.remote_exec("""
+  ...     import sys, os
+  ...     channel.send((sys.platform, sys.version_info, os.getpid()))
+  ... """)
+  >>> platform, version_info, remote_pid = channel.receive()
+  >>> platform
+  'linux2'
+  >>> version_info
+  (2, 4, 2, 'final', 0)
+
+
+Avoid "inlined" source strings with remote_exec
+--------------------------------------------------------------
+
+You can pass a module object to ``remote_exec`` in which case
+its source code will be sent.  No dependencies will be transferred
+so the module must be self-contained or only use modules that are 
+installed on the "other" side.   Module code can detect if it is 
+running in a remote_exec situation by checking for the special 
+``__name__`` attribute.
+
+.. include:: remote1.py
+    :literal:
+
+You can now remote-execute the module like this::
+
+    >>> import execnet, remote1
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec(remote1)
+    >>> print (ch.receive())
+    initialization complete
+
+which will print the 'initialization complete' string. 
+
+a simple command loop pattern
+--------------------------------------------------------------
+
+If you want the remote side to serve a number
+of synchronous function calls into your module
+you can setup a serving loop and write a local protocol.
+
+.. include:: remotecmd.py
+    :literal:
+
+Then on the local side you can do::
+
+    >>> import execnet, remotecmd
+    >>> gw = execnet.PopenGateway()
+    >>> ch = gw.remote_exec(remotecmd)
+    >>> ch.send('simple(10)') # execute func-call remotely
+    >>> ch.receive()
+    11
+
+Our remotecmd module starts up remote serving
+through the ``for item in channel`` loop which
+will terminate when the channel closes. It evaluates
+all incoming requests in the global name space and
+sends back the results.  
+
+
+Instantiate gateways through sockets 
+-----------------------------------------------------
+
+.. _`socketserver.py`: http://bitbucket.org/hpk42/execnet/raw/80baab4140de/execnet/script/socketserver.py
+
+In cases where you do not have SSH-access to a machine
+you need to download a small version-independent standalone 
+`socketserver.py`_ script to provide a remote bootstrapping-point.  
+You do not need to install the execnet package remotely.  
+Simply run the script like this::
+
+    python socketserver.py :8888   # bind to all IPs, port 8888
+
+You can then instruct execnet on your local machine to bootstrap 
+itself into the remote socket endpoint:
+
+    import execnet
+    gw = execnet.SocketGateway("TARGET-IP:8888")
+
+That's it, you can now use the gateway object just like
+a popen- or ssh-based one. 

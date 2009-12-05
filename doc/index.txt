@@ -1,36 +1,37 @@
 
-Welcome to rapid python deployment
+Welcome to rapid Python deployment
 ========================================================
 
 .. image:: _static/pythonring.png
    :align: right
 
 Python_ is a mature dynamic language whose interpreters can interact with 
-all major computing platforms today.  Execnet provides carefully tested 
-means to ad-hoc connect to Python interpreters across version, platform 
-and network barriers.  It provides a minimal, fast and robust API for 
-the following uses:
+all major computing platforms today.  
 
-* distribute tasks to multiple CPUs
+**execnet** provides carefully tested means to ad-hoc interact with Python
+interpreters across version, platform and network barriers.  It provides
+a minimal and fast API targetting the following uses:
+
+* distribute tasks to local or remote CPUs 
 * write and deploy hybrid multi-process applications 
-* write scripts to interact a bunch of exec environments
+* write scripts to administer a bunch of exec environments
 
 .. _Python: http://www.python.org
 
 Features
 ------------------
 
-* zero-install bootstrapping: no manual remote installation!
+* automatic bootstrapping: no manual remote installation.
 
-* flexible communication: send/receive as well as 
+* safe and simple serialization of python builtin types (no pickle)
+
+* flexible communication: synchronous send/receive as well as 
   callback/queue mechanisms supported
 
-* simple serialization of python builtin types (no pickling)
+* easy creation, handling and termination of multiple processes
 
-* grouped creation and robust termination of processes
-
-* well tested between CPython 2.4-3.1, Jython 2.5.1 and PyPy 1.1
-  interpreters.
+* well tested interactions between CPython 2.4-3.1, Jython 2.5.1 
+  and PyPy 1.1 interpreters.
 
 * fully interoperable between Windows and Unix-ish systems. 
 

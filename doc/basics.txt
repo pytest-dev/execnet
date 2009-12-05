@@ -10,7 +10,7 @@ help to manage creation and termination of sub interpreters.
 
 .. image:: _static/basic1.png
 
-Gateways: connecting to another Python Interpreter
+Gateways: bootstrapping Python interpreters
 ===================================================
 
 .. currentmodule:: execnet
@@ -18,13 +18,15 @@ Gateways: connecting to another Python Interpreter
 All Gateways are instantiated via a call to ``makegateway()`` 
 passing it a gateway specification or URL. 
 
-.. autofunction:: execnet.makegateway(xspec)
+.. _xspec:
+
+.. autofunction:: execnet.makegateway(spec)
 
 Here is an example which instantiates a simple Python subprocess::
 
     >>> gateway = execnet.makegateway("popen")
 
-You can use a gateway to `remote execute code`_ and 
+gateways allow to `remote execute code`_ and 
 `exchange data`_ bidirectionally.  
 
 examples for valid gateway specifications
@@ -38,26 +40,8 @@ examples for valid gateway specifications
   subprocess; running with the lowest CPU priority ("nice" level). 
   By default current dir will be the current dir of the instantiator.
 
-* ``socket=192.168.1.4:8888`` specifies of a Python Socket server
-  process that listens on 192.168.1.4:8888; current dir will be the
-  'pyexecnet-cache' sub directory which is used a default for all remote
-  processes.
-
-.. _xspec:
-
-recognized Gateway URL parts
----------------------------------------
-
-The following parameters are recognized as part of a gateway specification::
-
-* ``popen`` for a PopenGateway. 
-* ``ssh=host`` for a SshGateway to the given host. 
-* ``socket=address:port`` for a SocketGateway at the given address. 
-* ``id=NAME`` set the ``id`` of the gateway, must be unique within Group_
-* ``python=executable`` for specifying Python Interpreter executables
-* ``chdir=path`` change remote working dir to given relative or absolute path
-* ``nice=value`` decrease remote nice level if platforms supports it 
-
+* ``socket=192.168.1.4:8888`` specifies a Python Socket server
+  process that listens on 192.168.1.4:8888``
 
 .. _`remote execute code`:
 
@@ -90,8 +74,6 @@ Channels: exchanging data with remote code
 A channel object allows to send and receive data between 
 two asynchronously running programs.  
 
-.. class:: Channel 
-
    .. automethod:: Channel.send(item)
    .. automethod:: Channel.receive(timeout)
    .. automethod:: Channel.setcallback(callback, endmarker=_NOENDMARKER)
@@ -111,7 +93,7 @@ Grouped Gateways and robust termination
 All created gateway instances are part of a group.  If you
 call ``execnet.makegateway`` it actually is forwarded to
 the ``execnet.default_group``. Group objects are container 
-objects (see :doc:`group examples <example/test_group>>`_) 
+objects (see :doc:`group examples <example/test_group>`) 
 and manage the final termination procedure:
 
 .. automethod:: Group.terminate(timeout=None)
@@ -135,10 +117,9 @@ information from the remote side.
 
 Calling this method tells you e.g. how many execution 
 tasks are queued, how many are executing and how many
-channels are active.  Note that remote_status()
-works even if the other side's execution thread
-is blocked and can thus be used to query status
-in a non-blocking manner.
+channels are active.  Note that ``remote_status()``
+works even if the other side is busy executing code
+and can thus be used to query status in a non-blocking manner.
 
 rsync: synchronise filesystem with remote
 ===============================================================
