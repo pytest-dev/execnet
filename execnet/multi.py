@@ -161,6 +161,18 @@ class MultiChannel:
     def __init__(self, channels):
         self._channels = channels
 
+    def __len__(self):
+        return len(self._channels)
+
+    def __iter__(self):
+        return iter(self._channels)
+    
+    def __getitem__(self, key):
+        return self._channels[key]
+    
+    def __contains__(self, chan):
+        return chan in self._channels
+
     def send_each(self, item):
         for ch in self._channels:
             ch.send(item)
