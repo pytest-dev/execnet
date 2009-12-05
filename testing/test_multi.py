@@ -98,6 +98,11 @@ class TestGroup:
         assert len(exitlist) == 1
         assert len(joinlist) == 1
 
+    def test_group_default_spec(self):
+        group = Group()
+        group.defaultspec = "not-existing-type"
+        py.test.raises(ValueError, group.makegateway)
+
     def test_group_PopenGateway(self):
         group = Group()
         gw = group.makegateway("popen")

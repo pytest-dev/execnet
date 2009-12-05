@@ -9,6 +9,9 @@
 
 - new: execnet.Group can be indexed by integer
 
+- new: group.makegateway() uses group.default_spec if no spec is given
+  and the execnet.default_group uses ``popen`` as a default spec. 
+
 - have popen-gateways use imports instead of source-strings,
   also improves debugging/tracebacks, as a side effect
   popen-gateway startup can be substantially faster (>30%)

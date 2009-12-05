@@ -60,8 +60,9 @@ class TestMakegateway:
     def test_no_type(self):
         py.test.raises(ValueError, "execnet.makegateway('hello')")
 
-    def test_popen(self):
-        gw = execnet.makegateway("popen")
+    def test_popen_default(self):
+        gw = execnet.makegateway("")
+        assert gw.spec.popen 
         assert gw.spec.python == None
         rinfo = gw._rinfo()
         assert rinfo.executable == py.std.sys.executable
