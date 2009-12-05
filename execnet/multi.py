@@ -14,6 +14,7 @@ NO_ENDMARKER_WANTED = object()
 
 class Group:
     """ Gateway Groups. """
+    defaultspec = XSpec("popen")
     def __init__(self, xspecs=()):
         """ initialize group and make gateways as specified. """
         # Gateways may evolve to become GC-collectable
@@ -49,15 +50,26 @@ class Group:
     def __iter__(self):
         return iter(list(self._gateways))
 
-    def makegateway(self, spec):
-        """ create and configure a gateway to a Python interpreter
-            specified by a 'execution specification' string.
-            The format of the string generally is::
+    def makegateway(self, spec=None):
+        """ create and configure a gateway to a Python interpreter.
+
+            The ``spec`` string encodes the target gateway type
+            and configuration information. The general format is::
 
                 key1=value1//key2=value2//...
 
             If you leave out the ``=value`` part a True value is assumed.
+            Valid types: ``popen``, ``ssh=hostname``, ``socket=host:port``.
+            Valid configuration::
+                id=<string>     specifies the gateway id 
+                python=<path>   specifies which python interpreter to execute
+                chdir=<path>    specifies to which directory to change
+                nice=<path>     specifies process priority of new process
+
+            If no spec is given, self.defaultspec is used. 
         """
+        if not spec:
+            spec = self.defaultspec
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
         id = self._allocate_id(spec.id)
