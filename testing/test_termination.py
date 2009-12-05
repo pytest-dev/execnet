@@ -74,38 +74,23 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     stdout, stderr = popen.communicate()
     assert not stderr
 
-def test_double_call_to_terminate(testdir, anypython):
-    triggerfile = testdir.tmpdir.join("trigger")
+def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     p = testdir.makepyfile("""
         import sys
         sys.path.insert(0, %r)
-        triggerfile = %r
         import execnet
-        gw = execnet.makegateway("popen")
-        gw.remote_exec('''
-            import os, time
-            while 1: 
-                if os.path.exists(%%r):
-                    break
-                time.sleep(0.2)
-        ''' %% triggerfile)
-        ok = 0
-        try:
-            execnet.default_group.terminate(1.0)
-        except IOError:
-            try:
-                execnet.default_group.terminate(0.1)
-            except IOError:
-                f = open(triggerfile, 'w')
-                f.write("")
-                f.close()
-                execnet.default_group.terminate(5.0)
-                ok = 1
-        if not ok:
-            sys.stderr.write("no-timeout!\\n")
-    """ % (str(execnetdir), str(triggerfile)))
-    popen = subprocess.Popen([str(anypython), str(p)], 
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
-    stdout, stderr = popen.communicate()
-    assert not stderr
-    
+        group = execnet.Group()
+        gw = group.makegateway("popen")
+        ch = gw.remote_exec("import time ; channel.send(1) ; time.sleep(100)")
+        ch.receive() # remote execution started
+        sys.stdout.write("1\\n")
+        sys.stdout.flush()
+        #  use process at-exit group.terminate call
+    """ % str(execnetdir))
+    popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE)
+    # sync with start-up
+    line = popen.stdout.readline()
+    reply = WorkerPool(1).dispatch(popen.communicate)
+    reply.get(timeout=10)
+    out, err = capfd.readouterr()
+    assert not err or "Killed" in err
