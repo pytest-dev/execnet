@@ -4,11 +4,11 @@ Managing Gateway Groups and interactions with multiple channels.
 (c) 2008-2009, Holger Krekel and others
 """
 
-import sys, weakref, atexit, time
+import os, sys, weakref, atexit
 import execnet
 from execnet import XSpec
 from execnet import gateway
-from execnet.gateway_base import queue, reraise, trace
+from execnet.gateway_base import queue, reraise, trace, TimeoutError
 
 NO_ENDMARKER_WANTED = object()
 
@@ -115,31 +115,43 @@ class Group:
 
     def _cleanup_atexit(self):
         trace("=== atexit cleanup %r ===" %(self,))
-        self.terminate(timeout=2.0)
+        self.terminate(timeout=1.0)
 
     def terminate(self, timeout=None):
-        """ trigger exit of member gateways and and wait for completion
-        of receiver-threads of previously exited member gateways and any 
-        started subprocesses.  If after timeout seconds (None for no-timeout) 
-        waiting does not finish a TimeoutError will be raised.
+        """ trigger exit of member gateways and wait for termination 
+        of member gateways and associated subprocesses.  After waiting 
+        timeout seconds an attempt to kill local sub processes of popen- 
+        and ssh-gateways is started.  Timeout defaults to None meaning 
+        open-ended waiting and no kill attempts.
         """
-        endtime = timeout and (time.time() + timeout) or None
         for gw in self:
-            gw.exit() 
+            gw.exit()
         def join_receiver_and_wait_for_subprocesses():
             for gw in self._gateways_to_join:
                 gw.join()
             while self._gateways_to_join:
-                gw = self._gateways_to_join.pop(0)
+                gw = self._gateways_to_join[0]
                 if hasattr(gw, '_popen'):
                     gw._popen.wait()
-            self._gateways_to_join[:] = []
+                del self._gateways_to_join[0]
         from execnet.threadpool import WorkerPool
         pool = WorkerPool(1)
         reply = pool.dispatch(join_receiver_and_wait_for_subprocesses)
-        reply.get(timeout=timeout)
+        try:
+            reply.get(timeout=timeout)
+        except IOError:
+            trace("Gateways did not come down after timeout: %r" 
+                  %(self._gateways_to_join))
+            while self._gateways_to_join:
+                gw = self._gateways_to_join.pop(0)
+                popen = getattr(gw, '_popen', None)
+                if popen:
+                    killpopen(popen)
 
     def remote_exec(self, source):
+        """ remote_exec source on all member gateways and return
+            MultiChannel connecting to all sub processes.
+        """
         channels = []
         for gw in list(self._activegateways):
             channels.append(gw.remote_exec(source))
@@ -231,3 +243,34 @@ def APIWARN(version, msg, stacklevel=3):
     import warnings
     Warn = DeprecationWarning("(since version %s) %s" %(version, msg))
     warnings.warn(Warn, stacklevel=stacklevel)
+
+def killpopen(popen):
+    try:
+        if hasattr(popen, 'kill'):
+            popen.kill()
+        else:
+            killpid(popen.pid)
+    except EnvironmentError:
+        sys.stderr.write("ERROR killing: %s\n" %(sys.exc_info()[1]))
+        sys.stderr.flush()
+
+def killpid(pid):
+    if hasattr(os, 'kill'):
+        os.kill(pid, 15)
+    elif sys.platform == "win32":
+        try:
+            import ctypes
+        except ImportError:
+            # T: treekill, F: Force 
+            cmd = ("taskkill /T /F /PID %d" %(pid)).split()
+            ret = subprocess.call(cmd)
+            if ret != 0:
+                raise EnvironmentError("taskkill returned %r" %(ret,))
+        else:
+            PROCESS_TERMINATE = 1
+            handle = ctypes.windll.kernel32.OpenProcess(
+                        PROCESS_TERMINATE, False, pid)
+            ctypes.windll.kernel32.TerminateProcess(handle, -1)
+            ctypes.windll.kernel32.CloseHandle(handle)
+    else:
+        raise EnvironmmentError("no method to kill %s" %(pid,))

@@ -10,8 +10,9 @@
   popen-gateway startup can be substantially faster (>30%)
 
 - refine internal gateway exit/termination procedure
-  and introduce group.terminate(timeout) for timely
-  termination. 
+  and introduce group.terminate(timeout) which will
+  attempt to kill all subprocesses that did not terminate
+  within time.
 
 - EOFError on channel.receive/waitclose if the other
   side unexpectedly went away.  When a gateway exits 

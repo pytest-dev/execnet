@@ -138,6 +138,10 @@ class PopenCmdGateway(Gateway):
         self._popen = p = Popen(args, stdin=PIPE, stdout=PIPE)
         io = Popen2IO(p.stdin, p.stdout)
         super(PopenCmdGateway, self).__init__(io=io, id=id)
+        # fix for jython 2.5.1 
+        if p.pid is None:
+            p.pid = self.remote_exec(
+                "import os; channel.send(os.getpid())").receive()
 
 popen_bootstrapline = "import sys ; exec(eval(sys.stdin.readline()))"
 class PopenGateway(PopenCmdGateway):
