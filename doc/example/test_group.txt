@@ -1,29 +1,26 @@
-.. _group:
-
-Creating and working with grouped Gateways
+Managing multiple gateways and clusters
+==================================================
+ 
+Usings Groups for managing multiple gateways 
 ------------------------------------------------------
 
-Use ``execnet.Group`` to manage the lifetime of multiple 
-gateways and perform iteration and membership
-checks::
+Use ``execnet.Group`` to manage membership and lifetime of
+of multiple gateways::
 
     >>> import execnet
-    >>> group = execnet.Group()
-    >>> group.makegateway("popen")
-    <PopenGateway id='1' receive-live, 0 active channels>
-    >>> group.makegateway("popen")
-    <PopenGateway id='2' receive-live, 0 active channels>
-    >>> group
-    <Group ['1', '2']>
-    >>> list(group) 
-    [<PopenGateway id='1' receive-live, 0 active channels>, <PopenGateway id='2' receive-live, 0 active channels>]
+    >>> group = execnet.Group(['popen'] * 2)
     >>> len(group)
     2
-    >>> '1' in group and '2' in group
+    >>> group
+    <Group ['gw0', 'gw1']>
+    >>> list(group) 
+    [<PopenGateway id='gw0' receive-live, 0 active channels>, <PopenGateway id='gw1' receive-live, 0 active channels>]
+    >>> 'gw0' in group and 'gw1' in group
     True
-    >>> group['1']
-    <PopenGateway id='1' receive-live, 0 active channels>
-
+    >>> group['gw0'] == group[0]   
+    True
+    >>> group['gw1'] == group[1]   
+    True
     >>> group.terminate() # exit all member gateways
     >>> group
     <Group []>
@@ -43,16 +40,18 @@ Pass an ``id=MYNAME`` part to ``group.makegateway``. Example::
     <PopenGateway id='sub1' receive-live, 0 active channels>
 
 
-Gateways live in a default_group
+execnet.makegateway uses execnet.default_group
 ------------------------------------------------------
 
 Each time you create a gateway with ``execnet.makegateway()``
 you actually use the ``execnet.default_group``::
 
     >>> import execnet
-    >>> gw = execnet.makegateway("popen")
+    >>> gw = execnet.makegateway()
     >>> gw in execnet.default_group
     True
+    >>> gw.defaultspec    # used for empty makegateway() calls
+    "popen"
 
 Robust Termination of ssh/popen processes
 -----------------------------------------------
@@ -73,5 +72,5 @@ the related process is made::
     <Group []>
 
 execnet aims to provide totally robust termination so if 
-you have termination issues please report them via :doc:`contact <../contact>`. 
-thanks!
+you have left-over processes or other termination issues 
+please :doc:`report them <../support>`.  thanks!

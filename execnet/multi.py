@@ -14,7 +14,7 @@ NO_ENDMARKER_WANTED = object()
 
 class Group:
     """ Gateway Groups. """
-    defaultspec = XSpec("popen")
+    defaultspec = "popen"
     def __init__(self, xspecs=()):
         """ initialize group and make gateways as specified. """
         # Gateways may evolve to become GC-collectable

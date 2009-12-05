@@ -1,6 +1,8 @@
 1.0.1
 --------------------------------
 
+- revamp and better structure documentation
+
 - new method: gateway.hasreceiver() returns True 
   if the gateway is still receive-active. remote_status
   now only carries information about remote execution status.

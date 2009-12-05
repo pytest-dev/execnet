@@ -5,18 +5,13 @@ examples
 .. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
 .. _`execnet-commit`: http://codespeak.net/mailman/listinfo/execnet-commit
 
-execnet is under active development.  Checkout `execnet-dev`_
-and `execnet-commit`_.
+Note: all examples with `>>>` prompts are automatically tested.
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
-   example/test_connect
-   example/test_cwd.txt
-   example/test_channelexec.txt
-   example/test_remotecmd.txt
+   example/test_info.txt
    example/test_group.txt
-   example/test_syncreceive2.txt
-   example/test_asyncreceive2.txt
-   example/test_ssh_fileserver.txt
-   example/test_installvia.txt
+   example/test_multi.txt
+   example/hybridpython.txt
+   example/test_debug.txt
