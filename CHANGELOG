@@ -5,6 +5,8 @@
   if the gateway is still receive-active. remote_status
   now only carries information about remote execution status.
 
+- new: execnet.MultiChannel provides basic iteration/contain interface
+
 - have popen-gateways use imports instead of source-strings,
   also improves debugging/tracebacks, as a side effect
   popen-gateway startup can be substantially faster (>30%)
