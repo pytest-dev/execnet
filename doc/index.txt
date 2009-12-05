@@ -1,6 +1,4 @@
 
-Welcome to rapid Python deployment
-========================================================
 
 .. image:: _static/pythonring.png
    :align: right
@@ -12,7 +10,7 @@ all major computing platforms today.
 interpreters across version, platform and network barriers.  It provides
 a minimal and fast API targetting the following uses:
 
-* distribute tasks to local or remote CPUs 
+* distribute tasks to local or remote CPUs
 * write and deploy hybrid multi-process applications 
 * write scripts to administer a bunch of exec environments
 
@@ -78,4 +76,3 @@ are MIT-licensed.
    implnotes
    install 
    rel-1.0.0
-   docindex

@@ -105,8 +105,11 @@ class Popen2IO:
         self.outfile, self.infile = outfile, infile
         if sys.platform == "win32":
             import msvcrt
-            msvcrt.setmode(infile.fileno(), os.O_BINARY)
-            msvcrt.setmode(outfile.fileno(), os.O_BINARY)
+            try:
+                msvcrt.setmode(infile.fileno(), os.O_BINARY)
+                msvcrt.setmode(outfile.fileno(), os.O_BINARY)
+            except (AttributeError, IOError):
+                pass
 
     def read(self, numbytes):
         """Read exactly 'numbytes' bytes from the pipe. """

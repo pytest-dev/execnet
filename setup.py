@@ -1,15 +1,16 @@
 """
-execnet: connect your execution environments 
+execnet: rapid multi-Python deployment 
 ========================================================
 
-.. image:: _static/pythonring.png
-   :align: right
+.. _execnet: http://codespeak.net/execnet
 
-Execnet allows to ad-hoc connect to Python interpreters across version, platform and network barriers.  It provides a minimal, fast and robust API for the following uses:
+execnet_ provides carefully tested means to ad-hoc interact with Python
+interpreters across version, platform and network barriers.  It provides
+a minimal and fast API targetting the following uses:
 
-* distribute tasks to multiple CPUs
-* deploy hybrid applications 
-* manage local and remote execution environments
+* distribute tasks to local or remote CPUs 
+* write and deploy hybrid multi-process applications 
+* write scripts to administer a bunch of exec environments
 
 Features
 ------------------
@@ -39,7 +40,7 @@ from execnet import __version__
 def main():
     setup(
         name='execnet',
-        description='execnet: connect your execution environments',
+        description='execnet: rapid multi-Python deployment',
         long_description = __doc__,
         version= __version__,
         url='http://codespeak.net/execnet',

@@ -50,8 +50,8 @@ you actually use the ``execnet.default_group``::
     >>> gw = execnet.makegateway()
     >>> gw in execnet.default_group
     True
-    >>> gw.defaultspec    # used for empty makegateway() calls
-    "popen"
+    >>> execnet.default_group.defaultspec # used for empty makegateway() calls
+    'popen'
 
 Robust Termination of ssh/popen processes
 -----------------------------------------------
