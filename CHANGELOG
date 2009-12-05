@@ -7,6 +7,8 @@
 
 - new: execnet.MultiChannel provides basic iteration/contain interface
 
+- new: execnet.Group can be indexed by integer
+
 - have popen-gateways use imports instead of source-strings,
   also improves debugging/tracebacks, as a side effect
   popen-gateway startup can be substantially faster (>30%)

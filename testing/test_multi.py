@@ -102,8 +102,10 @@ class TestGroup:
         group = Group()
         gw = group.makegateway("popen")
         assert list(group) == [gw]
+        assert group[0] == gw
+        assert len(group) == 1
         group._cleanup_atexit()
-        assert not group._activegateways
+        assert not group._gateways
 
     def test_group_ordering_and_termination(self):
         group = Group()
@@ -113,8 +115,10 @@ class TestGroup:
         gwlist = list(group)
         assert len(gwlist) == 3
         idlist = [x.id for x in gwlist]
-        assert idlist == list('235')
+        assert idlist == list('325')
+        print group
         group.terminate()
+        print group
         assert not group
         assert repr(group) == "<Group []>"
 

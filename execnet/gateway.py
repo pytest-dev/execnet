@@ -35,11 +35,10 @@ class Gateway(gateway_base.BaseGateway):
         group.terminate() is called. 
         """
         self._trace("gateway.exit() called")
-        try:
-            self._group._unregister(self)
-        except KeyError:
+        if self not in self._group:
             self._trace("gateway already unregistered with group")
             return 
+        self._group._unregister(self)
         self._trace("--> sending GATEWAY_TERMINATE")
         try:
             self._send(Message.GATEWAY_TERMINATE(0, ''))

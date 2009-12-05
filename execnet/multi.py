@@ -4,7 +4,7 @@ Managing Gateway Groups and interactions with multiple channels.
 (c) 2008-2009, Holger Krekel and others
 """
 
-import os, sys, weakref, atexit
+import os, sys, atexit
 import execnet
 from execnet import XSpec
 from execnet import gateway
@@ -17,33 +17,37 @@ class Group:
     def __init__(self, xspecs=()):
         """ initialize group and make gateways as specified. """
         # Gateways may evolve to become GC-collectable
-        self._activegateways = weakref.WeakKeyDictionary()
-        self._id2gateway = weakref.WeakValueDictionary()
-        self._autoidcounter = 1
+        self._gateways = []
+        self._autoidcounter = 0
         self._gateways_to_join = []
         for xspec in xspecs:
             self.makegateway(xspec)
         atexit.register(self._cleanup_atexit)
 
     def __repr__(self):
-        keys = list(self._id2gateway)
-        keys.sort()
-        return "<Group %r>" %(keys,)
+        idgateways = [gw.id for gw in self]
+        return "<Group %r>" %(idgateways)
 
     def __getitem__(self, key):
-        return self._id2gateway[key]
+        if isinstance(key, int):
+            return self._gateways[key]
+        for gw in self._gateways:
+            if gw == key or gw.id == key:
+                return gw
+        raise KeyError(key)
 
     def __contains__(self, key):
-        return key in self._id2gateway or key in self._activegateways
+        try:
+            self[key]
+            return True
+        except KeyError:
+            return False
 
     def __len__(self):
-        return len(self._activegateways)
+        return len(self._gateways)
 
     def __iter__(self):
-        l = list(self._id2gateway.items())
-        l.sort()
-        for id, gw in l:
-            yield gw
+        return iter(list(self._gateways))
 
     def makegateway(self, spec):
         """ create and configure a gateway to a Python interpreter
@@ -67,7 +71,7 @@ class Group:
                 "socket: specifying python executables not yet supported")
             gateway_id = spec.installvia
             if gateway_id:
-                viagw = self._id2gateway[gateway_id]
+                viagw = self[gateway_id]
                 gw = gateway.SocketGateway.new_remote(viagw, id=id)
             else:
                 host, port = spec.socket.split(":")
@@ -94,23 +98,21 @@ class Group:
 
     def _allocate_id(self, id=None):
         if id is None:
-            id = str(self._autoidcounter)
+            id = "gw" + str(self._autoidcounter)
             self._autoidcounter += 1
-        assert id not in self._id2gateway
+        if id in self:
+            raise ValueError("already have member gateway with id %r" %(id,))
         return id
 
     def _register(self, gateway):
         assert not hasattr(gateway, '_group')
         assert gateway.id
-        assert id not in self._id2gateway
-        assert gateway not in self._activegateways
-        self._activegateways[gateway] = True
-        self._id2gateway[gateway.id] = gateway
+        assert id not in self
+        self._gateways.append(gateway)
         gateway._group = self
 
     def _unregister(self, gateway):
-        del self._id2gateway[gateway.id]
-        del self._activegateways[gateway]
+        self._gateways.remove(gateway)
         self._gateways_to_join.append(gateway)
 
     def _cleanup_atexit(self):
@@ -153,7 +155,7 @@ class Group:
             MultiChannel connecting to all sub processes.
         """
         channels = []
-        for gw in list(self._activegateways):
+        for gw in self:
             channels.append(gw.remote_exec(source))
         return MultiChannel(channels)
 
