@@ -30,6 +30,9 @@ help:
 clean:
 	-rm -rf $(BUILDDIR)/*
 
+install: clean html linkcheck
+	rsync -avz $(BUILDDIR)/html/ code:www-execnet/trunk/
+
 html:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
 	@echo

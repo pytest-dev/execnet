@@ -8,7 +8,7 @@ def test_subprocess_interaction(anypython):
     line = gateway.popen_bootstrapline
     compile(line, 'xyz', 'exec')
     args = [str(anypython), '-c', line]
-    popen = subprocess.Popen(args, bufsize=0, 
+    popen = subprocess.Popen(args, bufsize=0, universal_newlines=True,
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     def send(line):
         popen.stdin.write(line.encode('ascii'))
