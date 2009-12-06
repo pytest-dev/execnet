@@ -24,7 +24,7 @@ passing it a gateway specification or URL.
 
 Here is an example which instantiates a simple Python subprocess::
 
-    >>> gateway = execnet.makegateway("popen")
+    >>> gateway = execnet.makegateway()
 
 gateways allow to `remote execute code`_ and 
 `exchange data`_ bidirectionally.  
@@ -131,7 +131,7 @@ rsync: synchronise filesystem with remote
 Here is a basic example for using RSync::
 
     rsync = execnet.RSync('/tmp/source')
-    gw = execnet.makegateway("popen")
+    gw = execnet.makegateway()
     rsync.add_target(gw, '/tmp/dest')
     rsync.send()
 
