@@ -4,10 +4,10 @@ basic local and remote communication
 Comparing current working directories
 ----------------------------------------
 
-A popen gateway has the same working directory as the instantiatior::
+A local popen gateway has the same working directory as the instantiatior::
 
     >>> import execnet, os
-    >>> gw = execnet.PopenGateway()
+    >>> gw = execnet.makegateway()   
     >>> ch = gw.remote_exec("import os; channel.send(os.getcwd())")
     >>> res = ch.receive()
     >>> assert res == os.getcwd()
@@ -48,7 +48,7 @@ running in a remote_exec situation by checking for the special
 You can now remote-execute the module like this::
 
     >>> import execnet, remote1
-    >>> gw = execnet.PopenGateway()
+    >>> gw = execnet.makegateway()
     >>> ch = gw.remote_exec(remote1)
     >>> print (ch.receive())
     initialization complete
@@ -68,7 +68,7 @@ you can setup a serving loop and write a local protocol.
 Then on the local side you can do::
 
     >>> import execnet, remotecmd
-    >>> gw = execnet.PopenGateway()
+    >>> gw = execnet.makegateway()
     >>> ch = gw.remote_exec(remotecmd)
     >>> ch.send('simple(10)') # execute func-call remotely
     >>> ch.receive()
@@ -95,7 +95,7 @@ Simply run the script like this::
     python socketserver.py :8888   # bind to all IPs, port 8888
 
 You can then instruct execnet on your local machine to bootstrap 
-itself into the remote socket endpoint:
+itself into the remote socket endpoint::
 
     import execnet
     gw = execnet.SocketGateway("TARGET-IP:8888")

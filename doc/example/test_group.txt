@@ -74,3 +74,25 @@ the related process is made::
 execnet aims to provide totally robust termination so if 
 you have left-over processes or other termination issues 
 please :doc:`report them <../support>`.  thanks!
+
+
+Using Groups to manage a certain type of gateway
+------------------------------------------------------
+
+Set ``group.defaultspec`` to determine the default gateway
+specification used by ``group.makegateway()``:
+
+    >>> import execnet
+    >>> group = execnet.Group()
+    >>> group.defaultspec = "ssh=localhost//chdir=mytmp//nice=20"
+    >>> gw = group.makegateway() 
+    >>> ch = gw.remote_exec("""
+    ...      import os.path
+    ...      basename = os.path.basename(os.getcwd())
+    ...      channel.send(basename)
+    ... """)
+    >>> ch.receive()
+    'mytmp'
+
+This way a Group object becomes kind of a Gateway factory where
+the factory-caller does not need to know the setup.

@@ -41,7 +41,7 @@ Use channel callbacks if you want to process incoming
 data immediately and without blocking execution::
 
     >>> import execnet
-    >>> gw = execnet.PopenGateway()
+    >>> gw = execnet.makegateway()
     >>> ch = gw.remote_exec("channel.receive() ; channel.send(42)")
     >>> l = []
     >>> ch.setcallback(l.append)

@@ -13,7 +13,7 @@ Install a public `pypi release`_ via `easy_install`_ or pip_::
         or
 
     hg clone https://hpk42@bitbucket.org/hpk42/execnet/
-    python setup.py install # or add checkout path to PYTHONPATH directly
+    python setup.py install # or 'develop' or add checkout path to PYTHONPATH 
 
 Next checkout the basic api and examples:
 
