@@ -19,8 +19,9 @@ path: execnet/rsync.py
 currently rsyncing bails out with a strange message when trying to rsync
 links. should provide better message or even some support for doing it.
 
-a process keeping state across invoactions
---------------------------------------------------
+socketservice process for keeping cross-invocation state 
+---------------------------------------------------------
+
 tags: 1.1 feature newdist 
 
 A building block for keeping permanent network 
@@ -36,6 +37,16 @@ that keeps state. Considered:
   will re-use the already-imported gateway base code
   so again avoid parse/compile on arbitrary strings.
 
+Possible code example:
+
+    # connect to on-demand started port-8888 socket server
+    # similar to popen+socket//installvia=popen 
+    gw = group.makegateway("socketservice//port=8888")
+    gw.remote_exec("...") # execute code in a thread in the socket server
+    ... 
+    # exit the gateway-connection, but leave socket server running
+    gw.exit() 
+
 a channel-IO based gateway
 --------------------------------------------------
 tags: 1.1 feature newdist 
@@ -46,3 +57,24 @@ This way a gateway can be instantiated through another
 intermediating gateway which bi-directionallry forwads 
 Messages through a existing channel.
 
+A code example could look like this:
+
+    group.setlocalfactory(port=8888)
+    gw = group.makegateway("ssh=codespeak.net")
+    # local ssh-process would be a child of the factory service
+    # which could have timeouts for killing, or allow resuming. 
+    # for instantiating remote it could also install a multiplexer 
+    # on the remote place such that the same ssh connection is re-used 
+    # for multiple ssh=codespeak.net connections, makes for small latency.
+
+some first simple implemenation might look like this::
+
+    gw = group.makegateway("socketservice//port=8888")
+    # we can rely that the subprocess gw can import execnet
+    ch = gw.remote_exec("""
+        import execnet.service
+        execnet.service.gatewaymaker(channel)
+    """)
+    ch.send(xspec)
+    subchannel = ch.receive()
+    return ChannelGateway(subchannel)
