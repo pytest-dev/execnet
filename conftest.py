@@ -1,6 +1,7 @@
 import execnet
 import py
 import sys
+import subprocess
 
 collect_ignore = ['build', 'doc/_build']
 
@@ -63,9 +64,24 @@ def pytest_generate_tests(metafunc):
                      'pypy-c', 'jython'):
             metafunc.addcall(id=name, param=name)
 
+def getexecutable(name, cache={}):
+    try:
+        return cache[name]
+    except KeyError:
+        executable = py.path.local.sysfind(name)
+        if executable:
+            if name == "jython":
+                popen = subprocess.Popen([str(executable), "--version"], 
+                    stderr=subprocess.PIPE)
+                out, err = popen.communicate()
+                if not err or "2.5" not in err:
+                    executable = None
+        cache[name] = executable
+        return executable
+
 def pytest_funcarg__anypython(request):
     name = request.param
-    executable = py.path.local.sysfind(name)
+    executable = getexecutable(name)
     if executable is None:
         if sys.platform == "win32":
             executable = winpymap.get(name, None)
