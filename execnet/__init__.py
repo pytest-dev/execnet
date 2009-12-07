@@ -9,9 +9,9 @@ __version__ = "1.0.1"
 import execnet.apipkg
 
 execnet.apipkg.initpkg(__name__, {
-    'PopenGateway':     '.multi:PopenGateway',
-    'SocketGateway':    '.multi:SocketGateway',
-    'SshGateway':       '.multi:SshGateway',
+    'PopenGateway':     '.deprecated:PopenGateway',
+    'SocketGateway':    '.deprecated:SocketGateway',
+    'SshGateway':       '.deprecated:SshGateway',
     'makegateway':      '.multi:makegateway',
     'HostNotFound':     '.gateway:HostNotFound',
     'XSpec':            '.xspec:XSpec',
