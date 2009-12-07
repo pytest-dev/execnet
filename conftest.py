@@ -8,6 +8,7 @@ collect_ignore = ['build', 'doc/_build']
 rsyncdirs = ['conftest.py', 'execnet', 'testing', 'doc']
 
 winpymap = {
+    'python2.7': r'C:\Python27\python.exe',
     'python2.6': r'C:\Python26\python.exe',
     'python2.5': r'C:\Python25\python.exe',
     'python2.4': r'C:\Python24\python.exe',
@@ -61,7 +62,7 @@ def pytest_generate_tests(metafunc):
             metafunc.addcall(id=gwtype, param=gwtype)
     elif 'anypython' in metafunc.funcargnames:
         for name in ('python3.1', 'python2.4', 'python2.5', 'python2.6', 
-                     'pypy-c', 'jython'):
+                     'python2.7', 'pypy-c', 'jython'):
             metafunc.addcall(id=name, param=name)
 
 def getexecutable(name, cache={}):

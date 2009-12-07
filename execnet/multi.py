@@ -228,48 +228,6 @@ class MultiChannel:
         if first:
             reraise(*first)
 
-
-default_group = Group()
-
-makegateway = default_group.makegateway
-
-def PopenGateway(python=None):
-    """ instantiate a gateway to a subprocess
-        started with the given 'python' executable.
-    """
-    APIWARN("1.0.0b4", "use makegateway('popen')")
-    spec = execnet.XSpec("popen")
-    spec.python = python
-    return default_group.makegateway(spec)
-
-def SocketGateway(host, port):
-    """ This Gateway provides interaction with a remote process
-        by connecting to a specified socket.  On the remote
-        side you need to manually start a small script
-        (py/execnet/script/socketserver.py) that accepts
-        SocketGateway connections or use the experimental
-        new_remote() method on existing gateways.
-    """
-    APIWARN("1.0.0b4", "use makegateway('socket=host:port')")
-    spec = execnet.XSpec("socket=%s:%s" %(host, port))
-    return default_group.makegateway(spec)
-
-def SshGateway(sshaddress, remotepython=None, ssh_config=None):
-    """ instantiate a remote ssh process with the
-        given 'sshaddress' and remotepython version.
-        you may specify an ssh_config file.
-    """
-    APIWARN("1.0.0b4", "use makegateway('ssh=host')")
-    spec = execnet.XSpec("ssh=%s" % sshaddress)
-    spec.python = remotepython
-    spec.ssh_config = ssh_config
-    return default_group.makegateway(spec)
-
-def APIWARN(version, msg, stacklevel=3):
-    import warnings
-    Warn = DeprecationWarning("(since version %s) %s" %(version, msg))
-    warnings.warn(Warn, stacklevel=stacklevel)
-
 def killpopen(popen):
     try:
         if hasattr(popen, 'kill'):
@@ -300,3 +258,7 @@ def killpid(pid):
             ctypes.windll.kernel32.CloseHandle(handle)
     else:
         raise EnvironmmentError("no method to kill %s" %(pid,))
+
+default_group = Group()
+makegateway = default_group.makegateway
+
