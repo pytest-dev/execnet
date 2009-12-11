@@ -81,13 +81,14 @@ class Group:
         elif spec.socket:
             assert not spec.python, (
                 "socket: specifying python executables not yet supported")
+            from execnet.gateway_socket import SocketGateway
             gateway_id = spec.installvia
             if gateway_id:
                 viagw = self[gateway_id]
-                gw = gateway.SocketGateway.new_remote(viagw, id=id)
+                gw = SocketGateway.new_remote(viagw, id=id)
             else:
                 host, port = spec.socket.split(":")
-                gw = gateway.SocketGateway(host, port, id=id)
+                gw = SocketGateway(host, port, id=id)
         else:
             raise ValueError("no gateway type found for %r" % (spec._spec,))
         gw.spec = spec

@@ -1,3 +1,9 @@
+1.x (pending)
+--------------------------------
+
+- internally split socket gateways, speeds up popen-gateways
+  by 10% (now at 30 milliseconds per-gateway on my 3-year old machine) 
+
 1.0.1
 --------------------------------
 

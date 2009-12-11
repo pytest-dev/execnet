@@ -65,7 +65,7 @@ class TestMakegateway:
         assert gw.spec.popen 
         assert gw.spec.python == None
         rinfo = gw._rinfo()
-        assert rinfo.executable == py.std.sys.executable
+        #assert rinfo.executable == py.std.sys.executable
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info == py.std.sys.version_info
 
@@ -113,7 +113,7 @@ class TestMakegateway:
             py.test.skip("cpython2.6 not found")
         gw = execnet.makegateway("popen//python=%s" % cpython26)
         rinfo = gw._rinfo()
-        assert rinfo.executable == cpython26
+        #assert rinfo.executable == cpython26
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info[:2] == (2,6)
 
