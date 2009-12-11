@@ -6,7 +6,7 @@ gateway code for initiating popen, socket and ssh connections.
 import sys, os, inspect, socket, types
 import textwrap
 import execnet
-from execnet.gateway_base import Message, Popen2IO, SocketIO
+from execnet.gateway_base import Message, Popen2IO
 from execnet import gateway_base
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
@@ -173,59 +173,6 @@ class PopenGateway(PopenCmdGateway):
 def sendexec(io, *sources):
     source = "\n".join(sources)
     io.write((repr(source)+ "\n").encode('ascii'))
-
-class SocketGateway(Gateway):
-    """ This Gateway provides interaction with a remote process
-        by connecting to a specified socket.  On the remote
-        side you need to manually start a small script
-        (py/execnet/script/socketserver.py) that accepts
-        SocketGateway connections.
-    """
-    _remotesetup = "io = SocketIO(clientsock)" 
-
-    def __init__(self, host, port, id):
-        """ instantiate a gateway to a process accessed
-            via a host/port specified socket.
-        """
-        self.host = host = str(host)
-        self.port = port = int(port)
-        self.remoteaddress = '%s:%d' % (self.host, self.port)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            sock.connect((host, port))
-        except socket.gaierror:
-            raise HostNotFound(str(sys.exc_info()[1]))
-        io = SocketIO(sock)
-        super(SocketGateway, self).__init__(io=io, id=id)
-
-    def new_remote(cls, gateway, id, hostport=None):
-        """ return a new (connected) socket gateway, 
-            instantiated through the given 'gateway'.
-        """
-        if hostport is None:
-            host, port = ('localhost', 0)
-        else:
-            host, port = hostport
-        
-        mydir = os.path.dirname(__file__)
-        socketserver = os.path.join(mydir, 'script', 'socketserver.py')
-        socketserverbootstrap = "\n".join([
-            open(socketserver, 'r').read(), """if 1:
-            import socket
-            sock = bind_and_listen((%r, %r))
-            port = sock.getsockname()
-            channel.send(port)
-            startserver(sock)
-        """ % (host, port)])
-        # execute the above socketserverbootstrap on the other side
-        channel = gateway.remote_exec(socketserverbootstrap)
-        (realhost, realport) = channel.receive()
-        #self._trace("new_remote received"
-        #               "port=%r, hostname = %r" %(realport, hostname))
-        if not realhost or realhost=="0.0.0.0":
-            realhost = "localhost"
-        return cls(realhost, realport, id=id)
-    new_remote = classmethod(new_remote)
 
 class HostNotFound(Exception):
     pass

@@ -6,7 +6,7 @@ NOTE: aims to be compatible to Python 2.3-3.1, Jython and IronPython
 (C) 2004-2009 Holger Krekel, Armin Rigo, Benjamin Peterson, and others
 """
 import sys, os, weakref
-import threading, traceback, socket, struct
+import threading, traceback, struct
 try:
     import queue
 except ImportError:
@@ -55,47 +55,6 @@ else:
     def trace(*msg): 
         pass
 
-
-# ___________________________________________________________________________
-#
-# input output classes
-# ___________________________________________________________________________
-
-class SocketIO:
-    error = (socket.error, EOFError)
-    def __init__(self, sock):
-        self.sock = sock
-        try:
-            sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x10)# IPTOS_LOWDELAY
-            sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-        except (AttributeError, socket.error):
-            e = sys.exc_info()[1]
-            sys.stderr.write("WARNING: cannot set socketoption")
-
-    def read(self, numbytes):
-        "Read exactly 'bytes' bytes from the socket."
-        buf = bytes()
-        while len(buf) < numbytes:
-            t = self.sock.recv(numbytes - len(buf))
-            if not t:
-                raise EOFError
-            buf += t
-        return buf
-
-    def write(self, data):
-        assert isinstance(data, bytes)
-        self.sock.sendall(data)
-
-    def close_read(self):
-        try:
-            self.sock.shutdown(0)
-        except socket.error:
-            pass
-    def close_write(self):
-        try:
-            self.sock.shutdown(1)
-        except socket.error:
-            pass
 
 class Popen2IO:
     error = (IOError, OSError, EOFError)
