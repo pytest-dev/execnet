@@ -73,7 +73,7 @@ def getexecutable(name, cache={}):
         if executable:
             if name == "jython":
                 popen = subprocess.Popen([str(executable), "--version"], 
-                    stderr=subprocess.PIPE)
+                    universal_newlines=True, stderr=subprocess.PIPE)
                 out, err = popen.communicate()
                 if not err or "2.5" not in err:
                     executable = None

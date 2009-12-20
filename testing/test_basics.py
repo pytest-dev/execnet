@@ -11,11 +11,11 @@ def test_subprocess_interaction(anypython):
     popen = subprocess.Popen(args, bufsize=0, universal_newlines=True,
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE)
     def send(line):
-        popen.stdin.write(line.encode('ascii'))
+        popen.stdin.write(line)
         if sys.version_info > (3,0) or sys.platform.startswith("java"):
             popen.stdin.flush()
     def receive():
-        return popen.stdout.readline().decode('ascii')
+        return popen.stdout.readline()
 
     try:
         source = py.code.Source(read_write_loop, "read_write_loop()")
