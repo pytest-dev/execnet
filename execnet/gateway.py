@@ -93,7 +93,7 @@ class Gateway(gateway_base.BaseGateway):
         else:
             source = textwrap.dedent(str(source))
         channel = self.newchannel()
-        self._send(Message.CHANNEL_OPEN(channel.id, source))
+        self._send(Message.CHANNEL_EXEC(channel.id, source))
         return channel
 
     def remote_init_threads(self, num=None):

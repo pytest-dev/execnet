@@ -136,7 +136,7 @@ def _setupmessages():
             }
             gateway._send(Message.CHANNEL_DATA(self.channelid, d))
 
-    class CHANNEL_OPEN(Message):
+    class CHANNEL_EXEC(Message):
         def received(self, gateway):
             channel = gateway._channelfactory.new(self.channelid)
             gateway._local_schedulexec(channel=channel, sourcetask=self.data)
@@ -165,7 +165,7 @@ def _setupmessages():
             raise SystemExit(0)
 
     classes = [
-        STATUS, CHANNEL_OPEN, CHANNEL_DATA, CHANNEL_CLOSE, 
+        STATUS, CHANNEL_EXEC, CHANNEL_DATA, CHANNEL_CLOSE, 
         CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE, GATEWAY_TERMINATE
     ]
     for i, cls in enumerate(classes):
