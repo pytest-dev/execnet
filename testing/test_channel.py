@@ -244,6 +244,24 @@ class TestChannelBasicBehaviour:
         assert err
         assert str(err).find("ValueError") != -1
 
+    def test_channel_callback_error(self, gw):
+        channel = gw.remote_exec("""
+            def f(item):
+                raise ValueError(42)
+            ch = channel.gateway.newchannel()
+            ch.setcallback(f)
+            channel.send(ch)
+            channel.receive()
+            assert ch.isclosed()
+        """)
+        subchan = channel.receive()
+        subchan.send(1)
+        excinfo = py.test.raises(subchan.RemoteError, 
+            "subchan.waitclose(TESTTIMEOUT)")
+        assert "42" in excinfo.value.formatted
+        channel.send(1)
+        channel.waitclose()
+
 class TestChannelFile:
     def test_channel_file_write(self, gw):
         channel = gw.remote_exec("""

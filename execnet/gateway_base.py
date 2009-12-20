@@ -502,7 +502,16 @@ class ChannelFactory(object):
             else:
                 queue.put(data)
         else:
-            callback(data)   # even if channel may be already closed
+            try:
+                callback(data)   # even if channel may be already closed
+            except KeyboardInterrupt:
+                raise
+            except:
+                excinfo = sys.exc_info()
+                self.gateway._trace("exception during callback: %s" % excinfo[1])
+                errortext = geterrortext(excinfo)
+                self.gateway._send(Message.CHANNEL_CLOSE_ERROR(id, errortext))
+                self._local_close(id, errortext)
 
     def _finished_receiving(self):
         self._writelock.acquire()
