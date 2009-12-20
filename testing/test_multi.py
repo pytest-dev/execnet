@@ -121,9 +121,9 @@ class TestGroup:
         assert len(gwlist) == 3
         idlist = [x.id for x in gwlist]
         assert idlist == list('325')
-        print group
+        print (group)
         group.terminate()
-        print group
+        print (group)
         assert not group
         assert repr(group) == "<Group []>"
 
