@@ -41,7 +41,8 @@ Known uses
 * `py.test`_ uses it for its `distributed testing`_ mechanism. 
 
 * Jacob Perkins uses it for his `Distributed NTLK with execnet`_ 
-  project to launch computation processes through ssh. 
+  project to launch computation processes through ssh.  He also
+  compares `disco and execnet`_ in a subsequent post. 
 
 * Ronny Pfannschmidt uses it for his `anyvc`_ VCS-abstraction project
   to bridge the Python2/Python3 version gap. 
@@ -51,6 +52,7 @@ Known uses
 .. _`py.test`: http://pytest.org
 .. _`distributed testing`: http://codespeak.net/py/dist/test/dist.html
 .. _`Distributed NTLK with execnet`: http://streamhacker.com/2009/11/29/distributed-nltk-execnet/
+.. _`disco and execnet`: http://streamhacker.com/2009/12/14/execnet-disco-distributed-nltk/
 .. _`anyvc`: http://bitbucket.org/RonnyPfannschmidt/anyvc/
 
 Project status

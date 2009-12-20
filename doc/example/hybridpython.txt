@@ -90,6 +90,6 @@ using Mono 2.0 and IronPython-1.1 this will print on the CPython side::
    Using IronPython needs more testing, likely newer versions
    will work better.  please feedback if you have information. 
 
-.. _IronPython: http://www.IronPython.org
+.. _IronPython: http://ironpython.net
 
 

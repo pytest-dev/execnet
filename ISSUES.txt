@@ -78,3 +78,36 @@ some first simple implemenation might look like this::
     ch.send(xspec)
     subchannel = ch.receive()
     return ChannelGateway(subchannel)
+
+serialize channels everywhere 
+-------------------------------------------------
+tags: 1.0.2 feature
+
+currently sending channels only works if they are send 
+as a single item.  So they cannot be contained in a list or dict. 
+By making channel passing a feature of the serializer we should
+be able to lift this limitation, allowing channels in all places. 
+
+creating new channels 
+-------------------------------------------------
+tags: 1.0.2 feature
+
+document, provide examples and refine support for creating new channels. 
+Defining closing semantics - does a channel created from a channel 
+automatically close when its parent channel closes? This currently 
+depends on whether it is garbage collected. 
+
+creating virtualenv environments on the fly 
+-----------------------------------------------
+tags: 1.1 wish
+
+there should be a (plugin-provided?) way to create
+a virtual environment: 
+    gw = makegateway("ssh=codespeak.net")
+    newgw = xdeploy.create_venv_gateway(gw, "venvname", depstring)
+    newgw # lives in home/ dir of remote virtualenv 
+          # maybe have get_temproot default to tmp/ there? 
+    sf = xdeploy.SetupFile("..setup.py")
+    sf.sdist_remote_install(newgw)
+    
+    
