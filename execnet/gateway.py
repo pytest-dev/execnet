@@ -3,7 +3,7 @@ gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2009, Holger Krekel and others
 """
 
-import sys, os, inspect, socket, types
+import sys, os, inspect, types
 import textwrap
 import execnet
 from execnet.gateway_base import Message, Popen2IO

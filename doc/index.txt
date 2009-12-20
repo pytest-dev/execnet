@@ -6,8 +6,8 @@
 Python_ is a mature dynamic language whose interpreters can interact with 
 all major computing platforms today.  
 
-**execnet** provides carefully tested means to ad-hoc interact with Python
-interpreters across version, platform and network barriers.  It provides
+**execnet** provides carefully tested means to easily interact with Python
+interpreters across version, platform and network barriers.  It has 
 a minimal and fast API targetting the following uses:
 
 * distribute tasks to local or remote CPUs
@@ -28,7 +28,7 @@ Features
 
 * easy creation, handling and termination of multiple processes
 
-* well tested interactions between CPython 2.4-3.1, Jython 2.5.1 
+* well tested interactions between CPython 2.4-2.7, CPython3.1, Jython 2.5.1 
   and PyPy 1.1 interpreters.
 
 * fully interoperable between Windows and Unix-ish systems. 
