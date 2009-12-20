@@ -141,13 +141,6 @@ def _setupmessages():
             channel = gateway._channelfactory.new(self.channelid)
             gateway._local_schedulexec(channel=channel, sourcetask=self.data)
 
-    class CHANNEL_NEW(Message):
-        def received(self, gateway):
-            """ receive a remotely created new (sub)channel. """
-            newid = self.data
-            newchannel = gateway._channelfactory.new(newid)
-            gateway._channelfactory._local_receive(self.channelid, newchannel)
-
     class CHANNEL_DATA(Message):
         def received(self, gateway):
             gateway._channelfactory._local_receive(self.channelid, self.data)
@@ -172,7 +165,7 @@ def _setupmessages():
             raise SystemExit(0)
 
     classes = [
-        STATUS, CHANNEL_OPEN, CHANNEL_NEW, CHANNEL_DATA, CHANNEL_CLOSE, 
+        STATUS, CHANNEL_OPEN, CHANNEL_DATA, CHANNEL_CLOSE, 
         CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE, GATEWAY_TERMINATE
     ]
     for i, cls in enumerate(classes):
@@ -385,10 +378,7 @@ class Channel(object):
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
-        if isinstance(item, Channel):
-            data = Message.CHANNEL_NEW(self.id, item.id)
-        else:
-            data = Message.CHANNEL_DATA(self.id, item)
+        data = Message.CHANNEL_DATA(self.id, item)
         self.gateway._send(data)
 
     def receive(self, timeout=-1):
@@ -455,8 +445,10 @@ class ChannelFactory(object):
             if id is None:
                 id = self.count
                 self.count += 2
-            channel = Channel(self.gateway, id)
-            self._channels[id] = channel
+            try:
+                channel = self._channels[id] 
+            except KeyError:
+                channel = self._channels[id] = Channel(self.gateway, id)
             return channel
         finally:
             self._writelock.release()
@@ -597,7 +589,7 @@ class BaseGateway(object):
 
     def _thread_receiver(self):
         self._trace("starting to receive")
-        unserializer = Unserializer(self._io)
+        unserializer = Unserializer(self._io, self._channelfactory)
         try:
             while 1:
                 try:
@@ -607,6 +599,7 @@ class BaseGateway(object):
                     _receivelock.acquire()
                     try:
                         msg.received(self)
+                        del msg
                     finally:
                         _receivelock.release()
                 except sysex:
@@ -639,6 +632,7 @@ class BaseGateway(object):
     # _____________________________________________________________________
     #
     def newchannel(self):
+        """ return a new independent channel. """
         return self._channelfactory.new()
 
     def join(self, timeout=None):
@@ -729,8 +723,9 @@ class Unserializer(object):
     py2str_as_py3str = True # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
-    def __init__(self, stream):
+    def __init__(self, stream, channelfactory=None):
         self.stream = stream
+        self.channelfactory = channelfactory
 
     def load(self):
         self.stack = []
@@ -748,7 +743,7 @@ class Unserializer(object):
         except _Stop:
             if len(self.stack) != 1:
                 raise UnserializationError("internal unserialization error")
-            return self.stack[0]
+            return self.stack.pop(0)
         else:
             raise UnserializationError("didn't get STOP")
 
@@ -850,6 +845,11 @@ class Unserializer(object):
 
     def load_stop(self):
         raise _Stop
+
+    def load_channel(self):
+        id = self._read_int4()
+        newchannel = self.channelfactory.new(id)
+        self.stack.append(newchannel)
 
 # automatically build opcodes and byte-encoding 
 
@@ -997,6 +997,10 @@ class Serializer(object):
 
     def save_frozenset(self, s):
         self._write_set(s, opcode.FROZENSET)
+
+    def save_Channel(self, channel):
+        self._write(opcode.CHANNEL)
+        self._write_int4(channel.id)
 
 def init_popen_io():
     if not hasattr(os, 'dup'): # jython

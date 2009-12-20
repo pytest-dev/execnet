@@ -88,6 +88,30 @@ class TestChannelBasicBehaviour:
         l = list(channel)
         assert l == [0, 1, 2]
 
+    def test_channel_pass_in_structure(self, gw):
+        channel = gw.remote_exec('''
+            ch1, ch2 = channel.receive()
+            data = ch1.receive()
+            ch2.send(data+1)
+        ''')
+        newchan1 = gw.newchannel()
+        newchan2 = gw.newchannel()
+        channel.send((newchan1, newchan2))
+        newchan1.send(1)
+        data = newchan2.receive()
+        assert data ==2
+
+    def test_channel_multipass(self, gw):
+        channel = gw.remote_exec('''
+            channel.send(channel)
+            xchan = channel.receive()
+            assert xchan == channel
+        ''')
+        newchan = channel.receive()
+        assert newchan == channel
+        channel.send(newchan)
+        channel.waitclose()
+
     def test_channel_passing_over_channel(self, gw):
         channel = gw.remote_exec('''
                     c = channel.gateway.newchannel()

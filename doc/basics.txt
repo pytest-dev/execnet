@@ -61,6 +61,7 @@ get sent for remote execution.  ``remote_exec`` returns
 a channel object whose symmetric counterpart channel 
 is available to the remotely executing source. 
 
+
 .. _`Channel`: 
 .. _`channel-api`: 
 
@@ -82,6 +83,7 @@ two asynchronously running programs.
    .. automethod:: Channel.waitclose(timeout)
    .. autoattribute:: Channel.RemoteError
    .. autoattribute:: Channel.TimeoutError
+
 
 .. _Group:
 
