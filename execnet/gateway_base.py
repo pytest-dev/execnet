@@ -896,14 +896,14 @@ class Serializer(object):
         try:
             dispatch = self.dispatch[tp]
         except KeyError:
-            methodname = 'save_' + tp.__name__.lower()
+            methodname = 'save_' + tp.__name__
             meth = getattr(self, methodname, None)
             if meth is None:
                 raise SerializationError("can't serialize %s" % (tp,))
             dispatch = self.dispatch[tp] = meth
         dispatch(obj)
 
-    def save_nonetype(self, non):
+    def save_NoneType(self, non):
         self._write(opcode.NONE)
 
     def save_bool(self, boolean):
