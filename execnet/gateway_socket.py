@@ -2,6 +2,9 @@ import socket
 from execnet.gateway import Gateway, HostNotFound
 import os, sys, inspect
 
+try: bytes
+except NameError: bytes = str
+
 class SocketIO:
     error = (socket.error, EOFError)
     def __init__(self, sock):
@@ -10,7 +13,6 @@ class SocketIO:
             sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x10)# IPTOS_LOWDELAY
             sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
         except (AttributeError, socket.error):
-            e = sys.exc_info()[1]
             sys.stderr.write("WARNING: cannot set socketoption")
 
     def read(self, numbytes):
@@ -24,7 +26,6 @@ class SocketIO:
         return buf
 
     def write(self, data):
-        assert isinstance(data, bytes)
         self.sock.sendall(data)
 
     def close_read(self):
