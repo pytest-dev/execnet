@@ -74,6 +74,7 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     stdout, stderr = popen.communicate()
     assert not stderr
 
+@py.test.mark.skipif("not hasattr(os, 'dup')")
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     p = testdir.makepyfile("""
         import sys

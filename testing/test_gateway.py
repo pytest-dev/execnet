@@ -49,13 +49,14 @@ class TestBasicGateway:
         assert numchan2 == numchan
 
     def test_gateway_status_busy(self, gw):
+        numchannels = gw.remote_status().numchannels
         ch1 = gw.remote_exec("channel.send(1); channel.receive()")
         ch2 = gw.remote_exec("channel.receive()")
         ch1.receive()
         status = gw.remote_status()
         assert status.numexecuting == 1 # number of active execution threads
         assert status.execqsize == 1 # one more queued
-        assert status.numchannels == 2
+        assert status.numchannels == numchannels + 2
         ch1.send(None)
         ch2.send(None)
         ch1.waitclose()
