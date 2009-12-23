@@ -41,6 +41,15 @@ class TestChannelBasicBehaviour:
         channel.send(1)
         x = channel.receive(timeout=0.1)
 
+    def test_channel_receive_internal_timeout(self, gw, monkeypatch):
+        channel = gw.remote_exec("""
+            import time
+            time.sleep(0.5)
+            channel.send(1)
+        """)
+        monkeypatch.setattr(channel.__class__, '_INTERNALWAKEUP', 0.2)
+        x = channel.receive()
+
     def test_channel_close_and_then_receive_error_multiple(self, gw):
         channel = gw.remote_exec('channel.send(42) ; raise ValueError')
         x = channel.receive()

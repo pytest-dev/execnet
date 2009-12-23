@@ -212,6 +212,7 @@ class Channel(object):
     """Communication channel between two Python Interpreter execution points."""
     RemoteError = RemoteError
     TimeoutError = TimeoutError
+    _INTERNALWAKEUP = 1000
     _executing = False
 
     def __init__(self, gateway, id):
@@ -395,7 +396,7 @@ class Channel(object):
         if itemqueue is None:
             raise IOError("cannot receive(), channel has receiver callback")
         if timeout < 0:
-            internal_timeout = 1000
+            internal_timeout = self._INTERNALWAKEUP
         else:
             internal_timeout = timeout
            
@@ -404,7 +405,7 @@ class Channel(object):
                 x = itemqueue.get(timeout=internal_timeout)
                 break
             except queue.Empty:
-                if internal_timeout < 0:
+                if timeout < 0:
                     continue
                 raise self.TimeoutError("no item after %r seconds" %(timeout))
         if x is ENDMARKER:

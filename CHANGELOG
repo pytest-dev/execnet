@@ -13,6 +13,9 @@
 - internally split socket gateways, speeds up popen-gateways
   by 10% (now at <50 milliseconds per-gateway on a 1.5 GHZ machine) 
 
+- fix bug in channel.receive() that would wrongly raise a TimeoutError 
+  after 1000 seconds (thanks Ronny Pfannschmidt) 
+
 1.0.1
 --------------------------------
 
