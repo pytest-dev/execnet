@@ -17,7 +17,7 @@ winpymap = {
 
 def pytest_runtest_setup(item):
     if item.fspath.purebasename in ('test_group', 'test_info'):
-        if os.environ['USER'] == "hpk":
+        if os.environ.get('USER', "") == "hpk":
             return
         getspecssh(item.config) # will skip if no gx given
 

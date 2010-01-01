@@ -246,6 +246,7 @@ def killpid(pid):
         try:
             import ctypes
         except ImportError:
+            import subprocess
             # T: treekill, F: Force 
             cmd = ("taskkill /T /F /PID %d" %(pid)).split()
             ret = subprocess.call(cmd)
