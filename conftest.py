@@ -1,6 +1,6 @@
 import execnet
 import py
-import sys
+import os, sys
 import subprocess
 
 collect_ignore = ['build', 'doc/_build']
@@ -14,6 +14,12 @@ winpymap = {
     'python2.4': r'C:\Python24\python.exe',
     'python3.1': r'C:\Python31\python.exe',
 }
+
+def pytest_runtest_setup(item):
+    if item.fspath.purebasename in ('test_group', 'test_info'):
+        if os.environ['USER'] == "hpk":
+            return
+        getspecssh(item.config) # will skip if no gx given
 
 pytest_plugins = ['pytester', 'doctest']
 # configuration information for tests
