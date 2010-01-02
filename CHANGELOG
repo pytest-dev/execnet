@@ -1,3 +1,8 @@
+1.0.2post1
+--------------------------------
+
+- Windows/python2.4: fix bug that killing subprocesses would fail
+
 1.0.2 
 --------------------------------
 
