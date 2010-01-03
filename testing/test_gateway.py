@@ -64,7 +64,7 @@ class TestBasicGateway:
         status = gw.remote_status()
         assert status.execqsize == 0
         assert status.numexecuting == 0
-        assert status.numchannels == numchannels
+        assert status.numchannels <= numchannels
 
     def test_remote_exec_module(self, tmpdir, gw):
         p = tmpdir.join("remotetest.py")
