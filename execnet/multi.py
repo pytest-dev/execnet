@@ -51,22 +51,22 @@ class Group:
         return iter(list(self._gateways))
 
     def makegateway(self, spec=None):
-        """ create and configure a gateway to a Python interpreter.
+        """create and configure a gateway to a Python interpreter.
+        The ``spec`` string encodes the target gateway type
+        and configuration information. The general format is::
 
-            The ``spec`` string encodes the target gateway type
-            and configuration information. The general format is::
+            key1=value1//key2=value2//...
 
-                key1=value1//key2=value2//...
+        If you leave out the ``=value`` part a True value is assumed.
+        Valid types: ``popen``, ``ssh=hostname``, ``socket=host:port``.
+        Valid configuration::
 
-            If you leave out the ``=value`` part a True value is assumed.
-            Valid types: ``popen``, ``ssh=hostname``, ``socket=host:port``.
-            Valid configuration::
-                id=<string>     specifies the gateway id 
-                python=<path>   specifies which python interpreter to execute
-                chdir=<path>    specifies to which directory to change
-                nice=<path>     specifies process priority of new process
+            id=<string>     specifies the gateway id 
+            python=<path>   specifies which python interpreter to execute
+            chdir=<path>    specifies to which directory to change
+            nice=<path>     specifies process priority of new process
 
-            If no spec is given, self.defaultspec is used. 
+        If no spec is given, self.defaultspec is used. 
         """
         if not spec:
             spec = self.defaultspec
