@@ -2,24 +2,21 @@
 Receive file contents from remote SSH account 
 -----------------------------------------------------
 
-Here is a small program that you can use to retrieve
-contents of remote files::
+Here is some small server code that you can use to retrieve
+contents of remote files:
+
+.. include:: servefiles.py
+    :literal:
+
+And here is some code to use it to retrieve remote contents::
 
     import execnet
-    # open a gateway to a fresh child process 
+    import servefiles
     gw = execnet.makegateway("ssh=codespeak.net")
-    channel = gw.remote_exec("""
-            for fn in channel:
-                f = open(fn, 'rb')
-                channel.send(f.read())
-                f.close()
-    """) 
+    gw.remote_exec(servefiles)
 
-    for fn in somefilelist: 
+    for fn in ('/etc/passwd', '/etc/group'):
         channel.send(fn) 
         content = channel.receive()
-        # process content 
-     
-    # later you can exit / close down the gateway
-    gw.exit()
-
+        print(fn)
+        print(content)
