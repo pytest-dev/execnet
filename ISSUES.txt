@@ -81,3 +81,12 @@ a virtual environment:
     sf.sdist_remote_install(newgw)
     
     
+have callback accept errors / errback 
+-----------------------------------------------
+tags: 1.1 wish
+
+If using channel.setcallback() it currently is not
+impossible notice the exact errors that might happen
+on the other side.  Either introduce an "errback" 
+or (probably better) optionally allow an extra 'error' 
+parameter to execnet callbacks.
