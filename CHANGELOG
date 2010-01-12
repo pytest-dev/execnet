@@ -2,6 +2,9 @@
 --------------------------------
 
 - Windows/python2.4: fix bug that killing subprocesses would fail
+- refine termination some more: CTRL-C and gateway.exit will 
+  now try harder to interrupt remote execution.  this 
+  helps to avoid left-over ssh-processes.
 
 1.0.2 
 --------------------------------

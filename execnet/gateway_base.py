@@ -18,11 +18,16 @@ if ISPY3:
          "def reraise(cls, val, tb): raise val\n")
     unicode = str
     _long_type = int
+    from _thread import interrupt_main
 else:
     exec("def do_exec(co, loc): exec co in loc\n"
          "def reraise(cls, val, tb): raise cls, val, tb\n")
     bytes = str
     _long_type = long
+    try:
+        from thread import interrupt_main
+    except ImportError:
+        interrupt_main = None
 
 sysex = (KeyboardInterrupt, SystemExit)
 
@@ -160,8 +165,7 @@ def _setupmessages():
 
     class GATEWAY_TERMINATE(Message):
         def received(self, gateway):
-            gateway._trace("putting None to execqueue")
-            gateway._execqueue.put(None)
+            gateway._terminate_execution()
             raise SystemExit(0)
 
     classes = [
@@ -599,10 +603,11 @@ class BaseGateway(object):
 
     def _thread_receiver(self):
         self._trace("starting to receive")
-        unserializer = Unserializer(self._io, self._channelfactory)
+        eof = False
         try:
-            while 1:
-                try:
+            try:
+                unserializer = Unserializer(self._io, self._channelfactory)
+                while 1:
                     msg = Message.readfrom(unserializer)
                     self._trace("received", msg)
                     _receivelock = self._receivelock
@@ -612,21 +617,24 @@ class BaseGateway(object):
                         del msg
                     finally:
                         _receivelock.release()
-                except sysex:
-                    self._trace("io.close_read()")
-                    self._io.close_read()
-                    break
-                except EOFError:
-                    self._error = sys.exc_info()[1]
-                    break
-                except:
-                    self._trace("RECEIVERTHREAD", 
-                        geterrortext(self.exc_info()))
-                    break
+            except sysex:
+                self._trace("io.close_read()")
+                self._io.close_read()
+            except EOFError:
+                self._trace("receiverthread: got EOFError")
+                self._error = self.exc_info()[1]
+                eof = True
+            except:
+                self._trace("RECEIVERTHREAD", geterrortext(self.exc_info()))
         finally:
             self._channelfactory._finished_receiving()
+            if eof:
+                self._terminate_execution()
             if threading: # might be None during shutdown/finalization
                 self._trace('leaving', threading.currentThread())
+
+    def _terminate_execution(self):
+        pass
 
     def _send(self, msg):
         assert isinstance(msg, Message)
@@ -659,19 +667,36 @@ class SlaveGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
         self._execqueue.put((channel, sourcetask))
 
+    def _terminate_execution(self):
+        # called from receiverthread
+        self._trace("putting None to execqueue")
+        self._execqueue.put(None)
+        if interrupt_main:
+            self._trace("calling interrupt_main()")
+            interrupt_main()
+        self._execfinished.wait(10.0)
+        if not self._execfinished.isSet():
+            self._trace("execution did not finish in 10 secs, calling os._exit()")
+            os._exit(1)
+
     def serve(self, joining=True):
-        self._execqueue = queue.Queue()
-        self._initreceive()
         try:
-            while 1:
-                item = self._execqueue.get()
-                if item is None:
-                    break
-                try:
-                    self.executetask(item)
-                except self._StopExecLoop:
-                    break
+            try:
+                self._execqueue = queue.Queue()
+                self._execfinished = threading.Event()
+                self._initreceive()
+                while 1:
+                    item = self._execqueue.get()
+                    if item is None:
+                        break
+                    try:
+                        self.executetask(item)
+                    except self._StopExecLoop:
+                        break
+            except KeyboardInterrupt:
+                pass
         finally:
+            self._execfinished.set()
             self._trace("io.close_write()")
             self._io.close_write()
             self._trace("slavegateway.serve finished")
