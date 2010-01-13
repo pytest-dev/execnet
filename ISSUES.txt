@@ -16,9 +16,6 @@ A building block for keeping permanent network
 connections would be a started-on-first-access process 
 that keeps state. Considered:
 
-- PopenGateway imports local execnet package
-  and avoids parse/compile code strings
-
 - a rendevouz process that starts threads for each
   incoming connection.  On each such connection
   a SocketGateway can be instantiated but it 
