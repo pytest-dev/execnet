@@ -39,7 +39,7 @@ class TestChannelBasicBehaviour:
         channel = gw.remote_exec('channel.send(channel.receive())')
         py.test.raises(channel.TimeoutError, "channel.receive(timeout=0.2)")
         channel.send(1)
-        x = channel.receive(timeout=0.1)
+        x = channel.receive(timeout=TESTTIMEOUT)
 
     def test_channel_receive_internal_timeout(self, gw, monkeypatch):
         channel = gw.remote_exec("""
