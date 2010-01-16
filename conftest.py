@@ -22,10 +22,15 @@ def pytest_runtest_setup(item):
 pytest_plugins = ['pytester', 'doctest']
 # configuration information for tests
 def pytest_addoption(parser):
-    group = parser.getgroup("pylib", "py lib testing options")
+    group = parser.getgroup("execnet", "execnet testing options")
     group.addoption('--gx',
            action="append", dest="gspecs", default=None,
            help=("add a global test environment, XSpec-syntax. "))
+    group.addoption('--gwscope',
+           action="store", dest="scope", default="session",
+           type="choice", choices=["session", "function"],
+           help=("set gateway setup scope, default: session."))
+    
 
 def pytest_funcarg__specssh(request):
     return getspecssh(request.config)
@@ -98,7 +103,7 @@ def pytest_funcarg__anypython(request):
     return executable
 
 def pytest_funcarg__gw(request):
-    scope = "session"
+    scope = request.config.option.scope
     group = request.cached_setup(
         setup=execnet.Group, 
         teardown=lambda group: group.terminate(timeout=1),
