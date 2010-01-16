@@ -13,6 +13,8 @@ execnet.apipkg.initpkg(__name__, {
     'SshGateway':       '.deprecated:SshGateway',
     'makegateway':      '.multi:makegateway',
     'HostNotFound':     '.gateway:HostNotFound',
+    'RemoteError':      '.gateway_base:RemoteError',
+    'TimeoutError':     '.gateway_base:TimeoutError',
     'XSpec':            '.xspec:XSpec',
     'Group':            '.multi:Group',
     'MultiChannel':     '.multi:MultiChannel',

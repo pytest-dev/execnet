@@ -8,11 +8,11 @@
   the low-level read on subprocess pipes may be non-blocking, returning 
   less bytes than requested - so we now loop.
 - Windows/python2.4: fix bug that killing subprocesses would fail
-- fix some doc issues (thanks thm and ronny), add ssh_fileserver example
-- update apipkg
-- always skip remote tests if not ssh specs given
-- fix/refine some tests 
-- fix typo and bug on windows/python2.4
+- make RemoteError and TimeoutError available directly on execnet namespace
+
+- fix some doc and test issues (thanks thm and ronny), add ssh_fileserver example
+- update internal copy of apipkg
+- always skip remote tests if no ssh specs given
 
 1.0.2 
 --------------------------------
