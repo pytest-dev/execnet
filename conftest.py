@@ -30,7 +30,12 @@ def pytest_addoption(parser):
            action="store", dest="scope", default="session",
            type="choice", choices=["session", "function"],
            help=("set gateway setup scope, default: session."))
-    
+
+def pytest_report_header(config):
+    lines = []
+    lines.append("gateway test setup scope: %s" % config.getvalue("scope"))
+    lines.append("execnet: %s -- %s" %(execnet.__file__, execnet.__version__))
+    return lines
 
 def pytest_funcarg__specssh(request):
     return getspecssh(request.config)
