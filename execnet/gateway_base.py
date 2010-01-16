@@ -79,7 +79,7 @@ class Popen2IO:
     def read(self, numbytes):
         """Read exactly 'numbytes' bytes from the pipe. """
         # a file in non-blocking mode may return less bytes, so we loop
-        buf = ""
+        buf = bytes()
         while len(buf) < numbytes:
             data = self._read(numbytes)
             if not data:
