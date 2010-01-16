@@ -1,8 +1,13 @@
 
 import py
 import sys, os, subprocess, inspect
+import execnet
 from execnet import gateway_base, gateway
 from execnet.gateway_base import Message, Channel, ChannelFactory
+
+def test_errors_on_execnet():
+    assert hasattr(execnet, 'RemoteError')
+    assert hasattr(execnet, 'TimeoutError')
 
 def test_subprocess_interaction(anypython):
     line = gateway.popen_bootstrapline

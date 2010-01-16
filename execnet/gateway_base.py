@@ -158,7 +158,7 @@ def _setupmessages():
 
     class CHANNEL_CLOSE_ERROR(Message):
         def received(self, gateway):
-            remote_error = gateway._channelfactory.RemoteError(self.data)
+            remote_error = RemoteError(self.data)
             gateway._channelfactory._local_close(self.channelid, remote_error)
 
     class CHANNEL_LAST_MESSAGE(Message):
@@ -433,8 +433,6 @@ class Channel(object):
 ENDMARKER = object()
 
 class ChannelFactory(object):
-    RemoteError = RemoteError
-
     def __init__(self, gateway, startcount=1):
         self._channels = weakref.WeakValueDictionary()
         self._callbacks = {}
