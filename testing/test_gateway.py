@@ -231,12 +231,11 @@ class TestPopenGateway:
         py.test.raises(IOError, channel.send, None)
         py.test.raises(EOFError, channel.receive)
 
-    def test_receive_on_remote_io_closed(self):
-        gw = execnet.makegateway('popen')
+    def test_receive_on_remote_sysexit(self, gw):
         channel = gw.remote_exec("""
             raise SystemExit()
         """)
-        py.test.raises(EOFError, channel.receive)
+        py.test.raises(channel.RemoteError, channel.receive)
 
 def test_socket_gw_host_not_found(gw):
     py.test.raises(execnet.HostNotFound,
