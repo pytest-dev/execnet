@@ -299,7 +299,7 @@ class TestChannelFile:
         """)
         first = channel.receive()
         assert first.strip() == 'hello world'
-        py.test.raises(EOFError, channel.receive)
+        py.test.raises(channel.RemoteError, channel.receive)
 
     def test_channel_file_read(self, gw):
         channel = gw.remote_exec("""
@@ -337,77 +337,6 @@ class TestChannelFile:
     def test_channel_makefile_incompatmode(self, gw):
         channel = gw.newchannel()
         py.test.raises(ValueError, 'channel.makefile("rw")')
-
-
-class TestPopenGateway:
-    gwtype = 'popen'
-
-    def test_chdir_separation(self, tmpdir):
-        old = tmpdir.chdir()
-        try:
-            gw = execnet.makegateway('popen')
-        finally:
-            waschangedir = old.chdir()
-        c = gw.remote_exec("import os ; channel.send(os.getcwd())")
-        x = c.receive()
-        assert x == str(waschangedir)
-
-    def test_remoteerror_readable_traceback(self, gw):
-        e = py.test.raises(gateway_base.RemoteError, 
-            'gw.remote_exec("x y").waitclose()')
-        assert "gateway_base" in e.value.formatted 
-
-    def test_many_popen(self):
-        num = 4
-        l = []
-        for i in range(num):
-            l.append(execnet.makegateway('popen'))
-        channels = []
-        for gw in l:
-            channel = gw.remote_exec("""channel.send(42)""")
-            channels.append(channel)
-##        try:
-##            while channels:
-##                channel = channels.pop()
-##                try:
-##                    ret = channel.receive()
-##                    assert ret == 42
-##                finally:
-##                    channel.gateway.exit()
-##        finally:
-##            for x in channels:
-##                x.gateway.exit()
-        while channels:
-            channel = channels.pop()
-            ret = channel.receive()
-            assert ret == 42
-
-    def test_rinfo_popen(self, gw):
-        rinfo = gw._rinfo()
-        assert rinfo.executable == py.std.sys.executable
-        assert rinfo.cwd == py.std.os.getcwd()
-        assert rinfo.version_info == py.std.sys.version_info
-
-    def test_waitclose_on_remote_killed(self):
-        gw = execnet.makegateway('popen')
-        channel = gw.remote_exec("""
-            import os
-            import time
-            channel.send(os.getpid())
-            time.sleep(100)
-        """)
-        remotepid = channel.receive()
-        py.process.kill(remotepid)
-        py.test.raises(EOFError, "channel.waitclose(TESTTIMEOUT)")
-        py.test.raises(IOError, channel.send, None)
-        py.test.raises(EOFError, channel.receive)
-
-    def test_receive_on_remote_io_closed(self):
-        gw = execnet.makegateway('popen')
-        channel = gw.remote_exec("""
-            raise SystemExit()
-        """)
-        py.test.raises(EOFError, channel.receive)
 
 def test_socket_gw_host_not_found(gw):
     py.test.raises(execnet.HostNotFound,

@@ -190,11 +190,11 @@ def geterrortext(excinfo):
                                 excinfo[1])
     return errortext
 
-class RemoteError(EOFError):
+class RemoteError(Exception):
     """ Exception containing a stringified error from the other side. """
     def __init__(self, formatted):
         self.formatted = formatted
-        EOFError.__init__(self)
+        Exception.__init__(self)
 
     def __str__(self):
         return self.formatted
