@@ -74,16 +74,18 @@ class Popen2IO:
                 msvcrt.setmode(outfile.fileno(), os.O_BINARY)
             except (AttributeError, IOError):
                 pass
+        self._read = getattr(infile, "buffer", infile).read
 
     def read(self, numbytes):
         """Read exactly 'numbytes' bytes from the pipe. """
-        try:
-            data = self.infile.buffer.read(numbytes)
-        except AttributeError:
-            data = self.infile.read(numbytes)
-        if len(data) < numbytes:
-            raise EOFError
-        return data
+        # a file in non-blocking mode may return less bytes, so we loop
+        buf = ""
+        while len(buf) < numbytes:
+            data = self._read(numbytes)
+            if not data:
+                raise EOFError("expected %d bytes, got %d" %(numbytes, len(buf)))
+            buf += data
+        return buf
 
     def write(self, data):
         """write out all data bytes. """
@@ -622,6 +624,7 @@ class BaseGateway(object):
                 self._io.close_read()
             except EOFError:
                 self._trace("receiverthread: got EOFError")
+                self._trace("traceback was: ", geterrortext(self.exc_info()))
                 self._error = self.exc_info()[1]
                 eof = True
             except:
