@@ -4,6 +4,9 @@
 - refine termination some more: CTRL-C and gateway.exit will 
   now try harder to interrupt remote execution.  this 
   helps to avoid left-over ssh-processes.
+- fix read-on-non-blocking-files issue probably related to jython only:  
+  the low-level read on subprocess pipes may be non-blocking, returning 
+  less bytes than requested - so we now loop.
 - Windows/python2.4: fix bug that killing subprocesses would fail
 - fix some doc issues (thanks thm and ronny), add ssh_fileserver example
 - update apipkg
