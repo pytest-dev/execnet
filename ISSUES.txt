@@ -87,3 +87,9 @@ impossible notice the exact errors that might happen
 on the other side.  Either introduce an "errback" 
 or (probably better) optionally allow an extra 'error' 
 parameter to execnet callbacks.
+
+fix rsync between python/jython 
+-----------------------------------------------
+tags: 1.0 bug
+
+rsync does not complete with jython. 

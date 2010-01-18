@@ -694,15 +694,16 @@ class SlaveGateway(BaseGateway):
                         self.executetask(item)
                     except self._StopExecLoop:
                         break
-            except KeyboardInterrupt:
-                pass
-        finally:
-            self._execfinished.set()
-            self._trace("io.close_write()")
-            self._io.close_write()
-            self._trace("slavegateway.serve finished")
-        if joining:
-            self.join()
+            finally:
+                self._execfinished.set()
+                self._trace("io.close_write()")
+                self._io.close_write()
+                self._trace("slavegateway.serve finished")
+            if joining:
+                self.join()
+        except KeyboardInterrupt:
+            # in the slave we can't really do anything sensible
+            self._trace("swallowing keyboardinterrupt in main-thread, leaving")
 
     def executetask(self, item):
         channel, source = item
@@ -718,6 +719,8 @@ class SlaveGateway(BaseGateway):
                 self._trace("execution finished")
         except self._StopExecLoop:
             channel.close()
+            raise
+        except KeyboardInterrupt:
             raise
         except:
             excinfo = self.exc_info()
