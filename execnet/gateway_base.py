@@ -431,6 +431,7 @@ class Channel(object):
     __next__ = next
 
 ENDMARKER = object()
+INTERRUPT_TEXT = "keyboard-interrupted"
 
 class ChannelFactory(object):
     def __init__(self, gateway, startcount=1):
@@ -482,7 +483,8 @@ class ChannelFactory(object):
         if channel is None:
             # channel already in "deleted" state
             if remoteerror:
-                remoteerror.warn()
+                if remoteerror != INTERRUPT_TEXT:
+                    remoteerror.warn()
         else:
             # state transition to "closed" state
             if remoteerror:
@@ -721,6 +723,7 @@ class SlaveGateway(BaseGateway):
             channel.close()
             raise
         except KeyboardInterrupt:
+            channel.close(INTERRUPT_TEXT)
             raise
         except:
             excinfo = self.exc_info()
