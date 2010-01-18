@@ -72,6 +72,7 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     popen = subprocess.Popen([str(anypython), str(p)], 
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
     stdout, stderr = popen.communicate()
+    print (stderr)
     assert not stderr
 
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
