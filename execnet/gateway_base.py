@@ -205,8 +205,9 @@ class RemoteError(Exception):
         return "%s: %s" %(self.__class__.__name__, self.formatted)
 
     def warn(self):
-        # XXX do this better
-        sys.stderr.write("Warning: unhandled %r\n" % (self,))
+        if self.formatted != INTERRUPT_TEXT:
+            # XXX do this better
+            sys.stderr.write("Warning: unhandled %r\n" % (self,))
 
 class TimeoutError(IOError):
     """ Exception indicating that a timeout was reached. """
@@ -484,8 +485,7 @@ class ChannelFactory(object):
         if channel is None:
             # channel already in "deleted" state
             if remoteerror:
-                if remoteerror != INTERRUPT_TEXT:
-                    remoteerror.warn()
+                remoteerror.warn()
         else:
             # state transition to "closed" state
             if remoteerror:
