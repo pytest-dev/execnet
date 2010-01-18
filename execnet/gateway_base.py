@@ -441,6 +441,7 @@ class ChannelFactory(object):
         self.gateway = gateway
         self.count = startcount
         self.finished = False
+        self._list = list # needed during interp-shutdown
 
     def new(self, id=None):
         """ create a new Channel with 'id' (or create new id if None). """
@@ -460,7 +461,7 @@ class ChannelFactory(object):
             self._writelock.release()
 
     def channels(self):
-        return list(self._channels.values())
+        return self._list(self._channels.values())
 
     #
     # internal methods, called from the receiver thread
@@ -526,9 +527,9 @@ class ChannelFactory(object):
             self.finished = True
         finally:
             self._writelock.release()
-        for id in list(self._channels):
+        for id in self._list(self._channels):
             self._local_close(id, sendonly=True)
-        for id in list(self._callbacks):
+        for id in self._list(self._callbacks):
             self._no_longer_opened(id)
 
 class ChannelFile(object):
