@@ -31,35 +31,41 @@ else:
 
 sysex = (KeyboardInterrupt, SystemExit)
 
-DEBUG = os.environ.get('EXECNET_DEBUG')
-pid = os.getpid()
-if DEBUG == '2':
-    def trace(*msg):
-        line = " ".join(map(str, msg))
-        sys.stderr.write("[%s] %s\n" % (pid, line))
-        sys.stderr.flush()
-elif DEBUG:
-    import tempfile, os.path
-    fn = os.path.join(tempfile.gettempdir(), 'execnet-debug-%d' % os.getpid())
-    debugfile = open(fn, 'w')
-    def trace(*msg):
-        line = " ".join(map(str, msg))
-        try:
-            debugfile.write(line + "\n")
-            debugfile.flush()
-        except sysex:
-            raise
-        except:
-            v = sys.exc_info()[1]
-            try:
-                sys.stderr.write(
-                    "[%d] exception during tracing: %r\n" % (pid, v))
-            except (IOError,ValueError):
-                pass # nothing we can do anymore
-else:
-    def trace(*msg): 
-        pass
+class Trace:
+    pid = os.getpid()
+    stderr = sys.stderr
+    exc_info = sys.exc_info
+    _sysex = sysex
+    DEBUG = os.environ.get('EXECNET_DEBUG')
 
+    def __init__(self):
+        if self.DEBUG == '2':
+            self.stream = sys.stderr
+        elif self.DEBUG:
+            import tempfile, os.path
+            fn = os.path.join(tempfile.gettempdir(),'execnet-debug-%s' % self.pid)
+            self.stream = open(fn, 'w')
+        else:
+            self.stream = None
+    def trace(self, *msg):
+        if self.stream:
+            line = " ".join(map(str, msg))
+            try:
+                self.stream.write("[%s] %s\n" % (self.pid, line))
+                self.stream.flush()
+            except self._sysex:
+                raise
+            except:
+                if self.stream != self.stderr:
+                    try:
+                        v = self.exc_info()[1]
+                        self.stderr.write(
+                            "[%s] exception during tracing: %r\n" % (self.pid, v))
+                    except:
+                        pass # nothing we can do anymore
+
+_trace = Trace()
+trace = _trace.trace
 
 class Popen2IO:
     error = (IOError, OSError, EOFError)
@@ -181,7 +187,8 @@ def _setupmessages():
 
 _setupmessages()
 
-def geterrortext(excinfo, format_exception=traceback.format_exception):
+def geterrortext(excinfo, 
+    format_exception=traceback.format_exception, sysex=sysex):
     try:
         l = format_exception(*excinfo)
         errortext = "".join(l)
@@ -582,6 +589,7 @@ class ChannelFileRead(ChannelFile):
 
 class BaseGateway(object):
     exc_info = sys.exc_info
+    _sysex = sysex
     id = "<slave>"
 
     class _StopExecLoop(Exception):
@@ -622,7 +630,7 @@ class BaseGateway(object):
                         del msg
                     finally:
                         _receivelock.release()
-            except sysex:
+            except self._sysex:
                 self._trace("io.close_read()")
                 self._io.close_read()
             except EOFError:
