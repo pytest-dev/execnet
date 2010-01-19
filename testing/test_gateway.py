@@ -303,11 +303,12 @@ class TestThreads:
 
 class TestTracing:        
     def test_debug(self, monkeypatch):
-        monkeypatch.setenv('EXECNET_DEBUG', "1")
+        monkeypatch.setenv('EXECNET_DEBUG', "2")
         source = py.std.inspect.getsource(gateway_base)
         d = {}
         gateway_base.do_exec(source, d) 
-        assert 'debugfile' in d 
+        t = d['_trace']
+        assert t.stream == py.std.sys.stderr
 
     def test_popen_filetracing(self, monkeypatch):
         monkeypatch.setenv('EXECNET_DEBUG', "1")
@@ -335,6 +336,6 @@ class TestTracing:
 
 def test_nodebug():
     from execnet import gateway_base
-    assert not hasattr(gateway_base, 'debugfile')
+    assert not gateway_base.Trace.DEBUG
 
 
