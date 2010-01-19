@@ -1,3 +1,9 @@
+1.0.4
+--------------------------------
+
+- try harder to not have globals involved during finalization handling, 
+  this should (hopefully) fix bogus tracebacks at process exit. 
+
 1.0.3
 --------------------------------
 

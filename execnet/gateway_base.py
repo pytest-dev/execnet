@@ -181,9 +181,9 @@ def _setupmessages():
 
 _setupmessages()
 
-def geterrortext(excinfo):
+def geterrortext(excinfo, format_exception=traceback.format_exception):
     try:
-        l = traceback.format_exception(*excinfo)
+        l = format_exception(*excinfo)
         errortext = "".join(l)
     except sysex:
         raise
@@ -517,7 +517,7 @@ class ChannelFactory(object):
             except:
                 excinfo = sys.exc_info()
                 self.gateway._trace("exception during callback: %s" % excinfo[1])
-                errortext = geterrortext(excinfo)
+                errortext = self.gateway._geterrortext(excinfo)
                 self.gateway._send(Message.CHANNEL_CLOSE_ERROR(id, errortext))
                 self._local_close(id, errortext)
 
@@ -593,7 +593,9 @@ class BaseGateway(object):
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
         self._serializer = Serializer(io)
-        self._globaltrace = trace  # globals may be NONE at process-termination
+        # globals may be NONE at process-termination
+        self._globaltrace = trace  
+        self._geterrortext = geterrortext
 
     def _trace(self, *msg):
         self._globaltrace(self.id, *msg)
@@ -625,11 +627,12 @@ class BaseGateway(object):
                 self._io.close_read()
             except EOFError:
                 self._trace("receiverthread: got EOFError")
-                self._trace("traceback was: ", geterrortext(self.exc_info()))
+                self._trace("traceback was: ", 
+                    self._geterrortext(self.exc_info()))
                 self._error = self.exc_info()[1]
                 eof = True
             except:
-                self._trace("RECEIVERTHREAD", geterrortext(self.exc_info()))
+                self._trace("RECEIVERTHREAD", self._geterrortext(self.exc_info()))
         finally:
             self._channelfactory._finished_receiving()
             if eof:
@@ -729,7 +732,7 @@ class SlaveGateway(BaseGateway):
         except:
             excinfo = self.exc_info()
             self._trace("got exception: %s" % (excinfo[1],))
-            errortext = geterrortext(excinfo)
+            errortext = self._geterrortext(excinfo)
             channel.close(errortext)
         else:
             channel.close()
