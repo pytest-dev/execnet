@@ -1,8 +1,8 @@
 1.0.4
 --------------------------------
 
-- try harder to not have globals involved during finalization handling, 
-  this should (hopefully) fix bogus tracebacks at process exit. 
+- try to deal more cleanly with interpreter shutdown setting globals to
+  None. this avoids (hopefully) some bogus tracebacks at process exit. 
 
 1.0.3
 --------------------------------

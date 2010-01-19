@@ -302,20 +302,15 @@ class TestThreads:
 
 
 class TestTracing:        
-    def test_debug(self, monkeypatch):
-        monkeypatch.setenv('EXECNET_DEBUG', "2")
-        source = py.std.inspect.getsource(gateway_base)
-        d = {}
-        gateway_base.do_exec(source, d) 
-        t = d['_trace']
-        assert t.stream == py.std.sys.stderr
-
-    def test_popen_filetracing(self, monkeypatch):
+    def test_popen_filetracing(self, testdir, monkeypatch):
+        tmpdir = testdir.tmpdir
+        monkeypatch.setenv("TMP", tmpdir)
+        monkeypatch.setenv("TEMP", tmpdir) # windows
         monkeypatch.setenv('EXECNET_DEBUG', "1")
         gw = execnet.makegateway("popen")
         pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
-        tmpdir = py.path.local(py.std.tempfile.gettempdir())
         slavefile = tmpdir.join("execnet-debug-%s" % pid)
+        assert slavefile.check()
         slave_line = "creating slavegateway"
         for line in slavefile.readlines():
             if slave_line in line:
@@ -324,7 +319,6 @@ class TestTracing:
             py.test.fail("did not find %r in tracefile" %(slave_line,))
         gw.exit()
 
-    @needs_osdup
     def test_popen_stderr_tracing(self, capfd, monkeypatch):
         monkeypatch.setenv('EXECNET_DEBUG', "2")
         gw = execnet.makegateway("popen")
@@ -334,8 +328,6 @@ class TestTracing:
         assert slave_line in err
         gw.exit()
 
-def test_nodebug():
-    from execnet import gateway_base
-    assert not gateway_base.Trace.DEBUG
-
-
+    def test_no_tracing_by_default(self):
+        assert gateway_base.trace == gateway_base.notrace, \
+                "trace does not to default to empty tracing"
