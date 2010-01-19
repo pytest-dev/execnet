@@ -31,41 +31,35 @@ else:
 
 sysex = (KeyboardInterrupt, SystemExit)
 
-class Trace:
-    pid = os.getpid()
-    stderr = sys.stderr
-    exc_info = sys.exc_info
-    _sysex = sysex
-    DEBUG = os.environ.get('EXECNET_DEBUG')
 
-    def __init__(self):
-        if self.DEBUG == '2':
-            self.stream = sys.stderr
-        elif self.DEBUG:
-            import tempfile, os.path
-            fn = os.path.join(tempfile.gettempdir(),'execnet-debug-%s' % self.pid)
-            self.stream = open(fn, 'w')
-        else:
-            self.stream = None
-    def trace(self, *msg):
-        if self.stream:
+DEBUG = os.environ.get('EXECNET_DEBUG')
+pid = os.getpid()
+if DEBUG == '2':
+    def trace(*msg):
+        try:
             line = " ".join(map(str, msg))
+            sys.stderr.write("[%s] %s\n" % (pid, line))
+            sys.stderr.flush()
+        except Exception:
+            pass # nothing we can do, likely interpreter-shutdown
+elif DEBUG:
+    import tempfile, os.path
+    fn = os.path.join(tempfile.gettempdir(), 'execnet-debug-%d' % pid)
+    debugfile = open(fn, 'w')
+    def trace(*msg):
+        try:
+            line = " ".join(map(str, msg))
+            debugfile.write(line + "\n")
+            debugfile.flush()
+        except Exception:
             try:
-                self.stream.write("[%s] %s\n" % (self.pid, line))
-                self.stream.flush()
-            except self._sysex:
-                raise
-            except:
-                if self.stream != self.stderr:
-                    try:
-                        v = self.exc_info()[1]
-                        self.stderr.write(
-                            "[%s] exception during tracing: %r\n" % (self.pid, v))
-                    except:
-                        pass # nothing we can do anymore
-
-_trace = Trace()
-trace = _trace.trace
+                v = exc_info()[1]
+                sys.stderr.write(
+                    "[%s] exception during tracing: %r\n" % (pid, v))
+            except Exception:
+                pass # nothing we can do, likely interpreter-shutdown
+else:
+    notrace = trace = lambda *msg: None
 
 class Popen2IO:
     error = (IOError, OSError, EOFError)
@@ -602,11 +596,11 @@ class BaseGateway(object):
         self._receivelock = threading.RLock()
         self._serializer = Serializer(io)
         # globals may be NONE at process-termination
-        self._globaltrace = trace  
+        self._trace = trace  
         self._geterrortext = geterrortext
 
     def _trace(self, *msg):
-        self._globaltrace(self.id, *msg)
+        self._trace(self.id, *msg)
 
     def _initreceive(self):
         self._receiverthread = threading.Thread(name="receiver",
