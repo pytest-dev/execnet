@@ -636,11 +636,15 @@ class BaseGateway(object):
             except:
                 self._trace("RECEIVERTHREAD", self._geterrortext(self.exc_info()))
         finally:
-            self._channelfactory._finished_receiving()
-            if eof:
-                self._terminate_execution()
-            if threading: # might be None during shutdown/finalization
-                self._trace('leaving', threading.currentThread())
+            try:
+                self._trace('entering finalization', threading.currentThread())
+                if eof:
+                    self._terminate_execution()
+                self._channelfactory._finished_receiving()
+                if threading: # might be None during shutdown/finalization
+                    self._trace('leaving', threading.currentThread())
+            except Exception:
+                pass # XXX be silent at interp-shutdown
 
     def _terminate_execution(self):
         pass
