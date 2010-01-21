@@ -1,3 +1,9 @@
+1.0.4post1
+--------------------------------
+
+- silence receiver-thread finalization exceptions during interp-shutdown 
+- fix glitch in ssh-fileserver example 
+
 1.0.4
 --------------------------------
 
