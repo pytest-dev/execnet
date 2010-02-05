@@ -3,6 +3,7 @@
 
 - silence receiver-thread finalization exceptions during interp-shutdown 
 - fix glitch in ssh-fileserver example 
+- experimentally add "setup.py test" support - will run py.test 
 
 1.0.4
 --------------------------------
