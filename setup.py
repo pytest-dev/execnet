@@ -31,9 +31,9 @@ Features
 """
 
 try:
-    from setuptools import setup
+    from setuptools import setup, Command
 except ImportError:
-    from distutils.core import setup
+    from distutils.core import setup, Command
 
 from execnet import __version__
 
@@ -48,6 +48,7 @@ def main():
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
         author='holger krekel and others',
         author_email='holger at merlinux.eu',
+        cmdclass = {'test': PyTest},
         classifiers=[
             'Development Status :: 5 - Production/Stable',
             'Intended Audience :: Developers',
@@ -62,6 +63,16 @@ def main():
             'Programming Language :: Python'],
         packages=['execnet', 'execnet.script'],
     )
+
+class PyTest(Command):
+    user_options = []
+    def initialize_options(self):
+        pass
+    def finalize_options(self):
+        pass
+    def run(self):
+        import py
+        py.cmdline.pytest(py.std.sys.argv[2:])
 
 if __name__ == '__main__':
     main()
