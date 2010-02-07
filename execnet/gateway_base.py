@@ -609,7 +609,7 @@ class BaseGateway(object):
         self._receiverthread.start()
 
     def _thread_receiver(self):
-        self._trace("starting to receive")
+        self._trace("RECEIVERTHREAD: starting to run")
         eof = False
         try:
             try:
@@ -625,11 +625,11 @@ class BaseGateway(object):
                     finally:
                         _receivelock.release()
             except self._sysex:
-                self._trace("io.close_read()")
+                self._trace("RECEIVERTHREAD: doing io.close_read()")
                 self._io.close_read()
             except EOFError:
-                self._trace("receiverthread: got EOFError")
-                self._trace("traceback was: ", 
+                self._trace("RECEIVERTHREAD: got EOFError")
+                self._trace("RECEIVERTHREAD: traceback was: ", 
                     self._geterrortext(self.exc_info()))
                 self._error = self.exc_info()[1]
                 eof = True
@@ -637,13 +637,11 @@ class BaseGateway(object):
                 self._trace("RECEIVERTHREAD", self._geterrortext(self.exc_info()))
         finally:
             try:
-                if threading: # might be None during shutdown/finalization
-                    self._trace('entering finalization', threading.currentThread())
+                self._trace('RECEIVERTHREAD', 'entering finalization')
                 if eof:
                     self._terminate_execution()
                 self._channelfactory._finished_receiving()
-                if threading: # might be None during shutdown/finalization
-                    self._trace('leaving', threading.currentThread())
+                self._trace('RECEIVERTHREAD', 'leaving finalization')
             except Exception:
                 pass # XXX be silent at interp-shutdown
 
@@ -712,11 +710,11 @@ class SlaveGateway(BaseGateway):
                 self._trace("io.close_write()")
                 self._io.close_write()
                 self._trace("slavegateway.serve finished")
-            if joining:
-                self.join()
         except KeyboardInterrupt:
             # in the slave we can't really do anything sensible
-            self._trace("swallowing keyboardinterrupt in main-thread, leaving")
+            self._trace("swallowing keyboardinterrupt in main-thread")
+        if joining:
+            self.join()
 
     def executetask(self, item):
         channel, source = item
