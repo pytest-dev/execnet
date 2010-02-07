@@ -1,7 +1,8 @@
-1.0.4post1
+1.0.5
 --------------------------------
 
-- silence receiver-thread finalization exceptions during interp-shutdown 
+- more care during receiver-thread finalization during interp-shutdown,
+  should get rid of annoying and meaningless exceptions
 - fix glitch in ssh-fileserver example 
 - experimentally add "setup.py test" support - will run py.test 
 
