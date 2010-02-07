@@ -637,7 +637,8 @@ class BaseGateway(object):
                 self._trace("RECEIVERTHREAD", self._geterrortext(self.exc_info()))
         finally:
             try:
-                self._trace('entering finalization', threading.currentThread())
+                if threading: # might be None during shutdown/finalization
+                    self._trace('entering finalization', threading.currentThread())
                 if eof:
                     self._terminate_execution()
                 self._channelfactory._finished_receiving()

@@ -135,8 +135,8 @@ class Group:
     def terminate(self, timeout=None):
         """ trigger exit of member gateways and wait for termination 
         of member gateways and associated subprocesses.  After waiting 
-        timeout seconds an attempt to kill local sub processes of popen- 
-        and ssh-gateways is started.  Timeout defaults to None meaning 
+        timeout seconds try to to kill local sub processes of popen- 
+        and ssh-gateways.  Timeout defaults to None meaning 
         open-ended waiting and no kill attempts.
         """
         for gw in self:
