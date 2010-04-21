@@ -142,7 +142,7 @@ class PopenCmdGateway(Gateway):
             p.pid = self.remote_exec(
                 "import os; channel.send(os.getpid())").receive()
 
-popen_bootstrapline = "import sys ; exec(eval(sys.stdin.readline()))"
+popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
 class PopenGateway(PopenCmdGateway):
     """ This Gateway provides interaction with a newly started
         python subprocess.
@@ -153,7 +153,7 @@ class PopenGateway(PopenCmdGateway):
         """
         if not python:
             python = sys.executable
-        args = [str(python), '-c', popen_bootstrapline]
+        args = [str(python), '-u', '-c', popen_bootstrapline]
         super(PopenGateway, self).__init__(args, id=id)
 
     def _remote_bootstrap_gateway(self, io):

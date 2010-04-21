@@ -126,7 +126,7 @@ class TestMakegateway:
         testdir.chdir()
         gw = execnet.makegateway("popen//chdir=hello")
         rinfo = gw._rinfo()
-        assert rinfo.cwd == str(testdir.tmpdir.join("hello").realpath())
+        assert rinfo.cwd.lower() == str(testdir.tmpdir.join("hello").realpath()).lower()
 
     def test_ssh(self, specssh):
         sshhost = specssh.ssh

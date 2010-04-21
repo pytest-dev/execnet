@@ -179,7 +179,7 @@ class TestPopenGateway:
             waschangedir = old.chdir()
         c = gw.remote_exec("import os ; channel.send(os.getcwd())")
         x = c.receive()
-        assert x == str(waschangedir)
+        assert x.lower() == str(waschangedir).lower()
 
     def test_remoteerror_readable_traceback(self, gw):
         e = py.test.raises(gateway_base.RemoteError, 

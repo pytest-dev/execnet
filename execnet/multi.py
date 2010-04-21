@@ -242,7 +242,7 @@ def killpopen(popen):
 def killpid(pid):
     if hasattr(os, 'kill'):
         os.kill(pid, 15)
-    elif sys.platform == "win32":
+    elif sys.platform == "win32" or getattr(os, '_name', None) == 'nt':
         try:
             import ctypes
         except ImportError:
@@ -259,7 +259,7 @@ def killpid(pid):
             ctypes.windll.kernel32.TerminateProcess(handle, -1)
             ctypes.windll.kernel32.CloseHandle(handle)
     else:
-        raise EnvironmmentError("no method to kill %s" %(pid,))
+        raise EnvironmentError("no method to kill %s" %(pid,))
 
 default_group = Group()
 makegateway = default_group.makegateway
