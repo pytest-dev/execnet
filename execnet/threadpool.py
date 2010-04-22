@@ -207,6 +207,7 @@ if __name__ == '__channelexec__':
     maxthreads = channel.receive()
     execpool = WorkerPool(maxthreads=maxthreads)
     gw = channel.gateway
+    channel.send("ok")
     gw._trace("instantiated thread work pool maxthreads=%s" %(maxthreads,))
     while 1:
         gw._trace("waiting for new exec task")
