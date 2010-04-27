@@ -491,13 +491,13 @@ class ChannelFactory(object):
             # state transition to "closed" state
             if remoteerror:
                 channel._remoteerrors.append(remoteerror)
-            if not sendonly: # otherwise #--> "sendonly"
-                channel._closed = True          # --> "closed"
-            channel._receiveclosed.set()
             queue = channel._items
             if queue is not None:
                 queue.put(ENDMARKER)
         self._no_longer_opened(id)
+        if not sendonly: # otherwise #--> "sendonly"
+            channel._closed = True          # --> "closed"
+        channel._receiveclosed.set()
 
     def _local_receive(self, id, data):
         # executes in receiver thread

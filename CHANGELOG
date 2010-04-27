@@ -2,6 +2,7 @@
 --------------------------------
 
 - fix jython/windows interactions 
+- fix waitclose/callback-with-endmarker race condition
 
 1.0.5
 --------------------------------
