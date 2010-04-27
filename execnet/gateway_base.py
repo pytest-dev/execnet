@@ -487,6 +487,7 @@ class ChannelFactory(object):
             # channel already in "deleted" state
             if remoteerror:
                 remoteerror.warn()
+            self._no_longer_opened(id)
         else:
             # state transition to "closed" state
             if remoteerror:
@@ -494,10 +495,10 @@ class ChannelFactory(object):
             queue = channel._items
             if queue is not None:
                 queue.put(ENDMARKER)
-        self._no_longer_opened(id)
-        if not sendonly: # otherwise #--> "sendonly"
-            channel._closed = True          # --> "closed"
-        channel._receiveclosed.set()
+            self._no_longer_opened(id)
+            if not sendonly: # otherwise #--> "sendonly"
+                channel._closed = True          # --> "closed"
+            channel._receiveclosed.set()
 
     def _local_receive(self, id, data):
         # executes in receiver thread
