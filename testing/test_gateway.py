@@ -279,7 +279,7 @@ class TestThreads:
 
     def test_threads_race_sending(self):
         # multiple threads sending data in parallel 
-        gw = execnet.makegateway("popen//python=jython")
+        gw = execnet.makegateway("popen")
         num = 5
         gw.remote_init_threads(num)
         print ("remote_init_threads(%d)" % num)
