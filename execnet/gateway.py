@@ -108,6 +108,7 @@ class Gateway(gateway_base.BaseGateway):
         self._remotechannelthread = self.remote_exec(source)
         self._remotechannelthread.send(num)
         status = self._remotechannelthread.receive()
+        assert status == "ok", status
 
 class RInfo:
     def __init__(self, kwargs):

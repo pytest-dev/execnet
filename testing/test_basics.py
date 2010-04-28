@@ -66,13 +66,12 @@ def test_io_message(anypython, tmpdir):
         temp_out = BytesIO()
         temp_in = BytesIO()
         io = Popen2IO(temp_out, temp_in)
-        serializer = Serializer(io)
         unserializer = Unserializer(io)
         for i, msg_cls in Message._types.items():
             print ("checking %s %s" %(i, msg_cls))
             for data in "hello", "hello".encode('ascii'):
                 msg1 = msg_cls(i, data)
-                msg1.writeto(serializer)
+                msg1.writeto(io)
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
                 io.outfile.seek(0)
@@ -176,9 +175,8 @@ class TestMessage:
     def test_wire_protocol(self):
         for cls in Message._types.values():
             one = py.io.BytesIO()
-            serializer = gateway_base.Serializer(one)
             data = '23'.encode('ascii')
-            cls(42, data).writeto(serializer)
+            cls(42, data).writeto(one)
             two = py.io.BytesIO(one.getvalue())
             unserializer = gateway_base.Unserializer(two)
             msg = Message.readfrom(unserializer)

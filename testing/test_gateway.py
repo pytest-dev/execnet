@@ -277,6 +277,27 @@ class TestThreads:
         res = c1.receive()
         assert res == 42
 
+    def test_threads_race_sending(self):
+        # multiple threads sending data in parallel 
+        gw = execnet.makegateway("popen//python=jython")
+        num = 5
+        gw.remote_init_threads(num)
+        print ("remote_init_threads(%d)" % num)
+        channels = []
+        for x in range(num):
+            ch = gw.remote_exec("""
+                for x in range(10):
+                    channel.send(''*1000) 
+                channel.receive()
+            """)
+            channels.append(ch)
+        for ch in channels:
+            for x in range(10):
+                ch.receive(TESTTIMEOUT)
+            ch.send(1)
+        for ch in channels:
+            ch.waitclose(TESTTIMEOUT)
+
     def test_status_with_threads(self):
         gw = execnet.makegateway('popen')
         gw.remote_init_threads(3)

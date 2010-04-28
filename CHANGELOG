@@ -3,6 +3,8 @@
 
 - fix jython/windows interactions 
 - fix waitclose/callback-with-endmarker race condition
+- fix race condition where multiple threads sending data over channels
+  would crash the serializer and process 
 
 1.0.5
 --------------------------------
