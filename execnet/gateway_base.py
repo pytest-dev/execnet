@@ -75,6 +75,7 @@ class Popen2IO:
             except (AttributeError, IOError):
                 pass
         self._read = getattr(infile, "buffer", infile).read
+        self._write = getattr(outfile, "buffer", outfile).write
 
     def read(self, numbytes):
         """Read exactly 'numbytes' bytes from the pipe. """
@@ -90,10 +91,7 @@ class Popen2IO:
     def write(self, data):
         """write out all data bytes. """
         assert isinstance(data, bytes)
-        try:
-            self.outfile.buffer.write(data)
-        except AttributeError:
-            self.outfile.write(data)
+        self._write(data)
         self.outfile.flush()
 
     def close_read(self):
@@ -110,8 +108,8 @@ class Message:
         self.channelid = channelid
         self.data = data
 
-    def writeto(self, serializer):
-        serializer.save((self.msgtype, self.channelid, self.data))
+    def writeto(self, io):
+        serialize(io, (self.msgtype, self.channelid, self.data))
 
     def readfrom(cls, unserializer):
         msgtype, senderid, data = unserializer.load()
@@ -595,7 +593,6 @@ class BaseGateway(object):
         self.id = id
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
-        self._serializer = Serializer(io)
         # globals may be NONE at process-termination
         self._trace = trace  
         self._geterrortext = geterrortext
@@ -651,7 +648,7 @@ class BaseGateway(object):
 
     def _send(self, msg):
         assert isinstance(msg, Message)
-        msg.writeto(self._serializer)
+        msg.writeto(self._io)
         self._trace('sent', msg)
 
     def _local_schedulexec(self, channel, sourcetask):
@@ -923,37 +920,40 @@ def _buildopcodes():
 
 _buildopcodes()
 
-class Serializer(object):
-    WRITE_ON_SUCCESS=True # more robust against serialize failures
+def serialize(io, obj):
+    _Serializer(io).save(obj)
+
+class _Serializer(object):
+    _dispatch = {}
 
     def __init__(self, stream):
-        self.dispatch = {}
         self._stream = stream
+        self._streamlist = []
+
+    def _write(self, data):
+        self._streamlist.append(data)
 
     def save(self, obj):
-        if self.WRITE_ON_SUCCESS:
-            self.streamlist = []
-            self._write = self.streamlist.append
-        else:
-            self._write = self.stream.write
+        # calling here is not re-entrant but multiple instances 
+        # may write to the same stream because of the common platform 
+        # atomic-write guaruantee (concurrent writes each happen atomicly)
         self._save(obj)
         self._write(opcode.STOP)
-        if self.WRITE_ON_SUCCESS:
-            # atomic write! (compatible to python3 and python2)
-            s = type(self.streamlist[0])().join(self.streamlist)
-            self._stream.write(s)
+        s = type(self._streamlist[0])().join(self._streamlist)
+        # atomic write
+        self._stream.write(s)
 
     def _save(self, obj):
         tp = type(obj)
         try:
-            dispatch = self.dispatch[tp]
+            dispatch = self._dispatch[tp]
         except KeyError:
             methodname = 'save_' + tp.__name__
-            meth = getattr(self, methodname, None)
+            meth = getattr(self.__class__, methodname, None)
             if meth is None:
                 raise SerializationError("can't serialize %s" % (tp,))
-            dispatch = self.dispatch[tp] = meth
-        dispatch(obj)
+            dispatch = self._dispatch[tp] = meth
+        dispatch(self, obj)
 
     def save_NoneType(self, non):
         self._write(opcode.NONE)
