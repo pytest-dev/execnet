@@ -56,11 +56,11 @@ def main():
             'Operating System :: POSIX',
             'Operating System :: Microsoft :: Windows',
             'Operating System :: MacOS :: MacOS X',
-            'Topic :: Software Development :: Testing',
             'Topic :: Software Development :: Libraries',
             'Topic :: System :: Distributed Computing',
             'Topic :: System :: Networking',
-            'Programming Language :: Python'],
+            'Programming Language :: Python',
+            'Programming Language :: Python :: 3'],
         packages=['execnet', 'execnet.script'],
     )
 
