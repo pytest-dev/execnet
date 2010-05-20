@@ -58,6 +58,8 @@ def test_termination_on_remote_channel_receive(monkeypatch):
     assert str(pid) not in out, out
 
 def test_close_initiating_remote_no_error(testdir, anypython):
+    if '2.4' in str(anypython):
+        py.test.xfail("race/wait/interrupt_main/thread-loop issue with python2.4")
     p = testdir.makepyfile("""
         import sys
         sys.path.insert(0, %r)
