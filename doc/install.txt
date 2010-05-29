@@ -1,3 +1,22 @@
+Info in a nutshell
+====================
+
+**Pythons**: 2.4, 2.5, 2.6, 2.7, 3.0, 3.1.x, Jython-2.5.1, PyPy-1.2
+
+**Operating systems**: Linux, Windows, OSX, Unix 
+
+**Requirements**: plain distutils, setuptools_ or Distribute_ 
+
+**Installers**: easy_install_ and pip_ or distutils 
+
+**Distribution names**:
+
+* PyPI name: ``execnet`` 
+* redhat fedora: ``python-execnet``
+* debian: ``python-execnet``
+* gentoo: ``dev-python/execnet``
+
+**hg repository**: https://bitbucket.org/hpk42/execnet
 
 Installation
 ====================
