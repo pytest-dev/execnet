@@ -7,12 +7,12 @@ uses execnet.
 
 """
 
-import execnet
+import py, execnet
 import sys, os
 
 def usage():
     arg0 = sys.argv[0]
-    print """%s [user@]remote-host:/repo/location localrepo [identity keyfile]""" % (arg0,)
+    print "%s [user@]remote-host:/repo/location localrepo [ssh-config-file]" % (arg0,)
 
 
 def main(args):
@@ -20,13 +20,13 @@ def main(args):
     localrepo = py.path.local(args[1])
     if not localrepo.check(dir=1):
         raise SystemExit("localrepo %s does not exist" %(localrepo,))
-    if len(args) == 3:
-        keyfile = py.path.local(args[2])
+    if len(args) ==3:
+        configfile = args[2]
     else:
-        keyfile = None
+        configfile = None
     remote_host, path = remote.split(':', 1)
     print "ssh-connecting to", remote_host 
-    gw = getgateway(remote_host, keyfile)
+    gw = getgateway(remote_host, configfile)
 
     local_rev = get_svn_youngest(localrepo)
 
@@ -104,8 +104,11 @@ def get_svn_youngest(repo):
     rev = py.process.cmdexec('svnlook youngest "%s"' % repo) 
     return int(rev)
 
-def getgateway(host, keyfile=None):
-    return execnet.SshGateway(host, identity=keyfile)
+def getgateway(host, configfile=None):
+    xspec = "ssh=%s" % host
+    if configfile is not None:
+        xspec += "//ssh_config=%s" % configfile
+    return execnet.makegateway(xspec)
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
