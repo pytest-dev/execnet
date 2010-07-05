@@ -708,11 +708,11 @@ class SlaveGateway(BaseGateway):
                 self._trace("io.close_write()")
                 self._io.close_write()
                 self._trace("slavegateway.serve finished")
+            if joining:
+                self.join()
         except KeyboardInterrupt:
             # in the slave we can't really do anything sensible
             self._trace("swallowing keyboardinterrupt in main-thread")
-        if joining:
-            self.join()
 
     def executetask(self, item):
         channel, source = item
