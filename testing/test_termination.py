@@ -96,6 +96,6 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     # sync with start-up
     line = popen.stdout.readline()
     reply = WorkerPool(1).dispatch(popen.communicate)
-    reply.get(timeout=10)
+    reply.get(timeout=50)
     out, err = capfd.readouterr()
     assert not err or "Killed" in err
