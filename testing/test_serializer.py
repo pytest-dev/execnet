@@ -12,6 +12,11 @@ def _find_version(suffix=""):
     name = "python" + suffix
     executable = py.path.local.sysfind(name)
     if executable is None:
+        if suffix == "2":
+            for name in ('python2.6', 'python2.7'):
+                executable = py.path.local.sysfind(name)
+                if executable:
+                    return executable
         if sys.platform == "win32" and suffix == "3":
             for name in ('python31', 'python30'):
                 executable = py.path.local(r"c:\\%s\python.exe" % (name,))
@@ -24,7 +29,7 @@ def setup_module(mod):
     mod.TEMPDIR = py.path.local(tempfile.mkdtemp())
     if sys.version_info > (3, 0):
         mod._py3_wrapper = PythonWrapper(py.path.local(sys.executable))
-        mod._py2_wrapper = PythonWrapper(_find_version())
+        mod._py2_wrapper = PythonWrapper(_find_version("2"))
     else:
         mod._py3_wrapper = PythonWrapper(_find_version("3"))
         mod._py2_wrapper = PythonWrapper(py.path.local(sys.executable))
