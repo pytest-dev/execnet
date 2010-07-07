@@ -16,6 +16,7 @@ class XSpec:
 
     def __init__(self, string):
         self._spec = string
+        self.env = {}
         for keyvalue in string.split("//"):
             i = keyvalue.find("=")
             if i == -1:
@@ -26,7 +27,10 @@ class XSpec:
                 raise AttributeError("%r not a valid XSpec key" % key)
             if key in self.__dict__:
                 raise ValueError("duplicate key: %r in %r" %(key, string))
-            setattr(self, key, value)
+            if key.startswith("env:"):
+                self.env[key[4:]] = value 
+            else:
+                setattr(self, key, value)
 
     def __getattr__(self, name):
         if name[0] == "_":
