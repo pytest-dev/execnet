@@ -1,8 +1,12 @@
-1.0.7a1
+1.0.7
 --------------------------------
 
 - try to avoid a random KeyboardInterrupt Error when threads
   are ending. 
+
+- extend xspec syntax to allow for one or multiple "env:NAME=value" 
+  environment variable settings which will be set on the remote side. 
+  (thanks Jakub Gustak)
 
 1.0.6
 --------------------------------

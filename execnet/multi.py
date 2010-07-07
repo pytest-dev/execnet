@@ -65,6 +65,7 @@ class Group:
             python=<path>   specifies which python interpreter to execute
             chdir=<path>    specifies to which directory to change
             nice=<path>     specifies process priority of new process
+            env:NAME=value  specifies a remote environment variable setting. 
 
         If no spec is given, self.defaultspec is used. 
         """
@@ -93,19 +94,22 @@ class Group:
             raise ValueError("no gateway type found for %r" % (spec._spec,))
         gw.spec = spec
         self._register(gw)
-        if spec.chdir or spec.nice:
+        if spec.chdir or spec.nice or spec.env:
             channel = gw.remote_exec("""
                 import os
-                path, nice = channel.receive()
+                path, nice, env = channel.receive()
                 if path:
                     if not os.path.exists(path):
                         os.mkdir(path)
                     os.chdir(path)
                 if nice and hasattr(os, 'nice'):
                     os.nice(nice)
+                if env:
+                    for name, value in env.items():
+                        os.environ[name] = value
             """)
             nice = spec.nice and int(spec.nice) or 0
-            channel.send((spec.chdir, nice))
+            channel.send((spec.chdir, nice, spec.env))
             channel.waitclose()
         return gw
 

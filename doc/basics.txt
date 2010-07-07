@@ -40,6 +40,10 @@ examples for valid gateway specifications
   subprocess; running with the lowest CPU priority ("nice" level). 
   By default current dir will be the current dir of the instantiator.
 
+* ``popen//env:NAME=value`` specifies a subprocess that uses the 
+  same interpreter as the one it is initiated from and additionally 
+  remotely sets an environment variable ``NAME`` to ``value``.
+
 * ``socket=192.168.1.4:8888`` specifies a Python Socket server
   process that listens on 192.168.1.4:8888``
 

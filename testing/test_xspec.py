@@ -28,6 +28,10 @@ class TestXSpec:
         spec = XSpec("popen")
         assert spec.popen == True
 
+    def test_env(self):
+        xspec = XSpec("popen//env:NAME=value1")
+        assert xspec.env['NAME'] == "value1"
+
     def test__samefilesystem(self):
         assert XSpec("popen")._samefilesystem()
         assert XSpec("popen//python=123")._samefilesystem()
@@ -80,6 +84,15 @@ class TestMakegateway:
         """).receive()
         if remotenice is not None:
             assert remotenice == 5
+
+    def test_popen_env(self):
+        gw = execnet.makegateway("popen//env:NAME123=123")
+        ch = gw.remote_exec("""
+            import os
+            channel.send(os.environ['NAME123'])
+        """)
+        value = ch.receive()
+        assert value == "123"
 
     def test_popen_explicit(self):
         gw = execnet.makegateway("popen//python=%s" % py.std.sys.executable)
