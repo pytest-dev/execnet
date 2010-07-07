@@ -640,7 +640,7 @@ class BaseGateway(object):
                     self._terminate_execution()
                 self._channelfactory._finished_receiving()
                 self._trace('RECEIVERTHREAD', 'leaving finalization')
-            except Exception:
+            except:
                 pass # XXX be silent at interp-shutdown
 
     def _terminate_execution(self):
