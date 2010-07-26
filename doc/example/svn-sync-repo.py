@@ -1,9 +1,9 @@
-#!/usr/bin/env python 
+#!/usr/bin/env python
 
 """
 
-small utility for hot-syncing a svn repository through ssh. 
-uses execnet. 
+small utility for hot-syncing a svn repository through ssh.
+uses execnet.
 
 """
 
@@ -25,22 +25,22 @@ def main(args):
     else:
         configfile = None
     remote_host, path = remote.split(':', 1)
-    print "ssh-connecting to", remote_host 
+    print "ssh-connecting to", remote_host
     gw = getgateway(remote_host, configfile)
 
     local_rev = get_svn_youngest(localrepo)
 
-    # local protocol 
-    # 1. client sends rev/repo -> server 
-    # 2. server checks for newer revisions and sends dumps 
-    # 3. client receives dumps, updates local repo 
+    # local protocol
+    # 1. client sends rev/repo -> server
+    # 2. server checks for newer revisions and sends dumps
+    # 3. client receives dumps, updates local repo
     # 4. client goes back to step 1
     c = gw.remote_exec("""
         import py
         import os
         remote_rev, repopath = channel.receive()
-        while 1: 
-            rev = py.process.cmdexec('svnlook youngest "%s"' % repopath) 
+        while 1:
+            rev = py.process.cmdexec('svnlook youngest "%s"' % repopath)
             rev = int(rev)
             if rev > remote_rev:
                 revrange = (remote_rev+1, rev)
@@ -49,11 +49,11 @@ def main(args):
                 channel.send(dumpchannel)
 
                 f = os.popen(
-                        "svnadmin dump -q --incremental -r %s:%s %s" 
+                        "svnadmin dump -q --incremental -r %s:%s %s"
                          % (revrange[0], revrange[1], repopath), 'r')
                 try:
                     maxcount = dumpchannel.receive()
-                    count = maxcount 
+                    count = maxcount
                     while 1:
                         s = f.read(8192)
                         if not s:
@@ -62,11 +62,11 @@ def main(args):
                         count = count - 1
                         if count <= 0:
                             ack = dumpchannel.receive()
-                            count = maxcount 
-                            
+                            count = maxcount
+
                 except EOFError:
                     dumpchannel.close()
-                remote_rev = rev 
+                remote_rev = rev
             else:
                 # using svn-hook instead would be nice here
                 py.std.time.sleep(30)
@@ -74,17 +74,17 @@ def main(args):
 
     c.send((local_rev, path))
     print "checking revisions from %d in %s" %(local_rev, remote)
-    while 1: 
+    while 1:
         revstart, revend = c.receive()
-        dumpchannel = c.receive() 
+        dumpchannel = c.receive()
         print "receiving revisions", revstart, "-", revend, "replaying..."
         svn_load(localrepo, dumpchannel)
-        print "current revision", revend 
+        print "current revision", revend
 
 def svn_load(repo, dumpchannel, maxcount=100):
     # every maxcount we will send an ACK to the other
     # side in order to synchronise and avoid our side
-    # growing buffers  (execnet does not control 
+    # growing buffers  (execnet does not control
     # RAM usage or receive queue sizes)
     dumpchannel.send(maxcount)
     f = os.popen("svnadmin load -q %s" %(repo, ), "w")
@@ -98,10 +98,10 @@ def svn_load(repo, dumpchannel, maxcount=100):
             dumpchannel.send(maxcount)
             count = maxcount
     print >>sys.stdout
-    f.close() 
+    f.close()
 
 def get_svn_youngest(repo):
-    rev = py.process.cmdexec('svnlook youngest "%s"' % repo) 
+    rev = py.process.cmdexec('svnlook youngest "%s"' % repo)
     return int(rev)
 
 def getgateway(host, configfile=None):

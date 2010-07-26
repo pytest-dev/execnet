@@ -1,5 +1,5 @@
 """
-execnet: rapid multi-Python deployment 
+execnet: rapid multi-Python deployment
 ========================================================
 
 .. _execnet: http://codespeak.net/execnet
@@ -8,8 +8,8 @@ execnet_ provides carefully tested means to ad-hoc interact with Python
 interpreters across version, platform and network barriers.  It provides
 a minimal and fast API targetting the following uses:
 
-* distribute tasks to local or remote CPUs 
-* write and deploy hybrid multi-process applications 
+* distribute tasks to local or remote CPUs
+* write and deploy hybrid multi-process applications
 * write scripts to administer a bunch of exec environments
 
 Features
@@ -17,7 +17,7 @@ Features
 
 * zero-install bootstrapping: no remote installation required!
 
-* flexible communication: send/receive as well as 
+* flexible communication: send/receive as well as
   callback/queue mechanisms supported
 
 * simple serialization of python builtin types (no pickling)
@@ -27,7 +27,7 @@ Features
 * well tested between CPython 2.4-3.1, Jython 2.5.1 and PyPy 1.1
   interpreters.
 
-* fully interoperable between Windows and Unix-ish systems. 
+* fully interoperable between Windows and Unix-ish systems.
 """
 
 try:

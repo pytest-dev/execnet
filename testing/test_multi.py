@@ -19,7 +19,7 @@ class TestMultiChannelAndGateway:
         assert channels[0] in mch
         assert channels[1] in mch
         assert channels[2] in mch
-        
+
     def test_multichannel_receive_each(self):
         class pseudochannel:
             def receive(self):

@@ -3,15 +3,15 @@
 .. image:: _static/pythonring.png
    :align: right
 
-Python_ is a mature dynamic language whose interpreters can interact with 
-all major computing platforms today.  
+Python_ is a mature dynamic language whose interpreters can interact with
+all major computing platforms today.
 
 **execnet** provides carefully tested means to easily interact with Python
-interpreters across version, platform and network barriers.  It has 
+interpreters across version, platform and network barriers.  It has
 a minimal and fast API targetting the following uses:
 
 * distribute tasks to local or remote CPUs
-* write and deploy hybrid multi-process applications 
+* write and deploy hybrid multi-process applications
 * write scripts to administer a bunch of exec environments
 
 .. _Python: http://www.python.org
@@ -23,31 +23,31 @@ Features
 
 * safe and simple serialization of python builtin types (no pickle)
 
-* flexible communication: synchronous send/receive as well as 
+* flexible communication: synchronous send/receive as well as
   callback/queue mechanisms supported
 
 * easy creation, handling and termination of multiple processes
 
-* well tested interactions between CPython 2.4-2.7, CPython3.1, Jython 2.5.1 
+* well tested interactions between CPython 2.4-2.7, CPython3.1, Jython 2.5.1
   and PyPy 1.1 interpreters.
 
-* fully interoperable between Windows and Unix-ish systems. 
+* fully interoperable between Windows and Unix-ish systems.
 
 * many tested :doc:`examples`
 
 Known uses
 -------------------
 
-* `py.test`_ uses it for its `distributed testing`_ mechanism. 
+* `py.test`_ uses it for its `distributed testing`_ mechanism.
 
-* Jacob Perkins uses it for his `Distributed NTLK with execnet`_ 
+* Jacob Perkins uses it for his `Distributed NTLK with execnet`_
   project to launch computation processes through ssh.  He also
-  compares `disco and execnet`_ in a subsequent post. 
+  compares `disco and execnet`_ in a subsequent post.
 
 * Ronny Pfannschmidt uses it for his `anyvc`_ VCS-abstraction project
-  to bridge the Python2/Python3 version gap. 
+  to bridge the Python2/Python3 version gap.
 
-* sysadmins and developers are using it for ad-hoc custom scripting 
+* sysadmins and developers are using it for ad-hoc custom scripting
 
 .. _`py.test`: http://pytest.org
 .. _`distributed testing`: http://codespeak.net/py/dist/test/dist.html
@@ -62,10 +62,10 @@ The current 1.0 series aims at :doc:`basic API <basics>` stabilization, improved
 
 The 1.1 series will target setting up permanent networks and offering unix-shell-like capabilities to spawn processes and applications.
 
-execnet was conceived and is `actively developed`_ by `Holger Krekel`_.  
-The package is licensed under the GPL Version 2 or later, at your choice.  
+execnet was conceived and is `actively developed`_ by `Holger Krekel`_.
+The package is licensed under the GPL Version 2 or later, at your choice.
 Armin Rigo and Benjamin Peterson have done major contributions which
-are MIT-licensed. 
+are MIT-licensed.
 
 .. _`basic API`: basics.html
 .. _`actively developed`: http://bitbucket.org/hpk42/execnet/changesets
@@ -76,5 +76,5 @@ are MIT-licensed.
 
    support
    implnotes
-   install 
+   install
    rel-1.0.0

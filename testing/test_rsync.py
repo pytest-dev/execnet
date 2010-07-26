@@ -94,7 +94,7 @@ class TestRSync:
         assert not err
 
     def test_symlink_rsync(self, dirs, gw1):
-        if (py.std.sys.platform == 'win32' or 
+        if (py.std.sys.platform == 'win32' or
                 getattr(py.std.os, '_name', '') == 'nt'):
             py.test.skip("symlinks are unsupported on Windows.")
         source = dirs.source

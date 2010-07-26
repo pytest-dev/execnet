@@ -1,7 +1,7 @@
 """
 example
 
-reading results from possibly blocking code running in sub processes. 
+reading results from possibly blocking code running in sub processes.
 """
 import execnet
 
@@ -9,7 +9,7 @@ NUM_PROCESSES = 5
 
 channels = []
 for i in range(NUM_PROCESSES):
-    gw = execnet.makegateway() # or use SSH or socket gateways 
+    gw = execnet.makegateway() # or use SSH or socket gateways
     channel = gw.remote_exec("""
         import time
         secs = channel.receive()
@@ -24,12 +24,12 @@ queue = mc.make_receive_queue()
 
 print "***", "verifying that timeout on receiving results from blocked subprocesses works"
 try:
-    queue.get(timeout=1.0) 
+    queue.get(timeout=1.0)
 except Exception:
     pass
 
 print "*** sending subprocesses some data to have them unblock"
-mc.send_each(1) 
+mc.send_each(1)
 
 print "*** receiving results asynchronously"
 for i in range(NUM_PROCESSES):

@@ -265,7 +265,7 @@ class TestChannelBasicBehaviour:
         """)
         subchan = channel.receive()
         subchan.send(1)
-        excinfo = py.test.raises(subchan.RemoteError, 
+        excinfo = py.test.raises(subchan.RemoteError,
             "subchan.waitclose(TESTTIMEOUT)")
         assert "42" in excinfo.value.formatted
         channel.send(1)

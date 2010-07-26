@@ -1,10 +1,10 @@
 """
-redirect output from remote to a local function 
+redirect output from remote to a local function
 showcasing features of the channel object:
 
-- sending a channel over a channel 
-- adapting a channel to a file object 
-- setting a callback for receiving channel data 
+- sending a channel over a channel
+- adapting a channel to a file object
+- setting a callback for receiving channel data
 
 """
 
@@ -16,10 +16,10 @@ outchan = gw.remote_exec("""
     import sys
     outchan = channel.gateway.newchannel()
     sys.stdout = outchan.makefile("w")
-    channel.send(outchan) 
+    channel.send(outchan)
 """).receive()
 
-# note: callbacks execute in receiver thread! 
+# note: callbacks execute in receiver thread!
 def write(data):
     print "received:", repr(data)
 outchan.setcallback(write)

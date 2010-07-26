@@ -169,7 +169,7 @@ def _setupmessages():
             raise SystemExit(0)
 
     classes = [
-        STATUS, CHANNEL_EXEC, CHANNEL_DATA, CHANNEL_CLOSE, 
+        STATUS, CHANNEL_EXEC, CHANNEL_DATA, CHANNEL_CLOSE,
         CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE, GATEWAY_TERMINATE
     ]
     for i, cls in enumerate(classes):
@@ -179,7 +179,7 @@ def _setupmessages():
 
 _setupmessages()
 
-def geterrortext(excinfo, 
+def geterrortext(excinfo,
     format_exception=traceback.format_exception, sysex=sysex):
     try:
         l = format_exception(*excinfo)
@@ -328,9 +328,9 @@ class Channel(object):
         raise ValueError("mode %r not availabe" %(mode,))
 
     def close(self, error=None):
-        """ close down this channel with an optional error message. 
-            Note that closing of a channel tied to remote_exec happens 
-            automatically at the end of execution and cannot be done explicitely. 
+        """ close down this channel with an optional error message.
+            Note that closing of a channel tied to remote_exec happens
+            automatically at the end of execution and cannot be done explicitely.
         """
         if self._executing:
             raise IOError("cannot explicitly close channel within remote_exec")
@@ -362,10 +362,10 @@ class Channel(object):
         """ wait until this channel is closed (or the remote side
         otherwise signalled that no more data was being sent).
         The channel may still hold receiveable items, but not receive
-        any more after waitclose() has returned.  Exceptions from executing 
+        any more after waitclose() has returned.  Exceptions from executing
         code on the other side are reraised as local channel.RemoteErrors.
-        EOFError is raised if the reading-connection was prematurely closed, 
-        which often indicates a dying process. 
+        EOFError is raised if the reading-connection was prematurely closed,
+        which often indicates a dying process.
         self.TimeoutError is raised after the specified number of seconds
         (default is None, i.e. wait indefinitely).
         """
@@ -379,9 +379,9 @@ class Channel(object):
     def send(self, item):
         """sends the given item to the other side of the channel,
         possibly blocking if the sender queue is full.
-        The item must be a simple python type and will be 
-        copied to the other side by value.  IOError is 
-        raised if the write pipe was prematurely closed. 
+        The item must be a simple python type and will be
+        copied to the other side by value.  IOError is
+        raised if the write pipe was prematurely closed.
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
@@ -390,10 +390,10 @@ class Channel(object):
 
     def receive(self, timeout=-1):
         """receive a data item that was sent from the other side.
-        timeout: -1 [default] blocked waiting, but wake up periodically 
+        timeout: -1 [default] blocked waiting, but wake up periodically
         to let CTRL-C through.  A positive number indicates the
         number of seconds after which a channel.TimeoutError exception
-        will be raised if no item was received. 
+        will be raised if no item was received.
         Note that exceptions from the remotely executing code will be
         reraised as channel.RemoteError exceptions containing
         a textual representation of the remote traceback.
@@ -405,8 +405,8 @@ class Channel(object):
             internal_timeout = self._INTERNALWAKEUP
         else:
             internal_timeout = timeout
-           
-        while 1: 
+
+        while 1:
             try:
                 x = itemqueue.get(timeout=internal_timeout)
                 break
@@ -453,7 +453,7 @@ class ChannelFactory(object):
                 id = self.count
                 self.count += 2
             try:
-                channel = self._channels[id] 
+                channel = self._channels[id]
             except KeyError:
                 channel = self._channels[id] = Channel(self.gateway, id)
             return channel
@@ -594,7 +594,7 @@ class BaseGateway(object):
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
         # globals may be NONE at process-termination
-        self._trace = trace  
+        self._trace = trace
         self._geterrortext = geterrortext
 
     def _trace(self, *msg):
@@ -627,7 +627,7 @@ class BaseGateway(object):
                 self._io.close_read()
             except EOFError:
                 self._trace("RECEIVERTHREAD: got EOFError")
-                self._trace("RECEIVERTHREAD: traceback was: ", 
+                self._trace("RECEIVERTHREAD: traceback was: ",
                     self._geterrortext(self.exc_info()))
                 self._error = self.exc_info()[1]
                 eof = True
@@ -900,10 +900,10 @@ class Unserializer(object):
         newchannel = self.channelfactory.new(id)
         self.stack.append(newchannel)
 
-# automatically build opcodes and byte-encoding 
+# automatically build opcodes and byte-encoding
 
 class opcode:
-    """ container for name -> num mappings. """ 
+    """ container for name -> num mappings. """
 
 def _buildopcodes():
     l = []
@@ -915,7 +915,7 @@ def _buildopcodes():
     for i,(opname, func) in enumerate(l):
         assert i < 26, "xxx"
         i = b(chr(64+i))
-        Unserializer.num2func[i] = func 
+        Unserializer.num2func[i] = func
         setattr(opcode, opname, i)
 
 _buildopcodes()
@@ -934,8 +934,8 @@ class _Serializer(object):
         self._streamlist.append(data)
 
     def save(self, obj):
-        # calling here is not re-entrant but multiple instances 
-        # may write to the same stream because of the common platform 
+        # calling here is not re-entrant but multiple instances
+        # may write to the same stream because of the common platform
         # atomic-write guaruantee (concurrent writes each happen atomicly)
         self._save(obj)
         self._write(opcode.STOP)

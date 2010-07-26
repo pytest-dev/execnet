@@ -28,7 +28,7 @@ class XSpec:
             if key in self.__dict__:
                 raise ValueError("duplicate key: %r in %r" %(key, string))
             if key.startswith("env:"):
-                self.env[key[4:]] = value 
+                self.env[key[4:]] = value
             else:
                 setattr(self, key, value)
 

@@ -162,13 +162,13 @@ class PseudoChannel:
         self._sent.append(obj)
     def close(self, errortext=None):
         self._closed.append(errortext)
-    
+
 def test_exectask():
     io = py.io.BytesIO()
     gw = gateway_base.SlaveGateway(io, id="something")
     ch = PseudoChannel()
     gw.executetask((ch, "raise ValueError()"))
-    assert "ValueError" in str(ch._closed[0]) 
+    assert "ValueError" in str(ch._closed[0])
 
 
 class TestMessage:

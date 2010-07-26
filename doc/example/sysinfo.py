@@ -1,7 +1,7 @@
 """
 sysinfo.py [host1] [host2] [options]
 
-obtain system info from remote machine. 
+obtain system info from remote machine.
 
 (c) Holger Krekel, GPLv2 or 3
 """
@@ -56,7 +56,7 @@ class RemoteInfo:
 
     def getmemswap(self):
         if self.islinux():
-            return self.exreceive(""" 
+            return self.exreceive("""
             import commands, re
             out = commands.getoutput("free")
             mem = re.search(r"Mem:\s+(\S*)", out).group(1)
@@ -110,8 +110,8 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
         prefix = sshname.upper() + " "
         print >>loginfo, prefix, "fqdn:", ri.getfqdn()
         for attr in (
-            "sys.platform", 
-            "sys.version_info", 
+            "sys.platform",
+            "sys.version_info",
         ):
             loginfo.write("%s %s: " %(prefix, attr,))
             loginfo.flush()
@@ -122,14 +122,14 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
         memswap = ri.getmemswap()
         if memswap:
             mem,swap = memswap
-            print >>loginfo, prefix, "Memory:", mem, "Swap:", swap 
+            print >>loginfo, prefix, "Memory:", mem, "Swap:", swap
         cpuinfo = ri.getcpuinfo()
         if cpuinfo:
             numcpu, model = cpuinfo
             print >>loginfo, prefix, "number of cpus:",  numcpu
-            print >>loginfo, prefix, "cpu model", model 
+            print >>loginfo, prefix, "cpu model", model
         return ri
-            
+
 if __name__ == '__main__':
     options, args = parser.parse_args()
     hosts = list(args)
@@ -142,4 +142,4 @@ if __name__ == '__main__':
     for host in hosts:
         if host not in ignores:
             getinfo(host, ssh_config=ssh_config)
-        
+
