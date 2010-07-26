@@ -8,6 +8,7 @@ obtain system info from remote machine.
 
 import py
 import sys
+import execnet
 
 
 parser = py.std.optparse.OptionParser(usage=__doc__)
