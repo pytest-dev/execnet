@@ -1,4 +1,4 @@
-Contact and Support channels 
+Contact and Support channels
 ------------------------------
 
 If you have interest, questions, issues or suggestions you
@@ -7,9 +7,9 @@ are welcome to:
 * join `execnet-dev`_ for general discussions
 * join `execnet-commit`_ to be notified of changes
 * clone the `bitbucket repository`_ and submit patches
-* hang out on the irc.freenode.net #pylib channel 
+* hang out on the irc.freenode.net #pylib channel
 * follow the `tetamap blog`_ or `Holger's twitter presence`_.
-* contact merlinux_ if you want to buy teaching or other support. 
+* contact merlinux_ if you want to buy teaching or other support.
 
 .. _`Holger's twitter presence`: http://twitter.com/hpk42
 .. _merlinux: http://merlinux.eu

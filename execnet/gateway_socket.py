@@ -64,14 +64,14 @@ class SocketGateway(Gateway):
         super(SocketGateway, self).__init__(io=io, id=id)
 
     def new_remote(cls, gateway, id, hostport=None):
-        """ return a new (connected) socket gateway, 
+        """ return a new (connected) socket gateway,
             instantiated through the given 'gateway'.
         """
         if hostport is None:
             host, port = ('localhost', 0)
         else:
             host, port = hostport
-        
+
         mydir = os.path.dirname(__file__)
         socketserver = os.path.join(mydir, 'script', 'socketserver.py')
         socketserverbootstrap = "\n".join([

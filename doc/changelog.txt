@@ -2,7 +2,7 @@
 
 .. _changes:
 
-execnet CHANGELOG 
+execnet CHANGELOG
 ********************
 
 .. include:: ../CHANGELOG

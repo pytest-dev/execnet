@@ -22,9 +22,9 @@ def test_deprecation(recwarn, monkeypatch):
 class TestBasicGateway:
     def test_correct_setup(self, gw):
         assert gw.hasreceiver()
-        assert gw in gw._group 
-        assert gw.id in gw._group 
-        assert gw.spec 
+        assert gw in gw._group
+        assert gw.id in gw._group
+        assert gw.spec
 
     def test_repr_doesnt_crash(self, gw):
         assert isinstance(repr(gw), str)
@@ -64,7 +64,7 @@ class TestBasicGateway:
         status = gw.remote_status()
         assert status.execqsize == 0
         assert status.numexecuting == 0
-        # race condition 
+        # race condition
         assert status.numchannels <= numchannels + 1
 
     def test_remote_exec_module(self, tmpdir, gw):
@@ -104,7 +104,7 @@ class TestBasicGateway:
 
     def test_remote_exec_no_explicit_close(self, gw):
         channel = gw.remote_exec('channel.close()')
-        excinfo = py.test.raises(channel.RemoteError, 
+        excinfo = py.test.raises(channel.RemoteError,
             "channel.waitclose(TESTTIMEOUT)")
         assert "explicit" in excinfo.value.formatted
 
@@ -182,9 +182,9 @@ class TestPopenGateway:
         assert x.lower() == str(waschangedir).lower()
 
     def test_remoteerror_readable_traceback(self, gw):
-        e = py.test.raises(gateway_base.RemoteError, 
+        e = py.test.raises(gateway_base.RemoteError,
             'gw.remote_exec("x y").waitclose()')
-        assert "gateway_base" in e.value.formatted 
+        assert "gateway_base" in e.value.formatted
 
     def test_many_popen(self):
         num = 4
@@ -278,7 +278,7 @@ class TestThreads:
         assert res == 42
 
     def test_threads_race_sending(self):
-        # multiple threads sending data in parallel 
+        # multiple threads sending data in parallel
         gw = execnet.makegateway("popen")
         num = 5
         gw.remote_init_threads(num)
@@ -287,7 +287,7 @@ class TestThreads:
         for x in range(num):
             ch = gw.remote_exec("""
                 for x in range(10):
-                    channel.send(''*1000) 
+                    channel.send(''*1000)
                 channel.receive()
             """)
             channels.append(ch)
@@ -322,7 +322,7 @@ class TestThreads:
         py.test.raises(IOError, gw.remote_init_threads, 3)
 
 
-class TestTracing:        
+class TestTracing:
     def test_popen_filetracing(self, testdir, monkeypatch):
         tmpdir = testdir.tmpdir
         monkeypatch.setenv("TMP", tmpdir)

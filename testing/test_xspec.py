@@ -66,7 +66,7 @@ class TestMakegateway:
 
     def test_popen_default(self):
         gw = execnet.makegateway("")
-        assert gw.spec.popen 
+        assert gw.spec.popen
         assert gw.spec.python == None
         rinfo = gw._rinfo()
         #assert rinfo.executable == py.std.sys.executable

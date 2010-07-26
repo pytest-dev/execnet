@@ -61,13 +61,13 @@ class Group:
         Valid types: ``popen``, ``ssh=hostname``, ``socket=host:port``.
         Valid configuration::
 
-            id=<string>     specifies the gateway id 
+            id=<string>     specifies the gateway id
             python=<path>   specifies which python interpreter to execute
             chdir=<path>    specifies to which directory to change
             nice=<path>     specifies process priority of new process
-            env:NAME=value  specifies a remote environment variable setting. 
+            env:NAME=value  specifies a remote environment variable setting.
 
-        If no spec is given, self.defaultspec is used. 
+        If no spec is given, self.defaultspec is used.
         """
         if not spec:
             spec = self.defaultspec
@@ -77,7 +77,7 @@ class Group:
         if spec.popen:
             gw = gateway.PopenGateway(python=spec.python, id=id)
         elif spec.ssh:
-            gw = gateway.SshGateway(spec.ssh, remotepython=spec.python, 
+            gw = gateway.SshGateway(spec.ssh, remotepython=spec.python,
                                     ssh_config=spec.ssh_config, id=id)
         elif spec.socket:
             assert not spec.python, (
@@ -137,10 +137,10 @@ class Group:
         self.terminate(timeout=1.0)
 
     def terminate(self, timeout=None):
-        """ trigger exit of member gateways and wait for termination 
-        of member gateways and associated subprocesses.  After waiting 
-        timeout seconds try to to kill local sub processes of popen- 
-        and ssh-gateways.  Timeout defaults to None meaning 
+        """ trigger exit of member gateways and wait for termination
+        of member gateways and associated subprocesses.  After waiting
+        timeout seconds try to to kill local sub processes of popen-
+        and ssh-gateways.  Timeout defaults to None meaning
         open-ended waiting and no kill attempts.
         """
         for gw in self:
@@ -159,7 +159,7 @@ class Group:
         try:
             reply.get(timeout=timeout)
         except IOError:
-            trace("Gateways did not come down after timeout: %r" 
+            trace("Gateways did not come down after timeout: %r"
                   %(self._gateways_to_join))
             while self._gateways_to_join:
                 gw = self._gateways_to_join.pop(0)
@@ -185,10 +185,10 @@ class MultiChannel:
 
     def __iter__(self):
         return iter(self._channels)
-    
+
     def __getitem__(self, key):
         return self._channels[key]
-    
+
     def __contains__(self, chan):
         return chan in self._channels
 
@@ -251,7 +251,7 @@ def killpid(pid):
             import ctypes
         except ImportError:
             import subprocess
-            # T: treekill, F: Force 
+            # T: treekill, F: Force
             cmd = ("taskkill /T /F /PID %d" %(pid)).split()
             ret = subprocess.call(cmd)
             if ret != 0:

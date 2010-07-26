@@ -1,7 +1,7 @@
-advanced (multi) channel communication 
+advanced (multi) channel communication
 =====================================================
 
-MultiChannel: container for multiple channels 
+MultiChannel: container for multiple channels
 ------------------------------------------------------
 
 Use ``execnet.MultiChannel`` to work with multiple channels::
@@ -29,9 +29,9 @@ from which to obtain results::
     >>> ch2 = execnet.makegateway().remote_exec("channel.send(2)")
     >>> mch = execnet.MultiChannel([ch1, ch2])
     >>> queue = mch.make_receive_queue()
-    >>> chan1, res1 = queue.get()  
+    >>> chan1, res1 = queue.get()
     >>> chan2, res2 = queue.get(timeout=3)
-    >>> res1 + res2 
+    >>> res1 + res2
     3
 
 Working asynchronously/event-based with channels
@@ -46,18 +46,18 @@ data immediately and without blocking execution::
     >>> l = []
     >>> ch.setcallback(l.append)
     >>> ch.send(1)
-    >>> ch.waitclose() 
+    >>> ch.waitclose()
     >>> assert l == [42]
 
 Note that the callback function will be executed in the
-receiver thread and should not block or run for too long. 
+receiver thread and should not block or run for too long.
 
-robustly receive results and termination notification 
+robustly receive results and termination notification
 -----------------------------------------------------
 
 Use ``MultiChannel.make_receive_queue(endmarker)`` to specify
 an object to be put to the queue when the remote side of a channel
-is closed.  The endmarker will also be put to the Queue if the gateway 
+is closed.  The endmarker will also be put to the Queue if the gateway
 is blocked in execution and is terminated/killed::
 
     >>> group = execnet.Group(['popen'] * 3) # create three gateways

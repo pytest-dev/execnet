@@ -222,11 +222,11 @@ def test_str(py2, py3):
     assert tp == "str"
     assert s == "'xyz'"
     tp, s = py3.load(p, "py2str_as_py3str=True")
-    assert tp == "str" 
+    assert tp == "str"
     assert s == "'xyz'"
     tp, s = py3.load(p, "py2str_as_py3str=False")
     assert s == "b'xyz'"
-    assert tp == "bytes" 
+    assert tp == "bytes"
 
 def test_unicode(py2, py3):
     p = py2.dump("u'hi'")

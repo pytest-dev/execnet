@@ -51,7 +51,7 @@ def test_termination_on_remote_channel_receive(monkeypatch):
     gw.remote_exec("channel.receive()")
     group.terminate()
     command = ["ps", "-p", str(pid)]
-    popen = subprocess.Popen(command, stdout=subprocess.PIPE, 
+    popen = subprocess.Popen(command, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
     out, err = popen.communicate()
     out = py.builtin._totext(out, 'utf8')
@@ -71,7 +71,7 @@ def test_close_initiating_remote_no_error(testdir, anypython):
         ch3 = gw.remote_exec("channel.receive()")
         execnet.default_group.terminate()
     """ % str(execnetdir))
-    popen = subprocess.Popen([str(anypython), str(p)], 
+    popen = subprocess.Popen([str(anypython), str(p)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
     stdout, stderr = popen.communicate()
     print (stdout)

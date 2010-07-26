@@ -1,7 +1,7 @@
 Connecting different Python interpreters
 ==========================================
 
-Connect to Python2/Numpy from Python3 
+Connect to Python2/Numpy from Python3
 ----------------------------------------
 
 Here we run a Python3 interpreter to connect to a Python2.6 interpreter
@@ -29,8 +29,8 @@ will print on the CPython3.1 side::
 
     array([1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
 
-A more refined real-life example of python3/python2 interaction 
-is the anyvc_ project which uses version-control bindings in 
+A more refined real-life example of python3/python2 interaction
+is the anyvc_ project which uses version-control bindings in
 a Python2 subprocess in order to offer Python3-based library
 functionality.
 
@@ -86,9 +86,9 @@ using Mono 2.0 and IronPython-1.1 this will print on the CPython side::
 
     System.Double[](1.0, 2.0)
 
-.. note:: 
+.. note::
    Using IronPython needs more testing, likely newer versions
-   will work better.  please feedback if you have information. 
+   will work better.  please feedback if you have information.
 
 .. _IronPython: http://ironpython.net
 

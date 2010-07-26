@@ -32,12 +32,12 @@ class Gateway(gateway_base.BaseGateway):
     def exit(self):
         """ trigger gateway exit.  Defer waiting for finishing
         of receiver-thread and subprocess activity to when
-        group.terminate() is called. 
+        group.terminate() is called.
         """
         self._trace("gateway.exit() called")
         if self not in self._group:
             self._trace("gateway already unregistered with group")
-            return 
+            return
         self._group._unregister(self)
         self._trace("--> sending GATEWAY_TERMINATE")
         try:
@@ -50,10 +50,10 @@ class Gateway(gateway_base.BaseGateway):
 
     def _remote_bootstrap_gateway(self, io):
         """ send gateway bootstrap code to a remote Python interpreter
-            endpoint, which reads from io for a string to execute. 
+            endpoint, which reads from io for a string to execute.
         """
-        sendexec(io, 
-            inspect.getsource(gateway_base), 
+        sendexec(io,
+            inspect.getsource(gateway_base),
             self._remotesetup,
             "io.write('1'.encode('ascii'))",
             "serve(io, id='%s-slave')" % self.id,
@@ -139,7 +139,7 @@ class PopenCmdGateway(Gateway):
         self._popen = p = Popen(args, stdin=PIPE, stdout=PIPE)
         io = Popen2IO(p.stdin, p.stdout)
         super(PopenCmdGateway, self).__init__(io=io, id=id)
-        # fix for jython 2.5.1 
+        # fix for jython 2.5.1
         if p.pid is None:
             p.pid = self.remote_exec(
                 "import os; channel.send(os.getpid())").receive()
@@ -159,12 +159,12 @@ class PopenGateway(PopenCmdGateway):
         super(PopenGateway, self).__init__(args, id=id)
 
     def _remote_bootstrap_gateway(self, io):
-        sendexec(io, 
+        sendexec(io,
                  "import sys",
                  "sys.stdout.write('1')",
                  "sys.stdout.flush()",
                  popen_bootstrapline)
-        sendexec(io, 
+        sendexec(io,
             "import sys ; sys.path.insert(0, %r)" % importdir,
             "from execnet.gateway_base import serve, init_popen_io",
             "serve(init_popen_io(), id='%s-slave')" % self.id,

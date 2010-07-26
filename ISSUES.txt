@@ -1,45 +1,45 @@
-rsync links from posix to windows 
+rsync links from posix to windows
 -----------------------------------------
 tags: 1.1 feature
 bb: http://bitbucket.org/hpk42/py-trunk/issue/35
-path: execnet/rsync.py 
+path: execnet/rsync.py
 
 currently rsyncing bails out with a strange message when trying to rsync
 links. should provide better message or even some support for doing it.
 
-socketservice process for keeping cross-invocation state 
+socketservice process for keeping cross-invocation state
 ---------------------------------------------------------
 
-tags: 1.1 feature newdist 
+tags: 1.1 feature newdist
 
-A building block for keeping permanent network 
-connections would be a started-on-first-access process 
+A building block for keeping permanent network
+connections would be a started-on-first-access process
 that keeps state. Considered:
 
 - a rendevouz process that starts threads for each
   incoming connection.  On each such connection
-  a SocketGateway can be instantiated but it 
+  a SocketGateway can be instantiated but it
   will re-use the already-imported gateway base code
   so again avoid parse/compile on arbitrary strings.
 
 Possible code example:
 
     # connect to on-demand started port-8888 socket server
-    # similar to popen+socket//installvia=popen 
+    # similar to popen+socket//installvia=popen
     gw = group.makegateway("socketservice//port=8888")
     gw.remote_exec("...") # execute code in a thread in the socket server
-    ... 
+    ...
     # exit the gateway-connection, but leave socket server running
-    gw.exit() 
+    gw.exit()
 
 a channel-IO based gateway
 --------------------------------------------------
-tags: 1.1 feature newdist 
+tags: 1.1 feature newdist
 
 A building block for establishing a permanent hierarchy
 of processes is a Gateway that operates on a Channel object.
 This way a gateway can be instantiated through another
-intermediating gateway which bi-directionallry forwads 
+intermediating gateway which bi-directionallry forwads
 Messages through a existing channel.
 
 A code example could look like this:
@@ -47,9 +47,9 @@ A code example could look like this:
     group.setlocalfactory(port=8888)
     gw = group.makegateway("ssh=codespeak.net")
     # local ssh-process would be a child of the factory service
-    # which could have timeouts for killing, or allow resuming. 
-    # for instantiating remote it could also install a multiplexer 
-    # on the remote place such that the same ssh connection is re-used 
+    # which could have timeouts for killing, or allow resuming.
+    # for instantiating remote it could also install a multiplexer
+    # on the remote place such that the same ssh connection is re-used
     # for multiple ssh=codespeak.net connections, makes for small latency.
 
 some first simple implemenation might look like this::
@@ -64,32 +64,32 @@ some first simple implemenation might look like this::
     subchannel = ch.receive()
     return ChannelGateway(subchannel)
 
-creating virtualenv environments on the fly 
+creating virtualenv environments on the fly
 -----------------------------------------------
 tags: 1.1 wish
 
 there should be a (plugin-provided?) way to create
-a virtual environment: 
+a virtual environment:
     gw = makegateway("ssh=codespeak.net")
     newgw = xdeploy.create_venv_gateway(gw, "venvname", depstring)
-    newgw # lives in home/ dir of remote virtualenv 
-          # maybe have get_temproot default to tmp/ there? 
+    newgw # lives in home/ dir of remote virtualenv
+          # maybe have get_temproot default to tmp/ there?
     sf = xdeploy.SetupFile("..setup.py")
     sf.sdist_remote_install(newgw)
-    
-    
-have callback accept errors / errback 
+
+
+have callback accept errors / errback
 -----------------------------------------------
 tags: 1.1 wish
 
 If using channel.setcallback() it currently is not
 impossible notice the exact errors that might happen
-on the other side.  Either introduce an "errback" 
-or (probably better) optionally allow an extra 'error' 
+on the other side.  Either introduce an "errback"
+or (probably better) optionally allow an extra 'error'
 parameter to execnet callbacks.
 
-fix rsync between python/jython 
+fix rsync between python/jython
 -----------------------------------------------
 tags: 1.0 bug
 
-rsync does not complete with jython. 
+rsync does not complete with jython.

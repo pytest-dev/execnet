@@ -2,11 +2,11 @@
 API in a nutshell
 ==============================================================================
 
-execnet ad-hoc instantiates local and remote Python interpreters.   
+execnet ad-hoc instantiates local and remote Python interpreters.
 Each interpreter is accessible through a **Gateway** which manages
 code and data communication.  **Channels** allow to exchange
 data between the local and the remote end.  **Groups**
-help to manage creation and termination of sub interpreters. 
+help to manage creation and termination of sub interpreters.
 
 .. image:: _static/basic1.png
 
@@ -15,8 +15,8 @@ Gateways: bootstrapping Python interpreters
 
 .. currentmodule:: execnet
 
-All Gateways are instantiated via a call to ``makegateway()`` 
-passing it a gateway specification or URL. 
+All Gateways are instantiated via a call to ``makegateway()``
+passing it a gateway specification or URL.
 
 .. _xspec:
 
@@ -26,22 +26,22 @@ Here is an example which instantiates a simple Python subprocess::
 
     >>> gateway = execnet.makegateway()
 
-gateways allow to `remote execute code`_ and 
-`exchange data`_ bidirectionally.  
+gateways allow to `remote execute code`_ and
+`exchange data`_ bidirectionally.
 
 examples for valid gateway specifications
 -------------------------------------------
 
 * ``ssh=wyvern//python=python2.4//chdir=mycache`` specifies a Python2.4
-  interpreter on the host ``wyvern``.  The remote process will have 
-  ``mycache`` as its current working directory. 
+  interpreter on the host ``wyvern``.  The remote process will have
+  ``mycache`` as its current working directory.
 
 * ``popen//python=2.5//nice=20`` specification of a python2.5
-  subprocess; running with the lowest CPU priority ("nice" level). 
+  subprocess; running with the lowest CPU priority ("nice" level).
   By default current dir will be the current dir of the instantiator.
 
-* ``popen//env:NAME=value`` specifies a subprocess that uses the 
-  same interpreter as the one it is initiated from and additionally 
+* ``popen//env:NAME=value`` specifies a subprocess that uses the
+  same interpreter as the one it is initiated from and additionally
   remotely sets an environment variable ``NAME`` to ``value``.
 
 * ``socket=192.168.1.4:8888`` specifies a Python Socket server
@@ -49,25 +49,25 @@ examples for valid gateway specifications
 
 .. _`remote execute code`:
 
-remote_exec: execute source code remotely 
+remote_exec: execute source code remotely
 ===================================================
 
 .. currentmodule:: execnet.gateway
 
-All gateways offer a simple method to execute source code 
+All gateways offer a simple method to execute source code
 in the connected interpreter:
 
 .. automethod:: Gateway.remote_exec(source)
 
-It is allowed to pass a module object as source code 
-in which case it's source code will be obtained and 
+It is allowed to pass a module object as source code
+in which case it's source code will be obtained and
 get sent for remote execution.  ``remote_exec`` returns
-a channel object whose symmetric counterpart channel 
-is available to the remotely executing source. 
+a channel object whose symmetric counterpart channel
+is available to the remotely executing source.
 
 
-.. _`Channel`: 
-.. _`channel-api`: 
+.. _`Channel`:
+.. _`channel-api`:
 
 .. _`exchange data`:
 
@@ -76,8 +76,8 @@ Channels: exchanging data with remote code
 
 .. currentmodule:: execnet.gateway_base
 
-A channel object allows to send and receive data between 
-two asynchronously running programs.  
+A channel object allows to send and receive data between
+two asynchronously running programs.
 
    .. automethod:: Channel.send(item)
    .. automethod:: Channel.receive(timeout)
@@ -98,30 +98,30 @@ Grouped Gateways and robust termination
 
 All created gateway instances are part of a group.  If you
 call ``execnet.makegateway`` it actually is forwarded to
-the ``execnet.default_group``. Group objects are container 
-objects (see :doc:`group examples <example/test_group>`) 
+the ``execnet.default_group``. Group objects are container
+objects (see :doc:`group examples <example/test_group>`)
 and manage the final termination procedure:
 
 .. automethod:: Group.terminate(timeout=None)
 
-This method is implicitely called for each gateway group at 
+This method is implicitely called for each gateway group at
 process-exit, using a small timeout.  This is fine
 for interactive sessions or random scripts which
 you rather like to error out than hang.  If you start many
 processes then you often want to call ``group.terminate()``
 yourself and specify a larger or not timeout.
 
-remote_status: get low-level execution info 
+remote_status: get low-level execution info
 ===================================================
 
 .. currentmodule:: execnet.gateway
 
 All gateways offer a simple method to obtain some status
-information from the remote side. 
+information from the remote side.
 
 .. automethod:: Gateway.remote_status(source)
 
-Calling this method tells you e.g. how many execution 
+Calling this method tells you e.g. how many execution
 tasks are queued, how many are executing and how many
 channels are active.  Note that ``remote_status()``
 works even if the other side is busy executing code
@@ -133,7 +133,7 @@ rsync: synchronise filesystem with remote
 .. currentmodule:: execnet
 
 
-``execnet`` implements a simple efficient rsyncing protocol. 
+``execnet`` implements a simple efficient rsyncing protocol.
 Here is a basic example for using RSync::
 
     rsync = execnet.RSync('/tmp/source')
@@ -152,8 +152,8 @@ Debugging execnet
 ===============================================================
 
 By setting the environment variable ``EXECNET_DEBUG`` you can
-configure a tracing mechanism: 
+configure a tracing mechanism:
 
-:EXECNET_DEBUG=1:  write per-process trace-files to ``execnet-debug-PID`` 
+:EXECNET_DEBUG=1:  write per-process trace-files to ``execnet-debug-PID``
 :EXECNET_DEUBG=2:  perform tracing to stderr (popen-gateway slaves will send this to their instantiator)
 

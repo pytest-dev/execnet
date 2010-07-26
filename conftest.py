@@ -75,7 +75,7 @@ def pytest_generate_tests(metafunc):
         for gwtype in gwtypes:
             metafunc.addcall(id=gwtype, param=gwtype)
     elif 'anypython' in metafunc.funcargnames:
-        for name in ('python3.1', 'python2.4', 'python2.5', 'python2.6', 
+        for name in ('python3.1', 'python2.4', 'python2.5', 'python2.6',
                      'python2.7', 'pypy-c', 'jython'):
             metafunc.addcall(id=name, param=name)
 
@@ -86,7 +86,7 @@ def getexecutable(name, cache={}):
         executable = py.path.local.sysfind(name)
         if executable:
             if name == "jython":
-                popen = subprocess.Popen([str(executable), "--version"], 
+                popen = subprocess.Popen([str(executable), "--version"],
                     universal_newlines=True, stderr=subprocess.PIPE)
                 out, err = popen.communicate()
                 if not err or "2.5" not in err:
@@ -110,7 +110,7 @@ def pytest_funcarg__anypython(request):
 def pytest_funcarg__gw(request):
     scope = request.config.option.scope
     group = request.cached_setup(
-        setup=execnet.Group, 
+        setup=execnet.Group,
         teardown=lambda group: group.terminate(timeout=1),
         extrakey="testgroup",
         scope=scope,
@@ -118,7 +118,7 @@ def pytest_funcarg__gw(request):
     try:
         return group[request.param]
     except KeyError:
-        if request.param == "popen": 
+        if request.param == "popen":
             gw = group.makegateway("popen//id=popen")
         elif request.param == "socket":
             pname = 'sproxy1'
@@ -128,7 +128,7 @@ def pytest_funcarg__gw(request):
             gw = group.makegateway("socket//id=socket//installvia=%s" % pname)
             gw.proxygw = proxygw
             assert pname in group
-            
+
         elif request.param == "ssh":
             sshhost = request.getfuncargvalue('specssh').ssh
             gw = group.makegateway("ssh=%s//id=ssh" %(sshhost,))

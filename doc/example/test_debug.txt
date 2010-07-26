@@ -1,16 +1,16 @@
 
-Debugging execnet / Wire messages 
+Debugging execnet / Wire messages
 ===============================================================
 
 By setting the environment variable ``EXECNET_DEBUG`` you can
-configure the execnet tracing mechanism: 
+configure the execnet tracing mechanism:
 
-:EXECNET_DEBUG=1:  write per-process trace-files to ``${TEMPROOT}/execnet-debug-PID`` 
+:EXECNET_DEBUG=1:  write per-process trace-files to ``${TEMPROOT}/execnet-debug-PID``
 :EXECNET_DEBUG=2:  perform tracing to stderr (popen-gateway slaves will send this to their instantiator)
 
 Here is a simple example to see what goes on with a simple execution::
 
-    EXECNET_DEBUG=2  # or "set EXECNET_DEBUG=2" on windows 
+    EXECNET_DEBUG=2  # or "set EXECNET_DEBUG=2" on windows
 
     python -c 'import execnet ; execnet.makegateway().remote_exec("42")'
 

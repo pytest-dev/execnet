@@ -1,8 +1,8 @@
-Welcome to execnet and elastic distributed computing! 
+Welcome to execnet and elastic distributed computing!
 
-Rapidly deploy tools and code to local or remote Python interpreters. 
+Rapidly deploy tools and code to local or remote Python interpreters.
 
-See doc/ for more info, examples and contact info. 
+See doc/ for more info, examples and contact info.
 
 have fun,
 
