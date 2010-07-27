@@ -104,11 +104,9 @@ class TestRSync:
         onefile.chmod(504)
         onefile_mtime = onefile.stat().mtime
 
-        print "status of gw1", gw1
         rsync = RSync(source)
         rsync.add_target(gw1, dest)
         rsync.send()
-        print "status of gw1 after rsync", gw1
 
         destdir = dirs.dest1.join(onedir.basename)
         destfile = dirs.dest1.join(onefile.basename)
@@ -123,7 +121,6 @@ class TestRSync:
 
         rsync = RSync(source)
         rsync.add_target(gw1, dest)
-        print "invoking second send", gw1
         rsync.send()
 
         mode = destfile.stat().mode
