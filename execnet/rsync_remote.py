@@ -82,14 +82,17 @@ def serve_rsync(channel):
     while msg != 42:
         # we get symlink
         _type, relpath, linkpoint = msg
-        assert _type == "link"
         path = os.path.join(destdir, relpath)
         try:
             remove(path)
         except OSError:
             pass
-
-        os.symlink(os.path.join(destdir, linkpoint), path)
+        if _type == "linkbase":
+            src = os.path.join(destdir, linkpoint)
+        else:
+            assert _type == "link", _type
+            src = linkpoint
+        os.symlink(src, path)
         msg = channel.receive()
     channel.send(("done", None))
 
