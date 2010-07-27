@@ -49,7 +49,7 @@ class RSync(object):
     def _process_link(self, channel):
         for link in self._links:
             channel.send(link)
-            # completion marker, this host is done
+        # completion marker, this host is done
         channel.send(42)
 
     def _done(self, channel):
@@ -58,6 +58,7 @@ class RSync(object):
         finishedcallback = self._channels.pop(channel)
         if finishedcallback:
             finishedcallback()
+        channel.waitclose()
 
     def _list_done(self, channel):
         # sum up all to send
@@ -171,7 +172,8 @@ class RSync(object):
             if self.filter(p):
                 names.append(name)
                 subpaths.append(p)
-        self._broadcast(names)
+        mode = os.lstat(path).st_mode
+        self._broadcast([mode] + names)
         for p in subpaths:
             self._send_directory_structure(p)
 
@@ -190,11 +192,11 @@ class RSync(object):
         try:
             st = os.lstat(path)
         except OSError:
-            self._broadcast((0, 0))
+            self._broadcast((None, 0, 0))
             return
         if stat.S_ISREG(st.st_mode):
-            # regular file: send a timestamp/size pair
-            self._broadcast((st.st_mtime, st.st_size))
+            # regular file: send a mode/timestamp/size pair
+            self._broadcast((st.st_mode, st.st_mtime, st.st_size))
         elif stat.S_ISDIR(st.st_mode):
             self._send_directory(path)
         elif stat.S_ISLNK(st.st_mode):

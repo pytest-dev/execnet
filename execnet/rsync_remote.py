@@ -30,10 +30,13 @@ def serve_rsync(channel):
                 st = None
             if not st:
                 os.makedirs(path)
+            mode = msg.pop(0)
+            if mode:
+                os.chmod(path, mode)
             entrynames = {}
             for entryname in msg:
-                receive_directory_structure(os.path.join(path, entryname),
-                    relcomponents + [entryname])
+                destpath = os.path.join(path, entryname)
+                receive_directory_structure(destpath, relcomponents + [entryname])
                 entrynames[entryname] = True
             if options.get('delete'):
                 for othername in os.listdir(path):
@@ -41,16 +44,20 @@ def serve_rsync(channel):
                         otherpath = os.path.join(path, othername)
                         remove(otherpath)
         elif msg is not None:
+            assert isinstance(msg, tuple)
             checksum = None
             if st:
                 if stat.S_ISREG(st.st_mode):
-                    msg_mtime, msg_size = msg
+                    msg_mode, msg_mtime, msg_size = msg
                     if msg_size != st.st_size:
                         pass
                     elif msg_mtime != st.st_mtime:
                         f = open(path, 'rb')
                         checksum = md5(f.read()).digest()
                         f.close()
+                    elif msg_mode and msg_mode != st.st_mode:
+                        os.chmod(path, msg_mode)
+                        return
                     else:
                         return    # already fine
                 else:
@@ -62,7 +69,7 @@ def serve_rsync(channel):
     STRICT_CHECK = False    # seems most useful this way for py.test
     channel.send(("list_done", None))
 
-    for path, (time, size) in modifiedfiles:
+    for path, (mode, time, size) in modifiedfiles:
         data = channel.receive()
         channel.send(("ack", path[len(destdir) + 1:]))
         if data is not None:
@@ -72,6 +79,8 @@ def serve_rsync(channel):
             f.write(data)
             f.close()
         try:
+            if mode:
+                os.chmod(path, mode)
             os.utime(path, (time, time))
         except OSError:
             pass
