@@ -93,6 +93,44 @@ class TestRSync:
         assert not out
         assert not err
 
+    @py.test.mark.skipif(
+        "sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
+    def test_permissions(self, dirs, gw1, gw2):
+        source = dirs.source
+        dest = dirs.dest1
+        onedir = dirs.source.ensure("one", dir=1)
+        onedir.chmod(448)
+        onefile = dirs.source.ensure("file")
+        onefile.chmod(504)
+        onefile_mtime = onefile.stat().mtime
+
+        print "status of gw1", gw1
+        rsync = RSync(source)
+        rsync.add_target(gw1, dest)
+        rsync.send()
+        print "status of gw1 after rsync", gw1
+
+        destdir = dirs.dest1.join(onedir.basename)
+        destfile = dirs.dest1.join(onefile.basename)
+        assert destfile.stat().mode & 511 == 504
+        mode = destdir.stat().mode
+        assert mode & 511 == 448
+
+        # transfer again with changed permissions
+        onedir.chmod(504)
+        onefile.chmod(448)
+        onefile.setmtime(onefile_mtime)
+
+        rsync = RSync(source)
+        rsync.add_target(gw1, dest)
+        print "invoking second send", gw1
+        rsync.send()
+
+        mode = destfile.stat().mode
+        assert mode & 511 == 448, mode
+        mode = destdir.stat().mode
+        assert mode & 511 == 504
+
     @py.test.mark.skipif("not hasattr(os, 'symlink')")
     def test_symlink_rsync(self, dirs, gw1):
         source = dirs.source

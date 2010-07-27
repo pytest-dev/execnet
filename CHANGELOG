@@ -1,6 +1,8 @@
 1.0.8
 --------------------------------
 
+- enhance rsyncing to also sync permissions (stat().st_mode) 
+  of directories and files. 
 - fix rsyncing of symlinks, thanks to Charles Solar 
   (should also resolve http://bitbucket.org/hpk42/py-trunk/issue/70/)
 - update usage of apipkg to 1.0b6
