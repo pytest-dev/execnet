@@ -75,6 +75,10 @@ class TestBasicGateway:
         channel = gw.remote_exec(mod)
         name = channel.receive()
         assert name == 1
+        p.write("channel.send(2)")
+        channel = gw.remote_exec(mod)
+        name = channel.receive()
+        assert name == 2
 
     def test_correct_setup_no_py(self, gw):
         channel = gw.remote_exec("""
