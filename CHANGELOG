@@ -2,6 +2,7 @@
 --------------------------------
 
 - removed all trailing whitespace from source files
+- update usage of apipkg to 1.0b6
 
 1.0.7
 --------------------------------
