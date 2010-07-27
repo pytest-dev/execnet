@@ -3,7 +3,7 @@ gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2009, Holger Krekel and others
 """
 
-import sys, os, inspect, types
+import sys, os, inspect, types, linecache
 import textwrap
 import execnet
 from execnet.gateway_base import Message, Popen2IO
@@ -89,6 +89,7 @@ class Gateway(gateway_base.BaseGateway):
             namespace.
         """
         if isinstance(source, types.ModuleType):
+            linecache.updatecache(inspect.getsourcefile(source))
             source = inspect.getsource(source)
         else:
             source = textwrap.dedent(str(source))
