@@ -159,8 +159,8 @@ class RSync(object):
         for channel in self._channels:
             channel.send(msg)
 
-    def _send_link(self, basename, linkpoint):
-        self._links.append(("link", basename, linkpoint))
+    def _send_link(self, linktype, basename, linkpoint):
+        self._links.append((linktype, basename, linkpoint))
 
     def _send_directory(self, path):
         # dir: send a list of entries
@@ -178,14 +178,12 @@ class RSync(object):
     def _send_link_structure(self, path):
         linkpoint = os.readlink(path)
         basename = path[len(self._sourcedir) + 1:]
-        if not linkpoint.startswith(os.sep):
-            # relative link, just send it
-            # XXX: do sth with ../ links
-            self._send_link(basename, linkpoint)
-        elif linkpoint.startswith(self._sourcedir):
-            self._send_link(basename, linkpoint[len(self._sourcedir) + 1:])
+        if linkpoint.startswith(self._sourcedir):
+            self._send_link("linkbase", basename,
+                linkpoint[len(self._sourcedir) + 1:])
         else:
-            self._send_link(basename, linkpoint)
+            # relative or absolute link, just send it
+            self._send_link("link", basename, linkpoint)
         self._broadcast(None)
 
     def _send_directory_structure(self, path):

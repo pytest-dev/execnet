@@ -93,22 +93,40 @@ class TestRSync:
         assert not out
         assert not err
 
+    @py.test.mark.skipif("not hasattr(os, 'symlink')")
     def test_symlink_rsync(self, dirs, gw1):
-        if (py.std.sys.platform == 'win32' or
-                getattr(py.std.os, '_name', '') == 'nt'):
-            py.test.skip("symlinks are unsupported on Windows.")
         source = dirs.source
         dest = dirs.dest1
-        dirs.source.ensure("existant")
-        source.join("rellink").mksymlinkto(source.join("existant"), absolute=0)
-        source.join('abslink').mksymlinkto(source.join("existant"))
+        sourcefile = dirs.source.ensure("subdir", "existant")
+        source.join("rellink").mksymlinkto(sourcefile, absolute=0)
+        source.join('abslink').mksymlinkto(sourcefile)
 
         rsync = RSync(source)
         rsync.add_target(gw1, dest)
         rsync.send()
 
-        assert dest.join('rellink').readlink() == dest.join("existant")
-        assert dest.join('abslink').readlink() == dest.join("existant")
+        expected = dest.join(sourcefile.relto(dirs.source))
+        assert dest.join('rellink').readlink() == "subdir/existant"
+        assert dest.join('abslink').readlink() == expected
+
+    @py.test.mark.skipif("not hasattr(os, 'symlink')")
+    def test_symlink2_rsync(self, dirs, gw1):
+        source = dirs.source
+        dest = dirs.dest1
+        subdir = dirs.source.ensure("subdir", dir=1)
+        sourcefile = subdir.ensure("somefile")
+        subdir.join("link1").mksymlinkto(subdir.join("link2"), absolute=0)
+        subdir.join("link2").mksymlinkto(sourcefile, absolute=1)
+        subdir.join("link3").mksymlinkto(source.dirpath(), absolute=1)
+        rsync = RSync(source)
+        rsync.add_target(gw1, dest)
+        rsync.send()
+        expected = dest.join(sourcefile.relto(dirs.source))
+        destsub = dest.join("subdir")
+        assert destsub.check()
+        assert destsub.join('link1').readlink() == "link2"
+        assert destsub.join('link2').readlink() == expected
+        assert destsub.join('link3').readlink() == source.dirpath()
 
     def test_callback(self, dirs, gw1):
         dest = dirs.dest1
