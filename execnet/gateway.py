@@ -136,6 +136,25 @@ channel.send(dict(
 """
 
 
+def _find_non_builtin_globals(source, codeobj):
+    try:
+        import ast
+    except ImportError:
+        return None
+    try:
+        import __builtin__
+    except ImportError:
+        import builtins as __builtin__
+
+    vars = dict.fromkeys(codeobj.co_varnames)
+    all = []
+    for node in ast.walk(ast.parse(source)):
+        if (isinstance(node, ast.Name) and node.id not in vars and
+            node.id not in __builtin__.__dict__):
+            all.append(node.id)
+    return all
+
+
 def _source_of_function(function):
     if function.__name__ == '<lambda>':
         raise ValueError("can't evaluate lambda functions'")
@@ -147,8 +166,10 @@ def _source_of_function(function):
 
     if sys.version_info < (3,0):
         closure = function.func_closure
+        codeobj = function.func_code
     else:
         closure = function.__closure__
+        codeobj = function.__code__
 
     if closure is not None:
         raise ValueError("functions with closures can't be passed")
@@ -159,6 +180,14 @@ def _source_of_function(function):
         raise ValueError("can't find source file for %s" % function)
 
     source = textwrap.dedent(source) # just for inner functions
+
+    used_globals = _find_non_builtin_globals(source, codeobj)
+    if used_globals:
+        raise ValueError(
+            "the use of non-builtin globals isn't supported",
+            used_globals,
+        )
+
     return '%s\n%s(channel)' % (source, function.__name__)
 
 
