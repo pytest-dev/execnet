@@ -236,11 +236,6 @@ class TestSourceOfFunction(object):
 
         py.test.raises(ValueError, gateway._source_of_function, closure)
 
-    def test_function_with_global_fails(self):
-        def func(channel):
-            test
-        py.test.raises(ValueError, gateway._source_of_function, func)
-
 
     def test_function_call_concat(self):
         def working(channel):
@@ -253,7 +248,7 @@ class TestSourceOfFunction(object):
 
 class TestGlobalFinder(object):
 
-    def setup_method(self, method):
+    def setup_class(cls):
         py.test.importorskip('ast')
 
     def check(self, func):
@@ -276,9 +271,16 @@ class TestGlobalFinder(object):
 
         assert self.check(f) == ['glob']
 
+
     def test_builtin(self):
         def f():
             len
 
         assert self.check(f) == []
+
+    def test_function_with_global_fails(self):
+        def func(channel):
+            test
+        py.test.raises(ValueError, gateway._source_of_function, func)
+
 
