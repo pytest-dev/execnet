@@ -128,7 +128,7 @@ rinfo_source = """
 import sys, os
 channel.send(dict(
     executable = sys.executable,
-    version_info = tuple([sys.version_info[i] for i in range(5)]),
+    version_info = sys.version_info[:5],
     platform = sys.platform,
     cwd = os.getcwd(),
     pid = os.getpid(),
