@@ -236,6 +236,12 @@ class TestSourceOfFunction(object):
 
         py.test.raises(ValueError, gateway._source_of_function, closure)
 
+    def test_function_with_global_fails(self):
+        def func(channel):
+            test
+        py.test.raises(ValueError, gateway._source_of_function, func)
+
+
     def test_function_call_concat(self):
         def working(channel):
             pass
@@ -243,4 +249,33 @@ class TestSourceOfFunction(object):
         send_source = gateway._source_of_function(working)
         assert send_source.startswith('def working')
         assert send_source.endswith('working(channel)')
+
+
+class TestGlobalFinder(object):
+
+    def check(self, func):
+        src = py.code.Source(func)
+        code = py.code.Code(func)
+        return gateway._find_non_builtin_globals(str(src), code.raw)
+
+    def test_local(self):
+        def f(a, b, c):
+            d = 3
+            pass
+
+        assert self.check(f) == []
+
+    def test_global(self):
+        def f(a, b):
+            c = 3
+            glob
+            d = 4
+
+        assert self.check(f) == ['glob']
+
+    def test_builtin(self):
+        def f():
+            len
+
+        assert self.check(f) == []
 
