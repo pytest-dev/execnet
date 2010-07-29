@@ -211,3 +211,36 @@ class TestPureChannel:
         py.test.raises(ValueError, 'channel.makefile("rw")')
 
 
+class TestSourceOfFunction(object):
+
+    def test_lambda_unsupported(self):
+        py.test.raises(ValueError, gateway._source_of_function, lambda:1)
+
+    def test_wrong_prototype_fails(self):
+        def prototype(wrong):
+            pass
+        py.test.raises(ValueError, gateway._source_of_function, prototype)
+
+    def test_function_without_known_source_fails(self):
+        # this one wont be able to find the source
+        mess = {}
+        py.builtin.exec_('def fail(channel): pass', mess, mess)
+        import inspect
+        print(inspect.getsourcefile(mess['fail']))
+        py.test.raises(ValueError, gateway._source_of_function, mess['fail'])
+
+    def test_function_with_closure_fails(self):
+        mess = {}
+        def closure(channel):
+            print(mess)
+
+        py.test.raises(ValueError, gateway._source_of_function, closure)
+
+    def test_function_call_concat(self):
+        def working(channel):
+            pass
+
+        send_source = gateway._source_of_function(working)
+        assert send_source.startswith('def working')
+        assert send_source.endswith('working(channel)')
+
