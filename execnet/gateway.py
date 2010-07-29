@@ -91,6 +91,8 @@ class Gateway(gateway_base.BaseGateway):
         if isinstance(source, types.ModuleType):
             linecache.updatecache(inspect.getsourcefile(source))
             source = inspect.getsource(source)
+        elif isinstance(source, types.FunctionType):
+            source = _source_of_function(source)
         else:
             source = textwrap.dedent(str(source))
         channel = self.newchannel()
@@ -132,6 +134,33 @@ channel.send(dict(
     pid = os.getpid(),
 ))
 """
+
+
+def _source_of_function(function):
+    if function.__name__ == '<lambda>':
+        raise ValueError("can't evaluate lambda functions'")
+    argspec = inspect.getargspec(function)
+    if argspec != (['channel'], None, None, None):
+        raise ValueError(
+            'the expected function prototype is %s(channel)' % function.__name__
+        )
+
+    if sys.version_info < (3,0):
+        closure = function.func_closure
+    else:
+        closure = function.__closure__
+
+    if closure is not None:
+        raise ValueError("functions with closures can't be passed")
+
+    try:
+        source = inspect.getsource(function)
+    except IOError:
+        raise ValueError("can't find source file for %s" % function)
+
+    source = textwrap.dedent(source) # just for inner functions
+    return '%s\n%s(channel)' % (source, function.__name__)
+
 
 class PopenCmdGateway(Gateway):
     _remotesetup = "io = init_popen_io()"
