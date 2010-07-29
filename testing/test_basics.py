@@ -253,6 +253,9 @@ class TestSourceOfFunction(object):
 
 class TestGlobalFinder(object):
 
+    def setup_method(self, method):
+        py.test.importorskip('ast')
+
     def check(self, func):
         src = py.code.Source(func)
         code = py.code.Code(func)
