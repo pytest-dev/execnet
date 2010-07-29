@@ -1,8 +1,8 @@
 basic local and remote communication
 =========================================
 
-Execute code in subprocess, communicate through a channel
----------------------------------------------------------
+Execute source code in subprocess, communicate through a channel
+-------------------------------------------------------------------
 
 You can instantiate a subprocess gateway, execute code
 in it and exchange data dynamically::
@@ -13,6 +13,32 @@ in it and exchange data dynamically::
     >>> channel.send(1)
     >>> channel.receive()
     2
+
+Remote-Execute a function, communicate through a channel
+-------------------------------------------------------------------
+
+You can send and execute parametrized functions remotely like this::
+
+    import execnet
+    gw = execnet.makegateway()
+
+    def adder(channel, arg1, arg2):
+        channel.send(arg1+arg2)
+
+    channel = gw.remote_exec(adder, arg1=1, arg2=15)
+    result = channel.receive()
+    assert result == 16
+
+The ``adder`` function needs to be "pure", i.e. is not allowed
+to access global state.  Its source code will be send to
+the remote side and called with the supplied ``arg1``
+and ``arg2`` parameters as well as with the channel that allows
+it to communicate back.  All arguments must be sendable over a
+channel so can only contain instances of builtin types.
+
+Note that this example does not work on the Python prompt because
+``remote_exec()`` uses ``inspect.getsource(func)`` and this does
+not work for interactively defined functions.
 
 Compare current working directories
 ----------------------------------------
