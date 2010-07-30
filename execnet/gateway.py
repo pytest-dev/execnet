@@ -82,21 +82,28 @@ class Gateway(gateway_base.BaseGateway):
         self._channelfactory._local_close(channel.id)
         return RemoteStatus(statusdict)
 
-    def remote_exec(self, source):
+    def remote_exec(self, source, **kwargs):
         """ return channel object and connect it to a remote
             execution thread where the given 'source' executes
             and has the sister 'channel' object in its global
             namespace.
         """
+        call_name = None
         if isinstance(source, types.ModuleType):
             linecache.updatecache(inspect.getsourcefile(source))
             source = inspect.getsource(source)
         elif isinstance(source, types.FunctionType):
+            call_name = source.__name__
             source = _source_of_function(source)
         else:
             source = textwrap.dedent(str(source))
+
+        if call_name is None and kwargs:
+            raise TypeError("can't pass kwargs to non-function remote_exec")
+
         channel = self.newchannel()
-        self._send(Message.CHANNEL_EXEC(channel.id, source))
+        self._send(Message.CHANNEL_EXEC(channel.id,
+                                       (source, call_name, kwargs)))
         return channel
 
     def remote_init_threads(self, num=None):
@@ -158,11 +165,11 @@ def _find_non_builtin_globals(source, codeobj):
 def _source_of_function(function):
     if function.__name__ == '<lambda>':
         raise ValueError("can't evaluate lambda functions'")
-    argspec = inspect.getargspec(function)
-    if argspec != (['channel'], None, None, None):
-        raise ValueError(
-            'the expected function prototype is %s(channel)' % function.__name__
-        )
+    #XXX: we dont check before remote instanciation
+    #     if arguments are used propperly
+    args, varargs, keywords, defaults = inspect.getargspec(function)
+    if args[0] != 'channel':
+        raise ValueError('expected first function argument to be `channel`')
 
     if sys.version_info < (3,0):
         closure = function.func_closure
@@ -188,8 +195,7 @@ def _source_of_function(function):
             used_globals,
         )
 
-    return '%s\n%s(channel)' % (source, function.__name__)
-
+    return source
 
 class PopenCmdGateway(Gateway):
     _remotesetup = "io = init_popen_io()"

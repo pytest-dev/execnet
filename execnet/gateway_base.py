@@ -715,7 +715,7 @@ class SlaveGateway(BaseGateway):
             self._trace("swallowing keyboardinterrupt in main-thread")
 
     def executetask(self, item):
-        channel, source = item
+        channel, (source, call_name, kwargs) = item
         try:
             loc = {'channel' : channel, '__name__': '__channelexec__'}
             self._trace("execution starts[%s]: %s" % (channel.id, repr(source)[:50]))
@@ -723,6 +723,10 @@ class SlaveGateway(BaseGateway):
             try:
                 co = compile(source+'\n', '', 'exec')
                 do_exec(co, loc)
+                if call_name:
+                    self._trace('calling function [%s] with %s'%(call_name, repr(kwargs)[:50]))
+                    function = loc[call_name]
+                    function(channel, **kwargs)
             finally:
                 channel._executing = False
                 self._trace("execution finished")

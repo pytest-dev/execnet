@@ -167,7 +167,7 @@ def test_exectask():
     io = py.io.BytesIO()
     gw = gateway_base.SlaveGateway(io, id="something")
     ch = PseudoChannel()
-    gw.executetask((ch, "raise ValueError()"))
+    gw.executetask((ch, ("raise ValueError()", None, {})))
     assert "ValueError" in str(ch._closed[0])
 
 
@@ -237,13 +237,13 @@ class TestSourceOfFunction(object):
         py.test.raises(ValueError, gateway._source_of_function, closure)
 
 
-    def test_function_call_concat(self):
+    def test_source_of_nested_function(self):
         def working(channel):
             pass
 
         send_source = gateway._source_of_function(working)
-        assert send_source.startswith('def working')
-        assert send_source.endswith('working(channel)')
+        expected = 'def working(channel):\n    pass\n'
+        assert send_source == expected
 
 
 class TestGlobalFinder(object):
@@ -283,4 +283,23 @@ class TestGlobalFinder(object):
             test
         py.test.raises(ValueError, gateway._source_of_function, func)
 
+
+def test_remote_exec_function_with_kwargs(anypython):
+    def func(channel, data):
+        channel.send(data)
+    group = execnet.Group()
+    gw = group.makegateway('popen//python=%s' % anypython)
+    ch = gw.remote_exec(func, data=1)
+    result = ch.receive()
+    assert result == 1
+
+
+
+def test_remote_exc_module_takes_no_kwargs():
+    gw = execnet.makegateway()
+    py.test.raises(TypeError, gw.remote_exec, gateway_base, kwarg=1)
+
+def test_remote_exec_string_takes_no_kwargs():
+    gw = execnet.makegateway()
+    py.test.raises(TypeError, gw.remote_exec, 'pass', kwarg=1)
 
