@@ -5,7 +5,7 @@ Execute source code in subprocess, communicate through a channel
 -------------------------------------------------------------------
 
 You can instantiate a subprocess gateway, execute code
-in it and exchange data dynamically::
+in it and bidirectionally send messages::
 
     >>> import execnet
     >>> gw = execnet.makegateway()
@@ -14,31 +14,64 @@ in it and exchange data dynamically::
     >>> channel.receive()
     2
 
-Remote-Execute a function, communicate through a channel
+The initiating and the remote execution happen concurrently.
+``channel.receive()`` operations return when input is available.
+``channel.send(data)`` operations return when the message could
+be delivered to the IO system.
+
+The initiating and the "other" process work use a `share-nothing
+model`_ and ``channel.send|receive`` are means to pass basic data
+messages between two processes.
+
+.. _`share-nothing model`: http://en.wikipedia.org/wiki/Shared_nothing_architecture
+
+remote-exec a function (avoiding inlined source part I)
 -------------------------------------------------------------------
 
-You can send and execute parametrized functions remotely like this::
+You can send and remote execute parametrized pure functions like this:
 
-    import execnet
-    gw = execnet.makegateway()
+.. include:: funcmultiplier.py
+    :literal:
 
-    def adder(channel, arg1, arg2):
-        channel.send(arg1+arg2)
+The ``multiplier`` function executes remotely and establishes
+a loop multipliying incoming data with a constant factor passed
+in via keyword arguments to ``remote_exec``.
 
-    channel = gw.remote_exec(adder, arg1=1, arg2=15)
-    result = channel.receive()
-    assert result == 16
+Notes:
 
-The ``adder`` function needs to be "pure", i.e. is not allowed
-to access global state.  Its source code will be send to
-the remote side and called with the supplied ``arg1``
-and ``arg2`` parameters as well as with the channel that allows
-it to communicate back.  All arguments must be sendable over a
-channel so can only contain instances of builtin types.
+* unfortunately, you can not type this example interactively because
+  ``inspect.getsource(func)`` fails for interactively defined
+  functions.
 
-Note that this example does not work on the Python prompt because
-``remote_exec()`` uses ``inspect.getsource(func)`` and this does
-not work for interactively defined functions.
+* on Python2.6 and onwards you will get an explicit error
+  if you try to execute non-pure functions, i.e. functions
+  that access any global state (which will not be available
+  remotely as we have a share-nothing model between the nodes).
+
+
+remote-exec a module (avoiding inlined source part II)
+--------------------------------------------------------------
+
+You can pass a module object to ``remote_exec`` in which case
+its source code will be sent.  No dependencies will be transferred
+so the module must be self-contained or only use modules that are
+installed on the "other" side.   Module code can detect if it is
+running in a remote_exec situation by checking for the special
+``__name__`` attribute.
+
+.. include:: remote1.py
+    :literal:
+
+You can now remote-execute the module like this::
+
+    >>> import execnet, remote1
+    >>> gw = execnet.makegateway()
+    >>> ch = gw.remote_exec(remote1)
+    >>> print (ch.receive())
+    initialization complete
+
+which will print the 'initialization complete' string.
+
 
 Compare current working directories
 ----------------------------------------
@@ -108,28 +141,7 @@ and use it to transfer information::
     >>> c2.receive()
     'world'
 
-Avoid "inlined" source strings with remote_exec
---------------------------------------------------------------
 
-You can pass a module object to ``remote_exec`` in which case
-its source code will be sent.  No dependencies will be transferred
-so the module must be self-contained or only use modules that are
-installed on the "other" side.   Module code can detect if it is
-running in a remote_exec situation by checking for the special
-``__name__`` attribute.
-
-.. include:: remote1.py
-    :literal:
-
-You can now remote-execute the module like this::
-
-    >>> import execnet, remote1
-    >>> gw = execnet.makegateway()
-    >>> ch = gw.remote_exec(remote1)
-    >>> print (ch.receive())
-    initialization complete
-
-which will print the 'initialization complete' string.
 
 a simple command loop pattern
 --------------------------------------------------------------

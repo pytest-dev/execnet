@@ -6,13 +6,18 @@
 Python_ is a mature dynamic language whose interpreters can interact with
 all major computing platforms today.
 
-**execnet** provides carefully tested means to easily interact with Python
-interpreters across version, platform and network barriers.  It has
+**execnet** provides a `share-nothing model`_ with `channel-send/receive`_
+communication for distributing execution across many Python interpreters
+across version, platform and network barriers.  It has
 a minimal and fast API targetting the following uses:
 
-* distribute tasks to local or remote CPUs
+* distribute tasks to (many) local or remote CPUs
 * write and deploy hybrid multi-process applications
-* write scripts to administer a bunch of exec environments
+* write scripts to administer multiple environments
+
+.. _`channel-send/receive`: http://en.wikipedia.org/wiki/Channel_(programming)
+.. _`share-nothing model`: http://en.wikipedia.org/wiki/Shared_nothing_architecture
+
 
 .. _Python: http://www.python.org
 
@@ -22,6 +27,7 @@ Features
 * automatic bootstrapping: no manual remote installation.
 
 * safe and simple serialization of python builtin types (no pickle)
+  for sending/receiving structured data messages.
 
 * flexible communication: synchronous send/receive as well as
   callback/queue mechanisms supported
