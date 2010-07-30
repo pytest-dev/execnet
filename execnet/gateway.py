@@ -84,9 +84,19 @@ class Gateway(gateway_base.BaseGateway):
 
     def remote_exec(self, source, **kwargs):
         """ return channel object and connect it to a remote
-            execution thread where the given 'source' executes
-            and has the sister 'channel' object in its global
-            namespace.
+            execution thread where the given ``source`` executes.
+
+            * ``source`` is a string: execute source string remotely
+              with a ``channel`` put into the global namespace.
+            * ``source`` is a pure function: serialize source and
+              call function with ``**kwargs``, adding a
+              ``channel`` object to the keyword arguments.
+            * ``source`` is a pure module: execute source of module
+              with a ``channel`` in its global namespace
+
+            In all cases the binding ``__name__='__channelexec__'``
+            will be available in the global namespace of the remotely
+            executing code.
         """
         call_name = None
         if isinstance(source, types.ModuleType):

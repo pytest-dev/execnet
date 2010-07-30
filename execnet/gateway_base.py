@@ -12,7 +12,7 @@ try:
 except ImportError:
     import Queue as queue
 
-ISPY3 = sys.version_info > (3, 0)
+ISPY3 = sys.version_info >= (3, 0)
 if ISPY3:
     exec("def do_exec(co, loc): exec(co, loc)\n"
          "def reraise(cls, val, tb): raise val\n")
@@ -716,16 +716,26 @@ class SlaveGateway(BaseGateway):
             self._trace("swallowing keyboardinterrupt in main-thread")
 
     def executetask(self, item):
-        channel, (source, call_name, kwargs) = item
         try:
+            channel, (source, call_name, kwargs) = item
+            if not ISPY3 and kwargs:
+                # some python2 versions do not accept unicode keyword params
+                # note: Unserializer generally turns py2-str to py3-str objects
+                newkwargs = {}
+                for name, value in kwargs.items():
+                    if isinstance(name, unicode):
+                        name = name.encode('ascii')
+                    newkwargs[name] = value
+                kwargs = newkwargs
             loc = {'channel' : channel, '__name__': '__channelexec__'}
-            self._trace("execution starts[%s]: %s" % (channel.id, repr(source)[:50]))
+            self._trace("execution starts[%s]: %s" %
+                            (channel.id, repr(source)[:50]))
             channel._executing = True
             try:
                 co = compile(source+'\n', '', 'exec')
                 do_exec(co, loc)
                 if call_name:
-                    self._trace('calling function [%s] with %s'%(call_name, repr(kwargs)[:50]))
+                    self._trace('calling %s(**%60r)' % (call_name, kwargs))
                     function = loc[call_name]
                     function(channel, **kwargs)
             finally:

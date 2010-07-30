@@ -284,10 +284,13 @@ class TestGlobalFinder(object):
 
 
 def test_remote_exec_function_with_kwargs(anypython):
+    import sys
     def func(channel, data):
         channel.send(data)
     group = execnet.Group()
     gw = group.makegateway('popen//python=%s' % anypython)
+    print ("local version_info %r" %(sys.version_info,))
+    print ("remote info: %s" % (gw._rinfo(),))
     ch = gw.remote_exec(func, data=1)
     result = ch.receive()
     assert result == 1
