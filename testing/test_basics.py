@@ -78,7 +78,7 @@ def test_io_message(anypython, tmpdir):
                 io.infile.seek(0)
                 io.infile.write(x)
                 io.infile.seek(0)
-                msg2 = Message.readfrom(unserializer)
+                msg2 = Message.readfrom(io, None)
                 assert msg1.channelid == msg2.channelid, (msg1, msg2)
                 assert msg1.data == msg2.data
         print ("all passed")
@@ -178,8 +178,7 @@ class TestMessage:
             data = '23'.encode('ascii')
             cls(42, data).writeto(one)
             two = py.io.BytesIO(one.getvalue())
-            unserializer = gateway_base.Unserializer(two)
-            msg = Message.readfrom(unserializer)
+            msg = Message.readfrom(two, None)
             assert isinstance(msg, cls)
             assert msg.channelid == 42
             assert msg.data == data

@@ -111,9 +111,11 @@ class Message:
     def writeto(self, io):
         serialize(io, (self.msgtype, self.channelid, self.data))
 
-    def readfrom(cls, unserializer):
+    def readfrom(cls, io, channelfactory):
+        unserializer = Unserializer(io, channelfactory)
         msgtype, senderid, data = unserializer.load()
         return cls._types[msgtype](senderid, data)
+
     readfrom = classmethod(readfrom)
 
     def __repr__(self):
@@ -611,9 +613,8 @@ class BaseGateway(object):
         eof = False
         try:
             try:
-                unserializer = Unserializer(self._io, self._channelfactory)
                 while 1:
-                    msg = Message.readfrom(unserializer)
+                    msg = Message.readfrom(self._io, self._channelfactory)
                     self._trace("received", msg)
                     _receivelock = self._receivelock
                     _receivelock.acquire()
