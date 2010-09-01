@@ -102,11 +102,15 @@ class Popen2IO:
 
 class Message:
     """ encapsulates Messages and their wire protocol. """
-    _types = {}
+    _types = []
 
-    def __init__(self, channelid=0, data=''):
+    def __init__(self, channelid=0,  msgtype=0, data=''):
         self.channelid = channelid
+        self.msgtype = msgtype
         self.data = data
+
+    def received(self, gateway):
+        self._types[self.msgtype](self, gateway)
 
     def writeto(self, io):
         serialize(io, (self.msgtype, self.channelid, self.data))
@@ -114,70 +118,63 @@ class Message:
     def readfrom(cls, io, channelfactory):
         unserializer = Unserializer(io, channelfactory)
         msgtype, senderid, data = unserializer.load()
-        return cls._types[msgtype](senderid, data)
+        return cls(senderid, msgtype, data)
 
     readfrom = classmethod(readfrom)
 
     def __repr__(self):
+        name = self._types[self.msgtype].__name__.upper()
         r = repr(self.data)
         if len(r) > 50:
-            return "<Message.%s channelid=%d len=%d>" %(self.__class__.__name__,
+            return "<Message.%s channelid=%d len=%d>" %(name,
                         self.channelid, len(r))
         else:
-            return "<Message.%s channelid=%d %r>" %(self.__class__.__name__,
+            return "<Message.%s channelid=%d %s>" %(name,
                         self.channelid, self.data)
 
 def _setupmessages():
-    class STATUS(Message):
-        def received(self, gateway):
-            # we use self.channelid to send back information
-            # but don't instantiate a channel object
-            active_channels = gateway._channelfactory.channels()
-            numexec = 0
-            for ch in active_channels:
-                if getattr(ch, '_executing', False):
-                    numexec += 1
-            d = {'execqsize': gateway._execqueue.qsize(),
-                 'numchannels': len(active_channels),
-                 'numexecuting': numexec
-            }
-            gateway._send(Message.CHANNEL_DATA(self.channelid, d))
+    def status(message, gateway):
+        # we use the channelid to send back information
+        # but don't instantiate a channel object
+        active_channels = gateway._channelfactory.channels()
+        numexec = 0
+        for ch in active_channels:
+            if getattr(ch, '_executing', False):
+                numexec += 1
+        d = {'execqsize': gateway._execqueue.qsize(),
+             'numchannels': len(active_channels),
+             'numexecuting': numexec
+        }
+        gateway._send(Message(message.channelid, Message.CHANNEL_DATA, d))
 
-    class CHANNEL_EXEC(Message):
-        def received(self, gateway):
-            channel = gateway._channelfactory.new(self.channelid)
-            gateway._local_schedulexec(channel=channel, sourcetask=self.data)
+    def channel_exec(message, gateway):
+        channel = gateway._channelfactory.new(message.channelid)
+        gateway._local_schedulexec(channel=channel, sourcetask=message.data)
 
-    class CHANNEL_DATA(Message):
-        def received(self, gateway):
-            gateway._channelfactory._local_receive(self.channelid, self.data)
+    def channel_data(message, gateway):
+        gateway._channelfactory._local_receive(message.channelid, message.data)
 
-    class CHANNEL_CLOSE(Message):
-        def received(self, gateway):
-            gateway._channelfactory._local_close(self.channelid)
+    def channel_close(message, gateway):
+        gateway._channelfactory._local_close(message.channelid)
 
-    class CHANNEL_CLOSE_ERROR(Message):
-        def received(self, gateway):
-            remote_error = RemoteError(self.data)
-            gateway._channelfactory._local_close(self.channelid, remote_error)
+    def channel_close_error(message, gateway):
+        remote_error = RemoteError(message.data)
+        gateway._channelfactory._local_close(message.channelid, remote_error)
 
-    class CHANNEL_LAST_MESSAGE(Message):
-        def received(self, gateway):
-            gateway._channelfactory._local_close(self.channelid, sendonly=True)
+    def channel_last_message(message, gateway):
+        gateway._channelfactory._local_close(message.channelid, sendonly=True)
 
-    class GATEWAY_TERMINATE(Message):
-        def received(self, gateway):
-            gateway._terminate_execution()
-            raise SystemExit(0)
+    def gateway_terminate(message, gateway):
+        gateway._terminate_execution()
+        raise SystemExit(0)
 
-    classes = [
-        STATUS, CHANNEL_EXEC, CHANNEL_DATA, CHANNEL_CLOSE,
-        CHANNEL_CLOSE_ERROR, CHANNEL_LAST_MESSAGE, GATEWAY_TERMINATE
+    types = [
+        status, channel_exec, channel_data, channel_close,
+        channel_close_error, channel_last_message, gateway_terminate
     ]
-    for i, cls in enumerate(classes):
-        Message._types[i] = cls
-        cls.msgtype = i
-        setattr(Message, cls.__name__, cls)
+    for i, handler in enumerate(types):
+        Message._types.append(handler)
+        setattr(Message, handler.__name__.upper(), i)
 
 _setupmessages()
 
@@ -291,11 +288,11 @@ class Channel(object):
         else:
             # state transition "opened" --> "deleted"
             if self._items is None:    # has_callback
-                Msg = Message.CHANNEL_LAST_MESSAGE
+                msgtype = Message.CHANNEL_LAST_MESSAGE
             else:
-                Msg = Message.CHANNEL_CLOSE
+                msgtype = Message.CHANNEL_CLOSE
             try:
-                self.gateway._send(Msg(self.id))
+                self.gateway._send(Message(self.id, msgtype))
             except (IOError, ValueError): # ignore problems with sending
                 pass
 
@@ -347,9 +344,9 @@ class Channel(object):
             if not self._receiveclosed.isSet():
                 put = self.gateway._send
                 if error is not None:
-                    put(Message.CHANNEL_CLOSE_ERROR(self.id, error))
+                    put(Message(self.id, Message.CHANNEL_CLOSE_ERROR, error))
                 else:
-                    put(Message.CHANNEL_CLOSE(self.id))
+                    put(Message(self.id, Message.CHANNEL_CLOSE))
                 self._trace("sent channel close message")
             if isinstance(error, RemoteError):
                 self._remoteerrors.append(error)
@@ -387,7 +384,7 @@ class Channel(object):
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
-        data = Message.CHANNEL_DATA(self.id, item)
+        data = Message(self.id, Message.CHANNEL_DATA, item)
         self.gateway._send(data)
 
     def receive(self, timeout=-1):
@@ -520,7 +517,7 @@ class ChannelFactory(object):
                 excinfo = sys.exc_info()
                 self.gateway._trace("exception during callback: %s" % excinfo[1])
                 errortext = self.gateway._geterrortext(excinfo)
-                self.gateway._send(Message.CHANNEL_CLOSE_ERROR(id, errortext))
+                self.gateway._send(Message(id, Message.CHANNEL_CLOSE_ERROR, errortext))
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):

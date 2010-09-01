@@ -67,10 +67,10 @@ def test_io_message(anypython, tmpdir):
         temp_in = BytesIO()
         io = Popen2IO(temp_out, temp_in)
         unserializer = Unserializer(io)
-        for i, msg_cls in Message._types.items():
-            print ("checking %s %s" %(i, msg_cls))
+        for i, handler in enumerate(Message._types):
+            print ("checking %s %s" %(i, handler))
             for data in "hello", "hello".encode('ascii'):
-                msg1 = msg_cls(i, data)
+                msg1 = Message(i, i, data)
                 msg1.writeto(io)
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
@@ -81,6 +81,7 @@ def test_io_message(anypython, tmpdir):
                 msg2 = Message.readfrom(io, None)
                 assert msg1.channelid == msg2.channelid, (msg1, msg2)
                 assert msg1.data == msg2.data
+                assert msg1.msgtype == msg2.msgtype
         print ("all passed")
     """))
     #out = py.process.cmdexec("%s %s" %(executable,check))
@@ -173,13 +174,14 @@ def test_exectask():
 
 class TestMessage:
     def test_wire_protocol(self):
-        for cls in Message._types.values():
+        for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
             data = '23'.encode('ascii')
-            cls(42, data).writeto(one)
+            Message(42, i, data).writeto(one)
             two = py.io.BytesIO(one.getvalue())
             msg = Message.readfrom(two, None)
-            assert isinstance(msg, cls)
+            assert msg.msgtype == i
+            assert isinstance(msg, Message)
             assert msg.channelid == 42
             assert msg.data == data
             assert isinstance(repr(msg), str)

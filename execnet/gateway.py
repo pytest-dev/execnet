@@ -41,7 +41,7 @@ class Gateway(gateway_base.BaseGateway):
         self._group._unregister(self)
         self._trace("--> sending GATEWAY_TERMINATE")
         try:
-            self._send(Message.GATEWAY_TERMINATE(0, ''))
+            self._send(Message(0, Message.GATEWAY_TERMINATE, ''))
             self._io.close_write()
         except IOError:
             v = sys.exc_info()[1]
@@ -75,7 +75,7 @@ class Gateway(gateway_base.BaseGateway):
     def remote_status(self):
         """ return information object about remote execution status. """
         channel = self.newchannel()
-        self._send(Message.STATUS(channel.id))
+        self._send(Message(channel.id, Message.STATUS))
         statusdict = channel.receive()
         # the other side didn't actually instantiate a channel
         # so we just delete the internal id/channel mapping
@@ -112,8 +112,9 @@ class Gateway(gateway_base.BaseGateway):
             raise TypeError("can't pass kwargs to non-function remote_exec")
 
         channel = self.newchannel()
-        self._send(Message.CHANNEL_EXEC(channel.id,
-                                       (source, call_name, kwargs)))
+        self._send(Message(channel.id,
+                           Message.CHANNEL_EXEC,
+                           (source, call_name, kwargs)))
         return channel
 
     def remote_init_threads(self, num=None):
