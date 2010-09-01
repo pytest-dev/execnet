@@ -81,7 +81,7 @@ def test_io_message(anypython, tmpdir):
                 msg2 = Message.readfrom(io, None)
                 assert msg1.channelid == msg2.channelid, (msg1, msg2)
                 assert msg1.data == msg2.data
-                assert msg1.msgtype == msg2.msgtype
+                assert msg1.msgcode == msg2.msgcode
         print ("all passed")
     """))
     #out = py.process.cmdexec("%s %s" %(executable,check))
@@ -177,10 +177,10 @@ class TestMessage:
         for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
             data = '23'.encode('ascii')
-            Message(42, i, data).writeto(one)
+            Message(i, 42, data).writeto(one)
             two = py.io.BytesIO(one.getvalue())
             msg = Message.readfrom(two, None)
-            assert msg.msgtype == i
+            assert msg.msgcode == i
             assert isinstance(msg, Message)
             assert msg.channelid == 42
             assert msg.data == data
