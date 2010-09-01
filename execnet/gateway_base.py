@@ -766,10 +766,10 @@ class UnserializationError(SerializeError):
     """Error while unserializing an object."""
 
 if ISPY3:
-    def b(s):
-        return s.encode("latin-1")
+    def bchr(n):
+        return bytes([n])
 else:
-    b = str
+    bchr = chr
 
 FOUR_BYTE_INT_MAX = 2147483647
 
@@ -926,7 +926,7 @@ def _buildopcodes():
     l.sort()
     for i,(opname, func) in enumerate(l):
         assert i < 26, "xxx"
-        i = b(chr(64+i))
+        i = bchr(64+i)
         Unserializer.num2func[i] = func
         setattr(opcode, opname, i)
 
