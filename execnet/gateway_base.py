@@ -145,7 +145,7 @@ def _setupmessages():
              'numchannels': len(active_channels),
              'numexecuting': numexec
         }
-        gateway._send(Message(Message.CHANNEL_DATA, message.channelid, d))
+        gateway._send(Message.CHANNEL_DATA, message.channelid, d)
 
     def channel_exec(message, gateway):
         channel = gateway._channelfactory.new(message.channelid)
@@ -292,7 +292,7 @@ class Channel(object):
             else:
                 msgcode = Message.CHANNEL_CLOSE
             try:
-                self.gateway._send(Message(msgcode, self.id))
+                self.gateway._send(msgcode, self.id)
             except (IOError, ValueError): # ignore problems with sending
                 pass
 
@@ -344,9 +344,9 @@ class Channel(object):
             if not self._receiveclosed.isSet():
                 put = self.gateway._send
                 if error is not None:
-                    put(Message(Message.CHANNEL_CLOSE_ERROR, self.id, error))
+                    put(Message.CHANNEL_CLOSE_ERROR, self.id, error)
                 else:
-                    put(Message(Message.CHANNEL_CLOSE, self.id))
+                    put(Message.CHANNEL_CLOSE, self.id)
                 self._trace("sent channel close message")
             if isinstance(error, RemoteError):
                 self._remoteerrors.append(error)
@@ -384,8 +384,7 @@ class Channel(object):
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
-        data = Message(Message.CHANNEL_DATA, self.id, item)
-        self.gateway._send(data)
+        self.gateway._send(Message.CHANNEL_DATA, self.id, item)
 
     def receive(self, timeout=-1):
         """receive a data item that was sent from the other side.
@@ -517,7 +516,7 @@ class ChannelFactory(object):
                 excinfo = sys.exc_info()
                 self.gateway._trace("exception during callback: %s" % excinfo[1])
                 errortext = self.gateway._geterrortext(excinfo)
-                self.gateway._send(Message(Message.CHANNEL_CLOSE_ERROR, id, errortext))
+                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, errortext)
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):
@@ -644,8 +643,8 @@ class BaseGateway(object):
     def _terminate_execution(self):
         pass
 
-    def _send(self, msg):
-        assert isinstance(msg, Message)
+    def _send(self, msgcode, channelid=0, data=''):
+        msg = Message(msgcode, channelid, data)
         msg.writeto(self._io)
         self._trace('sent', msg)
 
