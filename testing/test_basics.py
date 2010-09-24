@@ -3,7 +3,7 @@ import py
 import sys, os, subprocess, inspect
 import execnet
 from execnet import gateway_base, gateway
-from execnet.gateway_base import Message, Channel, ChannelFactory
+from execnet.gateway_base import Message, Channel, ChannelFactory, serialize
 
 def test_errors_on_execnet():
     assert hasattr(execnet, 'RemoteError')
@@ -71,7 +71,7 @@ def test_io_message(anypython, tmpdir):
             print ("checking %s %s" %(i, handler))
             for data in "hello", "hello".encode('ascii'):
                 msg1 = Message(i, i, data)
-                msg1.writeto(io)
+                serialize(io, (i, i, data))
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
                 io.outfile.seek(0)
@@ -177,7 +177,7 @@ class TestMessage:
         for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
             data = '23'.encode('ascii')
-            Message(i, 42, data).writeto(one)
+            serialize(one, (i, 42, data))
             two = py.io.BytesIO(one.getvalue())
             msg = Message.readfrom(two, None)
             assert msg.msgcode == i
