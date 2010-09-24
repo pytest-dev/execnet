@@ -112,13 +112,6 @@ class Message:
     def received(self, gateway):
         self._types[self.msgcode](self, gateway)
 
-    def readfrom(cls, io, channelfactory):
-        unserializer = Unserializer(io, channelfactory)
-        msgcode, senderid, data = unserializer.load()
-        return cls(msgcode, senderid, data)
-
-    readfrom = classmethod(readfrom)
-
     def __repr__(self):
         name = self._types[self.msgcode].__name__.upper()
         r = repr(self.data)
@@ -607,7 +600,8 @@ class BaseGateway(object):
         try:
             try:
                 while 1:
-                    msg = Message.readfrom(self._io, self._channelfactory)
+                    unserializer = Unserializer(self._io, self._channelfactory)
+                    msg = Message(*unserializer.load())
                     self._trace("received", msg)
                     _receivelock = self._receivelock
                     _receivelock.acquire()
