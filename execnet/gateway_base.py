@@ -112,9 +112,6 @@ class Message:
     def received(self, gateway):
         self._types[self.msgcode](self, gateway)
 
-    def writeto(self, io):
-        serialize(io, (self.msgcode, self.channelid, self.data))
-
     def readfrom(cls, io, channelfactory):
         unserializer = Unserializer(io, channelfactory)
         msgcode, senderid, data = unserializer.load()
@@ -644,9 +641,8 @@ class BaseGateway(object):
         pass
 
     def _send(self, msgcode, channelid=0, data=''):
-        msg = Message(msgcode, channelid, data)
-        msg.writeto(self._io)
-        self._trace('sent', msg)
+        serialize(self._io, (msgcode, channelid, data))
+        self._trace('sent', Message(msgcode, channelid, data))
 
     def _local_schedulexec(self, channel, sourcetask):
         channel.close("execution disallowed")
