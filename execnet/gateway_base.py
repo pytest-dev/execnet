@@ -599,8 +599,8 @@ class BaseGateway(object):
         eof = False
         try:
             try:
+                unserializer = Unserializer(self._io, self._channelfactory)
                 while 1:
-                    unserializer = Unserializer(self._io, self._channelfactory)
                     msg = Message(*unserializer.load())
                     self._trace("received", msg)
                     _receivelock = self._receivelock
