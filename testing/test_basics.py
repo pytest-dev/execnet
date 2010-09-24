@@ -3,7 +3,8 @@ import py
 import sys, os, subprocess, inspect
 import execnet
 from execnet import gateway_base, gateway
-from execnet.gateway_base import Message, Channel, ChannelFactory, serialize
+from execnet.gateway_base import Message, Channel, ChannelFactory, serialize, \
+        Unserializer
 
 def test_errors_on_execnet():
     assert hasattr(execnet, 'RemoteError')
@@ -78,7 +79,7 @@ def test_io_message(anypython, tmpdir):
                 io.infile.seek(0)
                 io.infile.write(x)
                 io.infile.seek(0)
-                msg2 = Message.readfrom(io, None)
+                msg2 = Message(*unserializer.load())
                 assert msg1.channelid == msg2.channelid, (msg1, msg2)
                 assert msg1.data == msg2.data
                 assert msg1.msgcode == msg2.msgcode
@@ -179,7 +180,7 @@ class TestMessage:
             data = '23'.encode('ascii')
             serialize(one, (i, 42, data))
             two = py.io.BytesIO(one.getvalue())
-            msg = Message.readfrom(two, None)
+            msg = Message(*Unserializer(two, None).load())
             assert msg.msgcode == i
             assert isinstance(msg, Message)
             assert msg.channelid == 42
