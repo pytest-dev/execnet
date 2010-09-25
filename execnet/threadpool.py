@@ -165,44 +165,6 @@ class WorkerPool(object):
             if thread.isAlive():
                 raise IOError("timeout while joining threads")
 
-class NamedThreadPool:
-    def __init__(self, **kw):
-        self._namedthreads = {}
-        for name, value in kw.items():
-            self.start(name, value)
-
-    def __repr__(self):
-        return "<NamedThreadPool %r>" %(self._namedthreads)
-
-    def get(self, name=None):
-        if name is None:
-            l = []
-            for x in self._namedthreads.values():
-                l.extend(x)
-            return l
-        else:
-            return self._namedthreads.get(name, [])
-
-    def getstarted(self, name=None):
-        return [t for t in self.get(name) if t.isAlive()]
-
-    def prunestopped(self, name=None):
-        if name is None:
-            for name in self.names():
-                self.prunestopped(name)
-        else:
-            self._namedthreads[name] = self.getstarted(name)
-
-    def names(self):
-        return self._namedthreads.keys()
-
-    def start(self, name, func):
-        l = self._namedthreads.setdefault(name, [])
-        thread = threading.Thread(name="%s%d" % (name, len(l)),
-                                  target=func)
-        thread.start()
-        l.append(thread)
-
 if __name__ == '__channelexec__':
     maxthreads = channel.receive()
     execpool = WorkerPool(maxthreads=maxthreads)
