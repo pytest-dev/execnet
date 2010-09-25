@@ -1,3 +1,14 @@
+1.0.9
+--------------------------------
+
+- refactor message types into received handler functions
+- refactor b(chr(opcode)) to bchr(opcode)
+- reorder Message ctor args, rename msgtype to msgcode
+- refactor gateway.send to take message's init args instead of a message
+- inline and remove Message.writeto/readfrom
+- refactor collection loading to avoid the indirection over tuple
+
+
 1.0.8
 --------------------------------
 
