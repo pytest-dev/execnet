@@ -875,23 +875,23 @@ class Unserializer(object):
     def load_newdict(self):
         self.stack.append({})
 
-    def _load_tuple(self):
+    def _load_collection(self, type_):
         length = self._read_int4()
         if length:
-            tup = tuple(self.stack[-length:])
+            res = type_(self.stack[-length:])
             del self.stack[-length:]
+            self.stack.append(res)
         else:
-            tup = ()
-        return tup
+            self.stack.append(type_())
 
     def load_buildtuple(self):
-        self.stack.append(self._load_tuple())
+        self._load_collection(tuple)
 
     def load_set(self):
-        self.stack.append(set(self._load_tuple()))
+        self._load_collection(set)
 
     def load_frozenset(self):
-        self.stack.append(frozenset(self._load_tuple()))
+        self._load_collection(frozenset)
 
     def load_stop(self):
         raise _Stop
