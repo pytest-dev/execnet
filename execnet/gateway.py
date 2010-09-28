@@ -48,6 +48,16 @@ class Gateway(gateway_base.BaseGateway):
             self._trace("io-error: could not send termination sequence")
             self._trace(" exception: %r" % v)
 
+    def setcoerce(self, py2str_as_py3str=True, py3str_as_py2str=False):
+        """
+        set the string coercion for this gateway
+        the default is to try to convert py2 str as py3 str,
+        but not to try and convert py3 str to py2 str
+        """
+        self._unserializer.py2str_as_py3str = py2str_as_py3str
+        self._unserializer.py3str_as_py2str = py3str_as_py2str
+        self._send(Message.SET_COERCE, data=(py2str_as_py3str, py3str_as_py2str))
+
     def _remote_bootstrap_gateway(self, io):
         """ send gateway bootstrap code to a remote Python interpreter
             endpoint, which reads from io for a string to execute.
