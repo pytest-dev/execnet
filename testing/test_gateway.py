@@ -381,7 +381,7 @@ class TestStringCoerce:
         gw = execnet.makegateway('popen//python=%s'%python)
 
         ch = gw.remote_exec('channel.send(channel.receive())')
-        ch.send('a')
+        ch.send(bytes('a', 'ascii'))
         res = ch.receive()
         assert isinstance(res, str)
 
