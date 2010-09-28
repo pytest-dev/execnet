@@ -158,15 +158,15 @@ def _setupmessages():
         gateway._terminate_execution()
         raise SystemExit(0)
 
-    def set_coerce(message, gateway):
+    def reconfigure(message, gateway):
         py2str_as_py3str, py3str_as_py2str = message.data
         gateway._unserializer.py2str_as_py3str = py2str_as_py3str
         gateway._unserializer.py3str_as_py2str = py3str_as_py2str
 
     types = [
-        status, channel_exec, channel_data, channel_close,
-        channel_close_error, channel_last_message, gateway_terminate,
-        set_coerce,
+        status, reconfigure, gateway_terminate,
+        channel_exec, channel_data, channel_close,
+        channel_close_error, channel_last_message,
     ]
     for i, handler in enumerate(types):
         Message._types.append(handler)

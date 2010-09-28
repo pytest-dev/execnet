@@ -366,7 +366,7 @@ class TestStringCoerce:
         res = ch.receive()
         assert isinstance(res, unicode)
 
-        gw.setcoerce(py3str_as_py2str=True)
+        gw.reconfigure(py3str_as_py2str=True)
 
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send('a')
@@ -383,7 +383,7 @@ class TestStringCoerce:
         res = ch.receive()
         assert isinstance(res, str)
 
-        gw.setcoerce(py3str_as_py2str=True, py2str_as_py3str=False)
+        gw.reconfigure(py3str_as_py2str=True, py2str_as_py3str=False)
 
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send('a')
