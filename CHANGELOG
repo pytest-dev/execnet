@@ -1,4 +1,4 @@
-1.0.9
+1.0.9.dev0
 --------------------------------
 
 - refactor message types into received handler functions
