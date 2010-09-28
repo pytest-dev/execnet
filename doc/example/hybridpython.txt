@@ -36,6 +36,34 @@ functionality.
 
 .. _anyvc: http://bitbucket.org/RonnyPfannschmidt/anyvc/overview/
 
+
+Reconfiguring the string coercion between python2 and python3
+-------------------------------------------------------------
+
+Sometimes the default configuration of string coercion (2str to 3str, 3str to 2unicode)
+is inconvient, thus it can be reconfigured via `gw.reconfigure`.
+
+
+    >>> import execnet
+    >>> execnet.makegateway("popen//python=python3.1")
+    <PopenGateway id='gw0' receive-live, 0 active channels>
+    >>> gw=execnet.makegateway("popen//python=python3.1")
+    >>> gw.remote_exec("channel.send('hello')").receive()
+    u'hello'
+    >>> gw.reconfigure(py3str_as_py2str=True)
+    >>> gw.remote_exec("channel.send('hello')").receive()
+    'hello'
+    >>> ch = gw.remote_exec("channel.send(isinstance(channel.receive(), bytes)")
+    >>> ch.send('a')
+    >>> ch.receive()
+    False
+    >>> gw.reconfigure(py2str_as_py3str=False)
+    >>> ch = gw.remote_exec("channel.send(isinstance(channel.receive(), bytes)")
+    >>> ch.send('a')
+    >>> ch.receive()
+    True
+
+
 Work with Java objects from CPython
 ----------------------------------------
 
