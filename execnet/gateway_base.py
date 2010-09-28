@@ -158,9 +158,15 @@ def _setupmessages():
         gateway._terminate_execution()
         raise SystemExit(0)
 
+    def set_coerce(message, gateway):
+        py2str_as_py3str, py3str_as_py2str = message.data
+        gateway._unserializer.py2str_as_py3str = py2str_as_py3str
+        gateway._unserializer.py3str_as_py2str = py3str_as_py2str
+
     types = [
         status, channel_exec, channel_data, channel_close,
-        channel_close_error, channel_last_message, gateway_terminate
+        channel_close_error, channel_last_message, gateway_terminate,
+        set_coerce,
     ]
     for i, handler in enumerate(types):
         Message._types.append(handler)
@@ -580,6 +586,7 @@ class BaseGateway(object):
         self._io = io
         self.id = id
         self._channelfactory = ChannelFactory(self, _startcount)
+        self._unserializer = Unserializer(self._io, self._channelfactory)
         self._receivelock = threading.RLock()
         # globals may be NONE at process-termination
         self._trace = trace
@@ -599,9 +606,8 @@ class BaseGateway(object):
         eof = False
         try:
             try:
-                unserializer = Unserializer(self._io, self._channelfactory)
                 while 1:
-                    msg = Message(*unserializer.load())
+                    msg = Message(*self._unserializer.load())
                     self._trace("received", msg)
                     _receivelock = self._receivelock
                     _receivelock.acquire()

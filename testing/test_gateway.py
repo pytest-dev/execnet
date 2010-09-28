@@ -356,3 +356,38 @@ class TestTracing:
     def test_no_tracing_by_default(self):
         assert gateway_base.trace == gateway_base.notrace, \
                 "trace does not to default to empty tracing"
+
+class TestStringCoerce:
+    @py.test.mark.skipif('sys.version>="3.0"')
+    def test_2to3(self):
+        gw = execnet.makegateway('popen//python=python3')
+        ch = gw.remote_exec('channel.send(channel.receive())')
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, unicode)
+
+        gw.setcoerce(py3str_as_py2str=True)
+
+        ch = gw.remote_exec('channel.send(channel.receive())')
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, str)
+        gw.exit()
+
+    @py.test.mark.skipif('sys.version<"3.0"')
+    def test_3to2(self):
+        gw = execnet.makegateway('popen//python=python2')
+
+        ch = gw.remote_exec('channel.send(channel.receive())')
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, str)
+
+        gw.setcoerce(py3str_as_py2str=True, py2str_as_py3str=False)
+
+        ch = gw.remote_exec('channel.send(channel.receive())')
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, bytes)
+        gw.exit()
+
