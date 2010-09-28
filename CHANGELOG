@@ -8,6 +8,8 @@
 - inline and remove Message.writeto/readfrom
 - refactor collection loading to avoid the indirection over tuple
 - remove the unused NamedThreadPool
+- add gw.setcoerce(py2str_as_py3str, py3str_as_py2str)
+  to configure per gateway string coercion
 
 
 1.0.8
