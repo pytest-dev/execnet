@@ -66,6 +66,10 @@ a channel object whose symmetric counterpart channel
 is available to the remotely executing source.
 
 
+.. method:: Gateway.reconfigure([py2str_as_py3str=True, py3str_as_py2str=False])
+
+    reconfigures the string-coercion behaviour of the gateway
+
 .. _`Channel`:
 .. _`channel-api`:
 
