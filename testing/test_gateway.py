@@ -5,7 +5,7 @@ import os, sys, time
 import py
 import execnet
 from execnet import gateway_base, gateway
-
+from testing.test_serializer import _find_version
 TESTTIMEOUT = 10.0 # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 
@@ -360,7 +360,8 @@ class TestTracing:
 class TestStringCoerce:
     @py.test.mark.skipif('sys.version>="3.0"')
     def test_2to3(self):
-        gw = execnet.makegateway('popen//python=python3')
+        python = _find_version('3')
+        gw = execnet.makegateway('popen//python=%s'%python)
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send('a')
         res = ch.receive()
@@ -376,7 +377,8 @@ class TestStringCoerce:
 
     @py.test.mark.skipif('sys.version<"3.0"')
     def test_3to2(self):
-        gw = execnet.makegateway('popen//python=python2')
+        python = _find_version('2')
+        gw = execnet.makegateway('popen//python=%s'%python)
 
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send('a')
