@@ -73,12 +73,13 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     """ % str(execnetdir))
     popen = subprocess.Popen([str(anypython), str(p)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,)
-    stdout, stderr = popen.communicate()
-    print (stdout)
-    print (stderr)
-    lines = [x for x in stderr.splitlines()
+    out, err = popen.communicate()
+    print (out)
+    print (err)
+    err = err.decode('utf8')
+    lines = [x for x in err.splitlines()
                if '*sys-package' not in x]
-    assert not stderr
+    assert not lines
 
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     p = testdir.makepyfile("""
