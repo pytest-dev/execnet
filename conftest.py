@@ -15,9 +15,13 @@ winpymap = {
     'python3.1': r'C:\Python31\python.exe',
 }
 
-def pytest_runtest_setup(item):
+def pytest_runtest_setup(item, __multicall__):
     if item.fspath.purebasename in ('test_group', 'test_info'):
         getspecssh(item.config) # will skip if no gx given
+    res = __multicall__.execute()
+    if 'pypy-c' in item.keywords and not item.config.option.pypy:
+        py.test.skip("pypy-c tests skipped, use --pypy to run them.")
+    return res
 
 pytest_plugins = ['pytester', 'doctest']
 # configuration information for tests
@@ -30,6 +34,8 @@ def pytest_addoption(parser):
            action="store", dest="scope", default="session",
            type="choice", choices=["session", "function"],
            help=("set gateway setup scope, default: session."))
+    group.addoption('--pypy', action="store_true", dest="pypy",
+           help=("run some tests also against pypy-c"))
 
 def pytest_report_header(config):
     lines = []
