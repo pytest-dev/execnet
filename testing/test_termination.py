@@ -76,6 +76,8 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     stdout, stderr = popen.communicate()
     print (stdout)
     print (stderr)
+    lines = [x for x in stderr.splitlines()
+               if '*sys-package' not in x]
     assert not stderr
 
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
@@ -98,4 +100,6 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     reply = WorkerPool(1).dispatch(popen.communicate)
     reply.get(timeout=50)
     out, err = capfd.readouterr()
-    assert not err or "Killed" in err
+    lines = [x for x in err.splitlines()
+               if '*sys-package' not in x]
+    assert not lines or "Killed" in err
