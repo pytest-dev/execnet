@@ -531,6 +531,9 @@ class ChannelFile(object):
         self.channel = channel
         self._proxyclose = proxyclose
 
+    def isatty(self):
+        return False
+
     def close(self):
         if self._proxyclose:
             self.channel.close()

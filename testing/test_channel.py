@@ -287,6 +287,7 @@ class TestChannelFile:
     def test_channel_file_write_error(self, gw):
         channel = gw.remote_exec("pass")
         f = channel.makefile()
+        assert not f.isatty()
         channel.waitclose(TESTTIMEOUT)
         py.test.raises(IOError, f.write, 'hello')
 
