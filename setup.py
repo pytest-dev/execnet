@@ -71,8 +71,9 @@ class PyTest(Command):
     def finalize_options(self):
         pass
     def run(self):
-        import py
-        py.cmdline.pytest(py.std.sys.argv[2:])
+        import sys,subprocess
+        errno = subprocess.call([sys.executable, 'testing/runtest.py'])
+        raise SystemExit(errno)
 
 if __name__ == '__main__':
     main()
