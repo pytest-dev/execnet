@@ -5,13 +5,14 @@
   currently it supports the boolean flags
   py2str_as_py3str and py3str_as_py2str to configure string deserialization
 - channel.makefile() objects now have a isatty() returning False
-- refactor message types into received handler functions
-- refactor b(chr(opcode)) to bchr(opcode)
-- reorder Message ctor args, rename msgtype to msgcode
-- refactor gateway.send to take message's init args instead of a message
-- inline and remove Message.writeto/readfrom
-- refactor collection loading to avoid the indirection over tuple
-- remove the unused NamedThreadPool
+- internal refactorings and cleanups (thanks Ronny Pfannschmidt):
+  - refactor message types into received handler functions
+  - refactor b(chr(opcode)) to bchr(opcode)
+  - reorder Message ctor args, rename msgtype to msgcode
+  - refactor gateway.send to take message's init args instead of a message
+  - inline and remove Message.writeto/readfrom
+  - refactor collection loading to avoid the indirection over tuple
+  - remove the unused NamedThreadPool
 
 
 1.0.8
