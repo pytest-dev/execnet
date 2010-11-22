@@ -5,6 +5,7 @@
 import execnet
 import py
 from execnet.gateway_base import Channel
+from execnet import XSpec
 
 class TestMultiChannelAndGateway:
     def test_multichannel_container_basics(self):
@@ -126,6 +127,18 @@ class TestGroup:
         print (group)
         assert not group
         assert repr(group) == "<Group []>"
+
+    def test_group_id_allocation(self):
+        group = Group()
+        specs = [XSpec("popen"), XSpec("popen//id=hello")]
+        group.allocate_id(specs[0])
+        group.allocate_id(specs[1])
+        gw = group.makegateway(specs[1])
+        assert gw.id == "hello"
+        gw = group.makegateway(specs[0])
+        assert gw.id == "gw0"
+        #py.test.raises(ValueError, group.allocate_id, XSpec("popen//id=hello"))
+        group.terminate()
 
     def test_gateway_and_id(self):
         group = Group()

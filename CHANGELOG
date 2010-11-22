@@ -1,10 +1,13 @@
 1.0.9.dev0
 --------------------------------
 
-- add gw.reconfigure to configure per gateways
-  currently it supports the boolean flags
+- add gw.reconfigure() to configure per gateway options.  Currently supported:
   py2str_as_py3str and py3str_as_py2str to configure string deserialization
+
 - channel.makefile() objects now have a isatty() returning False
+
+- group.allocate_id(spec) allows to early-determine an (automatic) id
+  
 - internal refactorings and cleanups (thanks Ronny Pfannschmidt):
   - refactor message types into received handler functions
   - refactor b(chr(opcode)) to bchr(opcode)
