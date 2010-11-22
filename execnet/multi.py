@@ -73,12 +73,12 @@ class Group:
             spec = self.defaultspec
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
-        id = self._allocate_id(spec.id)
+        self.allocate_id(spec)
         if spec.popen:
-            gw = gateway.PopenGateway(python=spec.python, id=id)
+            gw = gateway.PopenGateway(python=spec.python, id=spec.id)
         elif spec.ssh:
             gw = gateway.SshGateway(spec.ssh, remotepython=spec.python,
-                                    ssh_config=spec.ssh_config, id=id)
+                                    ssh_config=spec.ssh_config, id=spec.id)
         elif spec.socket:
             assert not spec.python, (
                 "socket: specifying python executables not yet supported")
@@ -86,10 +86,10 @@ class Group:
             gateway_id = spec.installvia
             if gateway_id:
                 viagw = self[gateway_id]
-                gw = SocketGateway.new_remote(viagw, id=id)
+                gw = SocketGateway.new_remote(viagw, id=spec.id)
             else:
                 host, port = spec.socket.split(":")
-                gw = SocketGateway(host, port, id=id)
+                gw = SocketGateway(host, port, id=spec.id)
         else:
             raise ValueError("no gateway type found for %r" % (spec._spec,))
         gw.spec = spec
@@ -113,13 +113,14 @@ class Group:
             channel.waitclose()
         return gw
 
-    def _allocate_id(self, id=None):
-        if id is None:
+    def allocate_id(self, spec):
+        """ allocate id for the given xspec object. """
+        if spec.id is None:
             id = "gw" + str(self._autoidcounter)
             self._autoidcounter += 1
-        if id in self:
-            raise ValueError("already have member gateway with id %r" %(id,))
-        return id
+            if id in self:
+                raise ValueError("already have gateway with id %r" %(id,))
+            spec.id = id
 
     def _register(self, gateway):
         assert not hasattr(gateway, '_group')

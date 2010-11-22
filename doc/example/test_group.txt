@@ -39,6 +39,19 @@ Pass an ``id=MYNAME`` part to ``group.makegateway``. Example::
     >>> group['sub1']
     <PopenGateway id='sub1' receive-live, 0 active channels>
 
+Getting (auto) IDs before instantiation
+------------------------------------------------------
+
+Sometimes it's useful to know the gateway ID ahead
+of instantiating it::
+
+    >>> import execnet
+    >>> group = execnet.Group()
+    >>> spec = execnet.XSpec("popen")
+    >>> group.allocate_id(spec)
+    >>> allocated_id = spec.id
+    >>> gw = group.makegateway(spec)
+    >>> assert gw.id == allocated_id
 
 execnet.makegateway uses execnet.default_group
 ------------------------------------------------------
