@@ -35,14 +35,12 @@ try:
 except ImportError:
     from distutils.core import setup, Command
 
-from execnet import __version__
-
 def main():
     setup(
         name='execnet',
         description='execnet: rapid multi-Python deployment',
         long_description = __doc__,
-        version= __version__,
+        version='1.0.9.dev3',
         url='http://codespeak.net/execnet',
         license='GPL V2 or later',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
