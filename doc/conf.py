@@ -46,7 +46,7 @@ copyright = '2009, holger krekel and others'
 #
 # The short X.Y version.
 import execnet
-version = "1.0.8"
+version = "1.0.9"
 # The full version, including alpha/beta/rc tags.
 release = version
 
