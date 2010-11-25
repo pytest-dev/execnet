@@ -1,4 +1,4 @@
-import py
+import pytest, py
 import execnet
 
 XSpec = execnet.XSpec
@@ -73,17 +73,21 @@ class TestMakegateway:
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info == py.std.sys.version_info
 
+    @pytest.mark.skipif("not hasattr(os, 'nice')")
     def test_popen_nice(self):
-        gw = execnet.makegateway("popen//nice=5")
-        remotenice = gw.remote_exec("""
+        gw = execnet.makegateway("popen")
+        def getnice(channel):
             import os
             if hasattr(os, 'nice'):
                 channel.send(os.nice(0))
             else:
                 channel.send(None)
-        """).receive()
+        remotenice = gw.remote_exec(getnice).receive()
+        gw.exit()
         if remotenice is not None:
-            assert remotenice == 5
+            gw = execnet.makegateway("popen//nice=5")
+            remotenice2 = gw.remote_exec(getnice).receive()
+            assert remotenice2 == remotenice + 5
 
     def test_popen_env(self):
         gw = execnet.makegateway("popen//env:NAME123=123")
