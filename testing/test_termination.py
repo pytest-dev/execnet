@@ -58,8 +58,10 @@ def test_termination_on_remote_channel_receive(monkeypatch):
     assert str(pid) not in out, out
 
 def test_close_initiating_remote_no_error(testdir, anypython):
-    if '2.4' in str(anypython):
-        py.test.xfail("race/wait/interrupt_main/thread-loop issue with python2.4")
+    x = str(anypython).replace(".", "")
+    if '24' in x or '25' in x:
+        py.test.xfail("race/wait/interrupt_main/thread-loop issue "
+            "with Python <= 2.6")
     p = testdir.makepyfile("""
         import sys
         sys.path.insert(0, %r)
@@ -79,6 +81,7 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     err = err.decode('utf8')
     lines = [x for x in err.splitlines()
                if '*sys-package' not in x]
+    print (lines)
     assert not lines
 
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
