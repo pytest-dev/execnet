@@ -57,11 +57,9 @@ def test_termination_on_remote_channel_receive(monkeypatch):
     out = py.builtin._totext(out, 'utf8')
     assert str(pid) not in out, out
 
+@py.test.mark.xfail(reason="non-resolved race/wait/interrupt_main/thread-loop "
+ "issue with some Python interpreters")
 def test_close_initiating_remote_no_error(testdir, anypython):
-    x = str(anypython).replace(".", "")
-    if '24' in x or '25' in x:
-        py.test.xfail("race/wait/interrupt_main/thread-loop issue "
-            "with Python <= 2.6")
     p = testdir.makepyfile("""
         import sys
         sys.path.insert(0, %r)
