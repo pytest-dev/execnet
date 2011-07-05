@@ -36,6 +36,9 @@ def pytest_addoption(parser):
            help=("set gateway setup scope, default: session."))
     group.addoption('--pypy', action="store_true", dest="pypy",
            help=("run some tests also against pypy-c"))
+    group.addoption('--broken-isp', action="store_true", dest="broken_isp",
+            help=("Skips tests that assume your ISP doesn't put up a landing "
+                "page on invalid addresses"))
 
 def pytest_report_header(config):
     lines = []

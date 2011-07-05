@@ -241,6 +241,7 @@ class TestPopenGateway:
         """)
         py.test.raises(channel.RemoteError, channel.receive)
 
+@py.test.mark.skipif("config.option.broken_isp")
 def test_socket_gw_host_not_found(gw):
     py.test.raises(execnet.HostNotFound,
             'execnet.makegateway("socket=qwepoipqwe:9000")'
