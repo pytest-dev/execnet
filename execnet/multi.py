@@ -75,7 +75,7 @@ class Group:
             spec = XSpec(spec)
         self.allocate_id(spec)
         if spec.popen:
-            gw = gateway.PopenGateway(python=spec.python, id=spec.id)
+            gw = gateway.PopenGateway(python=spec.python, id=spec.id, spec=spec)
         elif spec.ssh:
             gw = gateway.SshGateway(spec.ssh, remotepython=spec.python,
                                     ssh_config=spec.ssh_config, id=spec.id)

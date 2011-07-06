@@ -241,6 +241,22 @@ class TestPopenGateway:
         """)
         py.test.raises(channel.RemoteError, channel.receive)
 
+    @py.test.mark.skipif('sys.version_info < (2, 6)')
+    def test_dont_write_bytecode(self):
+        check_sys_dont_write_bytecode = """
+            import sys
+            channel.send(sys.dont_write_bytecode)
+        """
+
+        gw = execnet.makegateway('popen')
+        channel = gw.remote_exec(check_sys_dont_write_bytecode)
+        ret = channel.receive()
+        assert not ret
+        gw = execnet.makegateway('popen//dont_write_bytecode')
+        channel = gw.remote_exec(check_sys_dont_write_bytecode)
+        ret = channel.receive()
+        assert ret
+
 @py.test.mark.skipif("config.option.broken_isp")
 def test_socket_gw_host_not_found(gw):
     py.test.raises(execnet.HostNotFound,

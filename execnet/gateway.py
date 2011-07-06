@@ -235,13 +235,18 @@ class PopenGateway(PopenCmdGateway):
     """ This Gateway provides interaction with a newly started
         python subprocess.
     """
-    def __init__(self, id, python=None):
+    def __init__(self, id, python=None, spec=None):
         """ instantiate a gateway to a subprocess
             started with the given 'python' executable.
         """
         if not python:
             python = sys.executable
-        args = [str(python), '-u', '-c', popen_bootstrapline]
+        args = [str(python), '-u']
+        if spec is not None and spec.dont_write_bytecode:
+            args.append("-B")
+        # Slight gymnastics in ordering these arguments because CPython (as of
+        # 2.7.1) ignores -B if you provide `python -c "something" -B`
+        args.extend(['-c', popen_bootstrapline])
         super(PopenGateway, self).__init__(args, id=id)
 
     def _remote_bootstrap_gateway(self, io):
