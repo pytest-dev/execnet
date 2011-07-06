@@ -1,3 +1,10 @@
+1.0.10
+--------------------------------
+
+- added a ``dont_write_bytecode`` option to Popen gateways, this sets the
+  ``sys.dont_write_bytecode`` flag on the spawned process, this only works on
+  CPython 2.6 and higher.
+
 1.0.9
 --------------------------------
 
@@ -7,7 +14,7 @@
 - channel.makefile() objects now have a isatty() returning False
 
 - group.allocate_id(spec) allows to early-determine an (automatic) id
-  
+
 - internal refactorings and cleanups (thanks Ronny Pfannschmidt):
   - refactor message types into received handler functions
   - refactor b(chr(opcode)) to bchr(opcode)
@@ -29,17 +36,17 @@
   for writing a "pure-function" checker so that on Python2.6
   onwards non-pure functions will be rejected.
 
-- enhance rsyncing to also sync permissions (stat().st_mode) 
-  of directories and files. 
+- enhance rsyncing to also sync permissions (stat().st_mode)
+  of directories and files.
   (should also resolve http://bitbucket.org/hpk42/py-trunk/issue/68/)
 
-- fix rsyncing of symlinks, thanks to Charles Solar 
+- fix rsyncing of symlinks, thanks to Charles Solar
   (should also resolve http://bitbucket.org/hpk42/py-trunk/issue/70/)
 
 - update internal usage of apipkg to 1.0b6
 
 - remote_exec(module) now makes sure that the linecache is updated
-  before reading and sending the source.  thanks Ronny, Matt. 
+  before reading and sending the source.  thanks Ronny, Matt.
 
 - removed all trailing whitespace from source files
 
@@ -47,42 +54,42 @@
 --------------------------------
 
 - try to avoid a random KeyboardInterrupt Error when threads
-  are ending. 
+  are ending.
 
-- extend xspec syntax to allow for one or multiple "env:NAME=value" 
-  environment variable settings which will be set on the remote side. 
+- extend xspec syntax to allow for one or multiple "env:NAME=value"
+  environment variable settings which will be set on the remote side.
   (thanks Jakub Gustak)
 
 1.0.6
 --------------------------------
 
-- fix jython/windows interactions 
+- fix jython/windows interactions
 - fix waitclose/callback-with-endmarker race condition
 - fix race condition where multiple threads sending data over channels
-  would crash the serializer and process 
+  would crash the serializer and process
 
 1.0.5
 --------------------------------
 
 - more care during receiver-thread finalization during interp-shutdown,
   should get rid of annoying and meaningless exceptions
-- fix glitch in ssh-fileserver example 
-- experimentally add "setup.py test" support - will run py.test 
+- fix glitch in ssh-fileserver example
+- experimentally add "setup.py test" support - will run py.test
 
 1.0.4
 --------------------------------
 
 - try to deal more cleanly with interpreter shutdown setting globals to
-  None. this avoids (hopefully) some bogus tracebacks at process exit. 
+  None. this avoids (hopefully) some bogus tracebacks at process exit.
 
 1.0.3
 --------------------------------
 
-- refine termination some more: CTRL-C and gateway.exit will 
-  now try harder to interrupt remote execution.  this 
+- refine termination some more: CTRL-C and gateway.exit will
+  now try harder to interrupt remote execution.  this
   helps to avoid left-over ssh-processes.
-- fix read-on-non-blocking-files issue probably related to jython only:  
-  the low-level read on subprocess pipes may be non-blocking, returning 
+- fix read-on-non-blocking-files issue probably related to jython only:
+  the low-level read on subprocess pipes may be non-blocking, returning
   less bytes than requested - so we now loop.
 - Windows/python2.4: fix bug that killing subprocesses would fail
 - make RemoteError and TimeoutError available directly on execnet namespace
@@ -91,30 +98,30 @@
 - update internal copy of apipkg
 - always skip remote tests if no ssh specs given
 
-1.0.2 
+1.0.2
 --------------------------------
 
-- generalize channel-over-channel sending: you can now have channels 
+- generalize channel-over-channel sending: you can now have channels
   anywhere in a data structure (i.e. as an item of a container type).
   Add according examples.
 
-- automatically close a channel when a remote callback raises 
-  an exception, makes communication more robust because until 
-  now failing callbacks rendered the receiverthread unuseable 
+- automatically close a channel when a remote callback raises
+  an exception, makes communication more robust because until
+  now failing callbacks rendered the receiverthread unuseable
   leaving the remote side in-accessible.
 
 - internally split socket gateways, speeds up popen-gateways
-  by 10% (now at <50 milliseconds per-gateway on a 1.5 GHZ machine) 
+  by 10% (now at <50 milliseconds per-gateway on a 1.5 GHZ machine)
 
-- fix bug in channel.receive() that would wrongly raise a TimeoutError 
-  after 1000 seconds (thanks Ronny Pfannschmidt) 
+- fix bug in channel.receive() that would wrongly raise a TimeoutError
+  after 1000 seconds (thanks Ronny Pfannschmidt)
 
 1.0.1
 --------------------------------
 
 - revamp and better structure documentation
 
-- new method: gateway.hasreceiver() returns True 
+- new method: gateway.hasreceiver() returns True
   if the gateway is still receive-active. remote_status
   now only carries information about remote execution status.
 
@@ -123,7 +130,7 @@
 - new: execnet.Group can be indexed by integer
 
 - new: group.makegateway() uses group.default_spec if no spec is given
-  and the execnet.default_group uses ``popen`` as a default spec. 
+  and the execnet.default_group uses ``popen`` as a default spec.
 
 - have popen-gateways use imports instead of source-strings,
   also improves debugging/tracebacks, as a side effect
@@ -135,26 +142,26 @@
   within time.
 
 - EOFError on channel.receive/waitclose if the other
-  side unexpectedly went away.  When a gateway exits 
+  side unexpectedly went away.  When a gateway exits
   it now internally sends an explicit termination message
-  instead of abruptly closing.  
+  instead of abruptly closing.
 
-- introduce a timeout parameter to channel.receive() 
+- introduce a timeout parameter to channel.receive()
   and default to periodically internally wake up
   to let KeyboardInterrupts pass through.
 
 - EXECNET_DEBUG=2 will cause tracing to go to stderr,
-  which with popen slave gateways will relay back 
+  which with popen slave gateways will relay back
   tracing to the instantiator process.
-  
+
 
 1.0.0
 --------------------------------
 
-* introduce execnet.Group for managing gateway creation 
-  and termination.  Introduce execnet.default_group through which 
+* introduce execnet.Group for managing gateway creation
+  and termination.  Introduce execnet.default_group through which
   all "global" calls are routed.  cleanup gateway termination.
-  All Gateways get an id through which they can be 
+  All Gateways get an id through which they can be
   retrieved from a group object.
 
 * deprecate execnet.XYZGateway in favour of direct makegateway() calls.
@@ -163,14 +170,14 @@
   way to indirectly setup a socket server ("installvia")
   through a gateway url.
 
-* refine and automatically test documentation examples 
+* refine and automatically test documentation examples
 
 1.0.0b3
 --------------------------------
 
-* fix EXECNET_DEBUG to work with win32 
+* fix EXECNET_DEBUG to work with win32
 * add support for serializing longs, sets and frozensets  (thanks
-  Benjamin Peterson) 
+  Benjamin Peterson)
 * introduce remote_status() method which on the low level gives
   information about the remote side of a gateway
 * disallow explicit close in remote_exec situation
@@ -196,12 +203,12 @@
 * integrated new serializer code from Benjamin Peterson
 * improved support for Jython-2.5.1
 
-1.0.0alpha2 
+1.0.0alpha2
 ----------------------------
 
 * improve documentation, new website
 
-* use sphinx for documentation, added boilerplate files and setup.py 
+* use sphinx for documentation, added boilerplate files and setup.py
 
 * fixes for standalone usage, adding boilerplate files
 
