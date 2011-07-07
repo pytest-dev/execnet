@@ -5,6 +5,10 @@
   ``sys.dont_write_bytecode`` flag on the spawned process, this only works on
   CPython 2.6 and higher.  Thanks to Alex Gaynor.
 
+- added a pytest --broken-isp option to skip tests that assume
+  DNS queries for unknown hosts actually are resolved as such (Thanks
+  Alex Gaynor)
+
 1.0.9
 --------------------------------
 
