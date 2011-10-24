@@ -168,13 +168,13 @@ class Group:
                 if popen:
                     killpopen(popen)
 
-    def remote_exec(self, source):
+    def remote_exec(self, source, **kwargs):
         """ remote_exec source on all member gateways and return
             MultiChannel connecting to all sub processes.
         """
         channels = []
         for gw in self:
-            channels.append(gw.remote_exec(source))
+            channels.append(gw.remote_exec(source, **kwargs))
         return MultiChannel(channels)
 
 class MultiChannel:
