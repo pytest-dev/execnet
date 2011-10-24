@@ -161,3 +161,12 @@ class TestGroup:
         assert gw in newlist
         assert gw not in oldlist
 
+    def test_remote_exec_args(self):
+        group = Group()
+        gw = group.makegateway('popen')
+
+        def fun(channel, arg):
+            channel.send(arg)
+        mch = group.remote_exec(fun, arg=1)
+        result = mch.receive_each()
+        assert result == [1]
