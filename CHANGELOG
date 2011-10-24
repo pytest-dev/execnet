@@ -1,6 +1,8 @@
 1.0.10.dev
 --------------------------------
 
+- group.remote_exec now supports *kwargs as well
+
 - added a ``dont_write_bytecode`` option to Popen gateways, this sets the
   ``sys.dont_write_bytecode`` flag on the spawned process, this only works on
   CPython 2.6 and higher.  Thanks to Alex Gaynor.
