@@ -128,14 +128,26 @@ class Message:
         self._types[self.msgcode](self, gateway)
 
     def __repr__(self):
+        class FakeChannel(object):
+            _strconfig = False, False # never transform, never fail
+            def __init__(self, id):
+                self.id = id
+            def __repr__(self):
+                return '<Channel %s>' % self.id
+        FakeChannel.new = FakeChannel
+        FakeChannel.gateway = FakeChannel
         name = self._types[self.msgcode].__name__.upper()
-        r = repr(self.data)
+        try:
+            data = deserialize(self.data, FakeChannel)
+        except UnserializationError:
+            data = self.data
+        r = repr(data)
         if len(r) > 50:
             return "<Message.%s channelid=%d len=%d>" %(name,
                         self.channelid, len(r))
         else:
-            return "<Message.%s channelid=%d %r>" %(name,
-                        self.channelid, self.data)
+            return "<Message.%s channelid=%d %s>" %(name,
+                        self.channelid, r)
 
 def _setupmessages():
     def status(message, gateway):
