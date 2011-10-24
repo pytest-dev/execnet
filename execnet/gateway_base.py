@@ -81,8 +81,8 @@ class Popen2IO:
         """Read exactly 'numbytes' bytes from the pipe. """
         # a file in non-blocking mode may return less bytes, so we loop
         buf = bytes()
-        while len(buf) < numbytes:
-            data = self._read(numbytes)
+        while numbytes > len(buf):
+            data = self._read(numbytes-len(buf))
             if not data:
                 raise EOFError("expected %d bytes, got %d" %(numbytes, len(buf)))
             buf += data
