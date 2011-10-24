@@ -12,6 +12,11 @@ try:
 except ImportError:
     import Queue as queue
 
+try:
+    from io import BytesIO
+except:
+    from StringIO import StringIO as BytesIO
+
 ISPY3 = sys.version_info >= (3, 0)
 if ISPY3:
     exec("def do_exec(co, loc): exec(co, loc)\n"
@@ -109,6 +114,16 @@ class Message:
         self.channelid = channelid
         self.data = data
 
+    @staticmethod
+    def from_io(io):
+        header = io.read(9) # type 1, channel 4, payload 4
+        msgtype, channel, payload = struct.unpack('!bii', header)
+        return Message(msgtype, channel, io.read(payload))
+
+    def to_io(self, io):
+        header = struct.pack('!bii', self.msgcode, self.channelid, len(self.data))
+        io.write(header+self.data)
+
     def received(self, gateway):
         self._types[self.msgcode](self, gateway)
 
@@ -119,7 +134,7 @@ class Message:
             return "<Message.%s channelid=%d len=%d>" %(name,
                         self.channelid, len(r))
         else:
-            return "<Message.%s channelid=%d %s>" %(name,
+            return "<Message.%s channelid=%d %r>" %(name,
                         self.channelid, self.data)
 
 def _setupmessages():
@@ -135,11 +150,11 @@ def _setupmessages():
              'numchannels': len(active_channels),
              'numexecuting': numexec
         }
-        gateway._send(Message.CHANNEL_DATA, message.channelid, d)
+        gateway._send(Message.CHANNEL_DATA, message.channelid, serialize(d))
 
     def channel_exec(message, gateway):
         channel = gateway._channelfactory.new(message.channelid)
-        gateway._local_schedulexec(channel=channel, sourcetask=message.data)
+        gateway._local_schedulexec(channel=channel,sourcetask=message.data)
 
     def channel_data(message, gateway):
         gateway._channelfactory._local_receive(message.channelid, message.data)
@@ -148,7 +163,7 @@ def _setupmessages():
         gateway._channelfactory._local_close(message.channelid)
 
     def channel_close_error(message, gateway):
-        remote_error = RemoteError(message.data)
+        remote_error = RemoteError(deserialize(message.data))
         gateway._channelfactory._local_close(message.channelid, remote_error)
 
     def channel_last_message(message, gateway):
@@ -159,9 +174,10 @@ def _setupmessages():
         raise SystemExit(0)
 
     def reconfigure(message, gateway):
-        py2str_as_py3str, py3str_as_py2str = message.data
-        gateway._unserializer.py2str_as_py3str = py2str_as_py3str
-        gateway._unserializer.py3str_as_py2str = py3str_as_py2str
+        py2str_as_py3str, py3str_as_py2str, target = deserialize(message.data)
+        if target is None:
+            target = gateway
+        target._strconfig = py2str_as_py3str, py3str_as_py2str
 
     types = [
         status, reconfigure, gateway_terminate,
@@ -340,7 +356,7 @@ class Channel(object):
             if not self._receiveclosed.isSet():
                 put = self.gateway._send
                 if error is not None:
-                    put(Message.CHANNEL_CLOSE_ERROR, self.id, error)
+                    put(Message.CHANNEL_CLOSE_ERROR, self.id, serialize(error))
                 else:
                     put(Message.CHANNEL_CLOSE, self.id)
                 self._trace("sent channel close message")
@@ -380,7 +396,7 @@ class Channel(object):
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
-        self.gateway._send(Message.CHANNEL_DATA, self.id, item)
+        self.gateway._send(Message.CHANNEL_DATA, self.id, serialize(item))
 
     def receive(self, timeout=-1):
         """receive a data item that was sent from the other side.
@@ -494,6 +510,7 @@ class ChannelFactory(object):
 
     def _local_receive(self, id, data):
         # executes in receiver thread
+        data = deserialize(data, self)
         try:
             callback, endmarker = self._callbacks[id]
         except KeyError:
@@ -512,7 +529,7 @@ class ChannelFactory(object):
                 excinfo = sys.exc_info()
                 self.gateway._trace("exception during callback: %s" % excinfo[1])
                 errortext = self.gateway._geterrortext(excinfo)
-                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, errortext)
+                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, serialize(errortext))
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):
@@ -589,7 +606,6 @@ class BaseGateway(object):
         self._io = io
         self.id = id
         self._channelfactory = ChannelFactory(self, _startcount)
-        self._unserializer = Unserializer(self._io, self._channelfactory)
         self._receivelock = threading.RLock()
         # globals may be NONE at process-termination
         self._trace = trace
@@ -607,10 +623,11 @@ class BaseGateway(object):
     def _thread_receiver(self):
         self._trace("RECEIVERTHREAD: starting to run")
         eof = False
+        io = self._io
         try:
             try:
                 while 1:
-                    msg = Message(*self._unserializer.load())
+                    msg = Message.from_io(io)
                     self._trace("received", msg)
                     _receivelock = self._receivelock
                     _receivelock.acquire()
@@ -643,8 +660,9 @@ class BaseGateway(object):
     def _terminate_execution(self):
         pass
 
-    def _send(self, msgcode, channelid=0, data=''):
-        serialize(self._io, (msgcode, channelid, data))
+    def _send(self, msgcode, channelid=0, data=bytes()):
+        header = struct.pack('!bii', msgcode, channelid, len(data))
+        self._io.write(header+data)
         self._trace('sent', Message(msgcode, channelid, data))
 
     def _local_schedulexec(self, channel, sourcetask):
@@ -671,6 +689,7 @@ class BaseGateway(object):
 
 class SlaveGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
+        sourcetask = deserialize(sourcetask, self._channelfactory)
         self._execqueue.put((channel, sourcetask))
 
     def _terminate_execution(self):
@@ -782,9 +801,15 @@ class Unserializer(object):
     py2str_as_py3str = True # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
-    def __init__(self, stream, channelfactory=None):
+    def __init__(self, stream, channel_or_gateway=None):
+        strconfig = default = self.py2str_as_py3str, self.py3str_as_py2str
+        gateway = getattr(channel_or_gateway, 'gateway', channel_or_gateway)
+        strconfig = getattr(channel_or_gateway, '_strconfig', default)
+        if strconfig is default:
+            strconfig = getattr(gateway, '_strconfig', default)
+        self.py2str_as_py3str, self.py3str_as_py2str = strconfig
         self.stream = stream
-        self.channelfactory = channelfactory
+        self.channelfactory = gateway and gateway._channelfactory
 
     def load(self):
         self.stack = []
@@ -930,8 +955,15 @@ def _buildopcodes():
 
 _buildopcodes()
 
-def serialize(io, obj):
+def serialize(obj):
+    io = BytesIO()
     _Serializer(io).save(obj)
+    return io.getvalue()
+
+def deserialize(data, channelfactory=None):
+    io = BytesIO(data)
+    return Unserializer(io, channelfactory).load()
+
 
 class _Serializer(object):
     _dispatch = {}
