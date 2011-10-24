@@ -536,6 +536,7 @@ class ChannelFactory(object):
         # executes in receiver thread
         try:
             callback, endmarker = self._callbacks[id]
+            channel = self._channels.get(id)
         except KeyError:
             channel = self._channels.get(id)
             queue = channel and channel._items
@@ -545,7 +546,7 @@ class ChannelFactory(object):
                 queue.put(deserialize(data, channel))
         else:
             try:
-                data = deserialize(data, self.gateway) #XXX loss of coercion data
+                data = deserialize(data, channel)
                 callback(data)   # even if channel may be already closed
             except KeyboardInterrupt:
                 raise
