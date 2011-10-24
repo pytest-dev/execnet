@@ -152,16 +152,15 @@ class RInfo:
 
 RemoteStatus = RInfo
 
-rinfo_source = """
-import sys, os
-channel.send(dict(
-    executable = sys.executable,
-    version_info = sys.version_info[:5],
-    platform = sys.platform,
-    cwd = os.getcwd(),
-    pid = os.getpid(),
-))
-"""
+def rinfo_source(channel):
+    import sys, os
+    channel.send(dict(
+        executable = sys.executable,
+        version_info = sys.version_info[:5],
+        platform = sys.platform,
+        cwd = os.getcwd(),
+        pid = os.getpid(),
+    ))
 
 
 def _find_non_builtin_globals(source, codeobj):
