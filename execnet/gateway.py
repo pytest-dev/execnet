@@ -55,7 +55,7 @@ class Gateway(gateway_base.BaseGateway):
         but not to try and convert py3 str to py2 str
         """
         self._strconfig = (py2str_as_py3str, py3str_as_py2str)
-        data = serialize(self._strconfig + (None,))
+        data = serialize(self._strconfig)
         self._send(Message.RECONFIGURE, data=data)
 
     def _remote_bootstrap_gateway(self, io):

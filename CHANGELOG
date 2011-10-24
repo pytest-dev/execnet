@@ -3,6 +3,8 @@
 
 - group.remote_exec now supports *kwargs as well
 
+- support per channel string coercion configuration
+
 - Popen2IO.read now reads correct amounts of bytes from nonblocking fd's
 
 - added a ``dont_write_bytecode`` option to Popen gateways, this sets the
