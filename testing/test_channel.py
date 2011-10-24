@@ -5,10 +5,10 @@ import os, sys, time
 import py
 import execnet
 from execnet import gateway_base, gateway
+from testing.test_gateway import _find_version
 needs_early_gc = py.test.mark.skipif("not hasattr(sys, 'getrefcount')")
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 queue = py.builtin._tryimport('queue', 'Queue')
-
 TESTTIMEOUT = 10.0 # seconds
 
 class TestChannelBasicBehaviour:
@@ -340,4 +340,38 @@ class TestChannelFile:
         py.test.raises(ValueError, 'channel.makefile("rw")')
 
 
+
+class TestStringCoerce:
+    @py.test.mark.skipif('sys.version>="3.0"')
+    def test_2to3(self):
+        python = _find_version('3')
+        gw = execnet.makegateway('popen//python=%s'%python)
+        ch = gw.remote_exec('channel.send(channel.receive());'*2)
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, unicode)
+
+        ch.reconfigure(py3str_as_py2str=True)
+
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, str)
+        gw.exit()
+
+    @py.test.mark.skipif('sys.version<"3.0"')
+    def test_3to2(self):
+        python = _find_version('2')
+        gw = execnet.makegateway('popen//python=%s'%python)
+
+        ch = gw.remote_exec('channel.send(channel.receive());'*2)
+        ch.send(bytes('a', 'ascii'))
+        res = ch.receive()
+        assert isinstance(res, str)
+
+        ch.reconfigure(py3str_as_py2str=True, py2str_as_py3str=False)
+
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, bytes)
+        gw.exit()
 

@@ -186,10 +186,11 @@ def _setupmessages():
         raise SystemExit(0)
 
     def reconfigure(message, gateway):
-        py2str_as_py3str, py3str_as_py2str, target = deserialize(message.data)
-        if target is None:
+        if message.channelid == 0:
             target = gateway
-        target._strconfig = py2str_as_py3str, py3str_as_py2str
+        else:
+            target = gateway._channelfactory.new(message.channelid)
+        target._strconfig = deserialize(message.data, gateway)
 
     types = [
         status, reconfigure, gateway_terminate,
@@ -452,6 +453,17 @@ class Channel(object):
             raise StopIteration
     __next__ = next
 
+
+    def reconfigure(self, py2str_as_py3str=True, py3str_as_py2str=False):
+        """
+        set the string coercion for this channel
+        the default is to try to convert py2 str as py3 str,
+        but not to try and convert py3 str to py2 str
+        """
+        self._strconfig = (py2str_as_py3str, py3str_as_py2str)
+        data = serialize(self._strconfig)
+        self.gateway._send(Message.RECONFIGURE, self.id, data=data)
+
 ENDMARKER = object()
 INTERRUPT_TEXT = "keyboard-interrupted"
 
@@ -522,7 +534,6 @@ class ChannelFactory(object):
 
     def _local_receive(self, id, data):
         # executes in receiver thread
-        data = deserialize(data, self)
         try:
             callback, endmarker = self._callbacks[id]
         except KeyError:
@@ -531,9 +542,10 @@ class ChannelFactory(object):
             if queue is None:
                 pass    # drop data
             else:
-                queue.put(data)
+                queue.put(deserialize(data, channel))
         else:
             try:
+                data = deserialize(data, self.gateway) #XXX loss of coercion data
                 callback(data)   # even if channel may be already closed
             except KeyboardInterrupt:
                 raise
@@ -821,7 +833,7 @@ class Unserializer(object):
             strconfig = getattr(gateway, '_strconfig', default)
         self.py2str_as_py3str, self.py3str_as_py2str = strconfig
         self.stream = stream
-        self.channelfactory = gateway and gateway._channelfactory
+        self.channelfactory = getattr(gateway, '_channelfactory', gateway)
 
     def load(self):
         self.stack = []
