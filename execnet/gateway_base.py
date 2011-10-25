@@ -116,7 +116,11 @@ class Message:
 
     @staticmethod
     def from_io(io):
-        header = io.read(9) # type 1, channel 4, payload 4
+        try:
+            header = io.read(9) # type 1, channel 4, payload 4
+        except EOFError:
+            e = sys.exc_info()[1]
+            raise EOFError('couldnt load message header, ' + e.args[0])
         msgtype, channel, payload = struct.unpack('!bii', header)
         return Message(msgtype, channel, io.read(payload))
 
