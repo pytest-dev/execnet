@@ -58,7 +58,7 @@ elif DEBUG:
             debugfile.flush()
         except Exception:
             try:
-                v = exc_info()[1]
+                v = sys.exc_info()[1]
                 sys.stderr.write(
                     "[%s] exception during tracing: %r\n" % (pid, v))
             except Exception:
