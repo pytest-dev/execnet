@@ -981,9 +981,7 @@ def _buildopcodes():
 _buildopcodes()
 
 def serialize(obj):
-    io = BytesIO()
-    _Serializer(io).save(obj)
-    return io.getvalue()
+    return _Serializer().save(obj)
 
 def deserialize(data, channelfactory=None):
     io = BytesIO(data)
@@ -993,8 +991,7 @@ def deserialize(data, channelfactory=None):
 class _Serializer(object):
     _dispatch = {}
 
-    def __init__(self, stream):
-        self._stream = stream
+    def __init__(self):
         self._streamlist = []
 
     def _write(self, data):
@@ -1008,7 +1005,7 @@ class _Serializer(object):
         self._write(opcode.STOP)
         s = type(self._streamlist[0])().join(self._streamlist)
         # atomic write
-        self._stream.write(s)
+        return s
 
     def _save(self, obj):
         tp = type(obj)
