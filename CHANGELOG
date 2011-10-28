@@ -1,7 +1,7 @@
 1.0.10.dev
 --------------------------------
 
-- group.remote_exec now supports *kwargs as well
+- group.remote_exec now supports kwargs as well
 
 - support per channel string coercion configuration
 
