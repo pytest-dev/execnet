@@ -284,7 +284,8 @@ class Channel(object):
                     olditem = items.get(block=False)
                 except queue.Empty:
                     if not (self._closed or self._receiveclosed.isSet()):
-                        _callbacks[self.id] = (callback, endmarker)
+                        _callbacks[self.id] = (callback, endmarker, 
+                                               getattr(self, '_strconfig', None))
                     break
                 else:
                     if olditem is ENDMARKER:
@@ -510,7 +511,7 @@ class ChannelFactory(object):
         except KeyError:
             pass
         try:
-            callback, endmarker = self._callbacks.pop(id)
+            callback, endmarker, strconfig = self._callbacks.pop(id)
         except KeyError:
             pass
         else:
@@ -539,7 +540,7 @@ class ChannelFactory(object):
     def _local_receive(self, id, data):
         # executes in receiver thread
         try:
-            callback, endmarker = self._callbacks[id]
+            callback, endmarker, strconfig= self._callbacks[id]
             channel = self._channels.get(id)
         except KeyError:
             channel = self._channels.get(id)
@@ -550,7 +551,7 @@ class ChannelFactory(object):
                 queue.put(deserialize(data, channel))
         else:
             try:
-                data = deserialize(data, channel)
+                data = deserialize(data, channel, strconfig)
                 callback(data)   # even if channel may be already closed
             except KeyboardInterrupt:
                 raise
@@ -830,8 +831,10 @@ class Unserializer(object):
     py2str_as_py3str = True # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
-    def __init__(self, stream, channel_or_gateway=None):
-        strconfig = default = self.py2str_as_py3str, self.py3str_as_py2str
+    def __init__(self, stream, channel_or_gateway=None, strconfig=None):
+        default = self.py2str_as_py3str, self.py3str_as_py2str
+        if strconfig is None:
+            strconfig = default
         gateway = getattr(channel_or_gateway, 'gateway', channel_or_gateway)
         strconfig = getattr(channel_or_gateway, '_strconfig', default)
         if strconfig is default:
@@ -987,9 +990,9 @@ _buildopcodes()
 def serialize(obj):
     return _Serializer().save(obj)
 
-def deserialize(data, channelfactory=None):
+def deserialize(data, channelfactory=None, strconfig=None):
     io = BytesIO(data)
-    return Unserializer(io, channelfactory).load()
+    return Unserializer(io, channelfactory, strconfig).load()
 
 
 class _Serializer(object):
