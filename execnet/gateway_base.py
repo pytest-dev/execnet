@@ -638,11 +638,11 @@ class BaseGateway(object):
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
         # globals may be NONE at process-termination
-        self._trace = trace
+        self.__trace = trace
         self._geterrortext = geterrortext
 
     def _trace(self, *msg):
-        self._trace(self.id, *msg)
+        self.__trace(self.id, *msg)
 
     def _initreceive(self):
         self._receiverthread = threading.Thread(name="receiver",
