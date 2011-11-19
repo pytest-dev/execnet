@@ -1,0 +1,7 @@
+include CHANGELOG
+include conftest.py
+include README.txt
+include setup.py
+include LICENSE 
+graft doc
+graft testing
