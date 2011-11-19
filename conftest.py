@@ -13,6 +13,8 @@ winpymap = {
     'python2.5': r'C:\Python25\python.exe',
     'python2.4': r'C:\Python24\python.exe',
     'python3.1': r'C:\Python31\python.exe',
+    'python3.2': r'C:\Python31\python.exe',
+    'python3.3': r'C:\Python31\python.exe',
 }
 
 def pytest_runtest_setup(item, __multicall__):
@@ -81,12 +83,12 @@ def pytest_generate_tests(metafunc):
             gwtypes = [metafunc.cls.gwtype]
         else:
             gwtypes = ['popen', 'socket', 'ssh']
-        for gwtype in gwtypes:
-            metafunc.addcall(id=gwtype, param=gwtype)
+        metafunc.parametrize("gw", gwtypes, indirect=True)
     elif 'anypython' in metafunc.funcargnames:
-        for name in ('python3.1', 'python2.4', 'python2.5', 'python2.6',
-                     'python2.7', 'pypy-c', 'jython'):
-            metafunc.addcall(id=name, param=name)
+        metafunc.parametrize("anypython", indirect=True, argvalues=
+            ('python3.3', 'python3.2', 'python2.4', 'python2.5',
+             'python2.6', 'python2.7', 'pypy-c', 'jython')
+        )
 
 def getexecutable(name, cache={}):
     try:
@@ -113,6 +115,7 @@ def pytest_funcarg__anypython(request):
                 executable = py.path.local(executable)
                 if executable.check():
                     return executable
+                executable = None
         py.test.skip("no %s found" % (name,))
     return executable
 
