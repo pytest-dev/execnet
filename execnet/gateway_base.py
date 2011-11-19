@@ -45,6 +45,7 @@ if DEBUG == '2':
 elif DEBUG:
     import tempfile, os.path
     fn = os.path.join(tempfile.gettempdir(), 'execnet-debug-%d' % pid)
+    #sys.stderr.write("execnet-debug at %r" %(fn,))
     debugfile = open(fn, 'w')
     def trace(*msg):
         try:
