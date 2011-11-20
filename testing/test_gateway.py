@@ -350,8 +350,11 @@ class TestTracing:
         monkeypatch.setenv("TEMP", tmpdir) # windows
         monkeypatch.setenv('EXECNET_DEBUG', "1")
         gw = execnet.makegateway("popen")
-        pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
-        slavefile = tmpdir.join("execnet-debug-%s" % pid)
+        #  hack out the debuffilename
+        fn = gw.remote_exec(
+            "import execnet;channel.send(execnet.gateway_base.fn)"
+        ).receive()
+        slavefile = py.path.local(fn)
         assert slavefile.check()
         slave_line = "creating slavegateway"
         for line in slavefile.readlines():
