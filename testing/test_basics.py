@@ -4,7 +4,12 @@ import sys, os, subprocess, inspect
 import execnet
 from execnet import gateway_base, gateway
 from execnet.gateway_base import Message, Channel, ChannelFactory, serialize, \
-        Unserializer
+        Unserializer, Popen2IO
+
+try:
+    from StringIO import StringIO as BytesIO
+except:
+    from io import BytesIO
 
 def test_errors_on_execnet():
     assert hasattr(execnet, 'RemoteError')
@@ -107,6 +112,17 @@ def test_popen_io(anypython, tmpdir):
     ret = proc.wait()
     assert "hello".encode('ascii') in stdout
 
+def test_popen_io_readloop(monkeypatch):
+    sio = BytesIO('test'.encode('ascii'))
+    io = Popen2IO(sio, sio)
+    real_read = io._read
+    def newread(numbytes):
+        if numbytes > 1:
+            numbytes = numbytes-1
+        return real_read(numbytes)
+    io._read = newread
+    result = io.read(3)
+    assert result == 'tes'.encode('ascii')
 
 def test_rinfo_source(anypython, tmpdir):
     check = tmpdir.join("check.py")

@@ -82,8 +82,8 @@ class Popen2IO:
         """Read exactly 'numbytes' bytes from the pipe. """
         # a file in non-blocking mode may return less bytes, so we loop
         buf = bytes()
-        while len(buf) < numbytes:
-            data = self._read(numbytes)
+        while numbytes > len(buf):
+            data = self._read(numbytes-len(buf))
             if not data:
                 raise EOFError("expected %d bytes, got %d" %(numbytes, len(buf)))
             buf += data
@@ -593,11 +593,11 @@ class BaseGateway(object):
         self._unserializer = Unserializer(self._io, self._channelfactory)
         self._receivelock = threading.RLock()
         # globals may be NONE at process-termination
-        self._trace = trace
+        self.__trace = trace
         self._geterrortext = geterrortext
 
     def _trace(self, *msg):
-        self._trace(self.id, *msg)
+        self.__trace(self.id, *msg)
 
     def _initreceive(self):
         self._receiverthread = threading.Thread(name="receiver",
