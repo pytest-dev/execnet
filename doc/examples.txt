@@ -1,0 +1,22 @@
+==============================================================================
+examples
+==============================================================================
+
+.. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
+.. _`execnet-commit`: http://codespeak.net/mailman/listinfo/execnet-commit
+
+Note: all examples with `>>>` prompts are automatically tested.
+
+.. toctree::
+   :maxdepth: 2
+
+   example/test_info.txt
+   example/test_group.txt
+   example/test_multi.txt
+   example/hybridpython.txt
+   example/test_debug.txt
+
+.. toctree::
+   :hidden:
+
+   example/test_ssh_fileserver.txt
