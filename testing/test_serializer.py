@@ -56,7 +56,7 @@ sys.path.insert(0, %r)
 from execnet import gateway_base as serializer
 if sys.version_info > (3, 0): # Need binary output
     sys.stdout = sys.stdout.detach()
-saver = serializer.serialize(sys.stdout, %s)
+sys.stdout.write(serializer.serialize(%s))
 """ % (pyimportdir, obj_rep,))
         popen = subprocess.Popen([str(self.executable), str(script_file)],
                                  stdin=subprocess.PIPE,

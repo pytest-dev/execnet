@@ -1,7 +1,9 @@
 1.0.10.dev
 --------------------------------
 
-- group.remote_exec now supports *kwargs as well
+- group.remote_exec now supports kwargs as well
+
+- support per channel string coercion configuration
 
 - Popen2IO.read now reads correct amounts of bytes from nonblocking fd's
 
