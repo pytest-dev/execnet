@@ -103,14 +103,6 @@ def pytest_funcarg__py2(request):
 def pytest_funcarg__py3(request):
     return _py3_wrapper
 
-def pytest_funcarg__dump(request):
-    py_dump = request.getfuncargvalue(request.param[0])
-    return py_dump.dump
-
-def pytest_funcarg__load(request):
-    py_dump = request.getfuncargvalue(request.param[1])
-    return py_dump.load
-
 simple_tests = [
 #   type: expected before/after repr
     ('int', '4'),
