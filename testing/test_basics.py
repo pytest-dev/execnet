@@ -77,16 +77,16 @@ def test_io_message(anypython, tmpdir):
             print ("checking %s %s" %(i, handler))
             for data in "hello", "hello".encode('ascii'):
                 msg1 = Message(i, i, data)
-                serialize(io, (i, i, data))
+                msg1.to_io(io)
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
                 io.outfile.seek(0)
                 io.infile.seek(0)
                 io.infile.write(x)
                 io.infile.seek(0)
-                msg2 = Message(*unserializer.load())
+                msg2 = Message.from_io(io)
                 assert msg1.channelid == msg2.channelid, (msg1, msg2)
-                assert msg1.data == msg2.data
+                assert msg1.data == msg2.data, (msg1.data, msg2.data)
                 assert msg1.msgcode == msg2.msgcode
         print ("all passed")
     """))
@@ -194,9 +194,9 @@ class TestMessage:
         for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
             data = '23'.encode('ascii')
-            serialize(one, (i, 42, data))
+            Message(i, 42, data).to_io(one)
             two = py.io.BytesIO(one.getvalue())
-            msg = Message(*Unserializer(two, None).load())
+            msg = Message.from_io(two)
             assert msg.msgcode == i
             assert isinstance(msg, Message)
             assert msg.channelid == 42

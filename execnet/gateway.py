@@ -6,7 +6,7 @@ gateway code for initiating popen, socket and ssh connections.
 import sys, os, inspect, types, linecache
 import textwrap
 import execnet
-from execnet.gateway_base import Message, Popen2IO
+from execnet.gateway_base import Message, Popen2IO, serialize
 from execnet import gateway_base
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
@@ -54,9 +54,9 @@ class Gateway(gateway_base.BaseGateway):
         the default is to try to convert py2 str as py3 str,
         but not to try and convert py3 str to py2 str
         """
-        self._unserializer.py2str_as_py3str = py2str_as_py3str
-        self._unserializer.py3str_as_py2str = py3str_as_py2str
-        self._send(Message.RECONFIGURE, data=(py2str_as_py3str, py3str_as_py2str))
+        self._strconfig = (py2str_as_py3str, py3str_as_py2str)
+        data = serialize(self._strconfig)
+        self._send(Message.RECONFIGURE, data=data)
 
     def _remote_bootstrap_gateway(self, io):
         """ send gateway bootstrap code to a remote Python interpreter
@@ -124,7 +124,7 @@ class Gateway(gateway_base.BaseGateway):
         channel = self.newchannel()
         self._send(Message.CHANNEL_EXEC,
                    channel.id,
-                   (source, call_name, kwargs))
+                   serialize((source, call_name, kwargs)))
         return channel
 
     def remote_init_threads(self, num=None):
