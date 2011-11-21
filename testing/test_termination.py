@@ -94,6 +94,13 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
         sys.stdout.write("1\\n")
         sys.stdout.flush()
         sys.stdout.close()
+        class FlushNoOp(object):
+            def flush(self):
+                pass
+        #replace stdout since some python implementations flush and print errors (for example 3.2)
+        # see Issue #5319 (from the release notes of 3.2 Alpha 2)
+        sys.stdout = FlushNoOp()
+
         #  use process at-exit group.terminate call
     """ % str(execnetdir))
     popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE)

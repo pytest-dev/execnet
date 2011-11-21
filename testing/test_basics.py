@@ -4,7 +4,12 @@ import sys, os, subprocess, inspect
 import execnet
 from execnet import gateway_base, gateway
 from execnet.gateway_base import Message, Channel, ChannelFactory, serialize, \
-        Unserializer
+        Unserializer, Popen2IO
+
+try:
+    from StringIO import StringIO as BytesIO
+except:
+    from io import BytesIO
 
 def test_errors_on_execnet():
     assert hasattr(execnet, 'RemoteError')
@@ -67,21 +72,20 @@ def test_io_message(anypython, tmpdir):
         temp_out = BytesIO()
         temp_in = BytesIO()
         io = Popen2IO(temp_out, temp_in)
-        unserializer = Unserializer(io)
         for i, handler in enumerate(Message._types):
             print ("checking %s %s" %(i, handler))
             for data in "hello", "hello".encode('ascii'):
-                msg1 = Message(i, i, data)
-                serialize(io, (i, i, data))
+                msg1 = Message(i, i, serialize(data))
+                msg1.to_io(io)
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
                 io.outfile.seek(0)
                 io.infile.seek(0)
                 io.infile.write(x)
                 io.infile.seek(0)
-                msg2 = Message(*unserializer.load())
+                msg2 = Message.from_io(io)
                 assert msg1.channelid == msg2.channelid, (msg1, msg2)
-                assert msg1.data == msg2.data
+                assert msg1.data == msg2.data, (msg1.data, msg2.data)
                 assert msg1.msgcode == msg2.msgcode
         print ("all passed")
     """))
@@ -107,6 +111,17 @@ def test_popen_io(anypython, tmpdir):
     ret = proc.wait()
     assert "hello".encode('ascii') in stdout
 
+def test_popen_io_readloop(monkeypatch):
+    sio = BytesIO('test'.encode('ascii'))
+    io = Popen2IO(sio, sio)
+    real_read = io._read
+    def newread(numbytes):
+        if numbytes > 1:
+            numbytes = numbytes-1
+        return real_read(numbytes)
+    io._read = newread
+    result = io.read(3)
+    assert result == 'tes'.encode('ascii')
 
 def test_rinfo_source(anypython, tmpdir):
     check = tmpdir.join("check.py")
@@ -178,9 +193,9 @@ class TestMessage:
         for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
             data = '23'.encode('ascii')
-            serialize(one, (i, 42, data))
+            Message(i, 42, data).to_io(one)
             two = py.io.BytesIO(one.getvalue())
-            msg = Message(*Unserializer(two, None).load())
+            msg = Message.from_io(two)
             assert msg.msgcode == i
             assert isinstance(msg, Message)
             assert msg.channelid == 42
