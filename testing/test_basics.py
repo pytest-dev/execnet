@@ -72,11 +72,10 @@ def test_io_message(anypython, tmpdir):
         temp_out = BytesIO()
         temp_in = BytesIO()
         io = Popen2IO(temp_out, temp_in)
-        unserializer = Unserializer(io)
         for i, handler in enumerate(Message._types):
             print ("checking %s %s" %(i, handler))
             for data in "hello", "hello".encode('ascii'):
-                msg1 = Message(i, i, data)
+                msg1 = Message(i, i, serialize(data))
                 msg1.to_io(io)
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
