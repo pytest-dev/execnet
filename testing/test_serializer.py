@@ -111,38 +111,23 @@ def pytest_funcarg__load(request):
     py_dump = request.getfuncargvalue(request.param[1])
     return py_dump.load
 
-def pytest_generate_tests(metafunc):
-    if 'dump' in metafunc.funcargnames and 'load' in metafunc.funcargnames:
-        pys = 'py2', 'py3'
-        for dump in pys:
-            for load in pys:
-                param = (dump, load)
-                conversion = '%s to %s'%param
-                if 'repr' not in metafunc.funcargnames:
-                    metafunc.addcall(id=conversion, param=param)
-                else:
-                    for tp, repr in simple_tests.items():
-                        metafunc.addcall(
-                            id='%s:%s'%(tp, conversion),
-                            param=param,
-                            funcargs={'tp_name':tp, 'repr':repr},
-                            )
-
-
-simple_tests = {
+simple_tests = [
 #   type: expected before/after repr
-    'int': '4',
-    'float':'3.25',
-    'list': '[1, 2, 3]',
-    'tuple': '(1, 2, 3)',
-    'dict': '{(1, 2, 3): 32}',
-}
+    ('int', '4'),
+    ('float', '3.25'),
+    ('list', '[1, 2, 3]'),
+    ('tuple', '(1, 2, 3)'),
+    ('dict', '{(1, 2, 3): 32}'),
+]
 
-def test_simple(tp_name, repr, dump, load):
-    p = dump(repr)
-    tp , v = load(p)
-    assert tp == tp_name
-    assert v == repr
+@py.test.mark.parametrize(["tp_name", "repr"], simple_tests)
+def test_simple(tp_name, repr, py2, py3):
+    for load in py2.load, py3.load:
+        for dump in py3.dump, py2.dump:
+            p = dump(repr)
+            tp , v = load(p)
+            assert tp == tp_name
+            assert v == repr
 
 def test_set(py2, py3):
     for dump in py2.dump, py3.dump:
