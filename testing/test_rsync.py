@@ -1,6 +1,7 @@
 import py
 from execnet import RSync
 import execnet
+from testing.test_serializer import _find_version
 
 def pytest_funcarg__gw1(request):
     return request.cached_setup(
@@ -203,7 +204,8 @@ class TestRSync:
 
     @py.test.mark.skip_if('sys.version_info >= (3)')
     def test_2_to_3_bridge_can_send_binary_files(self, tmpdir):
-        gw = execnet.makegateway('popen//python=python3')
+        python = _find_version('3')
+        gw = execnet.makegateway('popen//python=%s'%(python,))
         source = tmpdir.ensure('source', dir=1)
         for i, content in enumerate('foo bar baz \x10foo'):
             source.join(str(i)).write(content)
