@@ -152,6 +152,7 @@ class RSync(object):
         def itemcallback(req):
             self._receivequeue.put((channel, req))
         channel = gateway.remote_exec(execnet.rsync_remote)
+        channel.reconfigure(py2str_as_py3str=False, py3str_as_py2str=False)
         channel.setcallback(itemcallback, endmarker = None)
         channel.send((str(destdir), options))
         self._channels[channel] = finishedcallback
