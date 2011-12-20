@@ -297,6 +297,12 @@ class TestGlobalFinder(object):
             test
         py.test.raises(ValueError, gateway._source_of_function, func)
 
+    def test_method_call(self):
+        # method names are reason for the simple code object based heusteric failing
+        def f(channel):
+            channel.send(dict(testing=2))
+        assert self.check(f) == []
+
 
 def test_remote_exec_function_with_kwargs(anypython):
     import sys
