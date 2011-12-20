@@ -2,6 +2,13 @@
 
 """
     start socket based minimal readline exec server
+
+    it can exeuted in 2 modes of operation
+
+    1. as normal script, that listens for new connections
+
+    2. via existing_gateway.remote_exec (as imported module)
+
 """
 # this part of the program only executes on the server side
 #
@@ -97,4 +104,9 @@ if __name__ == '__main__':
         hostport = ':8888'
     serversock = bind_and_listen(hostport)
     startserver(serversock, loop=False)
-
+elif __name__=='__channelexec__':
+    bindname = channel.receive()
+    sock = bind_and_listen(bindname)
+    port = sock.getsockname()
+    channel.send(port)
+    startserver(sock)
