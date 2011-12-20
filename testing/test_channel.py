@@ -356,6 +356,18 @@ class TestStringCoerce:
         ch.send('a')
         res = ch.receive()
         assert isinstance(res, str)
+
+        gw.reconfigure(py3str_as_py2str=True)
+        ch = gw.remote_exec('channel.send(channel.receive());'*2)
+
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, str)
+        ch.reconfigure(py3str_as_py2str=False, py2str_as_py3str=False)
+
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, str)
         gw.exit()
 
     @py.test.mark.skipif('sys.version<"3.0"')
@@ -373,5 +385,18 @@ class TestStringCoerce:
         ch.send('a')
         res = ch.receive()
         assert isinstance(res, bytes)
+
+        gw.reconfigure(py3str_as_py2str=True, py2str_as_py3str=False)
+        ch = gw.remote_exec('channel.send(channel.receive());'*2)
+
+        ch.send('a')
+        res = ch.receive()
+        assert isinstance(res, bytes)
+
+        ch.reconfigure(py3str_as_py2str=False, py2str_as_py3str=True)
+        ch.send(bytes('a', 'ascii'))
+        res = ch.receive()
+        assert isinstance(res, str)
+
         gw.exit()
 

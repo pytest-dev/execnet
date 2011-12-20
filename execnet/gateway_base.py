@@ -253,6 +253,8 @@ class Channel(object):
     def __init__(self, gateway, id):
         assert isinstance(id, int)
         self.gateway = gateway
+        #XXX: defaults copied from Unserializer
+        self._strconfig = getattr(gateway, '_strconfig', (True, False))
         self.id = id
         self._items = queue.Queue()
         self._closed = False
@@ -285,8 +287,11 @@ class Channel(object):
                     olditem = items.get(block=False)
                 except queue.Empty:
                     if not (self._closed or self._receiveclosed.isSet()):
-                        _callbacks[self.id] = (callback, endmarker, 
-                                               getattr(self, '_strconfig', None))
+                        _callbacks[self.id] = (
+                            callback,
+                            endmarker,
+                            self._strconfig,
+                        )
                     break
                 else:
                     if olditem is ENDMARKER:
@@ -636,6 +641,7 @@ class BaseGateway(object):
     def __init__(self, io, id, _startcount=2):
         self._io = io
         self.id = id
+        self._strconfig = Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str
         self._channelfactory = ChannelFactory(self, _startcount)
         self._receivelock = threading.RLock()
         # globals may be NONE at process-termination
@@ -720,7 +726,7 @@ class BaseGateway(object):
 
 class SlaveGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
-        sourcetask = deserialize(sourcetask, self._channelfactory)
+        sourcetask = deserialize(sourcetask, self)
         self._execqueue.put((channel, sourcetask))
 
     def _terminate_execution(self):
@@ -833,14 +839,10 @@ class Unserializer(object):
     py3str_as_py2str = False  # false means py2 will get unicode
 
     def __init__(self, stream, channel_or_gateway=None, strconfig=None):
-        default = self.py2str_as_py3str, self.py3str_as_py2str
-        if strconfig is None:
-            strconfig = default
         gateway = getattr(channel_or_gateway, 'gateway', channel_or_gateway)
-        strconfig = getattr(channel_or_gateway, '_strconfig', default)
-        if strconfig is default:
-            strconfig = getattr(gateway, '_strconfig', default)
-        self.py2str_as_py3str, self.py3str_as_py2str = strconfig
+        strconfig = getattr(channel_or_gateway, '_strconfig', strconfig)
+        if strconfig:
+            self.py2str_as_py3str, self.py3str_as_py2str = strconfig
         self.stream = stream
         self.channelfactory = getattr(gateway, '_channelfactory', gateway)
 
