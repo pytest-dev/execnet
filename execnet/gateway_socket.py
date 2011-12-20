@@ -73,17 +73,11 @@ class SocketGateway(Gateway):
             host, port = hostport
 
         mydir = os.path.dirname(__file__)
-        socketserver = os.path.join(mydir, 'script', 'socketserver.py')
-        socketserverbootstrap = "\n".join([
-            open(socketserver, 'r').read(), """if 1:
-            import socket
-            sock = bind_and_listen((%r, %r))
-            port = sock.getsockname()
-            channel.send(port)
-            startserver(sock)
-        """ % (host, port)])
+        from execnet.script import socketserver
+
         # execute the above socketserverbootstrap on the other side
-        channel = gateway.remote_exec(socketserverbootstrap)
+        channel = gateway.remote_exec(socketserver)
+        channel.send((host, port))
         (realhost, realport) = channel.receive()
         #self._trace("new_remote received"
         #               "port=%r, hostname = %r" %(realport, hostname))
