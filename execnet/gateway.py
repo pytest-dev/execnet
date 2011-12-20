@@ -250,13 +250,11 @@ class PopenGateway(PopenCmdGateway):
 
     def _remote_bootstrap_gateway(self, io):
         sendexec(io,
-                 "import sys",
-                 "sys.stdout.write('1')",
-                 "sys.stdout.flush()",
-                 popen_bootstrapline)
-        sendexec(io,
-            "import sys ; sys.path.insert(0, %r)" % importdir,
+            "import sys",
+            "sys.path.insert(0, %r)" % importdir,
             "from execnet.gateway_base import serve, init_popen_io",
+            "sys.stdout.write('1')",
+            "sys.stdout.flush()",
             "serve(init_popen_io(), id='%s-slave')" % self.id,
         )
         s = io.read(1)
