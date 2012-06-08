@@ -22,6 +22,8 @@
 
 - refactor socketserver, so it can be directly remote_exec'd for starting a socket gateway on a remote
 
+- include recent apipkg.py version
+
 1.0.9
 --------------------------------
 
