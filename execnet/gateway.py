@@ -209,29 +209,3 @@ def _source_of_function(function):
 
     return source
 
-class PopenGatewayBase(Gateway):
-    _remotesetup = "io = init_popen_io()"
-    def __init__(self, io, id):
-        super(PopenGatewayBase, self).__init__(io=io, id=id)
-        # fix for jython 2.5.1
-        if io.popen.pid is None:
-            io.popen.pid = self.remote_exec(
-                "import os; channel.send(os.getpid())").receive()
-
-
-class HostNotFound(Exception):
-    pass
-
-class SshGateway(PopenGatewayBase):
-    """ This Gateway provides interaction with a remote Python process,
-        established via the 'ssh' command line binary.
-        The remote side needs to have a Python interpreter executable.
-    """
-
-    def _remote_bootstrap_gateway(self, io):
-        try:
-            super(SshGateway, self)._remote_bootstrap_gateway(io)
-        except EOFError:
-            ret = self._io.wait()
-            if ret == 255:
-                raise HostNotFound(self.remoteaddress)

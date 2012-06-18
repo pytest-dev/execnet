@@ -5,7 +5,13 @@ import os
 import inspect
 import execnet
 from execnet import gateway_base
+from execnet.gateway import Gateway
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
+
+
+class HostNotFound(Exception):
+    pass
+
 
 def bootstrap_popen(io, spec):
     sendexec(io,
@@ -21,14 +27,20 @@ def bootstrap_popen(io, spec):
 
 
 def bootstrap_ssh(io, spec):
-    sendexec(io,
-        inspect.getsource(gateway_base),
-        'io = init_popen_io()',
-        "io.write('1'.encode('ascii'))",
-        "serve(io, id='%s-slave')" % spec.id,
-    )
-    s = io.read(1)
-    assert s == "1".encode('ascii')
+    try:
+        sendexec(io,
+            inspect.getsource(gateway_base),
+            'io = init_popen_io()',
+            "io.write('1'.encode('ascii'))",
+            "serve(io, id='%s-slave')" % spec.id,
+        )
+        s = io.read(1)
+        assert s == "1".encode('ascii')
+    except EOFError:
+        ret = io.wait()
+        if ret == 255:
+            raise HostNotFound(io.remoteaddress)
+
     
 def bootstrap_socket(io, id):
     #XXX: switch to spec
@@ -51,4 +63,20 @@ def bootstrap_socket(io, id):
 def sendexec(io, *sources):
     source = "\n".join(sources)
     io.write((repr(source)+ "\n").encode('ascii'))
+
+def bootstrap(io, spec):
+    if spec.popen:
+        bootstrap_popen(io, spec)
+    elif spec.ssh:
+        bootstrap_ssh(io, spec)
+    else:
+        raise ValueError('unknown gateway type, cant bootstrap')
+    gw = Gateway(io, spec.id)
+    if hasattr(io, 'popen'):
+        # fix for jython 2.5.1
+        if io.popen.pid is None:
+            io.popen.pid = gw.remote_exec(
+                "import os; channel.send(os.getpid())").receive()
+    return gw
+
 
