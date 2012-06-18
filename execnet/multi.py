@@ -7,7 +7,7 @@ Managing Gateway Groups and interactions with multiple channels.
 import os, sys, atexit
 import execnet
 from execnet import XSpec
-from execnet import gateway, gateway_io
+from execnet import gateway, gateway_io, gateway_bootstrap
 from execnet.gateway_base import queue, reraise, trace, TimeoutError
 
 NO_ENDMARKER_WANTED = object()
@@ -76,10 +76,13 @@ class Group:
         self.allocate_id(spec)
         if spec.popen:
             io = gateway_io.create_io(spec)
-            gw = gateway.PopenGateway(io, spec.id)
+            gateway_bootstrap.bootstrap_popen(io, spec)
+            gw = gateway.Gateway(io, spec.id)
+            #XXX jython pid fix
         elif spec.ssh:
             io = gateway_io.create_io(spec)
-            gw = gateway.SshGateway(io, spec.id)
+            gateway_bootstrap.bootstrap_ssh(io, spec)
+            gw = gateway.Gateway(io, spec.id)
         elif spec.socket:
             assert not spec.python, (
                 "socket: specifying python executables not yet supported")
