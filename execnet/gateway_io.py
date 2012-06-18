@@ -53,8 +53,37 @@ def killpid(pid):
 
 
 
+popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
+
+
+def popen_args(spec):
+    python = spec.python or sys.executable
+    args = [str(python), '-u']
+    if spec is not None and spec.dont_write_bytecode:
+        args.append("-B")
+    # Slight gymnastics in ordering these arguments because CPython (as of
+    # 2.7.1) ignores -B if you provide `python -c "something" -B`
+    args.extend(['-c', popen_bootstrapline])
+    return args
+
+def ssh_args(spec):
+    remotepython = spec.python or 'python'
+    args = ['ssh', '-C' ]
+    if spec.ssh_config is not None:
+        args.extend(['-F', str(spec.ssh_config)])
+    remotecmd = '%s -c "%s"' %(remotepython, popen_bootstrapline)
+    args.extend([spec.ssh, remotecmd])
+    return args
 
 
 
-
+def create_io(spec):
+    if spec.popen:
+        args = popen_args(spec)
+        return Popen2IOMaster(args)
+    if spec.ssh:
+        args = ssh_args(spec)
+        io = Popen2IOMaster(args)
+        io.remoteaddress = spec.ssh
+        return io
 

@@ -19,6 +19,10 @@ class Gateway(gateway_base.BaseGateway):
         self._remote_bootstrap_gateway(io)
         self._initreceive()
 
+    @property
+    def remoteaddress(self):
+        return self._io.remoteaddress
+
     def __repr__(self):
         """ return string representing gateway type and status. """
         try:
@@ -218,35 +222,19 @@ def _source_of_function(function):
 
     return source
 
-class PopenCmdGateway(Gateway):
+class PopenGatewayBase(Gateway):
     _remotesetup = "io = init_popen_io()"
-    def __init__(self, args, id):
-        from subprocess import Popen, PIPE
-        io = Popen2IOMaster(args)
-        super(PopenCmdGateway, self).__init__(io=io, id=id)
+    def __init__(self, io, id):
+        super(PopenGatewayBase, self).__init__(io=io, id=id)
         # fix for jython 2.5.1
         if io.popen.pid is None:
             io.popen.pid = self.remote_exec(
                 "import os; channel.send(os.getpid())").receive()
 
-popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
-class PopenGateway(PopenCmdGateway):
+class PopenGateway(PopenGatewayBase):
     """ This Gateway provides interaction with a newly started
         python subprocess.
     """
-    def __init__(self, id, python=None, spec=None):
-        """ instantiate a gateway to a subprocess
-            started with the given 'python' executable.
-        """
-        if not python:
-            python = sys.executable
-        args = [str(python), '-u']
-        if spec is not None and spec.dont_write_bytecode:
-            args.append("-B")
-        # Slight gymnastics in ordering these arguments because CPython (as of
-        # 2.7.1) ignores -B if you provide `python -c "something" -B`
-        args.extend(['-c', popen_bootstrapline])
-        super(PopenGateway, self).__init__(args, id=id)
 
     def _remote_bootstrap_gateway(self, io):
         sendexec(io,
@@ -267,25 +255,11 @@ def sendexec(io, *sources):
 class HostNotFound(Exception):
     pass
 
-class SshGateway(PopenCmdGateway):
+class SshGateway(PopenGatewayBase):
     """ This Gateway provides interaction with a remote Python process,
         established via the 'ssh' command line binary.
         The remote side needs to have a Python interpreter executable.
     """
-    def __init__(self, sshaddress, id, remotepython=None, ssh_config=None):
-        """ instantiate a remote ssh process with the
-            given 'sshaddress' and remotepython version.
-            you may specify an ssh_config file.
-        """
-        self.remoteaddress = sshaddress
-        if remotepython is None:
-            remotepython = "python"
-        args = ['ssh', '-C' ]
-        if ssh_config is not None:
-            args.extend(['-F', str(ssh_config)])
-        remotecmd = '%s -c "%s"' %(remotepython, popen_bootstrapline)
-        args.extend([sshaddress, remotecmd])
-        super(SshGateway, self).__init__(args, id=id)
 
     def _remote_bootstrap_gateway(self, io):
         try:

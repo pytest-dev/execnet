@@ -52,6 +52,7 @@ class SocketGateway(Gateway):
         (py/execnet/script/socketserver.py) that accepts
         SocketGateway connections.
     """
+
     _remotesetup = "import socket\n%s\nio = SocketIO(clientsock)" % inspect.getsource(SocketIO)
 
     def __init__(self, host, port, id):
@@ -60,13 +61,13 @@ class SocketGateway(Gateway):
         """
         self.host = host = str(host)
         self.port = port = int(port)
-        self.remoteaddress = '%s:%d' % (self.host, self.port)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        io = SocketIO(sock)
+        io.remoteaddress = '%s:%d' % (self.host, self.port)
         try:
             sock.connect((host, port))
         except socket.gaierror:
             raise HostNotFound(str(sys.exc_info()[1]))
-        io = SocketIO(sock)
         super(SocketGateway, self).__init__(io=io, id=id)
 
     def new_remote(cls, gateway, id, hostport=None):
