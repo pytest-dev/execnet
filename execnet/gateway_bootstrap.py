@@ -41,7 +41,7 @@ def bootstrap_ssh(io, spec):
         if ret == 255:
             raise HostNotFound(io.remoteaddress)
 
-    
+
 def bootstrap_socket(io, id):
     #XXX: switch to spec
     from execnet.gateway_socket import SocketIO
@@ -58,17 +58,18 @@ def bootstrap_socket(io, id):
     assert s == "1".encode('ascii')
 
 
-
-
 def sendexec(io, *sources):
     source = "\n".join(sources)
     io.write((repr(source)+ "\n").encode('ascii'))
+
 
 def bootstrap(io, spec):
     if spec.popen:
         bootstrap_popen(io, spec)
     elif spec.ssh:
         bootstrap_ssh(io, spec)
+    elif spec.socket:
+        bootstrap_socket(io, spec)
     else:
         raise ValueError('unknown gateway type, cant bootstrap')
     gw = Gateway(io, spec.id)
