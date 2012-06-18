@@ -48,52 +48,44 @@ class SocketIO:
     def kill(self):
         pass
 
-class SocketGateway(Gateway):
-    """ This Gateway provides interaction with a remote process
-        by connecting to a specified socket.  On the remote
-        side you need to manually start a small script
-        (py/execnet/script/socketserver.py) that accepts
-        SocketGateway connections.
+
+def start_via(gateway, hostport=None):
+    """ return a host, port tuple,
+        after instanciating a socketserver on the given gateway
     """
+    if hostport is None:
+        host, port = ('localhost', 0)
+    else:
+        host, port = hostport
+
+    from execnet.script import socketserver
+
+    # execute the above socketserverbootstrap on the other side
+    channel = gateway.remote_exec(socketserver)
+    channel.send((host, port))
+    (realhost, realport) = channel.receive()
+    #self._trace("new_remote received"
+    #               "port=%r, hostname = %r" %(realport, hostname))
+    if not realhost or realhost=="0.0.0.0":
+        realhost = "localhost"
+    return realhost, realport
 
 
-    def __init__(self, host, port, id):
-        """ instantiate a gateway to a process accessed
-            via a host/port specified socket.
-        """
-        self.host = host = str(host)
-        self.port = port = int(port)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        io = SocketIO(sock)
-        io.remoteaddress = '%s:%d' % (self.host, self.port)
-        try:
-            sock.connect((host, port))
-        except socket.gaierror:
-            raise HostNotFound(str(sys.exc_info()[1]))
-        #XXX: temporary
-        from execnet.gateway_bootstrap import bootstrap_socket
-        bootstrap_socket(io, id)
-        super(SocketGateway, self).__init__(io=io, id=id)
+def create_io(spec, group):
+    assert not spec.python, (
+        "socket: specifying python executables not yet supported")
+    gateway_id = spec.installvia
+    if gateway_id:
+        host, port = start_via(group[gateway_id])
+    else:
+        host, port = spec.socket.split(":")
+        port = int(port)
 
-    def new_remote(cls, gateway, id, hostport=None):
-        """ return a new (connected) socket gateway,
-            instantiated through the given 'gateway'.
-        """
-        if hostport is None:
-            host, port = ('localhost', 0)
-        else:
-            host, port = hostport
-
-        mydir = os.path.dirname(__file__)
-        from execnet.script import socketserver
-
-        # execute the above socketserverbootstrap on the other side
-        channel = gateway.remote_exec(socketserver)
-        channel.send((host, port))
-        (realhost, realport) = channel.receive()
-        #self._trace("new_remote received"
-        #               "port=%r, hostname = %r" %(realport, hostname))
-        if not realhost or realhost=="0.0.0.0":
-            realhost = "localhost"
-        return cls(realhost, realport, id=id)
-    new_remote = classmethod(new_remote)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    io = SocketIO(sock)
+    io.remoteaddress = '%s:%d' % (host, port)
+    try:
+        sock.connect((host, port))
+    except socket.gaierror:
+        raise HostNotFound(str(sys.exc_info()[1]))
+    return io
