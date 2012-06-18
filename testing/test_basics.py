@@ -3,7 +3,7 @@ import py
 import pytest
 import sys, os, subprocess, inspect
 import execnet
-from execnet import gateway_base, gateway
+from execnet import gateway_base, gateway, gateway_io
 from execnet.gateway_base import Message, Channel, ChannelFactory, \
         Unserializer, Popen2IO
 
@@ -33,7 +33,7 @@ def test_errors_on_execnet():
     assert hasattr(execnet, 'DataFormatError')
 
 def test_subprocess_interaction(anypython):
-    line = gateway.popen_bootstrapline
+    line = gateway_io.popen_bootstrapline
     compile(line, 'xyz', 'exec')
     args = [str(anypython), '-c', line]
     popen = subprocess.Popen(args, bufsize=0, universal_newlines=True,
