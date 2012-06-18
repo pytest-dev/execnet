@@ -39,6 +39,12 @@ class SocketIO:
         except socket.error:
             pass
 
+    def wait(self):
+        pass
+
+    def kill(self):
+        pass
+
 class SocketGateway(Gateway):
     """ This Gateway provides interaction with a remote process
         by connecting to a specified socket.  On the remote

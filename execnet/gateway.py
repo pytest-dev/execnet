@@ -6,7 +6,8 @@ gateway code for initiating popen, socket and ssh connections.
 import sys, os, inspect, types, linecache
 import textwrap
 import execnet
-from execnet.gateway_base import Message, Popen2IO
+from execnet.gateway_base import Message
+from execnet.gateway_io import Popen2IOMaster
 from execnet import gateway_base
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
@@ -221,12 +222,11 @@ class PopenCmdGateway(Gateway):
     _remotesetup = "io = init_popen_io()"
     def __init__(self, args, id):
         from subprocess import Popen, PIPE
-        self._popen = p = Popen(args, stdin=PIPE, stdout=PIPE)
-        io = Popen2IO(p.stdin, p.stdout)
+        io = Popen2IOMaster(args)
         super(PopenCmdGateway, self).__init__(io=io, id=id)
         # fix for jython 2.5.1
-        if p.pid is None:
-            p.pid = self.remote_exec(
+        if io.popen.pid is None:
+            io.popen.pid = self.remote_exec(
                 "import os; channel.send(os.getpid())").receive()
 
 popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
@@ -291,6 +291,6 @@ class SshGateway(PopenCmdGateway):
         try:
             super(SshGateway, self)._remote_bootstrap_gateway(io)
         except EOFError:
-            ret = self._popen.wait()
+            ret = self._io.wait()
             if ret == 255:
                 raise HostNotFound(self.remoteaddress)

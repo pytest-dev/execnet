@@ -151,8 +151,7 @@ class Group:
                 gw.join()
             while self._gateways_to_join:
                 gw = self._gateways_to_join[0]
-                if hasattr(gw, '_popen'):
-                    gw._popen.wait()
+                gw._io.wait()
                 del self._gateways_to_join[0]
         from execnet.threadpool import WorkerPool
         pool = WorkerPool(1)
@@ -164,9 +163,7 @@ class Group:
                   %(self._gateways_to_join))
             while self._gateways_to_join:
                 gw = self._gateways_to_join.pop(0)
-                popen = getattr(gw, '_popen', None)
-                if popen:
-                    killpopen(popen)
+                gw._io.kill()
 
     def remote_exec(self, source, **kwargs):
         """ remote_exec source on all member gateways and return
@@ -233,38 +230,6 @@ class MultiChannel:
                     first = sys.exc_info()
         if first:
             reraise(*first)
-
-def killpopen(popen):
-    try:
-        if hasattr(popen, 'kill'):
-            popen.kill()
-        else:
-            killpid(popen.pid)
-    except EnvironmentError:
-        sys.stderr.write("ERROR killing: %s\n" %(sys.exc_info()[1]))
-        sys.stderr.flush()
-
-def killpid(pid):
-    if hasattr(os, 'kill'):
-        os.kill(pid, 15)
-    elif sys.platform == "win32" or getattr(os, '_name', None) == 'nt':
-        try:
-            import ctypes
-        except ImportError:
-            import subprocess
-            # T: treekill, F: Force
-            cmd = ("taskkill /T /F /PID %d" %(pid)).split()
-            ret = subprocess.call(cmd)
-            if ret != 0:
-                raise EnvironmentError("taskkill returned %r" %(ret,))
-        else:
-            PROCESS_TERMINATE = 1
-            handle = ctypes.windll.kernel32.OpenProcess(
-                        PROCESS_TERMINATE, False, pid)
-            ctypes.windll.kernel32.TerminateProcess(handle, -1)
-            ctypes.windll.kernel32.CloseHandle(handle)
-    else:
-        raise EnvironmentError("no method to kill %s" %(pid,))
 
 default_group = Group()
 makegateway = default_group.makegateway
