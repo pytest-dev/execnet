@@ -16,7 +16,6 @@ class Gateway(gateway_base.BaseGateway):
 
     def __init__(self, io, id):
         super(Gateway, self).__init__(io=io, id=id, _startcount=1)
-        self._remote_bootstrap_gateway(io)
         self._initreceive()
 
     @property
@@ -63,18 +62,6 @@ class Gateway(gateway_base.BaseGateway):
         data = gateway_base.dumps2(self._strconfig)
         self._send(Message.RECONFIGURE, data=data)
 
-    def _remote_bootstrap_gateway(self, io):
-        """ send gateway bootstrap code to a remote Python interpreter
-            endpoint, which reads from io for a string to execute.
-        """
-        sendexec(io,
-            inspect.getsource(gateway_base),
-            self._remotesetup,
-            "io.write('1'.encode('ascii'))",
-            "serve(io, id='%s-slave')" % self.id,
-        )
-        s = io.read(1)
-        assert s == "1".encode('ascii')
 
     def _rinfo(self, update=False):
         """ return some sys/env information from remote. """
@@ -231,26 +218,6 @@ class PopenGatewayBase(Gateway):
             io.popen.pid = self.remote_exec(
                 "import os; channel.send(os.getpid())").receive()
 
-class PopenGateway(PopenGatewayBase):
-    """ This Gateway provides interaction with a newly started
-        python subprocess.
-    """
-
-    def _remote_bootstrap_gateway(self, io):
-        sendexec(io,
-            "import sys",
-            "sys.path.insert(0, %r)" % importdir,
-            "from execnet.gateway_base import serve, init_popen_io",
-            "sys.stdout.write('1')",
-            "sys.stdout.flush()",
-            "serve(init_popen_io(), id='%s-slave')" % self.id,
-        )
-        s = io.read(1)
-        assert s == "1".encode('ascii')
-
-def sendexec(io, *sources):
-    source = "\n".join(sources)
-    io.write((repr(source)+ "\n").encode('ascii'))
 
 class HostNotFound(Exception):
     pass

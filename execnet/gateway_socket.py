@@ -2,10 +2,12 @@ import socket
 from execnet.gateway import Gateway, HostNotFound
 import os, sys, inspect
 
+
 try: bytes
 except NameError: bytes = str
 
 class SocketIO:
+
     error = (socket.error, EOFError)
     def __init__(self, sock):
         self.sock = sock
@@ -53,7 +55,6 @@ class SocketGateway(Gateway):
         SocketGateway connections.
     """
 
-    _remotesetup = "import socket\n%s\nio = SocketIO(clientsock)" % inspect.getsource(SocketIO)
 
     def __init__(self, host, port, id):
         """ instantiate a gateway to a process accessed
@@ -68,6 +69,9 @@ class SocketGateway(Gateway):
             sock.connect((host, port))
         except socket.gaierror:
             raise HostNotFound(str(sys.exc_info()[1]))
+        #XXX: temporary
+        from execnet.gateway_bootstrap import bootstrap_socket
+        bootstrap_socket(io, id)
         super(SocketGateway, self).__init__(io=io, id=id)
 
     def new_remote(cls, gateway, id, hostport=None):
