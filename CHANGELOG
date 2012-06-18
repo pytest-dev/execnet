@@ -1,5 +1,8 @@
-1.0.10.dev
+1.1.dev
 --------------------------------
+
+- introduce execnet.dumps/loads providing serialization between
+  python interpreters.
 
 - group.remote_exec now supports kwargs as well
 
@@ -22,7 +25,6 @@
 
 - refactor socketserver, so it can be directly remote_exec'd for starting a socket gateway on a remote
 
-- include recent apipkg.py version
 
 1.0.9
 --------------------------------

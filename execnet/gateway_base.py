@@ -143,8 +143,8 @@ class Message:
         FakeChannel.gateway = FakeChannel
         name = self._types[self.msgcode].__name__.upper()
         try:
-            data = deserialize(self.data, FakeChannel)
-        except UnserializationError:
+            data = loads2(self.data, FakeChannel)
+        except LoadError:
             data = self.data
         r = repr(data)
         if len(r) > 50:
@@ -167,7 +167,7 @@ def _setupmessages():
              'numchannels': len(active_channels),
              'numexecuting': numexec
         }
-        gateway._send(Message.CHANNEL_DATA, message.channelid, serialize(d))
+        gateway._send(Message.CHANNEL_DATA, message.channelid, dumps2(d))
 
     def channel_exec(message, gateway):
         channel = gateway._channelfactory.new(message.channelid)
@@ -180,7 +180,7 @@ def _setupmessages():
         gateway._channelfactory._local_close(message.channelid)
 
     def channel_close_error(message, gateway):
-        remote_error = RemoteError(deserialize(message.data))
+        remote_error = RemoteError(loads2(message.data))
         gateway._channelfactory._local_close(message.channelid, remote_error)
 
     def channel_last_message(message, gateway):
@@ -195,7 +195,7 @@ def _setupmessages():
             target = gateway
         else:
             target = gateway._channelfactory.new(message.channelid)
-        target._strconfig = deserialize(message.data, gateway)
+        target._strconfig = loads2(message.data, gateway)
 
     types = [
         status, reconfigure, gateway_terminate,
@@ -380,7 +380,7 @@ class Channel(object):
             if not self._receiveclosed.isSet():
                 put = self.gateway._send
                 if error is not None:
-                    put(Message.CHANNEL_CLOSE_ERROR, self.id, serialize(error))
+                    put(Message.CHANNEL_CLOSE_ERROR, self.id, dumps2(error))
                 else:
                     put(Message.CHANNEL_CLOSE, self.id)
                 self._trace("sent channel close message")
@@ -420,7 +420,7 @@ class Channel(object):
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
-        self.gateway._send(Message.CHANNEL_DATA, self.id, serialize(item))
+        self.gateway._send(Message.CHANNEL_DATA, self.id, dumps2(item))
 
     def receive(self, timeout=-1):
         """receive a data item that was sent from the other side.
@@ -472,7 +472,7 @@ class Channel(object):
         but not to try and convert py3 str to py2 str
         """
         self._strconfig = (py2str_as_py3str, py3str_as_py2str)
-        data = serialize(self._strconfig)
+        data = dumps2(self._strconfig)
         self.gateway._send(Message.RECONFIGURE, self.id, data=data)
 
 ENDMARKER = object()
@@ -554,10 +554,10 @@ class ChannelFactory(object):
             if queue is None:
                 pass    # drop data
             else:
-                queue.put(deserialize(data, channel))
+                queue.put(loads2(data, channel))
         else:
             try:
-                data = deserialize(data, channel, strconfig)
+                data = loads2(data, channel, strconfig)
                 callback(data)   # even if channel may be already closed
             except KeyboardInterrupt:
                 raise
@@ -565,7 +565,7 @@ class ChannelFactory(object):
                 excinfo = sys.exc_info()
                 self.gateway._trace("exception during callback: %s" % excinfo[1])
                 errortext = self.gateway._geterrortext(excinfo)
-                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, serialize(errortext))
+                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, dumps2(errortext))
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):
@@ -726,7 +726,7 @@ class BaseGateway(object):
 
 class SlaveGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
-        sourcetask = deserialize(sourcetask, self)
+        sourcetask = loads2(sourcetask, self)
         self._execqueue.put((channel, sourcetask))
 
     def _terminate_execution(self):
@@ -810,13 +810,13 @@ class SlaveGateway(BaseGateway):
 # Cross-Python pickling code, tested from test_serializer.py
 #
 
-class SerializeError(Exception):
+class DataFormatError(Exception):
     pass
 
-class SerializationError(SerializeError):
+class DumpError(DataFormatError):
     """Error while serializing an object."""
 
-class UnserializationError(SerializeError):
+class LoadError(DataFormatError):
     """Error while unserializing an object."""
 
 if ISPY3:
@@ -824,6 +824,8 @@ if ISPY3:
         return bytes([n])
 else:
     bchr = chr
+
+DUMPFORMAT_VERSION = bchr(1)
 
 FOUR_BYTE_INT_MAX = 2147483647
 
@@ -846,7 +848,11 @@ class Unserializer(object):
         self.stream = stream
         self.channelfactory = getattr(gateway, '_channelfactory', gateway)
 
-    def load(self):
+    def load(self, versioned=False):
+        if versioned:
+            ver = self.stream.read(1)
+            if ver != DUMPFORMAT_VERSION:
+                raise LoadError("wrong dumpformat version")
         self.stack = []
         try:
             while True:
@@ -856,15 +862,15 @@ class Unserializer(object):
                 try:
                     loader = self.num2func[opcode]
                 except KeyError:
-                    raise UnserializationError("unkown opcode %r - "
+                    raise LoadError("unkown opcode %r - "
                         "wire protocol corruption?" % (opcode,))
                 loader(self)
         except _Stop:
             if len(self.stack) != 1:
-                raise UnserializationError("internal unserialization error")
+                raise LoadError("internal unserialization error")
             return self.stack.pop(0)
         else:
-            raise UnserializationError("didn't get STOP")
+            raise LoadError("didn't get STOP")
 
     def load_none(self):
         self.stack.append(None)
@@ -936,7 +942,7 @@ class Unserializer(object):
 
     def load_setitem(self):
         if len(self.stack) < 3:
-            raise UnserializationError("not enough items for setitem")
+            raise LoadError("not enough items for setitem")
         value = self.stack.pop()
         key = self.stack.pop()
         self.stack[-1][key] = value
@@ -990,12 +996,39 @@ def _buildopcodes():
 
 _buildopcodes()
 
-def serialize(obj):
-    return _Serializer().save(obj)
+def dumps(obj):
+    """ return a serialized bytestring of the given obj.
 
-def deserialize(data, channelfactory=None, strconfig=None):
-    io = BytesIO(data)
+    The obj and all contained objects must be of a builtin
+    python type (so nested dicts, sets, etc. are all ok but
+    not user-level instances).
+    """
+    return _Serializer().save(obj, versioned=True)
+
+def loads(bytestring, py2str_as_py3str=False, py3str_as_py2str=False):
+    """ return the object as deserialized from the given bytestring.
+
+    py2str_as_py3str: if true then string (str) objects previously
+                      dumped on Python2 will be loaded as Python3
+                      strings which really are text objects.
+    py3str_as_py2str: if true then string (str) objects previously
+                      dumped on Python3 will be loaded as Python2
+                      strings instead of unicode objects.
+
+    if the bytestring was dumped with an incompatible protocol
+    version or if the bytestring is corrupted, the
+    ``execnet.DataFormatError`` will be raised.
+    """
+    strconfig=(py2str_as_py3str, py3str_as_py2str)
+    io = BytesIO(bytestring)
+    return Unserializer(io, strconfig=strconfig).load(versioned=True)
+
+def loads2(bytestring, channelfactory=None, strconfig=None):
+    io = BytesIO(bytestring)
     return Unserializer(io, channelfactory, strconfig).load()
+
+def dumps2(obj):
+    return _Serializer().save(obj)
 
 
 class _Serializer(object):
@@ -1007,14 +1040,15 @@ class _Serializer(object):
     def _write(self, data):
         self._streamlist.append(data)
 
-    def save(self, obj):
+    def save(self, obj, versioned=False):
         # calling here is not re-entrant but multiple instances
         # may write to the same stream because of the common platform
         # atomic-write guaruantee (concurrent writes each happen atomicly)
+        if versioned:
+            self._write(DUMPFORMAT_VERSION)
         self._save(obj)
         self._write(opcode.STOP)
         s = type(self._streamlist[0])().join(self._streamlist)
-        # atomic write
         return s
 
     def _save(self, obj):
@@ -1025,7 +1059,7 @@ class _Serializer(object):
             methodname = 'save_' + tp.__name__
             meth = getattr(self.__class__, methodname, None)
             if meth is None:
-                raise SerializationError("can't serialize %s" % (tp,))
+                raise DumpError("can't serialize %s" % (tp,))
             dispatch = self._dispatch[tp] = meth
         dispatch(self, obj)
 
@@ -1059,7 +1093,7 @@ class _Serializer(object):
         try:
             as_bytes = s.encode("utf-8")
         except UnicodeEncodeError:
-            raise SerializationError("strings must be utf-8 encodable")
+            raise DumpError("strings must be utf-8 encodable")
         self._write_byte_sequence(as_bytes)
 
     def _write_byte_sequence(self, bytes_):
@@ -1087,7 +1121,7 @@ class _Serializer(object):
     def _write_int4(self, i, error="int must be less than %i" %
                     (FOUR_BYTE_INT_MAX,)):
         if i > FOUR_BYTE_INT_MAX:
-            raise SerializationError(error)
+            raise DumpError(error)
         self._write(struct.pack("!i", i))
 
     def save_list(self, L):
