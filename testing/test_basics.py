@@ -1,9 +1,10 @@
 
 import py
+import pytest
 import sys, os, subprocess, inspect
 import execnet
 from execnet import gateway_base, gateway
-from execnet.gateway_base import Message, Channel, ChannelFactory, serialize, \
+from execnet.gateway_base import Message, Channel, ChannelFactory, \
         Unserializer, Popen2IO
 
 try:
@@ -11,9 +12,25 @@ try:
 except:
     from io import BytesIO
 
+@pytest.mark.parametrize("val", [
+    "123", 42, [1,2,3], ["23", 25]])
+def test_serializer_api(val):
+    dumped = execnet.dumps(val)
+    val2 = execnet.loads(dumped)
+    assert val == val2
+
+def test_serializer_api_version_error(monkeypatch):
+    from execnet import gateway_base
+    bchr = gateway_base.bchr
+    monkeypatch.setattr(gateway_base, 'DUMPFORMAT_VERSION', bchr(1))
+    dumped = execnet.dumps(42)
+    monkeypatch.setattr(gateway_base, 'DUMPFORMAT_VERSION', bchr(2))
+    pytest.raises(execnet.DataFormatError, lambda: execnet.loads(dumped))
+
 def test_errors_on_execnet():
     assert hasattr(execnet, 'RemoteError')
     assert hasattr(execnet, 'TimeoutError')
+    assert hasattr(execnet, 'DataFormatError')
 
 def test_subprocess_interaction(anypython):
     line = gateway.popen_bootstrapline
@@ -75,7 +92,7 @@ def test_io_message(anypython, tmpdir):
         for i, handler in enumerate(Message._types):
             print ("checking %s %s" %(i, handler))
             for data in "hello", "hello".encode('ascii'):
-                msg1 = Message(i, i, serialize(data))
+                msg1 = Message(i, i, dumps(data))
                 msg1.to_io(io)
                 x = io.outfile.getvalue()
                 io.outfile.truncate(0)
