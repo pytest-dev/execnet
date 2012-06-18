@@ -1,5 +1,6 @@
 import socket
-from execnet.gateway import Gateway, HostNotFound
+from execnet.gateway import Gateway
+from execnet.gateway_bootstrap import HostNotFound
 import os, sys, inspect
 
 

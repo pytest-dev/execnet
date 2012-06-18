@@ -74,15 +74,9 @@ class Group:
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
         self.allocate_id(spec)
-        if spec.popen:
+        if spec.popen or spec.ssh:
             io = gateway_io.create_io(spec)
-            gateway_bootstrap.bootstrap_popen(io, spec)
-            gw = gateway.Gateway(io, spec.id)
-            #XXX jython pid fix
-        elif spec.ssh:
-            io = gateway_io.create_io(spec)
-            gateway_bootstrap.bootstrap_ssh(io, spec)
-            gw = gateway.Gateway(io, spec.id)
+            gw = gateway_bootstrap.bootstrap(io, spec)
         elif spec.socket:
             assert not spec.python, (
                 "socket: specifying python executables not yet supported")
