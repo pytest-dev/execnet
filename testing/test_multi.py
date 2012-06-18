@@ -79,8 +79,14 @@ class TestGroup:
         assert atexitlist == [group._cleanup_atexit]
         exitlist = []
         joinlist = []
+
+        class PseudoIO:
+            def wait(self):
+                pass
+
         class PseudoGW:
             id = "9999"
+            _io = PseudoIO()
             def exit(self):
                 exitlist.append(self)
                 group._unregister(self)

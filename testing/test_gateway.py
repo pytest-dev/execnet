@@ -4,7 +4,7 @@ mostly functional tests of gateways.
 import os, sys, time
 import py
 import execnet
-from execnet import gateway_base, gateway
+from execnet import gateway_base, gateway, gateway_io
 from testing.test_serializer import _find_version
 TESTTIMEOUT = 10.0 # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
@@ -267,9 +267,8 @@ class TestSshPopenGateway:
     gwtype = "ssh"
 
     def test_sshconfig_config_parsing(self, monkeypatch):
-        import subprocess
         l = []
-        monkeypatch.setattr(subprocess, 'Popen',
+        monkeypatch.setattr(gateway_io, 'Popen',
             lambda *args, **kwargs: l.append(args[0]))
         py.test.raises(AttributeError,
             """execnet.makegateway("ssh=xyz//ssh_config=qwe")""")
