@@ -82,7 +82,7 @@ def pytest_generate_tests(metafunc):
         elif hasattr(metafunc.cls, 'gwtype'):
             gwtypes = [metafunc.cls.gwtype]
         else:
-            gwtypes = ['popen', 'socket', 'ssh']
+            gwtypes = ['popen', 'socket', 'ssh', 'proxy']
         metafunc.parametrize("gw", gwtypes, indirect=True)
     elif 'anypython' in metafunc.funcargnames:
         metafunc.parametrize("anypython", indirect=True, argvalues=
@@ -144,4 +144,7 @@ def pytest_funcarg__gw(request):
         elif request.param == "ssh":
             sshhost = request.getfuncargvalue('specssh').ssh
             gw = group.makegateway("ssh=%s//id=ssh" %(sshhost,))
+        elif request.param == 'proxy':
+            master = group.makegateway('popen//id=proxy-transport')
+            gw = group.makegateway('popen//via=proxy-transport//id=proxy')
         return gw
