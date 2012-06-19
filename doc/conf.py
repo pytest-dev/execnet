@@ -38,7 +38,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'execnet'
-copyright = '2009, holger krekel and others'
+copyright = '2012, holger krekel and others'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -46,7 +46,7 @@ copyright = '2009, holger krekel and others'
 #
 # The short X.Y version.
 import execnet
-version = "1.0.9"
+version = "1.1"
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -76,6 +76,8 @@ exclude_trees = ['_build']
 # If true, the current module name will be prepended to all description
 # unit titles (such as .. function::).
 add_module_names = True
+
+linkcheck_timeout = 20.0
 
 # If true, sectionauthor and moduleauthor directives will be shown in the
 # output. They are ignored by default.
