@@ -5,8 +5,12 @@ creates io instances used for gateway io
 """
 import os
 import sys
-from execnet.gateway_base import Popen2IO
 from subprocess import Popen, PIPE
+
+try:
+    from execnet.gateway_base import Popen2IO, Message
+except ImportError:
+    from __main__ import Popen2IO, Message
 
 class Popen2IOMaster(Popen2IO):
     def __init__(self, args):
@@ -87,3 +91,81 @@ def create_io(spec):
         io.remoteaddress = spec.ssh
         return io
 
+RIO_KILL = 1
+RIO_WAIT = 2
+RIO_REMOTEADDRESS = 3
+RIO_CLOSE_WRITE = 4
+
+class RemoteIO(object):
+    def __init__(self, master_channel):
+        self.iochan = master_channel.gateway.newchannel()
+        self.controlchan = master_channel.gateway.newchannel()
+        master_channel.send((self.iochan, self.controlchan))
+        self.io = self.iochan.makefile('r')
+
+
+    def read(self, nbytes):
+        return self.io.read(nbytes)
+
+    def write(self, data):
+        return self.iochan.send(data)
+
+    def _controll(self, event):
+        self.controlchan.send(event)
+        return self.controlchan.receive()
+
+    def close_write(self):
+        self._controll(RIO_CLOSE_WRITE)
+
+    def kill(self):
+        self._controll(RIO_KILL)
+
+    def wait(self):
+        return self._controll(RIO_WAIT)
+
+    def __repr__(self):
+        return '<RemoteIO via %s>' % (self.iochan.gateway.id, )
+
+
+def serve_remote_io(channel):
+    class PseudoSpec(object):
+        def __getattr__(self, name):
+            return None
+    spec = PseudoSpec()
+    spec.__dict__.update(channel.receive())
+    io = create_io(spec)
+    io_chan, control_chan = channel.receive()
+    io_target = io_chan.makefile()
+
+    def iothread():
+        initial = io.read(1)
+        assert initial == '1'.encode('ascii')
+        channel.gateway._trace('initializing transfer io for', spec.id)
+        io_target.write(initial)
+        while True:
+            message = Message.from_io(io)
+            message.to_io(io_target)
+    import threading
+    thread = threading.Thread(name='io-forward-'+spec.id,
+                              target=iothread)
+    thread.setDaemon(True)
+    thread.start()
+
+    def iocallback(data):
+        io.write(data)
+    io_chan.setcallback(iocallback)
+
+
+    def controll(data):
+        if data==RIO_WAIT:
+            control_chan.send(io.wait())
+        elif data==RIO_KILL:
+            control_chan.send(io.kill())
+        elif data==RIO_REMOTEADDRESS:
+            control_chan.send(io.remoteaddress)
+        elif data==RIO_CLOSE_WRITE:
+            control_chan.send(io.close_write())
+    control_chan.setcallback(controll)
+
+if __name__ == "__channelexec__":
+    serve_remote_io(channel)

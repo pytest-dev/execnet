@@ -147,7 +147,7 @@ class Message:
         except LoadError:
             data = self.data
         r = repr(data)
-        if len(r) > 50:
+        if len(r) > 90:
             return "<Message.%s channelid=%d len=%d>" %(name,
                         self.channelid, len(r))
         else:

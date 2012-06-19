@@ -74,7 +74,14 @@ class Group:
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
         self.allocate_id(spec)
-        if spec.popen or spec.ssh:
+        if spec.via:
+            assert not spec.socket
+            master = self[spec.via]
+            channel = master.remote_exec(gateway_io)
+            channel.send(vars(spec))
+            io = gateway_io.RemoteIO(channel)
+            gw = gateway_bootstrap.bootstrap(io, spec)
+        elif spec.popen or spec.ssh:
             io = gateway_io.create_io(spec)
             gw = gateway_bootstrap.bootstrap(io, spec)
         elif spec.socket:
@@ -135,7 +142,7 @@ class Group:
         and ssh-gateways.  Timeout defaults to None meaning
         open-ended waiting and no kill attempts.
         """
-        for gw in self:
+        for gw in reversed(self):
             gw.exit()
         def join_receiver_and_wait_for_subprocesses():
             for gw in self._gateways_to_join:
