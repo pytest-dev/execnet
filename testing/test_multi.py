@@ -84,9 +84,13 @@ class TestGroup:
             def wait(self):
                 pass
 
+        class PseudoSpec:
+            via = None
+
         class PseudoGW:
             id = "9999"
             _io = PseudoIO()
+            spec = PseudoSpec()
             def exit(self):
                 exitlist.append(self)
                 group._unregister(self)
@@ -176,3 +180,11 @@ class TestGroup:
         mch = group.remote_exec(fun, arg=1)
         result = mch.receive_each()
         assert result == [1]
+
+    def test_terminate_with_proxying(self):
+        group = Group()
+        master = group.makegateway('popen//id=master')
+        slave = group.makegateway('popen//via=master//id=slave')
+        group.terminate(1.0)
+
+
