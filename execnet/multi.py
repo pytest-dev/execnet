@@ -142,26 +142,34 @@ class Group:
         and ssh-gateways.  Timeout defaults to None meaning
         open-ended waiting and no kill attempts.
         """
-        for gw in reversed(self):
-            gw.exit()
-        def join_receiver_and_wait_for_subprocesses():
-            for gw in self._gateways_to_join:
-                gw.join()
-            while self._gateways_to_join:
-                gw = self._gateways_to_join[0]
-                gw._io.wait()
-                del self._gateways_to_join[0]
-        from execnet.threadpool import WorkerPool
-        pool = WorkerPool(1)
-        reply = pool.dispatch(join_receiver_and_wait_for_subprocesses)
-        try:
-            reply.get(timeout=timeout)
-        except IOError:
-            trace("Gateways did not come down after timeout: %r"
-                  %(self._gateways_to_join))
-            while self._gateways_to_join:
-                gw = self._gateways_to_join.pop(0)
-                gw._io.kill()
+
+        while self:
+            #XXX multiplies the maximal timeout by the levels of indirection
+            vias = {}
+            for gw in self:
+                if gw.spec.via:
+                    vias[gw.spec.via] = True
+            for gw in self:
+                if gw.id not in vias:
+                    gw.exit()
+            def join_receiver_and_wait_for_subprocesses():
+                for gw in self._gateways_to_join:
+                    gw.join()
+                while self._gateways_to_join:
+                    gw = self._gateways_to_join[0]
+                    gw._io.wait()
+                    del self._gateways_to_join[0]
+            from execnet.threadpool import WorkerPool
+            pool = WorkerPool(1)
+            reply = pool.dispatch(join_receiver_and_wait_for_subprocesses)
+            try:
+                reply.get(timeout=timeout)
+            except IOError:
+                trace("Gateways did not come down after timeout: %r"
+                      %(self._gateways_to_join))
+                while self._gateways_to_join:
+                    gw = self._gateways_to_join.pop(0)
+                    gw._io.kill()
 
     def remote_exec(self, source, **kwargs):
         """ remote_exec source on all member gateways and return
