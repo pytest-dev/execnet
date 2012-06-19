@@ -698,9 +698,15 @@ class BaseGateway(object):
         pass
 
     def _send(self, msgcode, channelid=0, data=bytes()):
-        header = struct.pack('!bii', msgcode, channelid, len(data))
-        self._io.write(header+data)
-        self._trace('sent', Message(msgcode, channelid, data))
+        message = Message(msgcode, channelid, data)
+        try:
+            message.to_io(self._io)
+            self._trace('sent', message)
+        except (IOError, ValueError):
+            e = sys.exc_info()[1]
+            self._trace('failed to send', message, e)
+            raise
+
 
     def _local_schedulexec(self, channel, sourcetask):
         channel.close("execution disallowed")
