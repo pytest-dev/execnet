@@ -12,6 +12,7 @@ Note: all examples with `>>>` prompts are automatically tested.
 
    example/test_info.txt
    example/test_group.txt
+   example/test_proxy.txt
    example/test_multi.txt
    example/hybridpython.txt
    example/test_debug.txt
