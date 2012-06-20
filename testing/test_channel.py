@@ -343,9 +343,9 @@ class TestChannelFile:
 
 class TestStringCoerce:
     @py.test.mark.skipif('sys.version>="3.0"')
-    def test_2to3(self):
+    def test_2to3(self, makegateway):
         python = _find_version('3')
-        gw = execnet.makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s'%python)
         ch = gw.remote_exec('channel.send(channel.receive());'*2)
         ch.send('a')
         res = ch.receive()
@@ -371,9 +371,9 @@ class TestStringCoerce:
         gw.exit()
 
     @py.test.mark.skipif('sys.version<"3.0"')
-    def test_3to2(self):
+    def test_3to2(self, makegateway):
         python = _find_version('2')
-        gw = execnet.makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s'%python)
 
         ch = gw.remote_exec('channel.send(channel.receive());'*2)
         ch.send(bytes('a', 'ascii'))

@@ -10,7 +10,7 @@ TESTTIMEOUT = 10.0 # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 
 def test_deprecation(recwarn, monkeypatch):
-    execnet.PopenGateway()
+    execnet.PopenGateway().exit()
     assert recwarn.pop(DeprecationWarning)
     monkeypatch.setattr(py.std.socket, 'socket', lambda *args: 0/0)
     py.test.raises(Exception, 'execnet.SocketGateway("localhost", 8811)')
@@ -175,10 +175,10 @@ class TestBasicGateway:
 class TestPopenGateway:
     gwtype = 'popen'
 
-    def test_chdir_separation(self, tmpdir):
+    def test_chdir_separation(self, tmpdir, makegateway):
         old = tmpdir.chdir()
         try:
-            gw = execnet.makegateway('popen')
+            gw = makegateway('popen')
         finally:
             waschangedir = old.chdir()
         c = gw.remote_exec("import os ; channel.send(os.getcwd())")
@@ -190,11 +190,11 @@ class TestPopenGateway:
             'gw.remote_exec("x y").waitclose()')
         assert "gateway_base" in e.value.formatted
 
-    def test_many_popen(self):
+    def test_many_popen(self, makegateway):
         num = 4
         l = []
         for i in range(num):
-            l.append(execnet.makegateway('popen'))
+            l.append(makegateway('popen'))
         channels = []
         for gw in l:
             channel = gw.remote_exec("""channel.send(42)""")
@@ -221,8 +221,8 @@ class TestPopenGateway:
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info == py.std.sys.version_info
 
-    def test_waitclose_on_remote_killed(self):
-        gw = execnet.makegateway('popen')
+    def test_waitclose_on_remote_killed(self, makegateway):
+        gw = makegateway('popen')
         channel = gw.remote_exec("""
             import os
             import time
@@ -242,36 +242,36 @@ class TestPopenGateway:
         py.test.raises(channel.RemoteError, channel.receive)
 
     @py.test.mark.skipif('sys.version_info < (2, 6)')
-    def test_dont_write_bytecode(self):
+    def test_dont_write_bytecode(self, makegateway):
         check_sys_dont_write_bytecode = """
             import sys
             channel.send(sys.dont_write_bytecode)
         """
 
-        gw = execnet.makegateway('popen')
+        gw = makegateway('popen')
         channel = gw.remote_exec(check_sys_dont_write_bytecode)
         ret = channel.receive()
         assert not ret
-        gw = execnet.makegateway('popen//dont_write_bytecode')
+        gw = makegateway('popen//dont_write_bytecode')
         channel = gw.remote_exec(check_sys_dont_write_bytecode)
         ret = channel.receive()
         assert ret
 
 @py.test.mark.skipif("config.option.broken_isp")
-def test_socket_gw_host_not_found(gw):
-    py.test.raises(execnet.HostNotFound,
-            'execnet.makegateway("socket=qwepoipqwe:9000")'
-    )
+def test_socket_gw_host_not_found(gw, makegateway):
+    py.test.raises(execnet.HostNotFound, lambda:
+            makegateway("socket=qwepoipqwe:9000"))
 
 class TestSshPopenGateway:
     gwtype = "ssh"
 
-    def test_sshconfig_config_parsing(self, monkeypatch):
+    def test_sshconfig_config_parsing(self, monkeypatch, makegateway):
         l = []
         monkeypatch.setattr(gateway_io, 'Popen',
             lambda *args, **kwargs: l.append(args[0]))
-        py.test.raises(AttributeError,
-            """execnet.makegateway("ssh=xyz//ssh_config=qwe")""")
+        py.test.raises(AttributeError, lambda:
+            makegateway("ssh=xyz//ssh_config=qwe"))
+
         assert len(l) == 1
         popen_args = l[0]
         i = popen_args.index('-F')
@@ -280,13 +280,13 @@ class TestSshPopenGateway:
     def test_sshaddress(self, gw, specssh):
         assert gw.remoteaddress == specssh.ssh
 
-    def test_host_not_found(self, gw):
-        py.test.raises(execnet.HostNotFound,
-            "execnet.makegateway('ssh=nowhere.codespeak.net')")
+    def test_host_not_found(self, gw, makegateway):
+        py.test.raises(execnet.HostNotFound, lambda:
+            makegateway('ssh=nowhere.codespeak.net'))
 
 class TestThreads:
-    def test_threads(self):
-        gw = execnet.makegateway('popen')
+    def test_threads(self, makegateway):
+        gw = makegateway('popen')
         gw.remote_init_threads(3)
         c1 = gw.remote_exec("channel.send(channel.receive())")
         c2 = gw.remote_exec("channel.send(channel.receive())")
@@ -297,9 +297,9 @@ class TestThreads:
         res = c1.receive()
         assert res == 42
 
-    def test_threads_race_sending(self):
+    def test_threads_race_sending(self, makegateway):
         # multiple threads sending data in parallel
-        gw = execnet.makegateway("popen")
+        gw = makegateway("popen")
         num = 5
         gw.remote_init_threads(num)
         print ("remote_init_threads(%d)" % num)
@@ -318,8 +318,8 @@ class TestThreads:
         for ch in channels:
             ch.waitclose(TESTTIMEOUT)
 
-    def test_status_with_threads(self):
-        gw = execnet.makegateway('popen')
+    def test_status_with_threads(self, makegateway):
+        gw = makegateway('popen')
         gw.remote_init_threads(3)
         c1 = gw.remote_exec("channel.send(1) ; channel.receive()")
         c2 = gw.remote_exec("channel.send(2) ; channel.receive()")
@@ -336,19 +336,19 @@ class TestThreads:
         assert rstatus.numexecuting == 0 + 1
         assert rstatus.execqsize == 0
 
-    def test_threads_twice(self):
-        gw = execnet.makegateway('popen')
+    def test_threads_twice(self, makegateway):
+        gw = makegateway('popen')
         gw.remote_init_threads(3)
         py.test.raises(IOError, gw.remote_init_threads, 3)
 
 
 class TestTracing:
-    def test_popen_filetracing(self, testdir, monkeypatch):
+    def test_popen_filetracing(self, testdir, monkeypatch, makegateway):
         tmpdir = testdir.tmpdir
         monkeypatch.setenv("TMP", tmpdir)
         monkeypatch.setenv("TEMP", tmpdir) # windows
         monkeypatch.setenv('EXECNET_DEBUG', "1")
-        gw = execnet.makegateway("popen")
+        gw = makegateway("popen")
         #  hack out the debuffilename
         fn = gw.remote_exec(
             "import execnet;channel.send(execnet.gateway_base.fn)"
@@ -363,9 +363,9 @@ class TestTracing:
             py.test.fail("did not find %r in tracefile" %(slave_line,))
         gw.exit()
 
-    def test_popen_stderr_tracing(self, capfd, monkeypatch):
+    def test_popen_stderr_tracing(self, capfd, monkeypatch, makegateway):
         monkeypatch.setenv('EXECNET_DEBUG', "2")
-        gw = execnet.makegateway("popen")
+        gw = makegateway("popen")
         pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
         out, err = capfd.readouterr()
         slave_line = "[%s] creating slavegateway" % pid
@@ -378,9 +378,9 @@ class TestTracing:
 
 class TestStringCoerce:
     @py.test.mark.skipif('sys.version>="3.0"')
-    def test_2to3(self):
+    def test_2to3(self, makegateway):
         python = _find_version('3')
-        gw = execnet.makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s'%python)
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send('a')
         res = ch.receive()
@@ -395,9 +395,9 @@ class TestStringCoerce:
         gw.exit()
 
     @py.test.mark.skipif('sys.version<"3.0"')
-    def test_3to2(self):
+    def test_3to2(self, makegateway):
         python = _find_version('2')
-        gw = execnet.makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s'%python)
 
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send(bytes('a', 'ascii'))

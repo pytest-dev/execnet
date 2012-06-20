@@ -25,6 +25,11 @@ def pytest_runtest_setup(item, __multicall__):
         py.test.skip("pypy-c tests skipped, use --pypy to run them.")
     return res
 
+def pytest_funcarg__makegateway(request):
+    group = execnet.Group()
+    request.addfinalizer(lambda: group.terminate(0.5))
+    return group.makegateway
+
 pytest_plugins = ['pytester', 'doctest']
 # configuration information for tests
 def pytest_addoption(parser):
