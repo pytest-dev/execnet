@@ -5,7 +5,10 @@ Managing Gateway Groups and interactions with multiple channels.
 """
 
 import os, sys, atexit
+import time
 import execnet
+from execnet.threadpool import WorkerPool
+
 from execnet import XSpec
 from execnet import gateway, gateway_io, gateway_bootstrap
 from execnet.gateway_base import queue, reraise, trace, TimeoutError
@@ -144,7 +147,7 @@ class Group:
         """
 
         while self:
-            #XXX multiplies the maximal timeout by the levels of indirection
+            from execnet.threadpool import WorkerPool
             vias = {}
             for gw in self:
                 if gw.spec.via:
@@ -152,24 +155,18 @@ class Group:
             for gw in self:
                 if gw.id not in vias:
                     gw.exit()
-            def join_receiver_and_wait_for_subprocesses():
-                for gw in self._gateways_to_join:
-                    gw.join()
-                while self._gateways_to_join:
-                    gw = self._gateways_to_join[0]
-                    gw._io.wait()
-                    del self._gateways_to_join[0]
-            from execnet.threadpool import WorkerPool
-            pool = WorkerPool(1)
-            reply = pool.dispatch(join_receiver_and_wait_for_subprocesses)
-            try:
-                reply.get(timeout=timeout)
-            except IOError:
-                trace("Gateways did not come down after timeout: %r"
-                      %(self._gateways_to_join))
-                while self._gateways_to_join:
-                    gw = self._gateways_to_join.pop(0)
-                    gw._io.kill()
+
+            def join_wait(gw):
+                gw.join()
+                gw._io.wait()
+            def kill(gw):
+                trace("Gateways did not come down after timeout: %r" % gw)
+                gw._io.kill()
+
+            safe_terminate(timeout, [
+                (lambda: join_wait(gw), lambda: kill(gw))
+                for gw in self._gateways_to_join])
+            self._gateways_to_join[:] = []
 
     def remote_exec(self, source, **kwargs):
         """ remote_exec source on all member gateways and return
@@ -236,6 +233,26 @@ class MultiChannel:
                     first = sys.exc_info()
         if first:
             reraise(*first)
+
+
+
+def safe_terminate(timeout, list_of_paired_functions):
+    workerpool = WorkerPool(len(list_of_paired_functions)*2)
+
+    def termkill(termfunc, killfunc):
+        termreply = workerpool.dispatch(termfunc)
+        try:
+            termreply.get(timeout=timeout)
+        except IOError:
+            killfunc()
+
+    replylist = []
+    for termfunc, killfunc in list_of_paired_functions:
+        reply = workerpool.dispatch(termkill, termfunc, killfunc)
+        replylist.append(reply)
+    for reply in replylist:
+        reply.get()
+
 
 default_group = Group()
 makegateway = default_group.makegateway

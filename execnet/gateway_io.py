@@ -18,7 +18,10 @@ class Popen2IOMaster(Popen2IO):
         Popen2IO.__init__(self, p.stdin, p.stdout)
 
     def wait(self):
-        return self.popen.wait()
+        try:
+            return self.popen.wait()
+        except OSError:
+            pass  # subprocess probably dead already
 
     def kill(self):
         killpopen(self.popen)
