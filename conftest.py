@@ -91,7 +91,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("gw", gwtypes, indirect=True)
     elif 'anypython' in metafunc.funcargnames:
         metafunc.parametrize("anypython", indirect=True, argvalues=
-            ('python3.3', 'python3.2', 'python2.4', 'python2.5',
+            ('python3.3', 'python3.2', 'python2.5',
              'python2.6', 'python2.7', 'pypy-c', 'jython')
         )
 
