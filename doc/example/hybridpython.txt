@@ -1,6 +1,38 @@
 Connecting different Python interpreters
 ==========================================
 
+.. _`dumps/loads examples`:
+
+Dumping and loading values across interpreter versions
+----------------------------------------------------------
+
+.. versionadded:: 1.1
+
+Execnet offers a new safe and fast :ref:`dumps/loads API` which you 
+can use to dump builtin python data structures and load them 
+later with the same or a different python interpreter (including
+between Python2 and Python3).  The standard library offers
+the pickle and marshal modules but they do not work safely
+between different interpreter versions.  Using xml/json
+requires a mapping of Python objects and is not easy to
+get right.  Moreover, execnet allows to control handling
+of bytecode/strings/unicode types. Here is an example::
+
+    # using python2
+    import execnet
+    with open("data.py23", "wb") as f:
+        f.write(execnet.dumps(["hello", "world"]))
+
+    # using Python3 
+    import execnet
+    with open("data.py23", "rb") as f:
+        val = execnet.loads(f.read(), py2str_as_py3str=True)
+    assert val == ["hello", "world"]
+
+See the :ref:`dumps/loads API` for more details on string
+conversion options.  Please note, that you can not dump 
+user-level instances, only builtin python types.
+
 Connect to Python2/Numpy from Python3
 ----------------------------------------
 
