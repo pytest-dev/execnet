@@ -615,15 +615,21 @@ class ChannelFileRead(ChannelFile):
                 self._buffer += self.channel.receive()
         except EOFError:
             self.close()
-        ret = self._buffer[:n]
-        self._buffer = self._buffer[n:]
+        if self._buffer is None:
+            ret = ""
+        else:
+            ret = self._buffer[:n]
+            self._buffer = self._buffer[n:]
         return ret
 
     def readline(self):
-        i = self._buffer.find("\n")
-        if i != -1:
-            return self.read(i+1)
-        line = self.read(len(self._buffer)+1)
+        if self._buffer is not None:
+            i = self._buffer.find("\n")
+            if i != -1:
+                return self.read(i+1)
+            line = self.read(len(self._buffer)+1)
+        else:
+            line = self.read(1)
         while line and line[-1] != "\n":
             c = self.read(1)
             if not c:
