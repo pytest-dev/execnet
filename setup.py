@@ -40,7 +40,7 @@ def main():
         name='execnet',
         description='execnet: rapid multi-Python deployment',
         long_description = __doc__,
-        version='1.1.dev1',
+        version='1.1',
         url='http://codespeak.net/execnet',
         license='GPL V2 or later',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
@@ -48,7 +48,7 @@ def main():
         author_email='holger at merlinux.eu',
         cmdclass = {'test': PyTest},
         classifiers=[
-            'Development Status :: 5 - Production/Stable',
+            'Development Status :: 4 - Beta',
             'Intended Audience :: Developers',
             'License :: OSI Approved :: GNU General Public License (GPL)',
             'Operating System :: POSIX',
