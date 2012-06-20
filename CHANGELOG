@@ -1,4 +1,4 @@
-1.1.dev
+1.1
 --------------------------------
 
 - introduce execnet.dumps/loads providing serialization between
@@ -20,7 +20,7 @@
 
 - fix issue 1 - decouple string coercion of channels and gateway
 
-- fix issue #2 - propperly reconfigure the channels string coercion for rsync,
+- fix issue #2 - properly reconfigure the channels string coercion for rsync,
   so it can send from python2 to python3
 
 - refactor socketserver, so it can be directly remote_exec'd for starting a socket gateway on a remote
