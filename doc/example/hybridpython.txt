@@ -73,7 +73,7 @@ Reconfiguring the string coercion between python2 and python3
 -------------------------------------------------------------
 
 Sometimes the default configuration of string coercion (2str to 3str, 3str to 2unicode)
-is inconvient, thus it can be reconfigured via `gw.reconfigure`.
+is inconvient, thus it can be reconfigured via `gw.reconfigure` and `channel.reconfigure`. Here is an example session on a Python2 interpreter::
 
 
     >>> import execnet
@@ -85,15 +85,15 @@ is inconvient, thus it can be reconfigured via `gw.reconfigure`.
     >>> gw.reconfigure(py3str_as_py2str=True)
     >>> gw.remote_exec("channel.send('hello')").receive()
     'hello'
-    >>> ch = gw.remote_exec("channel.send(isinstance(channel.receive(), bytes)")
+    >>> ch = gw.remote_exec('channel.send(type(channel.receive()).__name__)')
     >>> ch.send('a')
     >>> ch.receive()
-    False
-    >>> gw.reconfigure(py2str_as_py3str=False)
-    >>> ch = gw.remote_exec("channel.send(isinstance(channel.receive(), bytes)")
+    'str'
+    >>> ch = gw.remote_exec('channel.send(type(channel.receive()).__name__)')
+    >>> ch.reconfigure(py2str_as_py3str=False)
     >>> ch.send('a')
     >>> ch.receive()
-    True
+    u'bytes'
 
 
 Work with Java objects from CPython
