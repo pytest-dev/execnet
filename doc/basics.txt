@@ -13,9 +13,12 @@ help to manage creation and termination of sub interpreters.
 .. currentmodule:: execnet
 
 .. _`dumps/loads`:
+.. _`dumps/loads API`:
 
 cross-interpreter serialization of python objects
 =======================================================
+
+.. versionadded:: 1.1
 
 Execnet exposes a function pair which you can safely use to
 store and load values from different Python interpreters
@@ -26,6 +29,8 @@ a basic example::
     >>> dump = execnet.dumps([1,2,3])
     >>> execnet.loads(dump)
     [1,2,3]
+
+For more examples see :ref:`dumps/loads examples`.
 
 .. autofunction:: execnet.dumps(spec)
 .. autofunction:: execnet.loads(spec)

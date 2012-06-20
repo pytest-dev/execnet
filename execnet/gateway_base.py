@@ -143,7 +143,7 @@ class Message:
         FakeChannel.gateway = FakeChannel
         name = self._types[self.msgcode].__name__.upper()
         try:
-            data = loads2(self.data, FakeChannel)
+            data = loads_internal(self.data, FakeChannel)
         except LoadError:
             data = self.data
         r = repr(data)
@@ -180,7 +180,7 @@ def _setupmessages():
         gateway._channelfactory._local_close(message.channelid)
 
     def channel_close_error(message, gateway):
-        remote_error = RemoteError(loads2(message.data))
+        remote_error = RemoteError(loads_internal(message.data))
         gateway._channelfactory._local_close(message.channelid, remote_error)
 
     def channel_last_message(message, gateway):
@@ -195,7 +195,7 @@ def _setupmessages():
             target = gateway
         else:
             target = gateway._channelfactory.new(message.channelid)
-        target._strconfig = loads2(message.data, gateway)
+        target._strconfig = loads_internal(message.data, gateway)
 
     types = [
         status, reconfigure, gateway_terminate,
@@ -554,10 +554,10 @@ class ChannelFactory(object):
             if queue is None:
                 pass    # drop data
             else:
-                queue.put(loads2(data, channel))
+                queue.put(loads_internal(data, channel))
         else:
             try:
-                data = loads2(data, channel, strconfig)
+                data = loads_internal(data, channel, strconfig)
                 callback(data)   # even if channel may be already closed
             except KeyboardInterrupt:
                 raise
@@ -605,15 +605,16 @@ class ChannelFileWrite(ChannelFile):
 class ChannelFileRead(ChannelFile):
     def __init__(self, channel, proxyclose=True):
         super(ChannelFileRead, self).__init__(channel, proxyclose)
-        self._buffer = ""
+        self._buffer = None
 
     def read(self, n):
-        while len(self._buffer) < n:
-            try:
+        try:
+            if self._buffer is None:
+                self._buffer = self.channel.receive()
+            while len(self._buffer) < n:
                 self._buffer += self.channel.receive()
-            except EOFError:
-                self.close()
-                break
+        except EOFError:
+            self.close()
         ret = self._buffer[:n]
         self._buffer = self._buffer[n:]
         return ret
@@ -732,7 +733,7 @@ class BaseGateway(object):
 
 class SlaveGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
-        sourcetask = loads2(sourcetask, self)
+        sourcetask = loads_internal(sourcetask, self)
         self._execqueue.put((channel, sourcetask))
 
     def _terminate_execution(self):
@@ -1029,7 +1030,7 @@ def loads(bytestring, py2str_as_py3str=False, py3str_as_py2str=False):
     io = BytesIO(bytestring)
     return Unserializer(io, strconfig=strconfig).load(versioned=True)
 
-def loads2(bytestring, channelfactory=None, strconfig=None):
+def loads_internal(bytestring, channelfactory=None, strconfig=None):
     io = BytesIO(bytestring)
     return Unserializer(io, channelfactory, strconfig).load()
 
