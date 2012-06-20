@@ -6,6 +6,7 @@ import execnet
 import py
 from execnet.gateway_base import Channel
 from execnet import XSpec
+from execnet.multi import safe_terminate
 
 class TestMultiChannelAndGateway:
     def test_multichannel_container_basics(self):
@@ -188,3 +189,20 @@ class TestGroup:
         group.terminate(1.0)
 
 
+def test_safe_terminate():
+    l = []
+    def term():
+        py.std.time.sleep(3)
+    def kill():
+        l.append(1)
+    safe_terminate(1, [(term, kill)] * 10)
+    assert len(l) == 10
+
+def test_safe_terminate2():
+    l = []
+    def term():
+        return
+    def kill():
+        l.append(1)
+    safe_terminate(3, [(term, kill)] * 10)
+    assert len(l) == 0
