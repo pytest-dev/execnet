@@ -739,7 +739,7 @@ class BaseGateway(object):
 
 class SlaveGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
-        sourcetask = loads_internal(sourcetask, self)
+        sourcetask = loads_internal(sourcetask)
         self._execqueue.put((channel, sourcetask))
 
     def _terminate_execution(self):
