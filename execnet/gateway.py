@@ -59,7 +59,7 @@ class Gateway(gateway_base.BaseGateway):
         but not to try and convert py3 str to py2 str
         """
         self._strconfig = (py2str_as_py3str, py3str_as_py2str)
-        data = gateway_base.dumps2(self._strconfig)
+        data = gateway_base.dumps_internal(self._strconfig)
         self._send(Message.RECONFIGURE, data=data)
 
 
@@ -116,7 +116,7 @@ class Gateway(gateway_base.BaseGateway):
         channel = self.newchannel()
         self._send(Message.CHANNEL_EXEC,
                    channel.id,
-                   gateway_base.dumps2((source, call_name, kwargs)))
+                   gateway_base.dumps_internal((source, call_name, kwargs)))
         return channel
 
     def remote_init_threads(self, num=None):

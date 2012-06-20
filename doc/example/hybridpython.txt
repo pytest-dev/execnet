@@ -77,9 +77,9 @@ is inconvient, thus it can be reconfigured via `gw.reconfigure`.
 
 
     >>> import execnet
-    >>> execnet.makegateway("popen//python=python3.1")
-    <PopenGateway id='gw0' receive-live, 0 active channels>
-    >>> gw=execnet.makegateway("popen//python=python3.1")
+    >>> execnet.makegateway("popen//python=python3.2")
+    <Gateway id='gw0' receive-live, 0 active channels>
+    >>> gw=execnet.makegateway("popen//python=python3.2")
     >>> gw.remote_exec("channel.send('hello')").receive()
     u'hello'
     >>> gw.reconfigure(py3str_as_py2str=True)

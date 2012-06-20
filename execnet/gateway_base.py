@@ -167,7 +167,7 @@ def _setupmessages():
              'numchannels': len(active_channels),
              'numexecuting': numexec
         }
-        gateway._send(Message.CHANNEL_DATA, message.channelid, dumps2(d))
+        gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
 
     def channel_exec(message, gateway):
         channel = gateway._channelfactory.new(message.channelid)
@@ -380,7 +380,7 @@ class Channel(object):
             if not self._receiveclosed.isSet():
                 put = self.gateway._send
                 if error is not None:
-                    put(Message.CHANNEL_CLOSE_ERROR, self.id, dumps2(error))
+                    put(Message.CHANNEL_CLOSE_ERROR, self.id, dumps_internal(error))
                 else:
                     put(Message.CHANNEL_CLOSE, self.id)
                 self._trace("sent channel close message")
@@ -420,7 +420,7 @@ class Channel(object):
         """
         if self.isclosed():
             raise IOError("cannot send to %r" %(self,))
-        self.gateway._send(Message.CHANNEL_DATA, self.id, dumps2(item))
+        self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
     def receive(self, timeout=-1):
         """receive a data item that was sent from the other side.
@@ -472,7 +472,7 @@ class Channel(object):
         but not to try and convert py3 str to py2 str
         """
         self._strconfig = (py2str_as_py3str, py3str_as_py2str)
-        data = dumps2(self._strconfig)
+        data = dumps_internal(self._strconfig)
         self.gateway._send(Message.RECONFIGURE, self.id, data=data)
 
 ENDMARKER = object()
@@ -565,7 +565,7 @@ class ChannelFactory(object):
                 excinfo = sys.exc_info()
                 self.gateway._trace("exception during callback: %s" % excinfo[1])
                 errortext = self.gateway._geterrortext(excinfo)
-                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, dumps2(errortext))
+                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, dumps_internal(errortext))
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):
@@ -796,7 +796,7 @@ class SlaveGateway(BaseGateway):
                             (channel.id, repr(source)[:50]))
             channel._executing = True
             try:
-                co = compile(source+'\n', '', 'exec')
+                co = compile(source, '', 'exec')
                 do_exec(co, loc)
                 if call_name:
                     self._trace('calling %s(**%60r)' % (call_name, kwargs))
@@ -1040,7 +1040,7 @@ def loads_internal(bytestring, channelfactory=None, strconfig=None):
     io = BytesIO(bytestring)
     return Unserializer(io, channelfactory, strconfig).load()
 
-def dumps2(obj):
+def dumps_internal(obj):
     return _Serializer().save(obj)
 
 
