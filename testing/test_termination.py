@@ -9,9 +9,8 @@ queue = py.builtin._tryimport('queue', 'Queue')
 from testing.test_gateway import TESTTIMEOUT
 execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
 
-def test_exit_blocked_slave_execution_gateway(anypython):
-    group = execnet.Group()
-    gateway = group.makegateway('popen//python=%s' % anypython)
+def test_exit_blocked_slave_execution_gateway(anypython, makegateway):
+    gateway = makegateway('popen//python=%s' % anypython)
     channel = gateway.remote_exec("""
         import time
         time.sleep(10.0)
@@ -25,8 +24,8 @@ def test_exit_blocked_slave_execution_gateway(anypython):
     x = reply.get(timeout=5.0)
     assert x == 17
 
-def test_endmarker_delivery_on_remote_killterm():
-    gw = execnet.makegateway('popen')
+def test_endmarker_delivery_on_remote_killterm(makegateway):
+    gw = makegateway('popen')
     q = queue.Queue()
     channel = gw.remote_exec(source='''
         import os, time
@@ -41,15 +40,14 @@ def test_endmarker_delivery_on_remote_killterm():
     err = channel._getremoteerror()
     assert isinstance(err, EOFError)
 
-def test_termination_on_remote_channel_receive(monkeypatch):
+def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     if not py.path.local.sysfind('ps'):
         py.test.skip("need 'ps' command to externally check process status")
     monkeypatch.setenv('EXECNET_DEBUG', '2')
-    group = execnet.Group()
-    gw = group.makegateway("popen")
+    gw = makegateway("popen")
     pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
     gw.remote_exec("channel.receive()")
-    group.terminate()
+    gw._group.terminate()
     command = ["ps", "-p", str(pid)]
     popen = subprocess.Popen(command, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT)
@@ -58,7 +56,7 @@ def test_termination_on_remote_channel_receive(monkeypatch):
     assert str(pid) not in out, out
 
 @py.test.mark.xfail(reason="non-resolved race/wait/interrupt_main/thread-loop "
- "issue with some Python interpreters")
+ "isdue with some Python interpreters")
 def test_close_initiating_remote_no_error(testdir, anypython):
     p = testdir.makepyfile("""
         import sys

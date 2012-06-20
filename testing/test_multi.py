@@ -167,10 +167,13 @@ class TestGroup:
     def test_default_group(self):
         oldlist = list(execnet.default_group)
         gw = execnet.makegateway("popen")
-        newlist = list(execnet.default_group)
-        assert len(newlist) == len(oldlist) + 1
-        assert gw in newlist
-        assert gw not in oldlist
+        try:
+            newlist = list(execnet.default_group)
+            assert len(newlist) == len(oldlist) + 1
+            assert gw in newlist
+            assert gw not in oldlist
+        finally:
+            gw.exit()
 
     def test_remote_exec_args(self):
         group = Group()

@@ -322,12 +322,11 @@ class TestGlobalFinder(object):
         assert self.check(f) == []
 
 
-def test_remote_exec_function_with_kwargs(anypython):
+def test_remote_exec_function_with_kwargs(anypython, makegateway):
     import sys
     def func(channel, data):
         channel.send(data)
-    group = execnet.Group()
-    gw = group.makegateway('popen//python=%s' % anypython)
+    gw = makegateway('popen//python=%s' % anypython)
     print ("local version_info %r" %(sys.version_info,))
     print ("remote info: %s" % (gw._rinfo(),))
     ch = gw.remote_exec(func, data=1)
@@ -336,11 +335,8 @@ def test_remote_exec_function_with_kwargs(anypython):
 
 
 
-def test_remote_exc_module_takes_no_kwargs():
-    gw = execnet.makegateway()
+def test_remote_exc__no_kwargs(makegateway):
+    gw = makegateway()
     py.test.raises(TypeError, gw.remote_exec, gateway_base, kwarg=1)
-
-def test_remote_exec_string_takes_no_kwargs():
-    gw = execnet.makegateway()
     py.test.raises(TypeError, gw.remote_exec, 'pass', kwarg=1)
 

@@ -61,11 +61,11 @@ class TestXSpec:
         assert hash(XSpec("socket=hello:8080")) != hash(XSpec("popen"))
 
 class TestMakegateway:
-    def test_no_type(self):
-        py.test.raises(ValueError, "execnet.makegateway('hello')")
+    def test_no_type(self, makegateway):
+        py.test.raises(ValueError, lambda: makegateway('hello'))
 
-    def test_popen_default(self):
-        gw = execnet.makegateway("")
+    def test_popen_default(self, makegateway):
+        gw = makegateway("")
         assert gw.spec.popen
         assert gw.spec.python == None
         rinfo = gw._rinfo()
@@ -74,8 +74,8 @@ class TestMakegateway:
         assert rinfo.version_info == py.std.sys.version_info
 
     @pytest.mark.skipif("not hasattr(os, 'nice')")
-    def test_popen_nice(self):
-        gw = execnet.makegateway("popen")
+    def test_popen_nice(self, makegateway):
+        gw = makegateway("popen")
         def getnice(channel):
             import os
             if hasattr(os, 'nice'):
@@ -85,12 +85,12 @@ class TestMakegateway:
         remotenice = gw.remote_exec(getnice).receive()
         gw.exit()
         if remotenice is not None:
-            gw = execnet.makegateway("popen//nice=5")
+            gw = makegateway("popen//nice=5")
             remotenice2 = gw.remote_exec(getnice).receive()
             assert remotenice2 == remotenice + 5
 
-    def test_popen_env(self):
-        gw = execnet.makegateway("popen//env:NAME123=123")
+    def test_popen_env(self, makegateway):
+        gw = makegateway("popen//env:NAME123=123")
         ch = gw.remote_exec("""
             import os
             channel.send(os.environ['NAME123'])
@@ -98,15 +98,15 @@ class TestMakegateway:
         value = ch.receive()
         assert value == "123"
 
-    def test_popen_explicit(self):
-        gw = execnet.makegateway("popen//python=%s" % py.std.sys.executable)
+    def test_popen_explicit(self, makegateway):
+        gw = makegateway("popen//python=%s" % py.std.sys.executable)
         assert gw.spec.python == py.std.sys.executable
         rinfo = gw._rinfo()
         assert rinfo.executable == py.std.sys.executable
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info == py.std.sys.version_info
 
-    def test_popen_cpython25(self):
+    def test_popen_cpython25(self, makegateway):
         for trypath in ('python2.5', r'C:\Python25\python.exe'):
             cpython25 = py.path.local.sysfind(trypath)
             if cpython25 is not None:
@@ -114,40 +114,40 @@ class TestMakegateway:
                 break
         else:
             py.test.skip("cpython2.5 not found")
-        gw = execnet.makegateway("popen//python=%s" % cpython25)
+        gw = makegateway("popen//python=%s" % cpython25)
         rinfo = gw._rinfo()
         if py.std.sys.platform != "darwin": # it's confusing there
             assert rinfo.executable == cpython25
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info[:2] == (2,5)
 
-    def test_popen_cpython26(self):
+    def test_popen_cpython26(self, makegateway):
         for trypath in ('python2.6', r'C:\Python26\python.exe'):
             cpython26 = py.path.local.sysfind(trypath)
             if cpython26 is not None:
                 break
         else:
             py.test.skip("cpython2.6 not found")
-        gw = execnet.makegateway("popen//python=%s" % cpython26)
+        gw = makegateway("popen//python=%s" % cpython26)
         rinfo = gw._rinfo()
         #assert rinfo.executable == cpython26
         assert rinfo.cwd == py.std.os.getcwd()
         assert rinfo.version_info[:2] == (2,6)
 
-    def test_popen_chdir_absolute(self, testdir):
-        gw = execnet.makegateway("popen//chdir=%s" % testdir.tmpdir)
+    def test_popen_chdir_absolute(self, testdir, makegateway):
+        gw = makegateway("popen//chdir=%s" % testdir.tmpdir)
         rinfo = gw._rinfo()
         assert rinfo.cwd == str(testdir.tmpdir.realpath())
 
-    def test_popen_chdir_newsub(self, testdir):
+    def test_popen_chdir_newsub(self, testdir, makegateway):
         testdir.chdir()
-        gw = execnet.makegateway("popen//chdir=hello")
+        gw = makegateway("popen//chdir=hello")
         rinfo = gw._rinfo()
         assert rinfo.cwd.lower() == str(testdir.tmpdir.join("hello").realpath()).lower()
 
-    def test_ssh(self, specssh):
+    def test_ssh(self, specssh, makegateway):
         sshhost = specssh.ssh
-        gw = execnet.makegateway("ssh=%s//id=ssh1" % sshhost)
+        gw = makegateway("ssh=%s//id=ssh1" % sshhost)
         rinfo = gw._rinfo()
         assert gw.id == 'ssh1'
         gw2 = execnet.SshGateway(sshhost)
@@ -156,8 +156,8 @@ class TestMakegateway:
         assert rinfo.cwd == rinfo2.cwd
         assert rinfo.version_info == rinfo2.version_info
 
-    def test_socket(self, specsocket):
-        gw = execnet.makegateway("socket=%s//id=sock1" % specsocket.socket)
+    def test_socket(self, specsocket, makegateway):
+        gw = makegateway("socket=%s//id=sock1" % specsocket.socket)
         rinfo = gw._rinfo()
         assert rinfo.executable
         assert rinfo.cwd

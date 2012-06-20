@@ -203,9 +203,9 @@ class TestRSync:
 
 
     @py.test.mark.skip_if('sys.version_info >= (3)')
-    def test_2_to_3_bridge_can_send_binary_files(self, tmpdir):
+    def test_2_to_3_bridge_can_send_binary_files(self, tmpdir, makegateway):
         python = _find_version('3')
-        gw = execnet.makegateway('popen//python=%s'%(python,))
+        gw = makegateway('popen//python=%s'%(python,))
         source = tmpdir.ensure('source', dir=1)
         for i, content in enumerate('foo bar baz \x10foo'):
             source.join(str(i)).write(content)
