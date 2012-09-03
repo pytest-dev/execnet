@@ -23,6 +23,8 @@
 - fix issue #2 - properly reconfigure the channels string coercion for rsync,
   so it can send from python2 to python3
 
+- fix issue #9 - propperly terminate the worker threadpools in safe_terminate
+
 - refactor socketserver, so it can be directly remote_exec'd for starting a socket gateway on a remote
 
 
