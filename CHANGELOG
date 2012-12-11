@@ -1,0 +1,236 @@
+1.1
+--------------------------------
+
+- introduce execnet.dumps/loads providing serialization between
+  python interpreters.
+
+- group.remote_exec now supports kwargs as well
+
+- support per channel string coercion configuration
+
+- Popen2IO.read now reads correct amounts of bytes from nonblocking fd's
+
+- added a ``dont_write_bytecode`` option to Popen gateways, this sets the
+  ``sys.dont_write_bytecode`` flag on the spawned process, this only works on
+  CPython 2.6 and higher.  Thanks to Alex Gaynor.
+
+- added a pytest --broken-isp option to skip tests that assume
+  DNS queries for unknown hosts actually are resolved as such (Thanks
+  Alex Gaynor)
+
+- fix issue 1 - decouple string coercion of channels and gateway
+
+- fix issue #2 - properly reconfigure the channels string coercion for rsync,
+  so it can send from python2 to python3
+
+- refactor socketserver, so it can be directly remote_exec'd for starting a socket gateway on a remote
+
+
+1.0.9
+--------------------------------
+
+- add gw.reconfigure() to configure per gateway options.  Currently supported:
+  py2str_as_py3str and py3str_as_py2str to configure string deserialization
+
+- channel.makefile() objects now have a isatty() returning False
+
+- group.allocate_id(spec) allows to early-determine an (automatic) id
+
+- internal refactorings and cleanups (thanks Ronny Pfannschmidt):
+  - refactor message types into received handler functions
+  - refactor b(chr(opcode)) to bchr(opcode)
+  - reorder Message ctor args, rename msgtype to msgcode
+  - refactor gateway.send to take message's init args instead of a message
+  - inline and remove Message.writeto/readfrom
+  - refactor collection loading to avoid the indirection over tuple
+  - remove the unused NamedThreadPool
+
+
+1.0.8
+--------------------------------
+
+- new ``gateway.remote_exec(func, **kwargs)`` style fo executing
+  a pure function with parameters.  The function on the remote
+  side also needs to accept a ``channel`` which allows it to
+  communicate back and forth.  Thanks to Ronny Pfannschmidt
+  for implementing it with special kudos to Maciej Fijalkowski
+  for writing a "pure-function" checker so that on Python2.6
+  onwards non-pure functions will be rejected.
+
+- enhance rsyncing to also sync permissions (stat().st_mode)
+  of directories and files.
+  (should also resolve http://bitbucket.org/hpk42/py-trunk/issue/68/)
+
+- fix rsyncing of symlinks, thanks to Charles Solar
+  (should also resolve http://bitbucket.org/hpk42/py-trunk/issue/70/)
+
+- update internal usage of apipkg to 1.0b6
+
+- remote_exec(module) now makes sure that the linecache is updated
+  before reading and sending the source.  thanks Ronny, Matt.
+
+- removed all trailing whitespace from source files
+
+1.0.7
+--------------------------------
+
+- try to avoid a random KeyboardInterrupt Error when threads
+  are ending.
+
+- extend xspec syntax to allow for one or multiple "env:NAME=value"
+  environment variable settings which will be set on the remote side.
+  (thanks Jakub Gustak)
+
+1.0.6
+--------------------------------
+
+- fix jython/windows interactions
+- fix waitclose/callback-with-endmarker race condition
+- fix race condition where multiple threads sending data over channels
+  would crash the serializer and process
+
+1.0.5
+--------------------------------
+
+- more care during receiver-thread finalization during interp-shutdown,
+  should get rid of annoying and meaningless exceptions
+- fix glitch in ssh-fileserver example
+- experimentally add "setup.py test" support - will run py.test
+
+1.0.4
+--------------------------------
+
+- try to deal more cleanly with interpreter shutdown setting globals to
+  None. this avoids (hopefully) some bogus tracebacks at process exit.
+
+1.0.3
+--------------------------------
+
+- refine termination some more: CTRL-C and gateway.exit will
+  now try harder to interrupt remote execution.  this
+  helps to avoid left-over ssh-processes.
+- fix read-on-non-blocking-files issue probably related to jython only:
+  the low-level read on subprocess pipes may be non-blocking, returning
+  less bytes than requested - so we now loop.
+- Windows/python2.4: fix bug that killing subprocesses would fail
+- make RemoteError and TimeoutError available directly on execnet namespace
+
+- fix some doc and test issues (thanks thm and ronny), add ssh_fileserver example
+- update internal copy of apipkg
+- always skip remote tests if no ssh specs given
+
+1.0.2
+--------------------------------
+
+- generalize channel-over-channel sending: you can now have channels
+  anywhere in a data structure (i.e. as an item of a container type).
+  Add according examples.
+
+- automatically close a channel when a remote callback raises
+  an exception, makes communication more robust because until
+  now failing callbacks rendered the receiverthread unuseable
+  leaving the remote side in-accessible.
+
+- internally split socket gateways, speeds up popen-gateways
+  by 10% (now at <50 milliseconds per-gateway on a 1.5 GHZ machine)
+
+- fix bug in channel.receive() that would wrongly raise a TimeoutError
+  after 1000 seconds (thanks Ronny Pfannschmidt)
+
+1.0.1
+--------------------------------
+
+- revamp and better structure documentation
+
+- new method: gateway.hasreceiver() returns True
+  if the gateway is still receive-active. remote_status
+  now only carries information about remote execution status.
+
+- new: execnet.MultiChannel provides basic iteration/contain interface
+
+- new: execnet.Group can be indexed by integer
+
+- new: group.makegateway() uses group.default_spec if no spec is given
+  and the execnet.default_group uses ``popen`` as a default spec.
+
+- have popen-gateways use imports instead of source-strings,
+  also improves debugging/tracebacks, as a side effect
+  popen-gateway startup can be substantially faster (>30%)
+
+- refine internal gateway exit/termination procedure
+  and introduce group.terminate(timeout) which will
+  attempt to kill all subprocesses that did not terminate
+  within time.
+
+- EOFError on channel.receive/waitclose if the other
+  side unexpectedly went away.  When a gateway exits
+  it now internally sends an explicit termination message
+  instead of abruptly closing.
+
+- introduce a timeout parameter to channel.receive()
+  and default to periodically internally wake up
+  to let KeyboardInterrupts pass through.
+
+- EXECNET_DEBUG=2 will cause tracing to go to stderr,
+  which with popen slave gateways will relay back
+  tracing to the instantiator process.
+
+
+1.0.0
+--------------------------------
+
+* introduce execnet.Group for managing gateway creation
+  and termination.  Introduce execnet.default_group through which
+  all "global" calls are routed.  cleanup gateway termination.
+  All Gateways get an id through which they can be
+  retrieved from a group object.
+
+* deprecate execnet.XYZGateway in favour of direct makegateway() calls.
+
+* refine socketserver-examples, experimentally introduce a
+  way to indirectly setup a socket server ("installvia")
+  through a gateway url.
+
+* refine and automatically test documentation examples
+
+1.0.0b3
+--------------------------------
+
+* fix EXECNET_DEBUG to work with win32
+* add support for serializing longs, sets and frozensets  (thanks
+  Benjamin Peterson)
+* introduce remote_status() method which on the low level gives
+  information about the remote side of a gateway
+* disallow explicit close in remote_exec situation
+* perform some more detailed tracing with EXECNET_DEBUG
+
+1.0.0b2
+--------------------------------
+
+* make internal protocols more robust against serialization failures
+
+* fix a seralization bug with nested tuples containing empty tuples
+  (thanks to ronny for discovering it)
+
+* setting the environment variable EXECNET_DEBUG will generate per
+  process trace-files for debugging
+
+1.0.0b1
+----------------------------
+
+* added new examples for NumPy, Jython, IronPython
+* improved documentation
+* include apipkg.py for lazy-importing
+* integrated new serializer code from Benjamin Peterson
+* improved support for Jython-2.5.1
+
+1.0.0alpha2
+----------------------------
+
+* improve documentation, new website
+
+* use sphinx for documentation, added boilerplate files and setup.py
+
+* fixes for standalone usage, adding boilerplate files
+
+* imported py/execnet and made it work standalone
