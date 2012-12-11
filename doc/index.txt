@@ -49,6 +49,8 @@ Known uses
 
 * `py.test`_ uses it for its `distributed testing`_ mechanism.
 
+* `quora`_ uses it for `connecting CPython and PyPy`_.
+
 * Jacob Perkins uses it for his `Distributed NTLK with execnet`_
   project to launch computation processes through ssh.  He also
   compares `disco and execnet`_ in a subsequent post.
@@ -57,6 +59,9 @@ Known uses
   to bridge the Python2/Python3 version gap.
 
 * sysadmins and developers are using it for ad-hoc custom scripting
+
+.. _`quora`: http://quora.com
+.. _`connecting CPython and PyPy`: http://www.quora.com/Quora-Infrastructure/Did-Quoras-switch-to-PyPy-result-in-increased-memory-consumption
 
 .. _`py.test`: http://pytest.org
 .. _`distributed testing`: http://codespeak.net/py/dist/test/dist.html
