@@ -252,6 +252,8 @@ def safe_terminate(timeout, list_of_paired_functions):
         replylist.append(reply)
     for reply in replylist:
         reply.get()
+    workerpool.shutdown()
+    workerpool.join()
 
 
 default_group = Group()
