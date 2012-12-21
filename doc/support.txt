@@ -13,7 +13,7 @@ are welcome to:
 
 .. _`Holger's twitter presence`: http://twitter.com/hpk42
 .. _merlinux: http://merlinux.eu
-.. _`tetamap blog`: http://tetamap.wordpress.com
-.. _`execnet-dev`: http://codespeak.net/mailman/listinfo/execnet-dev
-.. _`execnet-commit`: http://codespeak.net/mailman/listinfo/execnet-commit
+.. _`tetamap blog`: http://holgerkrekel.net
+.. _`execnet-dev`: http://mail.python.org/mailman/listinfo/execnet-dev
+.. _`execnet-commit`: http://mail.python.org/mailman/listinfo/execnet-commit
 .. _`bitbucket repository`: http://bitbucket.org/hpk42/execnet
