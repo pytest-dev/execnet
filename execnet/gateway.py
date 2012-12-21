@@ -14,8 +14,9 @@ importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 class Gateway(gateway_base.BaseGateway):
     """ Gateway to a local or remote Python Intepreter. """
 
-    def __init__(self, io, id):
-        super(Gateway, self).__init__(io=io, id=id, _startcount=1)
+    def __init__(self, io, spec):
+        super(Gateway, self).__init__(io=io, id=spec.id, _startcount=1)
+        self.spec = spec
         self._initreceive()
 
     @property

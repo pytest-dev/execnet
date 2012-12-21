@@ -2,6 +2,8 @@
     tests for multi channels and gateway Groups
 """
 
+import threading
+from time import sleep
 import execnet
 import py
 from execnet.gateway_base import Channel
@@ -193,6 +195,7 @@ class TestGroup:
 
 
 def test_safe_terminate():
+    active = threading.active_count()
     l = []
     def term():
         py.std.time.sleep(3)
@@ -200,8 +203,12 @@ def test_safe_terminate():
         l.append(1)
     safe_terminate(1, [(term, kill)] * 10)
     assert len(l) == 10
+    sleep(0.1)
+    py.std.gc.collect()
+    assert threading.active_count() == active
 
 def test_safe_terminate2():
+    active = threading.active_count()
     l = []
     def term():
         return
@@ -209,3 +216,6 @@ def test_safe_terminate2():
         l.append(1)
     safe_terminate(3, [(term, kill)] * 10)
     assert len(l) == 0
+    sleep(0.1)
+    py.std.gc.collect()
+    assert threading.active_count() == active

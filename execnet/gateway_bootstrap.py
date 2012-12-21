@@ -63,6 +63,17 @@ def sendexec(io, *sources):
     io.write((repr(source)+ "\n").encode('ascii'))
 
 
+def fix_pid_for_jython_popen(gw):
+    """
+    fix for jython 2.5.1
+    """
+    spec, io = gw.spec, gw._io
+    if spec.popen:
+        if io.popen.pid is None:
+            io.popen.pid = gw.remote_exec(
+                "import os; channel.send(os.getpid())").receive()
+
+
 def bootstrap(io, spec):
     if spec.popen:
         bootstrap_popen(io, spec)
@@ -72,12 +83,8 @@ def bootstrap(io, spec):
         bootstrap_socket(io, spec)
     else:
         raise ValueError('unknown gateway type, cant bootstrap')
-    gw = Gateway(io, spec.id)
-    if hasattr(io, 'popen'):
-        # fix for jython 2.5.1
-        if io.popen.pid is None:
-            io.popen.pid = gw.remote_exec(
-                "import os; channel.send(os.getpid())").receive()
+    gw = Gateway(io, spec)
+    fix_pid_for_jython_popen(gw)
     return gw
 
 
