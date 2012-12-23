@@ -7,30 +7,67 @@ path: execnet/rsync.py
 currently rsyncing bails out with a strange message when trying to rsync
 links. should provide better message or even some support for doing it.
 
-socketservice process for keeping cross-invocation state
----------------------------------------------------------
+http process for mediating client/remote-subprocess execution
+------------------------------------------------------------------
 
-tags: 1.1 feature newdist
+tags: 1.2 feature newdist
 
-A building block for keeping permanent network
-connections would be a started-on-first-access process
-that keeps state. Considered:
+A client client connects to an http-execserver.  An http-execserver
+routes incoming "POST /exec" requests to a subprocess and returns a PID.
+The PID identifies the subprocess which is used for further communication.
 
-- a rendevouz process that starts threads for each
-  incoming connection.  On each such connection
-  a SocketGateway can be instantiated but it
-  will re-use the already-imported gateway base code
-  so again avoid parse/compile on arbitrary strings.
+Client             http-exec              subprocess
 
-Possible code example:
+makegw("...") ->   POST /popen     ->     Popen() with bootstrap
+                   (bootstrap) 
+                   <- PID
 
-    # connect to on-demand started port-8888 socket server
-    # similar to popen+socket//installvia=popen
-    gw = group.makegateway("socketservice//port=8888")
-    gw.remote_exec("...") # execute code in a thread in the socket server
-    ...
-    # exit the gateway-connection, but leave socket server running
-    gw.exit()
+c=rexec(...)       POST /exec/PID         exec source
+(source)                                                 
+
+c.send(1)          POST /exec/PID         x = c.receive()
+                   (1)                    assert x == 1
+                                          c.send(2)
+
+z = c.receive()    GET /exec/PID           
+                   <- (2)
+assert z == 2
+
+The client connects via "POST /exec/PID" 
+and pushes data to the remotely-executing code 
+in the subprocess.
+
+The client connects via "GET /exec/PID" 
+and receives data from the remotely-executing code.
+
+The client constructs a Channel() object which triggers
+these two connections, presenting a nice send/receive
+abstractions.
+
+The code executing in the http-execserver controled
+subprocess is a PopenGateway.  It does not know that it
+is connected via the http client/server machinery.
+
+The http-execserver proxies data from the subprocess 
+to the client.  If there is no active GET request, the
+data is queued.
+
+The http-execserver forwards data from the client to the
+subprocess, using the PID.  If the subprocess is not 
+connected, an ERROR code is returned.
+
+Example session:
+
+    gw = group.makegateway("http=codespeak.net")
+           
+    def fun(channel):
+        return channel.send(channel.receive()+1)
+                            
+    ch = gw.remote_exec(fun)
+    ch.send(1)
+    x = ch.receive()
+    assert x == 2
+
 
 a channel-IO based gateway
 --------------------------------------------------
