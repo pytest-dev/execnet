@@ -1,3 +1,9 @@
+1.X
+--------------------------------
+
+- fix issue10 : skip PYTHONDONTWRITEBYTECODE test if 
+  it we are running with PYTHONDONTWRITEBYTECODE set.
+
 1.1
 --------------------------------
 

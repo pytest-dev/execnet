@@ -241,7 +241,7 @@ class TestPopenGateway:
         """)
         py.test.raises(channel.RemoteError, channel.receive)
 
-    @py.test.mark.skipif('sys.version_info < (2, 6)')
+    @py.test.mark.skipif('sys.version_info < (2,6) or sys.dont_write_bytecode')
     def test_dont_write_bytecode(self, makegateway):
         check_sys_dont_write_bytecode = """
             import sys
