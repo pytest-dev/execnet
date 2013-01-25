@@ -4,6 +4,8 @@
 - fix issue10 : skip PYTHONDONTWRITEBYTECODE test if 
   it we are running with PYTHONDONTWRITEBYTECODE set.
 
+- dont try the jython pid fixup on a RemoteIO
+
 1.1
 --------------------------------
 
