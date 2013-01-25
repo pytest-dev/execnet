@@ -68,7 +68,9 @@ def fix_pid_for_jython_popen(gw):
     fix for jython 2.5.1
     """
     spec, io = gw.spec, gw._io
-    if spec.popen:
+    if spec.popen and not spec.via:
+        #XXX: handle the case of remote being jython
+        #     and not having the popen pid
         if io.popen.pid is None:
             io.popen.pid = gw.remote_exec(
                 "import os; channel.send(os.getpid())").receive()
