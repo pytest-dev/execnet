@@ -1,7 +1,9 @@
+include LICENSE
 include CHANGELOG
-include conftest.py
 include README.txt
+include tox.ini
 include setup.py
-include LICENSE 
+include conftest.py
 graft doc
 graft testing
+graft execnet
