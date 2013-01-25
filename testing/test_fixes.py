@@ -1,6 +1,17 @@
 from execnet import Group
 from execnet.gateway_bootstrap import fix_pid_for_jython_popen
 
+
+def test_jython_bootstrap_not_on_remote():
+    group = Group()
+    try:
+        via = group.makegateway('popen//id=via')
+        gw = group.makegateway('popen//via=via')
+    finally:
+        group.terminate(timeout=1.0)
+
+
+
 def test_jython_bootstrap_fix():
     group = Group()
     gw = group.makegateway('popen')
