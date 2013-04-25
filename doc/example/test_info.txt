@@ -186,7 +186,7 @@ You can then instruct execnet on your local machine to bootstrap
 itself into the remote socket endpoint::
 
     import execnet
-    gw = execnet.SocketGateway("TARGET-IP:8888")
+    gw = execnet.makegateway("socket=TARGET-IP:8888")
 
 That's it, you can now use the gateway object just like
 a popen- or ssh-based one.
