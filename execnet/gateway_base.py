@@ -1018,6 +1018,10 @@ def dumps(obj):
     """
     return _Serializer().save(obj, versioned=True)
 
+def dump(byteio, obj):
+    """ write a serialized bytestring of the given obj to the given stream. """
+    _Serializer(write=byteio.write).save(obj, versioned=True)
+
 def loads(bytestring, py2str_as_py3str=False, py3str_as_py2str=False):
     """ return the object as deserialized from the given bytestring.
 
@@ -1032,8 +1036,16 @@ def loads(bytestring, py2str_as_py3str=False, py3str_as_py2str=False):
     version or if the bytestring is corrupted, the
     ``execnet.DataFormatError`` will be raised.
     """
-    strconfig=(py2str_as_py3str, py3str_as_py2str)
     io = BytesIO(bytestring)
+    return load(io, py2str_as_py3str=py2str_as_py3str,
+                    py3str_as_py2str=py3str_as_py2str)
+
+def load(io, py2str_as_py3str=False, py3str_as_py2str=False):
+    """ derserialize an object form the specified stream.
+
+    Behaviour and parameters are otherwise the same as with ``loads``
+    """
+    strconfig=(py2str_as_py3str, py3str_as_py2str)
     return Unserializer(io, strconfig=strconfig).load(versioned=True)
 
 def loads_internal(bytestring, channelfactory=None, strconfig=None):
@@ -1047,11 +1059,11 @@ def dumps_internal(obj):
 class _Serializer(object):
     _dispatch = {}
 
-    def __init__(self):
-        self._streamlist = []
-
-    def _write(self, data):
-        self._streamlist.append(data)
+    def __init__(self, write=None):
+        if write is None:
+            self._streamlist = []
+            write = self._streamlist.append
+        self._write = write
 
     def save(self, obj, versioned=False):
         # calling here is not re-entrant but multiple instances
@@ -1061,8 +1073,11 @@ class _Serializer(object):
             self._write(DUMPFORMAT_VERSION)
         self._save(obj)
         self._write(opcode.STOP)
-        s = type(self._streamlist[0])().join(self._streamlist)
-        return s
+        try:
+            streamlist = self._streamlist
+        except AttributeError:
+            return None
+        return type(streamlist[0])().join(streamlist)
 
     def _save(self, obj):
         tp = type(obj)

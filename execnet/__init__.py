@@ -3,7 +3,7 @@ execnet: pure python lib for connecting to local and remote Python Interpreters.
 
 (c) 2012, Holger Krekel and others
 """
-__version__ = '1.1.1dev4'
+__version__ = '1.1.1dev6'
 
 import execnet.apipkg
 
@@ -22,5 +22,7 @@ execnet.apipkg.initpkg(__name__, {
     'default_group':    '.multi:default_group',
     'dumps':            '.gateway_base:dumps',
     'loads':            '.gateway_base:loads',
+    'load':             '.gateway_base:load',
+    'dump':             '.gateway_base:dump',
     'DataFormatError':  '.gateway_base:DataFormatError',
 })

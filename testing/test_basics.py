@@ -12,12 +12,31 @@ try:
 except:
     from io import BytesIO
 
-@pytest.mark.parametrize("val", [
-    "123", 42, [1,2,3], ["23", 25]])
-def test_serializer_api(val):
-    dumped = execnet.dumps(val)
-    val2 = execnet.loads(dumped)
-    assert val == val2
+class TestSerializeAPI:
+    pytestmark = [pytest.mark.parametrize("val", [
+                  "123", 42, [1,2,3], ["23", 25]])]
+
+    def test_serializer_api(self, val):
+        dumped = execnet.dumps(val)
+        val2 = execnet.loads(dumped)
+        assert val == val2
+
+    def test_mmap(self, tmpdir, val):
+        mmap = pytest.importorskip("mmap").mmap
+        p = tmpdir.join("data")
+        with p.open("wb") as f:
+            f.write(execnet.dumps(val))
+        f = p.open("r+b")
+        m = mmap(f.fileno(), 0)
+        val2 = execnet.load(m)
+        assert val == val2
+
+    def test_bytesio(self, val):
+        f = py.io.BytesIO()
+        execnet.dump(f, val)
+        read = py.io.BytesIO(f.getvalue())
+        val2 = execnet.load(read)
+        assert val == val2
 
 def test_serializer_api_version_error(monkeypatch):
     from execnet import gateway_base
