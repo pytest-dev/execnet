@@ -42,7 +42,7 @@ def main():
         long_description = __doc__,
         version='1.1.1dev4',
         url='http://codespeak.net/execnet',
-        license='GPL V2 or later',
+        license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
         author='holger krekel and others',
         author_email='holger at merlinux.eu',
@@ -50,7 +50,7 @@ def main():
         classifiers=[
             'Development Status :: 4 - Beta',
             'Intended Audience :: Developers',
-            'License :: OSI Approved :: GNU General Public License (GPL)',
+            'License :: OSI Approved :: MIT License',
             'Operating System :: POSIX',
             'Operating System :: Microsoft :: Windows',
             'Operating System :: MacOS :: MacOS X',
