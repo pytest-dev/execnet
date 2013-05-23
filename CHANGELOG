@@ -1,6 +1,9 @@
 1.X
 --------------------------------
 
+- introduce execnet.dump/load variants of dumps/loads
+  serializing/unserializing mechanism.
+
 - fix issue10 : skip PYTHONDONTWRITEBYTECODE test if 
   it we are running with PYTHONDONTWRITEBYTECODE set.
 

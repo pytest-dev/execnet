@@ -40,7 +40,7 @@ def main():
         name='execnet',
         description='execnet: rapid multi-Python deployment',
         long_description = __doc__,
-        version='1.1.1dev4',
+        version='1.1.1dev6',
         url='http://codespeak.net/execnet',
         license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
