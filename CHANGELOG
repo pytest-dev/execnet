@@ -4,6 +4,9 @@
 - introduce execnet.dump/load variants of dumps/loads
   serializing/unserializing mechanism.
 
+- fix issue15: interoperability with inspect.getstack().
+  Thanks Peter Feiner.
+
 - fix issue10 : skip PYTHONDONTWRITEBYTECODE test if 
   it we are running with PYTHONDONTWRITEBYTECODE set.
 
