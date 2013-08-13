@@ -124,7 +124,8 @@ def pytest_funcarg__anypython(request):
         py.test.skip("no %s found" % (name,))
     return executable
 
-def pytest_funcarg__gw(request):
+@pytest.fixture
+def gw(request):
     scope = request.config.option.scope
     group = request.cached_setup(
         setup=execnet.Group,
