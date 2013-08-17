@@ -796,7 +796,7 @@ class SlaveGateway(BaseGateway):
                             (channel.id, repr(source)[:50]))
             channel._executing = True
             try:
-                co = compile(source+'\n', '', 'exec')
+                co = compile(source+'\n', '<remote exec>', 'exec')
                 do_exec(co, loc)
                 if call_name:
                     self._trace('calling %s(**%60r)' % (call_name, kwargs))

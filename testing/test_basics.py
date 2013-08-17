@@ -359,3 +359,13 @@ def test_remote_exc__no_kwargs(makegateway):
     py.test.raises(TypeError, gw.remote_exec, gateway_base, kwarg=1)
     py.test.raises(TypeError, gw.remote_exec, 'pass', kwarg=1)
 
+def test_remote_exec_inspect_stack(makegateway):
+    gw = makegateway()
+    ch = gw.remote_exec("""
+        import inspect
+        inspect.stack()
+        import traceback
+        channel.send('\\n'.join(traceback.format_stack()))
+    """)
+    assert 'File "<remote exec>"' in ch.receive()
+    ch.waitclose()
