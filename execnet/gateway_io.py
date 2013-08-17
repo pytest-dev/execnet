@@ -73,15 +73,15 @@ def popen_args(spec):
     args.extend(['-c', popen_bootstrapline])
     return args
 
-def ssh_args(spec):
-    remotepython = spec.python or 'python'
-    args = ['ssh', '-C' ]
-    if spec.ssh_config is not None:
-        args.extend(['-F', str(spec.ssh_config)])
-    remotecmd = '%s -c "%s"' %(remotepython, popen_bootstrapline)
-    args.extend([spec.ssh, remotecmd])
-    return args
 
+def ssh_args(spec):
+    remotepython = spec.python or "python"
+    args = ["ssh", "-C" ] 
+    args.extend(spec.ssh.split())
+    remotecmd = '{} -c "{}"'.format(
+        remotepython, popen_bootstrapline)
+    args.append(remotecmd)
+    return args
 
 
 def create_io(spec):

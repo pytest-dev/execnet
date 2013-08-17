@@ -28,6 +28,15 @@ class TestXSpec:
         spec = XSpec("popen")
         assert spec.popen == True
 
+    def test_ssh_options(self):
+        spec = XSpec("ssh=-p 22100 user@host//python=python3")
+        assert spec.ssh == "-p 22100 user@host"
+        assert spec.python == "python3"
+
+        spec = XSpec("ssh=-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host//python=python3")
+        assert spec.ssh == "-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host"
+        assert spec.python == "python3"
+
     def test_env(self):
         xspec = XSpec("popen//env:NAME=value1")
         assert xspec.env['NAME'] == "value1"
