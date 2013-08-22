@@ -1,5 +1,6 @@
 import pytest, py
 import execnet
+from execnet.gateway_io import ssh_args
 
 XSpec = execnet.XSpec
 
@@ -36,6 +37,12 @@ class TestXSpec:
         spec = XSpec("ssh=-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host//python=python3")
         assert spec.ssh == "-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host"
         assert spec.python == "python3"
+
+    def test_ssh_options_and_config(self):
+        spec = XSpec("ssh=-p 22100 user@host//python=python3")
+        spec.ssh_config = "/home/user/ssh_config"
+        assert ssh_args(spec)[:6] == [
+            "ssh", "-C", "-F", spec.ssh_config, "-p", "22100"]
 
     def test_env(self):
         xspec = XSpec("popen//env:NAME=value1")
