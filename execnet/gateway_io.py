@@ -76,7 +76,10 @@ def popen_args(spec):
 
 def ssh_args(spec):
     remotepython = spec.python or "python"
-    args = ["ssh", "-C" ] 
+    args = ["ssh", "-C" ]
+    if spec.ssh_config is not None:
+        args.extend(['-F', str(spec.ssh_config)])
+ 
     args.extend(spec.ssh.split())
     remotecmd = '{} -c "{}"'.format(
         remotepython, popen_bootstrapline)
