@@ -10,21 +10,19 @@ import threading, traceback, struct
 
 # NOTE that we want to avoid try/except style importing
 # to avoid setting sys.exc_info() during import
-if sys.version_info < (3,0):
-    import Queue as queue
-    from StringIO import StringIO as BytesIO
-else:
-    import queue
-    from io import BytesIO
 
 ISPY3 = sys.version_info >= (3, 0)
 if ISPY3:
+    import queue
+    from io import BytesIO
     exec("def do_exec(co, loc): exec(co, loc)\n"
          "def reraise(cls, val, tb): raise val\n")
     unicode = str
     _long_type = int
     from _thread import interrupt_main
 else:
+    import Queue as queue
+    from StringIO import StringIO as BytesIO
     exec("def do_exec(co, loc): exec co in loc\n"
          "def reraise(cls, val, tb): raise cls, val, tb\n")
     bytes = str
