@@ -3,6 +3,7 @@ mostly functional tests of gateways.
 """
 import os, sys, time
 import py
+import pytest
 import execnet
 from execnet import gateway_base, gateway, gateway_io
 from testing.test_serializer import _find_version
@@ -38,6 +39,20 @@ class TestBasicGateway:
         status = gw.remote_status()
         assert not status.execqsize
         assert status.numexecuting == 0
+
+    def test_exc_info_is_clear_after_gateway_startup(self, gw):
+        ch = gw.remote_exec("""
+                import traceback, sys
+                excinfo = sys.exc_info()
+                if excinfo != (None, None, None):
+                    r = traceback.format_exception(*excinfo)
+                else:
+                    r = 0
+                channel.send(r)
+        """)
+        res = ch.receive()
+        if res != 0:
+           pytest.fail("remote raised\n%s" % res)
 
     def test_gateway_status_no_real_channel(self, gw):
         numchan = gw._channelfactory.channels()
