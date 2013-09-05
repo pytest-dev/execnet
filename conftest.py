@@ -1,5 +1,6 @@
 import execnet
 import py
+import pytest
 import os, sys
 import subprocess
 

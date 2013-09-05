@@ -1,21 +1,21 @@
 """
 base execnet gateway code send to the other side for bootstrapping.
 
-NOTE: aims to be compatible to Python 2.3-3.1, Jython and IronPython
+NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
 
-(C) 2004-2009 Holger Krekel, Armin Rigo, Benjamin Peterson, and others
+(C) 2004-2013 Holger Krekel, Armin Rigo, Benjamin Peterson, and others
 """
 import sys, os, weakref
 import threading, traceback, struct
-try:
-    import queue
-except ImportError:
-    import Queue as queue
 
-try:
-    from io import BytesIO
-except:
+# NOTE that we want to avoid try/except style importing
+# to avoid setting sys.exc_info() during import
+if sys.version_info < (3,0):
+    import Queue as queue
     from StringIO import StringIO as BytesIO
+else:
+    import queue
+    from io import BytesIO
 
 ISPY3 = sys.version_info >= (3, 0)
 if ISPY3:

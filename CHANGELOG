@@ -14,6 +14,8 @@
 
 - dont try the jython pid fixup on a RemoteIO
 
+- avoid accidentally setting exc_info() in gateway_base.py
+
 1.1
 --------------------------------
 
