@@ -2,6 +2,7 @@
     tests for multi channels and gateway Groups
 """
 
+import pytest
 import threading
 from time import sleep
 import execnet
@@ -194,6 +195,7 @@ class TestGroup:
         group.terminate(1.0)
 
 
+@pytest.mark.skipif("sys.version_info < (2,6)")
 def test_safe_terminate():
     active = threading.active_count()
     l = []
@@ -207,6 +209,7 @@ def test_safe_terminate():
     py.std.gc.collect()
     assert threading.active_count() == active
 
+@pytest.mark.skipif("sys.version_info < (2,6)")
 def test_safe_terminate2():
     active = threading.active_count()
     l = []
