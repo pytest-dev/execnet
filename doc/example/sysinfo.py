@@ -97,9 +97,10 @@ def error(*args):
 
 def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
     import execnet
-    spec = "ssh=%s" % sshname
     if ssh_config:
-        spec += "ssh_config=%s" % ssh_config
+        spec = "ssh=-F %s %s" % (ssh_config, sshname)
+    else:
+        spec += "ssh=%s" % sshname
     debug("connecting to", repr(spec))
     try:
         gw = execnet.makegateway(spec)

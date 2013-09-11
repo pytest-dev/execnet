@@ -4,6 +4,10 @@
 - introduce execnet.dump/load variants of dumps/loads
   serializing/unserializing mechanism.
 
+- extended ssh-syntax to allow passing of command line args, 
+  e.g.  "ssh= -p 50 hostname". The options are passed to 
+  the underlying ssh client binary.  Thanks tundish.
+
 - fix issue15: interoperability with inspect.getstack().
   Thanks Peter Feiner.
 
@@ -13,6 +17,8 @@
 - change license to MIT
 
 - dont try the jython pid fixup on a RemoteIO
+
+- avoid accidentally setting exc_info() in gateway_base.py
 
 1.1
 --------------------------------

@@ -61,6 +61,9 @@ examples for valid gateway specifications
   interpreter on the host ``wyvern``.  The remote process will have
   ``mycache`` as its current working directory.
 
+* ``ssh=-p 5000 myhost`` makes execnet pass "-p 5000 myhost" arguments
+  to the underlying ssh client binary, specifying a custom part.
+
 * ``popen//python=2.5//nice=20`` specification of a python2.5
   subprocess; running with the lowest CPU priority ("nice" level).
   By default current dir will be the current dir of the instantiator.
