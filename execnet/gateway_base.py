@@ -420,12 +420,11 @@ class Channel(object):
             raise IOError("cannot send to %r" %(self,))
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
-    def receive(self, timeout=-1):
+    def receive(self, timeout=None):
         """receive a data item that was sent from the other side.
-        timeout: -1 [default] blocked waiting, but wake up periodically
-        to let CTRL-C through.  A positive number indicates the
-        number of seconds after which a channel.TimeoutError exception
-        will be raised if no item was received.
+        timeout: None [default] blocked waiting.  A positive number
+        indicates the number of seconds after which a channel.TimeoutError
+        exception will be raised if no item was received.
         Note that exceptions from the remotely executing code will be
         reraised as channel.RemoteError exceptions containing
         a textual representation of the remote traceback.
@@ -433,19 +432,10 @@ class Channel(object):
         itemqueue = self._items
         if itemqueue is None:
             raise IOError("cannot receive(), channel has receiver callback")
-        if timeout < 0:
-            internal_timeout = self._INTERNALWAKEUP
-        else:
-            internal_timeout = timeout
-
-        while 1:
-            try:
-                x = itemqueue.get(timeout=internal_timeout)
-                break
-            except queue.Empty:
-                if timeout < 0:
-                    continue
-                raise self.TimeoutError("no item after %r seconds" %(timeout))
+        try:
+            x = itemqueue.get(timeout=timeout)
+        except queue.Empty:
+            raise self.TimeoutError("no item after %r seconds" %(timeout))
         if x is ENDMARKER:
             itemqueue.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()

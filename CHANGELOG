@@ -1,8 +1,17 @@
 1.X
 --------------------------------
 
+- change license from GPL to MIT
+
 - introduce execnet.dump/load variants of dumps/loads
   serializing/unserializing mechanism.
+
+- improve channel.receive() communication latency on python2
+  by changing the default timeout of the underlying Queue.get
+  to a regular None instead of the previous default -1 
+  which caused an internal positive timeout value
+  (a hack probably introduced to allow CTRL-C to pass
+  through for <python2.5 versions).
 
 - extended ssh-syntax to allow passing of command line args, 
   e.g.  "ssh= -p 50 hostname". The options are passed to 
@@ -13,8 +22,6 @@
 
 - fix issue10 : skip PYTHONDONTWRITEBYTECODE test if 
   it we are running with PYTHONDONTWRITEBYTECODE set.
-
-- change license to MIT
 
 - dont try the jython pid fixup on a RemoteIO
 
