@@ -37,8 +37,8 @@ Features
 
 * easy creation, handling and termination of multiple processes
 
-* well tested interactions between CPython 2.4-2.7, CPython-3.2, Jython 2.5.1
-  and PyPy-1.8 and PyPy-1.9 interpreters.
+* well tested interactions between CPython 2.5-2.7, CPython-3.3, Jython 2.5.1
+  and PyPy interpreters.
 
 * fully interoperable between Windows and Unix-ish systems.
 
