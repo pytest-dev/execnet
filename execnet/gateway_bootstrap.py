@@ -23,7 +23,7 @@ def bootstrap_popen(io, spec):
         "serve(init_popen_io(), id='%s-slave')" % spec.id,
     )
     s = io.read(1)
-    assert s == "1".encode('ascii')
+    assert s == "1".encode('ascii'), repr(s)
 
 
 def bootstrap_ssh(io, spec):
