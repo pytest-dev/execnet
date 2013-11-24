@@ -4,14 +4,12 @@ Managing Gateway Groups and interactions with multiple channels.
 (c) 2008-2009, Holger Krekel and others
 """
 
-import os, sys, atexit
-import time
-import execnet
+import sys, atexit
 from execnet.threadpool import WorkerPool
 
 from execnet import XSpec
-from execnet import gateway, gateway_io, gateway_bootstrap
-from execnet.gateway_base import queue, reraise, trace, TimeoutError
+from execnet import gateway_io, gateway_bootstrap
+from execnet.gateway_base import queue, reraise, trace
 
 NO_ENDMARKER_WANTED = object()
 
@@ -147,7 +145,6 @@ class Group:
         """
 
         while self:
-            from execnet.threadpool import WorkerPool
             vias = {}
             for gw in self:
                 if gw.spec.via:

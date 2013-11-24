@@ -7,8 +7,6 @@ To use, run:
 """
 
 import sys
-import os
-import time
 import win32serviceutil
 import win32service
 import win32event

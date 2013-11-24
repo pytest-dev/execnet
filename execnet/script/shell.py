@@ -10,7 +10,6 @@ try:
     clientsock
 except NameError:
     print("client side starting")
-    import sys
     host, port  = sys.argv[1].split(':')
     port = int(port)
     myself = open(os.path.abspath(sys.argv[0]), 'rU').read()
@@ -73,13 +72,13 @@ class promptagent(Thread):
                         sys.stderr=olderr
                 clientfile.flush()
             except EOFError:
-                e = sys.exc_info()[1]
+                #e = sys.exc_info()[1]
                 sys.stderr.write("connection close, prompt thread returns")
                 break
                 #print >>sys.stdout, "".join(apply(format_exception,sys.exc_info()))
 
         self.clientsock.close()
 
-prompter = promptagent(clientsock)
+prompter = promptagent(clientsock)  # noqa
 prompter.start()
 print("promptagent - thread started")

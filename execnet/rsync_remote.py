@@ -1,5 +1,5 @@
 """
-(c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
+(c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
 def serve_rsync(channel):
     import os, stat, shutil
@@ -106,4 +106,4 @@ def serve_rsync(channel):
     channel.send(("done", None))
 
 if __name__ == '__channelexec__':
-    serve_rsync(channel)
+    serve_rsync(channel) # noqa

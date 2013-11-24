@@ -1,8 +1,6 @@
 """
-(c) 2008-2009, holger krekel
+(c) 2008-2013, holger krekel
 """
-import execnet
-
 class XSpec:
     """ Execution Specification: key1=value1//key2=value2 ...
         * keys need to be unique within the specification scope

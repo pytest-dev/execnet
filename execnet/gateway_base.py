@@ -717,7 +717,6 @@ class BaseGateway(object):
 
     def join(self, timeout=None):
         """ Wait for receiverthread to terminate. """
-        current = threading.currentThread()
         if self._receiverthread.isAlive():
             self._trace("joining receiver thread")
             self._receiverthread.join(timeout)
@@ -785,7 +784,7 @@ class SlaveGateway(BaseGateway):
             channel._executing = True
             try:
                 co = compile(source+'\n', '<remote exec>', 'exec')
-                do_exec(co, loc)
+                do_exec(co, loc) # noqa
                 if call_name:
                     self._trace('calling %s(**%60r)' % (call_name, kwargs))
                     function = loc[call_name]

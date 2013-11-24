@@ -173,4 +173,4 @@ def serve_remote_io(channel):
     control_chan.setcallback(controll)
 
 if __name__ == "__channelexec__":
-    serve_remote_io(channel)
+    serve_remote_io(channel) # noqa
