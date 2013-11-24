@@ -7,7 +7,6 @@ import sys, os, inspect, types, linecache
 import textwrap
 import execnet
 from execnet.gateway_base import Message
-from execnet.gateway_io import Popen2IOMaster
 from execnet import gateway_base
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 

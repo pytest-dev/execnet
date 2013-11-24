@@ -53,7 +53,7 @@ def exec_from_one_connection(serversock):
         co = compile(source+'\n', source, 'exec')
         print_(progname, 'compiled source, executing')
         try:
-            exec_(co, g)
+            exec_(co, g) # noqa
         finally:
             print_(progname, 'finished executing code')
             # background thread might hold a reference to this (!?)
@@ -105,8 +105,8 @@ if __name__ == '__main__':
     serversock = bind_and_listen(hostport)
     startserver(serversock, loop=False)
 elif __name__=='__channelexec__':
-    bindname = channel.receive()
+    bindname = channel.receive() # noqa
     sock = bind_and_listen(bindname)
     port = sock.getsockname()
-    channel.send(port)
+    channel.send(port) # noqa
     startserver(sock)

@@ -51,7 +51,7 @@ class Reply(object):
         if result is ERRORMARKER:
             self._queue = None
             excinfo = self._excinfo
-            reraise(excinfo[0], excinfo[1], excinfo[2])
+            reraise(excinfo[0], excinfo[1], excinfo[2]) # noqa
         return result
 
 class WorkerThread(threading.Thread):
@@ -152,7 +152,6 @@ class WorkerPool(object):
 
     def join(self, timeout=None):
         """ wait until all worker threads have terminated. """
-        current = threading.currentThread()
         deadline = delta = None
         if timeout is not None:
             deadline = time.time() + timeout
@@ -166,10 +165,10 @@ class WorkerPool(object):
                 raise IOError("timeout while joining threads")
 
 if __name__ == '__channelexec__':
-    maxthreads = channel.receive()
+    maxthreads = channel.receive()  # noqa
     execpool = WorkerPool(maxthreads=maxthreads)
-    gw = channel.gateway
-    channel.send("ok")
+    gw = channel.gateway # noqa
+    channel.send("ok") # noqa
     gw._trace("instantiated thread work pool maxthreads=%s" %(maxthreads,))
     while 1:
         gw._trace("waiting for new exec task")

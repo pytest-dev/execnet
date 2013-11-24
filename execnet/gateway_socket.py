@@ -1,8 +1,6 @@
 import socket
-from execnet.gateway import Gateway
 from execnet.gateway_bootstrap import HostNotFound
-import os, sys, inspect
-
+import sys
 
 try: bytes
 except NameError: bytes = str
