@@ -55,8 +55,6 @@ def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     out = py.builtin._totext(out, 'utf8')
     assert str(pid) not in out, out
 
-@py.test.mark.xfail(reason="non-resolved race/wait/interrupt_main/thread-loop "
- "isdue with some Python interpreters")
 def test_close_initiating_remote_no_error(testdir, anypython):
     p = testdir.makepyfile("""
         import sys

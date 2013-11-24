@@ -43,9 +43,10 @@ class Gateway(gateway_base.BaseGateway):
             self._trace("gateway already unregistered with group")
             return
         self._group._unregister(self)
-        self._trace("--> sending GATEWAY_TERMINATE")
         try:
+            self._trace("--> sending GATEWAY_TERMINATE")
             self._send(Message.GATEWAY_TERMINATE)
+            self._trace("--> io.close_write")
             self._io.close_write()
         except IOError:
             v = sys.exc_info()[1]
