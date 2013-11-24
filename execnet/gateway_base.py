@@ -117,6 +117,8 @@ class Message:
     def from_io(io):
         try:
             header = io.read(9) # type 1, channel 4, payload 4
+            if not header:
+                raise EOFError("empty read")
         except EOFError:
             e = sys.exc_info()[1]
             raise EOFError('couldnt load message header, ' + e.args[0])
@@ -186,8 +188,10 @@ def _setupmessages():
         gateway._channelfactory._local_close(message.channelid, sendonly=True)
 
     def gateway_terminate(message, gateway):
+        # wake up and terminate any execution waiting to receive something
+        gateway._channelfactory._finished_receiving()
+        # then try harder to terminate execution
         gateway._terminate_execution()
-        raise SystemExit(0)
 
     def reconfigure(message, gateway):
         if message.channelid == 0:
@@ -234,7 +238,8 @@ class RemoteError(Exception):
     def warn(self):
         if self.formatted != INTERRUPT_TEXT:
             # XXX do this better
-            sys.stderr.write("Warning: unhandled %r\n" % (self,))
+            sys.stderr.write("[%s] Warning: unhandled %r\n"
+                             % (os.getpid(), self,))
 
 class TimeoutError(IOError):
     """ Exception indicating that a timeout was reached. """
@@ -559,6 +564,7 @@ class ChannelFactory(object):
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):
+        self.gateway._trace("finished receiving")
         self._writelock.acquire()
         try:
             self.finished = True
@@ -655,14 +661,16 @@ class BaseGateway(object):
         self._receiverthread.start()
 
     def _thread_receiver(self):
-        self._trace("RECEIVERTHREAD: starting to run")
+        def log(*msg):
+            self._trace("[receiver-thread]", *msg)
+        log("RECEIVERTHREAD: starting to run")
         eof = False
         io = self._io
         try:
             try:
                 while 1:
                     msg = Message.from_io(io)
-                    self._trace("received", msg)
+                    log("received", msg)
                     _receivelock = self._receivelock
                     _receivelock.acquire()
                     try:
@@ -671,24 +679,23 @@ class BaseGateway(object):
                     finally:
                         _receivelock.release()
             except self._sysex:
-                self._trace("RECEIVERTHREAD: doing io.close_read()")
+                log("io.close_read()")
                 self._io.close_read()
             except EOFError:
-                self._trace("RECEIVERTHREAD: got EOFError")
-                self._trace("RECEIVERTHREAD: traceback was: ",
-                    self._geterrortext(self.exc_info()))
+                log("got EOF")
+                #log("traceback was: ", self._geterrortext(self.exc_info()))
                 self._error = self.exc_info()[1]
                 eof = True
             except:
-                self._trace("RECEIVERTHREAD",
-                            self._geterrortext(self.exc_info()))
+                log(self._geterrortext(self.exc_info()))
         finally:
             try:
-                self._trace('RECEIVERTHREAD', 'entering finalization')
+                log('entering finalization')
+                # wake up any execution waiting to receive something
+                self._channelfactory._finished_receiving()
                 if eof:
                     self._terminate_execution()
-                self._channelfactory._finished_receiving()
-                self._trace('RECEIVERTHREAD', 'leaving finalization')
+                log('leaving finalization')
             except:
                 pass # XXX be silent at interp-shutdown
 
@@ -736,12 +743,22 @@ class SlaveGateway(BaseGateway):
         # called from receiverthread
         self._trace("putting None to execqueue")
         self._execqueue.put(None)
-        if interrupt_main:
+        self._execfinished.wait(1.0)
+        if self._execfinished.isSet():
+            return
+        self._trace("execution thread is busy, trying interrupt_main")
+        # We try hard to terminate execution based on the assumption
+        # that there is only one gateway object running per-process.
+        if sys.platform != "win32":
+            self._trace("sending ourselves a SIGINT")
+            os.kill(os.getpid(), 2)  # send ourselves a SIGINT
+        elif interrupt_main is not None:
             self._trace("calling interrupt_main()")
             interrupt_main()
         self._execfinished.wait(10.0)
         if not self._execfinished.isSet():
-            self._trace("execution did not finish in 10 secs, calling os._exit()")
+            self._trace("execution did not finish in 10 secs, "
+                        "calling os._exit()")
             os._exit(1)
 
     def serve(self, joining=True):
@@ -803,7 +820,7 @@ class SlaveGateway(BaseGateway):
             raise
         except:
             excinfo = self.exc_info()
-            self._trace("got exception: %s" % (excinfo[1],))
+            self._trace("got exception: %r" % (excinfo[1],))
             errortext = self._geterrortext(excinfo)
             channel.close(errortext)
         else:

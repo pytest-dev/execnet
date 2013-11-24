@@ -1,6 +1,13 @@
 1.X
 --------------------------------
 
+- streamline gateway termination and simplify proxy
+  implementation. add more internal tracing.
+
+- if execution hangs in computation, we now try to 
+  send a SIGINT to ourselves instead of just calling
+  thread.interrupt_main()
+  
 - change license from GPL to MIT
 
 - introduce execnet.dump/load variants of dumps/loads

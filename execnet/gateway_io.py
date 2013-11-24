@@ -145,22 +145,29 @@ class ProxyIO(object):
     def __repr__(self):
         return '<RemoteIO via %s>' % (self.iochan.gateway.id, )
 
+class PseudoSpec:
+    def __init__(self, vars):
+        self.__dict__.update(vars)
+    def __getattr__(self, name):
+        return None
 
-def serve_proxy_io(proxy_channel):
-    class PseudoSpec(object):
-        def __getattr__(self, name):
-            return None
-    spec = PseudoSpec()
-    spec.__dict__.update(proxy_channel.receive())
+def serve_proxy_io(proxy_channelX):
+    _trace = proxy_channelX.gateway._trace
+    tag = "serve_proxy_io:%s " % proxy_channelX.id
+    def log(*msg):
+        _trace(tag + msg[0], *msg[1:])
+    spec = PseudoSpec(proxy_channelX.receive())
     # create sub IO object which we will proxy back to our proxy initiator
     sub_io = create_io(spec)
-    control_chan = proxy_channel.receive()
-    proxy_channel.gateway._trace("got control chan", control_chan)
+    control_chan = proxy_channelX.receive()
+    log("got control chan", control_chan)
 
     # read data from master, forward it to the sub
-    def iocallback(data):
+    # XXX writing might block, thus blocking the receiver thread
+    def forward_to_sub(data):
+        log("forward data to sub, size %s" % len(data))
         sub_io.write(data)
-    proxy_channel.setcallback(iocallback)
+    proxy_channelX.setcallback(forward_to_sub)
 
     def controll(data):
         if data==RIO_WAIT:
@@ -174,18 +181,24 @@ def serve_proxy_io(proxy_channel):
     control_chan.setcallback(controll)
 
     # write data to the master coming from the sub
-    proxyback_file = proxy_channel.makefile("w")
+    forward_to_master_file = proxy_channelX.makefile("w")
 
-    # forward IO from our sub to the master
+    # read bootstrap byte from sub, send it on to master
+    log('reading bootstrap byte from sub', spec.id)
     initial = sub_io.read(1)
     assert initial == '1'.encode('ascii'), initial
-    proxy_channel.gateway._trace('initializing transfer io for', spec.id)
-    proxyback_file.write(initial)
+    log('forwarding bootstrap byte from sub', spec.id)
+    forward_to_master_file.write(initial)
+
+    # enter message forwarding loop
     while True:
-        message = Message.from_io(sub_io)
-        #except EOFError:
-        #    break
-        message.to_io(proxyback_file)
+        try:
+            message = Message.from_io(sub_io)
+        except EOFError:
+            log('EOF from sub, terminating proxying loop', spec.id)
+            break
+        message.to_io(forward_to_master_file)
+    # proxy_channelX will be closed from remote_exec's finalization code
 
 if __name__ == "__channelexec__":
     serve_proxy_io(channel) # noqa
