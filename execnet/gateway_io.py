@@ -85,7 +85,6 @@ def ssh_args(spec):
     args.append(remotecmd)
     return args
 
-
 def create_io(spec):
     if spec.popen:
         args = popen_args(spec)
@@ -96,21 +95,29 @@ def create_io(spec):
         io.remoteaddress = spec.ssh
         return io
 
+#
+# Proxy Gateway handling code
+#
+
 RIO_KILL = 1
 RIO_WAIT = 2
 RIO_REMOTEADDRESS = 3
 RIO_CLOSE_WRITE = 4
 
-class RemoteIO(object):
-    def __init__(self, master_channel):
-        self.iochan = master_channel.gateway.newchannel()
-        self.controlchan = master_channel.gateway.newchannel()
-        master_channel.send((self.iochan, self.controlchan))
-        self.io = self.iochan.makefile('r')
-
+class ProxyIO(object):
+    """ A Proxy IO object allows to instantiate a Gateway
+    through another "via" gateway.  A ProxyIO object is connected to
+    and interacts with the remote code instantiated from serve_proxy_io()
+    through the proxy_channel object.
+    """
+    def __init__(self, proxy_channel):
+        self.iochan = proxy_channel.gateway.newchannel()
+        self.controlchan = proxy_channel.gateway.newchannel()
+        proxy_channel.send((self.iochan, self.controlchan))
+        self.iochan_file = self.iochan.makefile('r')
 
     def read(self, nbytes):
-        return self.io.read(nbytes)
+        return self.iochan_file.read(nbytes)
 
     def write(self, data):
         return self.iochan.send(data)
@@ -132,12 +139,13 @@ class RemoteIO(object):
         return '<RemoteIO via %s>' % (self.iochan.gateway.id, )
 
 
-def serve_remote_io(channel):
+def serve_proxy_io(channel):
     class PseudoSpec(object):
         def __getattr__(self, name):
             return None
     spec = PseudoSpec()
     spec.__dict__.update(channel.receive())
+    # create IO object that we will proxy back
     io = create_io(spec)
     io_chan, control_chan = channel.receive()
     io_target = io_chan.makefile()
@@ -149,6 +157,8 @@ def serve_remote_io(channel):
         io_target.write(initial)
         while True:
             message = Message.from_io(io)
+            #except EOFError:
+            #    break
             message.to_io(io_target)
     import threading
     thread = threading.Thread(name='io-forward-'+spec.id,
@@ -173,4 +183,4 @@ def serve_remote_io(channel):
     control_chan.setcallback(controll)
 
 if __name__ == "__channelexec__":
-    serve_remote_io(channel) # noqa
+    serve_proxy_io(channel) # noqa

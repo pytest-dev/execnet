@@ -78,10 +78,10 @@ class Group:
         if spec.via:
             assert not spec.socket
             master = self[spec.via]
-            channel = master.remote_exec(gateway_io)
-            channel.send(vars(spec))
-            io = gateway_io.RemoteIO(channel)
-            gw = gateway_bootstrap.bootstrap(io, spec)
+            proxy_channel = master.remote_exec(gateway_io)
+            proxy_channel.send(vars(spec))
+            proxy_io_master = gateway_io.ProxyIO(proxy_channel)
+            gw = gateway_bootstrap.bootstrap(proxy_io_master, spec)
         elif spec.popen or spec.ssh:
             io = gateway_io.create_io(spec)
             gw = gateway_bootstrap.bootstrap(io, spec)
