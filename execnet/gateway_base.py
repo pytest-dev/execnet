@@ -124,7 +124,8 @@ class Message:
         return Message(msgtype, channel, io.read(payload))
 
     def to_io(self, io):
-        header = struct.pack('!bii', self.msgcode, self.channelid, len(self.data))
+        header = struct.pack('!bii', self.msgcode, self.channelid,
+                             len(self.data))
         io.write(header+self.data)
 
     def received(self, gateway):
@@ -363,7 +364,8 @@ class Channel(object):
     def close(self, error=None):
         """ close down this channel with an optional error message.
             Note that closing of a channel tied to remote_exec happens
-            automatically at the end of execution and cannot be done explicitely.
+            automatically at the end of execution and cannot
+            be done explicitely.
         """
         if self._executing:
             raise IOError("cannot explicitly close channel within remote_exec")
@@ -678,7 +680,8 @@ class BaseGateway(object):
                 self._error = self.exc_info()[1]
                 eof = True
             except:
-                self._trace("RECEIVERTHREAD", self._geterrortext(self.exc_info()))
+                self._trace("RECEIVERTHREAD",
+                            self._geterrortext(self.exc_info()))
         finally:
             try:
                 self._trace('RECEIVERTHREAD', 'entering finalization')
