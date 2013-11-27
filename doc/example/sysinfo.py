@@ -96,7 +96,6 @@ def error(*args):
     debug("ERROR", args[0] + ":", *args[1:])
 
 def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
-    import execnet
     if ssh_config:
         spec = "ssh=-F %s %s" % (ssh_config, sshname)
     else:

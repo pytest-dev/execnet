@@ -4,8 +4,7 @@ import pytest
 import sys, os, subprocess, inspect
 import execnet
 from execnet import gateway_base, gateway, gateway_io
-from execnet.gateway_base import Message, Channel, ChannelFactory, \
-        Unserializer, Popen2IO
+from execnet.gateway_base import Message, ChannelFactory, Popen2IO
 
 try:
     from StringIO import StringIO as BytesIO
@@ -39,7 +38,6 @@ class TestSerializeAPI:
         assert val == val2
 
 def test_serializer_api_version_error(monkeypatch):
-    from execnet import gateway_base
     bchr = gateway_base.bchr
     monkeypatch.setattr(gateway_base, 'DUMPFORMAT_VERSION', bchr(1))
     dumped = execnet.dumps(42)
@@ -84,7 +82,6 @@ def test_subprocess_interaction(anypython):
         popen.wait()
 
 def read_write_loop():
-    import os, sys
     sys.stdout.write("ok\n")
     sys.stdout.flush()
     while 1:
@@ -144,7 +141,7 @@ def test_popen_io(anypython, tmpdir):
     proc.stdin.write("x".encode('ascii'))
     stdout, stderr = proc.communicate()
     print (stderr)
-    ret = proc.wait()
+    proc.wait()
     assert "hello".encode('ascii') in stdout
 
 def test_popen_io_readloop(monkeypatch):
@@ -193,11 +190,10 @@ def test_geterrortext(anypython, tmpdir):
     print (out)
     assert "all passed" in out
 
-@py.test.mark.skipif("not hasattr(os, 'dup')")
+@pytest.mark.skipif("not hasattr(os, 'dup')")
 def test_stdouterrin_setnull():
     cap = py.io.StdCaptureFD()
-    io = gateway_base.init_popen_io()
-    import os
+    gateway_base.init_popen_io()
     os.write(1, "hello".encode('ascii'))
     if os.name == "nt":
         os.write(2, "world")
@@ -257,37 +253,37 @@ class TestPureChannel:
 
     def test_channel_timeouterror(self):
         channel = self.fac.new()
-        py.test.raises(IOError, channel.waitclose, timeout=0.01)
+        pytest.raises(IOError, channel.waitclose, timeout=0.01)
 
     def test_channel_makefile_incompatmode(self):
         channel = self.fac.new()
-        py.test.raises(ValueError, 'channel.makefile("rw")')
+        with pytest.raises(ValueError):
+            channel.makefile("rw")
 
 
 class TestSourceOfFunction(object):
 
     def test_lambda_unsupported(self):
-        py.test.raises(ValueError, gateway._source_of_function, lambda:1)
+        pytest.raises(ValueError, gateway._source_of_function, lambda:1)
 
     def test_wrong_prototype_fails(self):
         def prototype(wrong):
             pass
-        py.test.raises(ValueError, gateway._source_of_function, prototype)
+        pytest.raises(ValueError, gateway._source_of_function, prototype)
 
     def test_function_without_known_source_fails(self):
         # this one wont be able to find the source
         mess = {}
         py.builtin.exec_('def fail(channel): pass', mess, mess)
-        import inspect
         print(inspect.getsourcefile(mess['fail']))
-        py.test.raises(ValueError, gateway._source_of_function, mess['fail'])
+        pytest.raises(ValueError, gateway._source_of_function, mess['fail'])
 
     def test_function_with_closure_fails(self):
         mess = {}
         def closure(channel):
             print(mess)
 
-        py.test.raises(ValueError, gateway._source_of_function, closure)
+        pytest.raises(ValueError, gateway._source_of_function, closure)
 
 
     def test_source_of_nested_function(self):
@@ -300,7 +296,7 @@ class TestSourceOfFunction(object):
 
 
 class TestGlobalFinder(object):
-    pytestmark = py.test.mark.skipif('sys.version_info < (2, 6)')
+    pytestmark = pytest.mark.skipif('sys.version_info < (2, 6)')
 
     def check(self, func):
         src = py.code.Source(func)
@@ -310,17 +306,17 @@ class TestGlobalFinder(object):
     def test_local(self):
         def f(a, b, c):
             d = 3
-            pass
+            return d
 
         assert self.check(f) == []
 
     def test_global(self):
         def f(a, b):
-            c = 3
-            glob
+            sys
             d = 4
+            return d
 
-        assert self.check(f) == ['glob']
+        assert self.check(f) == ['sys']
 
 
     def test_builtin(self):
@@ -331,8 +327,8 @@ class TestGlobalFinder(object):
 
     def test_function_with_global_fails(self):
         def func(channel):
-            test
-        py.test.raises(ValueError, gateway._source_of_function, func)
+            sys
+        pytest.raises(ValueError, gateway._source_of_function, func)
 
     def test_method_call(self):
         # method names are reason for the simple code object based heusteric failing
@@ -342,7 +338,6 @@ class TestGlobalFinder(object):
 
 
 def test_remote_exec_function_with_kwargs(anypython, makegateway):
-    import sys
     def func(channel, data):
         channel.send(data)
     gw = makegateway('popen//python=%s' % anypython)
@@ -356,8 +351,8 @@ def test_remote_exec_function_with_kwargs(anypython, makegateway):
 
 def test_remote_exc__no_kwargs(makegateway):
     gw = makegateway()
-    py.test.raises(TypeError, gw.remote_exec, gateway_base, kwarg=1)
-    py.test.raises(TypeError, gw.remote_exec, 'pass', kwarg=1)
+    pytest.raises(TypeError, gw.remote_exec, gateway_base, kwarg=1)
+    pytest.raises(TypeError, gw.remote_exec, 'pass', kwarg=1)
 
 def test_remote_exec_inspect_stack(makegateway):
     gw = makegateway()

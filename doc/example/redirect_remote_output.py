@@ -7,9 +7,7 @@ showcasing features of the channel object:
 - setting a callback for receiving channel data
 
 """
-
-import py
-
+import execnet
 gw = execnet.makegateway()
 
 outchan = gw.remote_exec("""

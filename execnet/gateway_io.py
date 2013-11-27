@@ -142,6 +142,10 @@ class ProxyIO(object):
     def wait(self):
         return self._controll(RIO_WAIT)
 
+    @property
+    def remoteaddress(self):
+        return self._controll(RIO_REMOTEADDRESS)
+
     def __repr__(self):
         return '<RemoteIO via %s>' % (self.iochan.gateway.id, )
 

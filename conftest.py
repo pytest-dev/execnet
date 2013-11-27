@@ -1,7 +1,7 @@
 import execnet
 import py
 import pytest
-import os, sys
+import sys
 import subprocess
 
 collect_ignore = ['build', 'doc/_build']
@@ -152,6 +152,6 @@ def gw(request):
             sshhost = request.getfuncargvalue('specssh').ssh
             gw = group.makegateway("ssh=%s//id=ssh" %(sshhost,))
         elif request.param == 'proxy':
-            master = group.makegateway('popen//id=proxy-transport')
+            group.makegateway('popen//id=proxy-transport')
             gw = group.makegateway('popen//via=proxy-transport//id=proxy')
         return gw

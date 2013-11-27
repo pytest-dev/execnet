@@ -129,9 +129,9 @@ class TestGroup:
 
     def test_group_ordering_and_termination(self):
         group = Group()
-        gw = group.makegateway("popen//id=3")
-        gw = group.makegateway("popen//id=2")
-        gw = group.makegateway("popen//id=5")
+        group.makegateway("popen//id=3")
+        group.makegateway("popen//id=2")
+        group.makegateway("popen//id=5")
         gwlist = list(group)
         assert len(gwlist) == 3
         idlist = [x.id for x in gwlist]
@@ -180,7 +180,7 @@ class TestGroup:
 
     def test_remote_exec_args(self):
         group = Group()
-        gw = group.makegateway('popen')
+        group.makegateway('popen')
 
         def fun(channel, arg):
             channel.send(arg)
@@ -190,8 +190,8 @@ class TestGroup:
 
     def test_terminate_with_proxying(self):
         group = Group()
-        master = group.makegateway('popen//id=master')
-        slave = group.makegateway('popen//via=master//id=slave')
+        group.makegateway('popen//id=master')
+        group.makegateway('popen//via=master//id=slave')
         group.terminate(1.0)
 
 

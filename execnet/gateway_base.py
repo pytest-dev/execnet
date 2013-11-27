@@ -3,7 +3,7 @@ base execnet gateway code send to the other side for bootstrapping.
 
 NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
 
-(C) 2004-2013 Holger Krekel, Armin Rigo, Benjamin Peterson, and others
+(C) 2004-2013 Holger Krekel, Armin Rigo, Benjamin Peterson, Ronny Pfannschmidt and others
 """
 import sys, os, weakref
 import threading, traceback, struct

@@ -1,45 +1,44 @@
 """
 mostly functional tests of gateways.
 """
-import os, sys, time
+import pytest
+import sys, time
 import py
-import execnet
-from execnet import gateway_base, gateway
 from testing.test_gateway import _find_version
-needs_early_gc = py.test.mark.skipif("not hasattr(sys, 'getrefcount')")
-needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
+needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
+needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
 queue = py.builtin._tryimport('queue', 'Queue')
 TESTTIMEOUT = 10.0 # seconds
 
 class TestChannelBasicBehaviour:
     def test_serialize_error(self, gw):
         ch = gw.remote_exec("channel.send(ValueError(42))")
-        excinfo = py.test.raises(ch.RemoteError, ch.receive)
+        excinfo = pytest.raises(ch.RemoteError, ch.receive)
         assert "can't serialize" in str(excinfo.value)
 
     def test_channel_close_and_then_receive_error(self, gw):
         channel = gw.remote_exec('raise ValueError')
-        py.test.raises(channel.RemoteError, channel.receive)
+        pytest.raises(channel.RemoteError, channel.receive)
 
     def test_channel_finish_and_then_EOFError(self, gw):
         channel = gw.remote_exec('channel.send(42)')
         x = channel.receive()
         assert x == 42
-        py.test.raises(EOFError, channel.receive)
-        py.test.raises(EOFError, channel.receive)
-        py.test.raises(EOFError, channel.receive)
+        pytest.raises(EOFError, channel.receive)
+        pytest.raises(EOFError, channel.receive)
+        pytest.raises(EOFError, channel.receive)
 
     def test_waitclose_timeouterror(self, gw):
         channel = gw.remote_exec("channel.receive()")
-        py.test.raises(channel.TimeoutError, channel.waitclose, 0.02)
+        pytest.raises(channel.TimeoutError, channel.waitclose, 0.02)
         channel.send(1)
         channel.waitclose(timeout=TESTTIMEOUT)
 
     def test_channel_receive_timeout(self, gw):
         channel = gw.remote_exec('channel.send(channel.receive())')
-        py.test.raises(channel.TimeoutError, "channel.receive(timeout=0.2)")
+        pytest.raises(channel.TimeoutError, "channel.receive(timeout=0.2)")
         channel.send(1)
-        x = channel.receive(timeout=TESTTIMEOUT)
+        channel.receive(timeout=TESTTIMEOUT)
 
     def test_channel_receive_internal_timeout(self, gw, monkeypatch):
         channel = gw.remote_exec("""
@@ -48,13 +47,13 @@ class TestChannelBasicBehaviour:
             channel.send(1)
         """)
         monkeypatch.setattr(channel.__class__, '_INTERNALWAKEUP', 0.2)
-        x = channel.receive()
+        channel.receive()
 
     def test_channel_close_and_then_receive_error_multiple(self, gw):
         channel = gw.remote_exec('channel.send(42) ; raise ValueError')
         x = channel.receive()
         assert x == 42
-        py.test.raises(channel.RemoteError, channel.receive)
+        pytest.raises(channel.RemoteError, channel.receive)
 
     def test_channel__local_close(self, gw):
         channel = gw._channelfactory.new()
@@ -65,7 +64,7 @@ class TestChannelBasicBehaviour:
         channel = gw._channelfactory.new()
         gw._channelfactory._local_close(channel.id,
                                             channel.RemoteError("error"))
-        py.test.raises(channel.RemoteError, channel.waitclose, 0.01)
+        pytest.raises(channel.RemoteError, channel.waitclose, 0.01)
 
     def test_channel_error_reporting(self, gw):
         channel = gw.remote_exec('def foo():\n  return foobar()\nfoo()\n')
@@ -77,7 +76,7 @@ class TestChannelBasicBehaviour:
             assert str(e).find('NameError: global name \'foobar\' '
                                'is not defined') > -1
         else:
-            py.test.fail('No exception raised')
+            pytest.fail('No exception raised')
 
     def test_channel_syntax_error(self, gw):
         # missing colon
@@ -149,7 +148,7 @@ class TestChannelBasicBehaviour:
             channel.send(channel.gateway.newchannel())
             ''')
         channel.setcallback(callback=l.append)
-        py.test.raises(IOError, channel.receive)
+        pytest.raises(IOError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 3
         assert l[:2] == [42,13]
@@ -165,7 +164,7 @@ class TestChannelBasicBehaviour:
         x = channel.receive()
         assert x == 42
         channel.setcallback(callback=l.append)
-        py.test.raises(IOError, channel.receive)
+        pytest.raises(IOError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 2
         assert l[0] == 13
@@ -215,7 +214,7 @@ class TestChannelBasicBehaviour:
             counter -= 1
             print(counter)
             if not counter:
-                py.test.fail("timed out waiting for the answer[%d]" % len(l))
+                pytest.fail("timed out waiting for the answer[%d]" % len(l))
             time.sleep(0.04)   # busy-wait
         assert l == [0, 100, 200, 300, 400]
         return subchannel
@@ -234,7 +233,7 @@ class TestChannelBasicBehaviour:
             channel.send(channel.gateway.newchannel())
             ''')
         channel.setcallback(l.append, 999)
-        py.test.raises(IOError, channel.receive)
+        pytest.raises(IOError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 4
         assert l[:2] == [42,13]
@@ -265,7 +264,7 @@ class TestChannelBasicBehaviour:
         """)
         subchan = channel.receive()
         subchan.send(1)
-        excinfo = py.test.raises(subchan.RemoteError,
+        excinfo = pytest.raises(subchan.RemoteError,
             "subchan.waitclose(TESTTIMEOUT)")
         assert "42" in excinfo.value.formatted
         channel.send(1)
@@ -289,7 +288,7 @@ class TestChannelFile:
         f = channel.makefile()
         assert not f.isatty()
         channel.waitclose(TESTTIMEOUT)
-        py.test.raises(IOError, f.write, 'hello')
+        pytest.raises(IOError, f.write, 'hello')
 
     def test_channel_file_proxyclose(self, gw):
         channel = gw.remote_exec("""
@@ -300,7 +299,7 @@ class TestChannelFile:
         """)
         first = channel.receive()
         assert first.strip() == 'hello world'
-        py.test.raises(channel.RemoteError, channel.receive)
+        pytest.raises(channel.RemoteError, channel.receive)
 
     def test_channel_file_read(self, gw):
         channel = gw.remote_exec("""
@@ -337,12 +336,12 @@ class TestChannelFile:
 
     def test_channel_makefile_incompatmode(self, gw):
         channel = gw.newchannel()
-        py.test.raises(ValueError, 'channel.makefile("rw")')
-
+        with pytest.raises(ValueError):
+            channel.makefile("rw")
 
 
 class TestStringCoerce:
-    @py.test.mark.skipif('sys.version>="3.0"')
+    @pytest.mark.skipif('sys.version>="3.0"')
     def test_2to3(self, makegateway):
         python = _find_version('3')
         gw = makegateway('popen//python=%s'%python)
@@ -370,7 +369,7 @@ class TestStringCoerce:
         assert isinstance(res, str)
         gw.exit()
 
-    @py.test.mark.skipif('sys.version<"3.0"')
+    @pytest.mark.skipif('sys.version<"3.0"')
     def test_3to2(self, makegateway):
         python = _find_version('2')
         gw = makegateway('popen//python=%s'%python)
