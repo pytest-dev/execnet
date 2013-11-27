@@ -1,4 +1,5 @@
-
+from __future__ import with_statement
+import pytest
 import py
 import sys
 from execnet.threadpool import queue, WorkerPool
@@ -42,15 +43,18 @@ def test_get_timeout():
         py.std.time.sleep(0.2)
         return 42
     reply = pool.dispatch(f)
-    py.test.raises(IOError, "reply.get(timeout=0.01)")
+    with py.test.raises(IOError):
+        reply.get(timeout=0.01)
 
 def test_get_excinfo():
     pool = WorkerPool()
     def f():
         raise ValueError("42")
     reply = pool.dispatch(f)
-    excinfo = py.test.raises(ValueError, "reply.get(1.0)")
-    py.test.raises(EOFError, "reply.get(1.0)")
+    with py.test.raises(ValueError):
+        reply.get(1.0)
+    with pytest.raises(EOFError):
+        reply.get(1.0)
 
 def test_maxthreads():
     pool = WorkerPool(maxthreads=1)

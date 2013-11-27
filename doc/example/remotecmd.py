@@ -6,7 +6,7 @@ def simple(arg):
 
 def listdir(path):
     return os.listdir(path)
-    
+
 if __name__ == '__channelexec__':
     for item in channel:
         channel.send(eval(item))

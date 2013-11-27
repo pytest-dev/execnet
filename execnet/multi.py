@@ -1,7 +1,7 @@
 """
 Managing Gateway Groups and interactions with multiple channels.
 
-(c) 2008-2009, Holger Krekel and others
+(c) 2008-2014, Holger Krekel and others
 """
 
 import sys, atexit

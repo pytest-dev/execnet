@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 import sys
-import os
 import tempfile
 import subprocess
 import py
 import execnet
-from execnet import gateway_base as serializer
 
 
 def _find_version(suffix=""):
@@ -29,6 +27,8 @@ def _find_version(suffix=""):
                     return executable
         py.test.skip("can't find a %r executable" % (name,))
     return executable
+
+TEMPDIR = _py2_wrapper = _py3_wrapper = None
 
 def setup_module(mod):
     mod.TEMPDIR = py.path.local(tempfile.mkdtemp())

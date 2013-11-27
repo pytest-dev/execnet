@@ -1,7 +1,5 @@
 
-import sys, os
 import execnet
-import time
 import subprocess
 import py
 from execnet.threadpool import WorkerPool
@@ -11,7 +9,7 @@ execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
 
 def test_exit_blocked_slave_execution_gateway(anypython, makegateway):
     gateway = makegateway('popen//python=%s' % anypython)
-    channel = gateway.remote_exec("""
+    gateway.remote_exec("""
         import time
         time.sleep(10.0)
     """)
@@ -103,7 +101,7 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     """ % str(execnetdir))
     popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE)
     # sync with start-up
-    line = popen.stdout.readline()
+    popen.stdout.readline()
     reply = WorkerPool(1).dispatch(popen.communicate)
     reply.get(timeout=50)
     out, err = capfd.readouterr()

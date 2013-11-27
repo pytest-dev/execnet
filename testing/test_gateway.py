@@ -1,11 +1,11 @@
 """
 mostly functional tests of gateways.
 """
-import os, sys, time
+import os
 import py
 import pytest
 import execnet
-from execnet import gateway_base, gateway, gateway_io
+from execnet import gateway_base, gateway_io
 from testing.test_serializer import _find_version
 TESTTIMEOUT = 10.0 # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
@@ -56,7 +56,7 @@ class TestBasicGateway:
 
     def test_gateway_status_no_real_channel(self, gw):
         numchan = gw._channelfactory.channels()
-        st = gw.remote_status()
+        gw.remote_status()
         numchan2 = gw._channelfactory.channels()
         # note that on CPython this can not really
         # fail because refcounting leads to immediate
@@ -171,7 +171,7 @@ class TestBasicGateway:
         assert rinfo.executable
         assert rinfo.cwd
         assert rinfo.version_info
-        s = repr(rinfo)
+        assert repr(rinfo)
         old = gw.remote_exec("""
             import os.path
             cwd = os.getcwd()
