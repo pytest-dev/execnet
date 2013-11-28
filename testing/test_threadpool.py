@@ -14,26 +14,21 @@ def test_some():
         while q.qsize():
             py.std.time.sleep(0.01)
     for i in range(num):
-        pool.dispatch(f, i)
+        pool.spawn(f, i)
     for i in range(num):
         q.get()
-    assert len(pool._alive) == 4
+    assert len(pool._running) == 4
     pool.shutdown()
-    # XXX I replaced the following join() with a time.sleep(1), which seems
-    # to fix the test on Windows, and doesn't break it on Linux... Completely
-    # unsure what the idea is, though, so it would be nice if someone with some
-    # more understanding of what happens here would either fix this better, or
-    # remove this comment...
-    # pool.join(timeout=1.0)
-    py.std.time.sleep(1)
-    assert len(pool._alive) == 0
-    assert len(pool._ready) == 0
+    pool.waitall(timeout=1.0)
+    #py.std.time.sleep(1)  helps on windows?
+    assert len(pool._running) == 0
+    assert len(pool._running) == 0
 
 def test_get():
     pool = WorkerPool()
     def f():
         return 42
-    reply = pool.dispatch(f)
+    reply = pool.spawn(f)
     result = reply.get()
     assert result == 42
 
@@ -42,7 +37,7 @@ def test_get_timeout():
     def f():
         py.std.time.sleep(0.2)
         return 42
-    reply = pool.dispatch(f)
+    reply = pool.spawn(f)
     with py.test.raises(IOError):
         reply.get(timeout=0.01)
 
@@ -50,7 +45,7 @@ def test_get_excinfo():
     pool = WorkerPool()
     def f():
         raise ValueError("42")
-    reply = pool.dispatch(f)
+    reply = pool.spawn(f)
     with py.test.raises(ValueError):
         reply.get(1.0)
     with pytest.raises(EOFError):
@@ -61,22 +56,22 @@ def test_maxthreads():
     def f():
         py.std.time.sleep(0.5)
     try:
-        pool.dispatch(f)
-        py.test.raises(IOError, pool.dispatch, f)
+        pool.spawn(f)
+        py.test.raises(IOError, pool.spawn, f)
     finally:
         pool.shutdown()
 
-def test_join_timeout():
+def test_waitall_timeout():
     pool = WorkerPool()
     q = queue.Queue()
     def f():
         q.get()
-    reply = pool.dispatch(f)
+    reply = pool.spawn(f)
     pool.shutdown()
-    py.test.raises(IOError, pool.join, 0.01)
+    py.test.raises(IOError, pool.waitall, 0.01)
     q.put(None)
     reply.get(timeout=1.0)
-    pool.join(timeout=0.1)
+    pool.waitall(timeout=0.1)
 
 @py.test.mark.skipif("not hasattr(os, 'dup')")
 def test_pool_clean_shutdown():
@@ -84,11 +79,11 @@ def test_pool_clean_shutdown():
     pool = WorkerPool()
     def f():
         pass
-    pool.dispatch(f)
-    pool.dispatch(f)
+    pool.spawn(f)
+    pool.spawn(f)
     pool.shutdown()
-    pool.join(timeout=1.0)
-    assert not pool._alive
+    pool.waitall(timeout=1.0)
+    assert not pool._running
     assert not pool._ready
     out, err = capture.reset()
     print(out)

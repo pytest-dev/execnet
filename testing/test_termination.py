@@ -18,7 +18,7 @@ def test_exit_blocked_slave_execution_gateway(anypython, makegateway):
         return 17
 
     pool = WorkerPool()
-    reply = pool.dispatch(doit)
+    reply = pool.spawn(doit)
     x = reply.get(timeout=5.0)
     assert x == 17
 
@@ -102,7 +102,7 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE)
     # sync with start-up
     popen.stdout.readline()
-    reply = WorkerPool(1).dispatch(popen.communicate)
+    reply = WorkerPool(1).spawn(popen.communicate)
     reply.get(timeout=50)
     out, err = capfd.readouterr()
     lines = [x for x in err.splitlines()

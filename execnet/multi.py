@@ -237,7 +237,7 @@ def safe_terminate(timeout, list_of_paired_functions):
     workerpool = WorkerPool(len(list_of_paired_functions)*2)
 
     def termkill(termfunc, killfunc):
-        termreply = workerpool.dispatch(termfunc)
+        termreply = workerpool.spawn(termfunc)
         try:
             termreply.get(timeout=timeout)
         except IOError:
@@ -245,12 +245,12 @@ def safe_terminate(timeout, list_of_paired_functions):
 
     replylist = []
     for termfunc, killfunc in list_of_paired_functions:
-        reply = workerpool.dispatch(termkill, termfunc, killfunc)
+        reply = workerpool.spawn(termkill, termfunc, killfunc)
         replylist.append(reply)
     for reply in replylist:
         reply.get()
     workerpool.shutdown()
-    workerpool.join()
+    workerpool.waitall()
 
 
 default_group = Group()

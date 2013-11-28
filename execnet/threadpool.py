@@ -4,6 +4,11 @@ dispatching execution to threads
 (c) 2009, holger krekel
 """
 import threading
+try:
+    import thread
+except ImportError:
+    import _thread as thread
+
 import time
 import sys
 
@@ -22,7 +27,7 @@ ERRORMARKER = object()
 class Reply(object):
     """ reply instances provide access to the result
         of a function execution that got dispatched
-        through WorkerPool.dispatch()
+        through WorkerPool.spawn()
     """
     _excinfo = None
     def __init__(self, task):
@@ -54,12 +59,11 @@ class Reply(object):
             reraise(excinfo[0], excinfo[1], excinfo[2]) # noqa
         return result
 
-class WorkerThread(threading.Thread):
+class WorkerThread:
     def __init__(self, pool):
-        threading.Thread.__init__(self)
         self._queue = queue.Queue()
         self._pool = pool
-        self.setDaemon(1)
+        self._finishevent = threading.Event()
 
     def _run_once(self):
         reply = self._queue.get()
@@ -79,16 +83,23 @@ class WorkerThread(threading.Thread):
         # at this point, reply, task and all other local variables go away
         return True
 
+    def start(self):
+        self.id = thread.start_new_thread(self.run, ())
+
+    @property
+    def dead(self):
+        return self._finishevent.isSet()
+
     def run(self):
         try:
             while self._run_once():
-                self._pool._ready[self] = True
+                self._pool._ready.add(self)
         finally:
-            del self._pool._alive[self]
             try:
-                del self._pool._ready[self]
+                self._pool._ready.remove(self)
             except KeyError:
                 pass
+            self._finishevent.set()
 
     def send(self, task):
         reply = Reply(task)
@@ -98,8 +109,11 @@ class WorkerThread(threading.Thread):
     def stop(self):
         self._queue.put(SystemExit)
 
+    def join(self, timeout=None):
+        self._finishevent.wait(timeout)
+
 class WorkerPool(object):
-    """ A WorkerPool allows to dispatch function executions
+    """ A WorkerPool allows to spawn function executions
         to threads.  Each Worker Thread is reused for multiple
         function executions. The dispatching operation
         takes care to create and dispatch to existing
@@ -116,10 +130,10 @@ class WorkerPool(object):
             create up to `maxthreads` worker threads.
         """
         self.maxthreads = maxthreads
-        self._ready = {}
-        self._alive = {}
+        self._running = set()
+        self._ready = set()
 
-    def dispatch(self, func, *args, **kwargs):
+    def spawn(self, func, *args, **kwargs):
         """ return Reply object for the asynchronous dispatch
             of the given func(*args, **kwargs) in a
             separate worker thread.
@@ -127,18 +141,19 @@ class WorkerPool(object):
         if self._shuttingdown:
             raise IOError("WorkerPool is already shutting down")
         try:
-            thread, _ = self._ready.popitem()
+            thread = self._ready.pop()
         except KeyError: # pop from empty list
-            if self.maxthreads and len(self._alive) >= self.maxthreads:
-                raise IOError("can't create more than %d threads." %
+            if self.maxthreads and len(self._running) >= self.maxthreads:
+                raise IOError("maximum of %d threads are busy, "
+                              "can't create more." %
                               (self.maxthreads,))
             thread = self._newthread()
         return thread.send((func, args, kwargs))
 
     def _newthread(self):
         thread = WorkerThread(self)
-        self._alive[thread] = True
         thread.start()
+        self._running.add(thread)
         return thread
 
     def shutdown(self):
@@ -147,22 +162,23 @@ class WorkerPool(object):
         """
         if not self._shuttingdown:
             self._shuttingdown = True
-            for t in list(self._alive):
+            for t in self._running:
                 t.stop()
 
-    def join(self, timeout=None):
+    def waitall(self, timeout=None):
         """ wait until all worker threads have terminated. """
         deadline = delta = None
         if timeout is not None:
             deadline = time.time() + timeout
-        for thread in list(self._alive):
+        while self._running:
+            thread = self._running.pop()
             if deadline:
                 delta = deadline - time.time()
                 if delta <= 0:
                     raise IOError("timeout while joining threads")
             thread.join(timeout=delta)
-            if thread.isAlive():
-                raise IOError("timeout while joining threads")
+            if not thread.dead:
+                raise IOError("timeout while joining thread %s" % thread.id)
 
 if __name__ == '__channelexec__':
     maxthreads = channel.receive()  # noqa
@@ -176,7 +192,7 @@ if __name__ == '__channelexec__':
         if task is None:
             gw._trace("thread-dispatcher got None, exiting")
             execpool.shutdown()
-            execpool.join()
+            execpool.waitall()
             raise gw._StopExecLoop
         gw._trace("dispatching exec task to thread pool")
-        execpool.dispatch(gw.executetask, task)
+        execpool.spawn(gw.executetask, task)
