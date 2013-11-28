@@ -11,11 +11,10 @@ rsyncdirs = ['conftest.py', 'execnet', 'testing', 'doc']
 winpymap = {
     'python2.7': r'C:\Python27\python.exe',
     'python2.6': r'C:\Python26\python.exe',
-    'python2.5': r'C:\Python25\python.exe',
-    'python2.4': r'C:\Python24\python.exe',
     'python3.1': r'C:\Python31\python.exe',
-    'python3.2': r'C:\Python31\python.exe',
-    'python3.3': r'C:\Python31\python.exe',
+    'python3.2': r'C:\Python32\python.exe',
+    'python3.3': r'C:\Python33\python.exe',
+    'python3.4': r'C:\Python34\python.exe',
 }
 
 def pytest_runtest_setup(item, __multicall__):
@@ -92,7 +91,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("gw", gwtypes, indirect=True)
     elif 'anypython' in metafunc.funcargnames:
         metafunc.parametrize("anypython", indirect=True, argvalues=
-            ('python3.3', 'python3.2', 'python2.5',
+            ('python3.3', 'python3.2',
              'python2.6', 'python2.7', 'pypy-c', 'jython')
         )
 
