@@ -5,15 +5,16 @@ NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
 
 (C) 2004-2013 Holger Krekel, Armin Rigo, Benjamin Peterson, Ronny Pfannschmidt and others
 """
+from __future__ import with_statement
 import sys, os, weakref
-import threading, traceback, struct
+import traceback, struct
 
 # NOTE that we want to avoid try/except style importing
 # to avoid setting sys.exc_info() during import
+#
 
 ISPY3 = sys.version_info >= (3, 0)
 if ISPY3:
-    import queue
     from io import BytesIO
     exec("def do_exec(co, loc): exec(co, loc)\n"
          "def reraise(cls, val, tb): raise val\n")
@@ -21,7 +22,6 @@ if ISPY3:
     _long_type = int
     from _thread import interrupt_main
 else:
-    import Queue as queue
     from StringIO import StringIO as BytesIO
     exec("def do_exec(co, loc): exec co in loc\n"
          "def reraise(cls, val, tb): raise cls, val, tb\n")
@@ -31,6 +31,172 @@ else:
         from thread import interrupt_main
     except ImportError:
         interrupt_main = None
+
+class EmptySemaphore:
+    acquire = release = lambda self: None
+
+def get_execmodel(backend):
+    if backend == "thread":
+        import threading
+        try:
+            import thread
+        except ImportError:
+            import _thread as thread
+        try:
+            from queue import Queue, Empty
+        except ImportError:
+            from Queue import Queue, Empty
+        import time
+        def exec_start(func, args=()):
+            thread.start_new_thread(func, args)
+        from os import fdopen
+        from subprocess import Popen, PIPE
+    elif backend == "eventlet":
+        from eventlet.green import threading
+        from eventlet.green import time
+        from eventlet.green.Queue import Queue, Empty
+        from eventlet import spawn_n
+        def exec_start(func, args=()):
+            spawn_n(func, *args)
+        from eventlet.greenio import GreenPipe as fdopen
+        from eventlet.green.subprocess import Popen, PIPE
+
+    class ExecModel:
+        QueueEmpty = Empty
+
+        def __init__(self, name):
+            self.backend = name
+
+        def __repr__(self):
+            return "<ExecModel %r>" % self.backend
+
+        def Semaphore(self, size=None):
+            if size is None:
+                return EmptySemaphore()
+            return threading.Semaphore(size)
+
+        def fdopen(self, fileno, mode, blocking=1):
+            return fdopen(fileno, mode, blocking)
+
+        def sleep(self, secs):
+            return time.sleep(secs)
+
+        def Queue(self, maxsize=0):
+            return Queue(maxsize)
+
+        def Lock(self):
+            return threading.Lock()
+
+        def RLock(self):
+            return threading.RLock()
+
+        def Event(self):
+            event = threading.Event()
+            if sys.version_info < (2,7):
+                # patch wait function to return event state instead of None
+                real_wait = event.wait
+                def wait(timeout=None):
+                    real_wait(timeout=timeout)
+                    return event.isSet()
+                event.wait = wait
+            return event
+
+        def PopenPiped(self, args):
+            return Popen(args, stdout=PIPE, stdin=PIPE)
+
+        def start(self, func, args=()):
+            exec_start(func, args)
+
+    return ExecModel(backend)
+
+
+class Reply(object):
+    """ reply instances provide access to the result
+        of a function execution that got dispatched
+        through WorkerPool.spawn()
+    """
+    def __init__(self, task, threadmodel):
+        self.task = task
+        self._result_ready = threadmodel.Event()
+        self.running = True
+
+    def get(self, timeout=None):
+        """ get the result object from an asynchronous function execution.
+            if the function execution raised an exception,
+            then calling get() will reraise that exception
+            including its traceback.
+        """
+        self.waitfinish(timeout)
+        try:
+            return self._result
+        except AttributeError:
+            reraise(*(self._excinfo[:3]))
+
+    def waitfinish(self, timeout=None):
+        if not self._result_ready.wait(timeout):
+            raise IOError("timeout waiting for %r" %(self.task, ))
+
+    def run(self):
+        func, args, kwargs = self.task
+        try:
+            try:
+                self._result = func(*args, **kwargs)
+            except:
+                self._excinfo = sys.exc_info()
+        finally:
+            self._result_ready.set()
+            self.running = False
+
+
+class WorkerPool(object):
+    """ A WorkerPool allows to spawn function executions
+        to threads, returning a reply object on which you
+        can ask for the result (and get exceptions reraised)
+    """
+    def __init__(self, execmodel, size=None):
+        """ by default allow unlimited number of spawns. """
+        self.execmodel = execmodel
+        self._size = size
+        self._running_lock = self.execmodel.Lock()
+        self._sem = self.execmodel.Semaphore(size)
+        self._running = set()
+
+    def spawn(self, func, *args, **kwargs):
+        """ return Reply object for the asynchronous dispatch
+            of the given func(*args, **kwargs).
+        """
+        reply = Reply((func, args, kwargs), self.execmodel)
+        def run_and_release():
+            reply.run()
+            with self._running_lock:
+                self._running.remove(reply)
+                self._sem.release()
+                if not self._running:
+                    try:
+                        self._waitall_event.set()
+                    except AttributeError:
+                        pass
+        self._sem.acquire()
+        with self._running_lock:
+            self._running.add(reply)
+            self.execmodel.start(run_and_release, ())
+        return reply
+
+    def waitall(self, timeout=None):
+        """ wait until all previosuly spawns have terminated. """
+        with self._running_lock:
+            if not self._running:
+                return
+            # if a Reply still runs, we let run_and_release
+            # signal us -- note that we are still holding the
+            # _running_lock to avoid race conditions
+            self._waitall_event = self.execmodel.Event()
+        if not self._waitall_event.wait(timeout=timeout):
+            raise IOError("waitall TIMEOUT, still running: %s" % (self._running,))
+
+
+
+concurrence = get_execmodel("thread")
 
 sysex = (KeyboardInterrupt, SystemExit)
 
@@ -260,9 +426,9 @@ class Channel(object):
         #XXX: defaults copied from Unserializer
         self._strconfig = getattr(gateway, '_strconfig', (True, False))
         self.id = id
-        self._items = queue.Queue()
+        self._items = concurrence.Queue()
         self._closed = False
-        self._receiveclosed = threading.Event()
+        self._receiveclosed = concurrence.Event()
         self._remoteerrors = []
 
     def _trace(self, *msg):
@@ -289,7 +455,7 @@ class Channel(object):
             while 1:
                 try:
                     olditem = items.get(block=False)
-                except queue.Empty:
+                except concurrence.QueueEmpty:
                     if not (self._closed or self._receiveclosed.isSet()):
                         _callbacks[self.id] = (
                             callback,
@@ -441,7 +607,7 @@ class Channel(object):
             raise IOError("cannot receive(), channel has receiver callback")
         try:
             x = itemqueue.get(timeout=timeout)
-        except queue.Empty:
+        except concurrence.QueueEmpty:
             raise self.TimeoutError("no item after %r seconds" %(timeout))
         if x is ENDMARKER:
             itemqueue.put(x)  # for other receivers
@@ -477,7 +643,7 @@ class ChannelFactory(object):
     def __init__(self, gateway, startcount=1):
         self._channels = weakref.WeakValueDictionary()
         self._callbacks = {}
-        self._writelock = threading.Lock()
+        self._writelock = concurrence.Lock()
         self.gateway = gateway
         self.count = startcount
         self.finished = False
@@ -549,7 +715,8 @@ class ChannelFactory(object):
             if queue is None:
                 pass    # drop data
             else:
-                queue.put(loads_internal(data, channel))
+                item = loads_internal(data, channel)
+                queue.put(item)
         else:
             try:
                 data = loads_internal(data, channel, strconfig)
@@ -646,7 +813,7 @@ class BaseGateway(object):
         self.id = id
         self._strconfig = Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str
         self._channelfactory = ChannelFactory(self, _startcount)
-        self._receivelock = threading.RLock()
+        self._receivelock = concurrence.RLock()
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
@@ -655,10 +822,8 @@ class BaseGateway(object):
         self.__trace(self.id, *msg)
 
     def _initreceive(self):
-        self._receiverthread = threading.Thread(name="receiver",
-                                 target=self._thread_receiver)
-        self._receiverthread.setDaemon(1)
-        self._receiverthread.start()
+        self._workerpool = WorkerPool(concurrence)
+        self._receiverthread = self._workerpool.spawn(self._thread_receiver)
 
     def _thread_receiver(self):
         def log(*msg):
@@ -727,13 +892,8 @@ class BaseGateway(object):
 
     def join(self, timeout=None):
         """ Wait for receiverthread to terminate. """
-        if self._receiverthread.isAlive():
-            self._trace("joining receiver thread")
-            self._receiverthread.join(timeout)
-            self._trace("BACK FROM joining receiver thread")
-        else:
-            self._trace("gateway.join() called while receiverthread "
-                        "already finished")
+        self._trace("waiting for receiver thread to finish")
+        self._receiverthread.waitfinish()
 
 class SlaveGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
@@ -765,8 +925,9 @@ class SlaveGateway(BaseGateway):
     def serve(self, joining=True):
         try:
             try:
-                self._execqueue = queue.Queue()
-                self._execfinished = threading.Event()
+                self._trace("waiting for execution task")
+                self._execqueue = concurrence.Queue()
+                self._execfinished = concurrence.Event()
                 self._initreceive()
                 while 1:
                     item = self._execqueue.get()
@@ -1213,24 +1374,24 @@ def init_popen_io():
             else:
                 devnull = '/dev/null'
         # stdin
-        stdin  = os.fdopen(os.dup(0), 'r', 1)
+        stdin  = concurrence.fdopen(os.dup(0), 'r', 1)
         fd = os.open(devnull, os.O_RDONLY)
         os.dup2(fd, 0)
         os.close(fd)
 
         # stdout
-        stdout = os.fdopen(os.dup(1), 'w', 1)
+        stdout = concurrence.fdopen(os.dup(1), 'w', 1)
         fd = os.open(devnull, os.O_WRONLY)
         os.dup2(fd, 1)
 
         # stderr for win32
         if os.name == 'nt':
-            sys.stderr = os.fdopen(os.dup(2), 'w', 1)
+            sys.stderr = concurrence.fdopen(os.dup(2), 'w', 1)
             os.dup2(fd, 2)
         os.close(fd)
         io = Popen2IO(stdout, stdin)
-        sys.stdin = os.fdopen(0, 'r', 1)
-        sys.stdout = os.fdopen(1, 'w', 1)
+        sys.stdin = concurrence.fdopen(0, 'r', 1)
+        sys.stdout = concurrence.fdopen(1, 'w', 1)
     return io
 
 def serve(io, id):

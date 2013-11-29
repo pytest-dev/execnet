@@ -1,6 +1,6 @@
 """
 gateway code for initiating popen, socket and ssh connections.
-(c) 2004-2009, Holger Krekel and others
+(c) 2004-2013, Holger Krekel and others
 """
 
 import sys, os, inspect, types, linecache
@@ -73,7 +73,7 @@ class Gateway(gateway_base.BaseGateway):
 
     def hasreceiver(self):
         """ return True if gateway is able to receive data. """
-        return self._receiverthread.isAlive() # approxmimation
+        return self._receiverthread.running  # approxmimation
 
     def remote_status(self):
         """ return information object about remote execution status. """

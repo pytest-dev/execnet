@@ -5,16 +5,15 @@ creates io instances used for gateway io
 """
 import os
 import sys
-from subprocess import Popen, PIPE
 
 try:
-    from execnet.gateway_base import Popen2IO, Message
+    from execnet.gateway_base import concurrence, Popen2IO, Message
 except ImportError:
     from __main__ import Popen2IO, Message
 
 class Popen2IOMaster(Popen2IO):
     def __init__(self, args):
-        self.popen = p = Popen(args, stdin=PIPE, stdout=PIPE)
+        self.popen = p = concurrence.PopenPiped(args)
         Popen2IO.__init__(self, p.stdin, p.stdout)
 
     def wait(self):
