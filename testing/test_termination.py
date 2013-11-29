@@ -1,13 +1,11 @@
-
+import pytest
 import execnet
 import subprocess
 import py
-from execnet.threadpool import WorkerPool
-queue = py.builtin._tryimport('queue', 'Queue')
 from testing.test_gateway import TESTTIMEOUT
 execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
 
-def test_exit_blocked_slave_execution_gateway(anypython, makegateway):
+def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):
     gateway = makegateway('popen//python=%s' % anypython)
     gateway.remote_exec("""
         import time
@@ -17,14 +15,15 @@ def test_exit_blocked_slave_execution_gateway(anypython, makegateway):
         gateway.exit()
         return 17
 
-    pool = WorkerPool()
     reply = pool.spawn(doit)
     x = reply.get(timeout=5.0)
     assert x == 17
 
-def test_endmarker_delivery_on_remote_killterm(makegateway):
+def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
+    if execmodel.backend != "thread":
+        pytest.xfail("test and execnet not compatible to greenlets yet")
     gw = makegateway('popen')
-    q = queue.Queue()
+    q = execmodel.Queue()
     channel = gw.remote_exec(source='''
         import os, time
         channel.send(os.getpid())
@@ -78,7 +77,9 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     #print (lines)
     assert not lines
 
-def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
+def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
+    if pool.execmodel != "thread":
+        pytest.xfail("only os threading model supported")
     p = testdir.makepyfile("""
         import sys
         sys.path.insert(0, %r)
@@ -102,7 +103,7 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd):
     popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE)
     # sync with start-up
     popen.stdout.readline()
-    reply = WorkerPool(1).spawn(popen.communicate)
+    reply = pool.spawn(popen.communicate)
     reply.get(timeout=50)
     out, err = capfd.readouterr()
     lines = [x for x in err.splitlines()

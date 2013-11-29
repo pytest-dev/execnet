@@ -2,32 +2,34 @@ from __future__ import with_statement
 import pytest
 import py
 import sys
-from execnet.gateway_base import queue
 from execnet.threadpool import WorkerPool
 
-def test_some():
-    pool = WorkerPool()
-    q = queue.Queue()
+def test_simple(pool):
+    reply = pool.spawn(lambda: 42)
+    assert reply.get() == 42
+
+def test_some(pool, execmodel):
+    q = execmodel.Queue()
     num = 4
 
     def f(i):
         q.put(i)
         while q.qsize():
-            py.std.time.sleep(0.01)
+            execmodel.sleep(0.01)
     for i in range(num):
         pool.spawn(f, i)
     for i in range(num):
         q.get()
     #assert len(pool._running) == 4
     pool.waitall(timeout=1.0)
-    #py.std.time.sleep(1)  helps on windows?
+    #execmodel.time.sleep(1)  helps on windows?
     assert len(pool._running) == 0
 
-def test_limited_size():
-    pool = WorkerPool(1)
-    q = queue.Queue()
-    q2 = queue.Queue()
-    q3 = queue.Queue()
+def test_limited_size(execmodel):
+    pool = WorkerPool(execmodel, size=1)
+    q = execmodel.Queue()
+    q2 = execmodel.Queue()
+    q3 = execmodel.Queue()
     def first():
         q.put(1)
         q2.get()
@@ -37,7 +39,7 @@ def test_limited_size():
         q3.put(3)
     # we spawn a second pool to spawn the second function
     # which should block
-    pool2 = WorkerPool()
+    pool2 = WorkerPool(execmodel)
     pool2.spawn(pool.spawn, second)
     pytest.raises(IOError, lambda: pool2.waitall(1.0))
     assert q3.qsize() == 0
@@ -45,25 +47,22 @@ def test_limited_size():
     pool2.waitall()
     pool.waitall()
 
-def test_get():
-    pool = WorkerPool()
+def test_get(pool):
     def f():
         return 42
     reply = pool.spawn(f)
     result = reply.get()
     assert result == 42
 
-def test_get_timeout():
-    pool = WorkerPool()
+def test_get_timeout(execmodel, pool):
     def f():
-        py.std.time.sleep(0.2)
+        execmodel.sleep(0.2)
         return 42
     reply = pool.spawn(f)
     with pytest.raises(IOError):
         reply.get(timeout=0.01)
 
-def test_get_excinfo():
-    pool = WorkerPool()
+def test_get_excinfo(pool):
     def f():
         raise ValueError("42")
     reply = pool.spawn(f)
@@ -72,9 +71,8 @@ def test_get_excinfo():
     with pytest.raises(ValueError):
         reply.get(1.0)
 
-def test_waitall_timeout():
-    pool = WorkerPool()
-    q = queue.Queue()
+def test_waitall_timeout(pool, execmodel):
+    q = execmodel.Queue()
     def f():
         q.get()
     reply = pool.spawn(f)
@@ -84,9 +82,8 @@ def test_waitall_timeout():
     pool.waitall(timeout=0.1)
 
 @py.test.mark.skipif("not hasattr(os, 'dup')")
-def test_pool_clean_shutdown():
+def test_pool_clean_shutdown(pool):
     capture = py.io.StdCaptureFD()
-    pool = WorkerPool()
     def f():
         pass
     pool.spawn(f)
