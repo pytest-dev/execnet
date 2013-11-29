@@ -9,7 +9,7 @@ from execnet.threadpool import WorkerPool, get_execmodel
 
 from execnet import XSpec
 from execnet import gateway_io, gateway_bootstrap
-from execnet.gateway_base import queue, reraise, trace
+from execnet.gateway_base import reraise, trace, concurrence
 
 NO_ENDMARKER_WANTED = object()
 
@@ -209,7 +209,7 @@ class MultiChannel:
         try:
             return self._queue
         except AttributeError:
-            self._queue = queue.Queue()
+            self._queue = concurrence.Queue()
             for ch in self._channels:
                 def putreceived(obj, channel=ch):
                     self._queue.put((channel, obj))

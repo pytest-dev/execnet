@@ -2,7 +2,17 @@ from __future__ import with_statement
 import pytest
 import py
 import sys
+import os
 from execnet.threadpool import WorkerPool
+
+def test_execmodel(execmodel, tmpdir):
+    assert execmodel.backend
+    p = tmpdir.join("somefile")
+    p.write("content")
+    fd = os.open(str(p), os.O_RDONLY)
+    f = execmodel.fdopen(fd, "r")
+    assert f.read() == "content"
+    f.close()
 
 def test_simple(pool):
     reply = pool.spawn(lambda: 42)
@@ -24,6 +34,26 @@ def test_some(pool, execmodel):
     pool.waitall(timeout=1.0)
     #execmodel.time.sleep(1)  helps on windows?
     assert len(pool._running) == 0
+
+def test_running_semnatics(pool, execmodel):
+    q = execmodel.Queue()
+    def first():
+        q.get()
+    reply = pool.spawn(first)
+    assert reply.running
+    q.put(1)
+    pool.waitall()
+    assert not reply.running
+
+def test_waitfinish_on_reply(pool):
+    l = []
+    reply = pool.spawn(lambda: l.append(1))
+    reply.waitfinish()
+    assert l == [1]
+    reply = pool.spawn(lambda: 0/0)
+    reply.waitfinish()  # no exception raised
+    pytest.raises(ZeroDivisionError, reply.get)
+
 
 def test_limited_size(execmodel):
     pool = WorkerPool(execmodel, size=1)
