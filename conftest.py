@@ -154,3 +154,19 @@ def gw(request):
             group.makegateway('popen//id=proxy-transport')
             gw = group.makegateway('popen//via=proxy-transport//id=proxy')
         return gw
+
+
+from execnet.threadpool import get_execmodel, WorkerPool
+@pytest.fixture(params=["thread", "eventlet"], scope="module")
+def execmodel(request):
+    try:
+        return get_execmodel(request.param)
+    except ImportError:
+        if request.param == "eventlet":
+            pytest.skip("eventlet not installed")
+        raise
+
+
+@pytest.fixture
+def pool(execmodel):
+    return WorkerPool(execmodel=execmodel)

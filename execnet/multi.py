@@ -5,7 +5,7 @@ Managing Gateway Groups and interactions with multiple channels.
 """
 
 import sys, atexit
-from execnet.threadpool import WorkerPool
+from execnet.threadpool import WorkerPool, get_execmodel
 
 from execnet import XSpec
 from execnet import gateway_io, gateway_bootstrap
@@ -234,7 +234,8 @@ class MultiChannel:
 
 
 def safe_terminate(timeout, list_of_paired_functions):
-    workerpool = WorkerPool()
+    execmodel = get_execmodel("thread")
+    workerpool = WorkerPool(execmodel)
 
     def termkill(termfunc, killfunc):
         termreply = workerpool.spawn(termfunc)
