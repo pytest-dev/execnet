@@ -2,7 +2,8 @@ from __future__ import with_statement
 import pytest
 import py
 import sys
-from execnet.threadpool import queue, WorkerPool
+from execnet.gateway_base import queue
+from execnet.threadpool import WorkerPool
 
 def test_some():
     pool = WorkerPool()
@@ -17,12 +18,32 @@ def test_some():
         pool.spawn(f, i)
     for i in range(num):
         q.get()
-    assert len(pool._running) == 4
-    pool.shutdown()
+    #assert len(pool._running) == 4
     pool.waitall(timeout=1.0)
     #py.std.time.sleep(1)  helps on windows?
     assert len(pool._running) == 0
-    assert len(pool._running) == 0
+
+def test_limited_size():
+    pool = WorkerPool(1)
+    q = queue.Queue()
+    q2 = queue.Queue()
+    q3 = queue.Queue()
+    def first():
+        q.put(1)
+        q2.get()
+    pool.spawn(first)
+    assert q.get() == 1
+    def second():
+        q3.put(3)
+    # we spawn a second pool to spawn the second function
+    # which should block
+    pool2 = WorkerPool()
+    pool2.spawn(pool.spawn, second)
+    pytest.raises(IOError, lambda: pool2.waitall(1.0))
+    assert q3.qsize() == 0
+    q2.put(2)
+    pool2.waitall()
+    pool.waitall()
 
 def test_get():
     pool = WorkerPool()
@@ -38,7 +59,7 @@ def test_get_timeout():
         py.std.time.sleep(0.2)
         return 42
     reply = pool.spawn(f)
-    with py.test.raises(IOError):
+    with pytest.raises(IOError):
         reply.get(timeout=0.01)
 
 def test_get_excinfo():
@@ -48,18 +69,8 @@ def test_get_excinfo():
     reply = pool.spawn(f)
     with py.test.raises(ValueError):
         reply.get(1.0)
-    with pytest.raises(EOFError):
+    with pytest.raises(ValueError):
         reply.get(1.0)
-
-def test_maxthreads():
-    pool = WorkerPool(maxthreads=1)
-    def f():
-        py.std.time.sleep(0.5)
-    try:
-        pool.spawn(f)
-        py.test.raises(IOError, pool.spawn, f)
-    finally:
-        pool.shutdown()
 
 def test_waitall_timeout():
     pool = WorkerPool()
@@ -67,8 +78,7 @@ def test_waitall_timeout():
     def f():
         q.get()
     reply = pool.spawn(f)
-    pool.shutdown()
-    py.test.raises(IOError, pool.waitall, 0.01)
+    pytest.raises(IOError, pool.waitall, 0.01)
     q.put(None)
     reply.get(timeout=1.0)
     pool.waitall(timeout=0.1)
@@ -81,10 +91,8 @@ def test_pool_clean_shutdown():
         pass
     pool.spawn(f)
     pool.spawn(f)
-    pool.shutdown()
     pool.waitall(timeout=1.0)
     assert not pool._running
-    assert not pool._ready
     out, err = capture.reset()
     print(out)
     sys.stderr.write(err + "\n")

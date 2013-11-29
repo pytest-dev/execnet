@@ -21,8 +21,8 @@ def pytest_runtest_setup(item, __multicall__):
     if item.fspath.purebasename in ('test_group', 'test_info'):
         getspecssh(item.config) # will skip if no gx given
     res = __multicall__.execute()
-    if 'pypy-c' in item.keywords and not item.config.option.pypy:
-        py.test.skip("pypy-c tests skipped, use --pypy to run them.")
+    if 'pypy' in item.keywords and not item.config.option.pypy:
+        py.test.skip("pypy tests skipped, use --pypy to run them.")
     return res
 
 def pytest_funcarg__makegateway(request):
@@ -42,7 +42,7 @@ def pytest_addoption(parser):
            type="choice", choices=["session", "function"],
            help=("set gateway setup scope, default: session."))
     group.addoption('--pypy', action="store_true", dest="pypy",
-           help=("run some tests also against pypy-c"))
+           help=("run some tests also against pypy"))
     group.addoption('--broken-isp', action="store_true", dest="broken_isp",
             help=("Skips tests that assume your ISP doesn't put up a landing "
                 "page on invalid addresses"))
@@ -92,7 +92,7 @@ def pytest_generate_tests(metafunc):
     elif 'anypython' in metafunc.funcargnames:
         metafunc.parametrize("anypython", indirect=True, argvalues=
             ('python3.3', 'python3.2',
-             'python2.6', 'python2.7', 'pypy-c', 'jython')
+             'python2.6', 'python2.7', 'pypy', 'jython')
         )
 
 def getexecutable(name, cache={}):
