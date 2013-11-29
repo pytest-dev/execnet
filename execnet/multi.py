@@ -234,7 +234,7 @@ class MultiChannel:
 
 
 def safe_terminate(timeout, list_of_paired_functions):
-    workerpool = WorkerPool(len(list_of_paired_functions)*2)
+    workerpool = WorkerPool()
 
     def termkill(termfunc, killfunc):
         termreply = workerpool.spawn(termfunc)
@@ -249,7 +249,6 @@ def safe_terminate(timeout, list_of_paired_functions):
         replylist.append(reply)
     for reply in replylist:
         reply.get()
-    workerpool.shutdown()
     workerpool.waitall()
 
 

@@ -75,7 +75,7 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     err = err.decode('utf8')
     lines = [x for x in err.splitlines()
                if '*sys-package' not in x]
-    print (lines)
+    #print (lines)
     assert not lines
 
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd):

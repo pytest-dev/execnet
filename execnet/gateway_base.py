@@ -730,6 +730,7 @@ class BaseGateway(object):
         if self._receiverthread.isAlive():
             self._trace("joining receiver thread")
             self._receiverthread.join(timeout)
+            self._trace("BACK FROM joining receiver thread")
         else:
             self._trace("gateway.join() called while receiverthread "
                         "already finished")
