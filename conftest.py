@@ -3,6 +3,7 @@ import py
 import pytest
 import sys
 import subprocess
+from execnet.threadpool import get_execmodel, WorkerPool
 
 collect_ignore = ['build', 'doc/_build']
 
@@ -91,7 +92,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("gw", gwtypes, indirect=True)
     elif 'anypython' in metafunc.funcargnames:
         metafunc.parametrize("anypython", indirect=True, argvalues=
-            ('python3.3', 'python3.2',
+            ('sys.executable', 'python3.3', 'python3.2',
              'python2.6', 'python2.7', 'pypy', 'jython')
         )
 
@@ -99,6 +100,8 @@ def getexecutable(name, cache={}):
     try:
         return cache[name]
     except KeyError:
+        if name == 'sys.executable':
+            return py.path.local(sys.executable)
         executable = py.path.local.sysfind(name)
         if executable:
             if name == "jython":
@@ -110,7 +113,8 @@ def getexecutable(name, cache={}):
         cache[name] = executable
         return executable
 
-def pytest_funcarg__anypython(request):
+@pytest.fixture
+def anypython(request):
     name = request.param
     executable = getexecutable(name)
     if executable is None:
@@ -122,10 +126,14 @@ def pytest_funcarg__anypython(request):
                     return executable
                 executable = None
         py.test.skip("no %s found" % (name,))
+    if "execmodel" in request.fixturenames and name != 'sys.executable':
+        backend = request.getfuncargvalue("execmodel").backend
+        if backend != "thread":
+            pytest.xfail("cannot run %r execmodel with bare %s" % (backend, name))
     return executable
 
 @pytest.fixture
-def gw(request):
+def gw(request, execmodel):
     scope = request.config.option.scope
     group = request.cached_setup(
         setup=execnet.Group,
@@ -137,26 +145,31 @@ def gw(request):
         return group[request.param]
     except KeyError:
         if request.param == "popen":
-            gw = group.makegateway("popen//id=popen")
+            gw = group.makegateway("popen//id=popen//execmodel=%s"
+                                   % execmodel.backend)
         elif request.param == "socket":
+            #if execmodel.backend != "thread":
+            #    pytest.xfail("cannot set remote non-thread execmodel for sockets")
             pname = 'sproxy1'
             if pname not in group:
                 proxygw = group.makegateway("popen//id=%s" % pname)
             #assert group['proxygw'].remote_status().receiving
-            gw = group.makegateway("socket//id=socket//installvia=%s" % pname)
+            gw = group.makegateway("socket//id=socket//installvia=%s"
+                                   "//execmodel=%s" % (pname, execmodel.backend))
             gw.proxygw = proxygw
             assert pname in group
-
         elif request.param == "ssh":
             sshhost = request.getfuncargvalue('specssh').ssh
-            gw = group.makegateway("ssh=%s//id=ssh" %(sshhost,))
+            # we don't use execmodel.backend here
+            # but you can set it when specifying the ssh spec
+            gw = group.makegateway("ssh=%s//id=ssh" % (sshhost,))
         elif request.param == 'proxy':
             group.makegateway('popen//id=proxy-transport')
-            gw = group.makegateway('popen//via=proxy-transport//id=proxy')
+            gw = group.makegateway('popen//via=proxy-transport//id=proxy'
+                                   '//execmodel=%s' % execmodel.backend)
         return gw
 
 
-from execnet.threadpool import get_execmodel, WorkerPool
 @pytest.fixture(params=["thread", "eventlet"], scope="module")
 def execmodel(request):
     try:

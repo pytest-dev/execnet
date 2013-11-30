@@ -3,7 +3,6 @@ dispatching execution to threads or greenlets
 
 (c) 2013, holger krekel
 """
-from __future__ import with_statement
 
 try:
     from execnet.gateway_base import get_execmodel, WorkerPool

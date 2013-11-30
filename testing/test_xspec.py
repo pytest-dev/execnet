@@ -38,6 +38,12 @@ class TestXSpec:
         assert spec.ssh == "-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host"
         assert spec.python == "python3"
 
+    def test_execmodel(self):
+        spec = XSpec("execmodel=thread")
+        assert spec.execmodel == "thread"
+        spec = XSpec("execmodel=eventlet")
+        assert spec.execmodel == "eventlet"
+
     def test_ssh_options_and_config(self):
         spec = XSpec("ssh=-p 22100 user@host//python=python3")
         spec.ssh_config = "/home/user/ssh_config"

@@ -10,7 +10,8 @@ class XSpec:
         * if no "=value" is given, assume a boolean True value
     """
     # XXX allow customization, for only allow specific key names
-    popen = ssh = socket = python = chdir = nice = dont_write_bytecode = None
+    popen = ssh = socket = python = chdir = nice = \
+            dont_write_bytecode = execmodel = None
 
     def __init__(self, string):
         self._spec = string

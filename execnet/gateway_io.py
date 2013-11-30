@@ -7,14 +7,14 @@ import os
 import sys
 
 try:
-    from execnet.gateway_base import concurrence, Popen2IO, Message
+    from execnet.gateway_base import Popen2IO, Message
 except ImportError:
     from __main__ import Popen2IO, Message
 
 class Popen2IOMaster(Popen2IO):
-    def __init__(self, args):
-        self.popen = p = concurrence.PopenPiped(args)
-        Popen2IO.__init__(self, p.stdin, p.stdout)
+    def __init__(self, args, execmodel):
+        self.popen = p = execmodel.PopenPiped(args)
+        Popen2IO.__init__(self, p.stdin, p.stdout, execmodel=execmodel)
 
     def wait(self):
         try:
@@ -84,13 +84,13 @@ def ssh_args(spec):
     args.append(remotecmd)
     return args
 
-def create_io(spec):
+def create_io(spec, execmodel):
     if spec.popen:
         args = popen_args(spec)
-        return Popen2IOMaster(args)
+        return Popen2IOMaster(args, execmodel)
     if spec.ssh:
         args = ssh_args(spec)
-        io = Popen2IOMaster(args)
+        io = Popen2IOMaster(args, execmodel)
         io.remoteaddress = spec.ssh
         return io
 
@@ -114,13 +114,14 @@ class ProxyIO(object):
     with forwarder:serve_proxy_io() which itself
     instantiates and interacts with the sub.
     """
-    def __init__(self, proxy_channel):
+    def __init__(self, proxy_channel, execmodel):
         # after exchanging the control channel we use proxy_channel
         # for messaging IO
         self.controlchan = proxy_channel.gateway.newchannel()
         proxy_channel.send(self.controlchan)
         self.iochan = proxy_channel
         self.iochan_file = self.iochan.makefile('r')
+        self.execmodel = execmodel
 
     def read(self, nbytes):
         return self.iochan_file.read(nbytes)
@@ -155,13 +156,14 @@ class PseudoSpec:
         return None
 
 def serve_proxy_io(proxy_channelX):
+    execmodel = proxy_channelX.gateway.execmodel
     _trace = proxy_channelX.gateway._trace
     tag = "serve_proxy_io:%s " % proxy_channelX.id
     def log(*msg):
         _trace(tag + msg[0], *msg[1:])
     spec = PseudoSpec(proxy_channelX.receive())
     # create sub IO object which we will proxy back to our proxy initiator
-    sub_io = create_io(spec)
+    sub_io = create_io(spec, execmodel)
     control_chan = proxy_channelX.receive()
     log("got control chan", control_chan)
 

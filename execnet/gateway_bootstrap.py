@@ -17,10 +17,11 @@ def bootstrap_popen(io, spec):
     sendexec(io,
         "import sys",
         "sys.path.insert(0, %r)" % importdir,
-        "from execnet.gateway_base import serve, init_popen_io",
+        "from execnet.gateway_base import serve, init_popen_io, get_execmodel",
         "sys.stdout.write('1')",
         "sys.stdout.flush()",
-        "serve(init_popen_io(), id='%s-slave')" % spec.id,
+        "execmodel = get_execmodel(%r)" % spec.execmodel,
+        "serve(init_popen_io(execmodel), id='%s-slave')" % spec.id,
     )
     s = io.read(1)
     assert s == "1".encode('ascii'), repr(s)
@@ -30,7 +31,8 @@ def bootstrap_ssh(io, spec):
     try:
         sendexec(io,
             inspect.getsource(gateway_base),
-            'io = init_popen_io()',
+            "execmodel = get_execmodel(%r)" % spec.execmodel,
+            'io = init_popen_io(execmodel)',
             "io.write('1'.encode('ascii'))",
             "serve(io, id='%s-slave')" % spec.id,
         )
@@ -50,7 +52,10 @@ def bootstrap_socket(io, id):
         inspect.getsource(gateway_base),
         'import socket',
         inspect.getsource(SocketIO),
-        "io = SocketIO(clientsock)",
+        "try: execmodel",
+        "except NameError:",
+        "   execmodel = get_execmodel('thread')",
+        "io = SocketIO(clientsock, execmodel)",
         "io.write('1'.encode('ascii'))",
         "serve(io, id='%s-slave')" % id,
     )
