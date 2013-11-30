@@ -94,7 +94,7 @@ def read_write_loop():
         except (IOError, EOFError):
             break
 
-def test_io_message(anypython, tmpdir):
+def test_io_message(anypython, tmpdir, execmodel):
     check = tmpdir.join("check.py")
     check.write(py.code.Source(gateway_base, """
         try:
@@ -104,7 +104,7 @@ def test_io_message(anypython, tmpdir):
         import tempfile
         temp_out = BytesIO()
         temp_in = BytesIO()
-        io = Popen2IO(temp_out, temp_in)
+        io = Popen2IO(temp_out, temp_in, get_execmodel({backend!r}))
         for i, handler in enumerate(Message._types):
             print ("checking %s %s" %(i, handler))
             for data in "hello", "hello".encode('ascii'):
@@ -121,20 +121,20 @@ def test_io_message(anypython, tmpdir):
                 assert msg1.data == msg2.data, (msg1.data, msg2.data)
                 assert msg1.msgcode == msg2.msgcode
         print ("all passed")
-    """))
+    """.format(backend=execmodel.backend)))
     #out = py.process.cmdexec("%s %s" %(executable,check))
     out = anypython.sysexec(check)
     print (out)
     assert "all passed" in out
 
-def test_popen_io(anypython, tmpdir):
+def test_popen_io(anypython, tmpdir, execmodel):
     check = tmpdir.join("check.py")
     check.write(py.code.Source(gateway_base, """
-        do_exec("io = init_popen_io()", globals())
+        do_exec("io = init_popen_io(get_execmodel({backend!r}))", globals())
         io.write("hello".encode('ascii'))
         s = io.read(1)
         assert s == "x".encode('ascii')
-    """))
+    """.format(backend=execmodel.backend)))
     from subprocess import Popen, PIPE
     args = [str(anypython), str(check)]
     proc = Popen(args, stdin=PIPE, stdout=PIPE, stderr=PIPE)
@@ -144,9 +144,9 @@ def test_popen_io(anypython, tmpdir):
     proc.wait()
     assert "hello".encode('ascii') in stdout
 
-def test_popen_io_readloop(monkeypatch):
+def test_popen_io_readloop(monkeypatch, execmodel):
     sio = BytesIO('test'.encode('ascii'))
-    io = Popen2IO(sio, sio)
+    io = Popen2IO(sio, sio, execmodel)
     real_read = io._read
     def newread(numbytes):
         if numbytes > 1:
@@ -191,9 +191,9 @@ def test_geterrortext(anypython, tmpdir):
     assert "all passed" in out
 
 @pytest.mark.skipif("not hasattr(os, 'dup')")
-def test_stdouterrin_setnull():
+def test_stdouterrin_setnull(execmodel):
     cap = py.io.StdCaptureFD()
-    gateway_base.init_popen_io()
+    gateway_base.init_popen_io(execmodel)
     os.write(1, "hello".encode('ascii'))
     if os.name == "nt":
         os.write(2, "world")
@@ -212,8 +212,9 @@ class PseudoChannel:
     def close(self, errortext=None):
         self._closed.append(errortext)
 
-def test_exectask():
+def test_exectask(execmodel):
     io = py.io.BytesIO()
+    io.execmodel = execmodel
     gw = gateway_base.SlaveGateway(io, id="something")
     ch = PseudoChannel()
     gw.executetask((ch, ("raise ValueError()", None, {})))
@@ -236,27 +237,31 @@ class TestMessage:
             # == "<Message.%s channelid=42 '23'>" %(msg.__class__.__name__, )
 
 class TestPureChannel:
-    def setup_method(self, method):
-        self.fac = ChannelFactory(None)
+    @pytest.fixture
+    def fac(self, execmodel):
+        class Gateway:
+            pass
+        Gateway.execmodel = execmodel
+        return ChannelFactory(Gateway)
 
-    def test_factory_create(self):
-        chan1 = self.fac.new()
+    def test_factory_create(self, fac):
+        chan1 = fac.new()
         assert chan1.id == 1
-        chan2 = self.fac.new()
+        chan2 = fac.new()
         assert chan2.id == 3
 
-    def test_factory_getitem(self):
-        chan1 = self.fac.new()
-        assert self.fac._channels[chan1.id] == chan1
-        chan2 = self.fac.new()
-        assert self.fac._channels[chan2.id] == chan2
+    def test_factory_getitem(self, fac):
+        chan1 = fac.new()
+        assert fac._channels[chan1.id] == chan1
+        chan2 = fac.new()
+        assert fac._channels[chan2.id] == chan2
 
-    def test_channel_timeouterror(self):
-        channel = self.fac.new()
+    def test_channel_timeouterror(self, fac):
+        channel = fac.new()
         pytest.raises(IOError, channel.waitclose, timeout=0.01)
 
-    def test_channel_makefile_incompatmode(self):
-        channel = self.fac.new()
+    def test_channel_makefile_incompatmode(self, fac):
+        channel = fac.new()
         with pytest.raises(ValueError):
             channel.makefile("rw")
 

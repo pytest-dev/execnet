@@ -5,26 +5,59 @@ Managing Gateway Groups and interactions with multiple channels.
 """
 
 import sys, atexit
-from execnet.threadpool import WorkerPool, get_execmodel
 
 from execnet import XSpec
 from execnet import gateway_io, gateway_bootstrap
-from execnet.gateway_base import reraise, trace, concurrence
+from execnet.gateway_base import reraise, trace, get_execmodel
 
 NO_ENDMARKER_WANTED = object()
 
-class Group:
+class Group(object):
     """ Gateway Groups. """
     defaultspec = "popen"
-    def __init__(self, xspecs=()):
-        """ initialize group and make gateways as specified. """
-        # Gateways may evolve to become GC-collectable
+    def __init__(self, xspecs=(), execmodel="thread"):
+        """ initialize group and make gateways as specified.
+        execmodel can be 'thread' or 'eventlet'.
+        """
         self._gateways = []
         self._autoidcounter = 0
         self._gateways_to_join = []
+        # we use the same execmodel for all of the Gateway objects
+        # we spawn on our side.  Probably we should not allow different
+        # execmodels between different groups but not clear.
+        # Note that "other side" execmodels may differ and is typically
+        # specified by the spec passed to makegateway.
+        self.set_execmodel(execmodel)
         for xspec in xspecs:
             self.makegateway(xspec)
         atexit.register(self._cleanup_atexit)
+
+    @property
+    def execmodel(self):
+        return self._execmodel
+
+    @property
+    def remote_execmodel(self):
+        return self._remote_execmodel
+
+    def set_execmodel(self, execmodel, remote_execmodel=None):
+        """ Set the execution model for local and remote site.
+
+        execmodel can be one of "thread" or "eventlet" (XXX gevent).
+        It determines the execution model for any newly created gateway.
+        If remote_execmodel is not specified it takes on the value
+        of execmodel.
+
+        NOTE: Execution models can only be set before any gateway is created.
+
+        """
+        if self._gateways:
+            raise ValueError("can not set execution models if "
+                             "gateways have been created already")
+        if remote_execmodel is None:
+            remote_execmodel = execmodel
+        self._execmodel = get_execmodel(execmodel)
+        self._remote_execmodel = get_execmodel(remote_execmodel)
 
     def __repr__(self):
         idgateways = [gw.id for gw in self]
@@ -75,19 +108,21 @@ class Group:
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
         self.allocate_id(spec)
+        if spec.execmodel is None:
+            spec.execmodel = self.remote_execmodel.backend
         if spec.via:
             assert not spec.socket
             master = self[spec.via]
             proxy_channel = master.remote_exec(gateway_io)
             proxy_channel.send(vars(spec))
-            proxy_io_master = gateway_io.ProxyIO(proxy_channel)
+            proxy_io_master = gateway_io.ProxyIO(proxy_channel, self.execmodel)
             gw = gateway_bootstrap.bootstrap(proxy_io_master, spec)
         elif spec.popen or spec.ssh:
-            io = gateway_io.create_io(spec)
+            io = gateway_io.create_io(spec, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
         elif spec.socket:
             from execnet import gateway_socket
-            io = gateway_socket.create_io(spec, self)
+            io = gateway_socket.create_io(spec, self, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
         else:
             raise ValueError("no gateway type found for %r" % (spec._spec,))
@@ -160,7 +195,7 @@ class Group:
                 trace("Gateways did not come down after timeout: %r" % gw)
                 gw._io.kill()
 
-            safe_terminate(timeout, [
+            safe_terminate(self.execmodel, timeout, [
                 (lambda: join_wait(gw), lambda: kill(gw))
                 for gw in self._gateways_to_join])
             self._gateways_to_join[:] = []
@@ -209,8 +244,10 @@ class MultiChannel:
         try:
             return self._queue
         except AttributeError:
-            self._queue = concurrence.Queue()
+            self._queue = None
             for ch in self._channels:
+                if self._queue is None:
+                    self._queue = ch.gateway.execmodel.Queue()
                 def putreceived(obj, channel=ch):
                     self._queue.put((channel, obj))
                 if endmarker is NO_ENDMARKER_WANTED:
@@ -233,9 +270,8 @@ class MultiChannel:
 
 
 
-def safe_terminate(timeout, list_of_paired_functions):
-    execmodel = get_execmodel("thread")
-    workerpool = WorkerPool(execmodel)
+def safe_terminate(execmodel, timeout, list_of_paired_functions):
+    workerpool = execmodel.WorkerPool()
 
     def termkill(termfunc, killfunc):
         termreply = workerpool.spawn(termfunc)

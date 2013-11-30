@@ -3,7 +3,6 @@
 """
 
 import pytest
-import threading
 from time import sleep
 import execnet
 import py
@@ -12,8 +11,8 @@ from execnet import XSpec
 from execnet.multi import safe_terminate
 
 class TestMultiChannelAndGateway:
-    def test_multichannel_container_basics(self):
-        mch = execnet.MultiChannel([Channel(None, i) for i in range(3)])
+    def test_multichannel_container_basics(self, gw, execmodel):
+        mch = execnet.MultiChannel([Channel(gw, i) for i in range(3)])
         assert len(mch) == 3
         channels = list(mch)
         assert len(channels) == 3
@@ -48,6 +47,20 @@ class TestMultiChannelAndGateway:
         mc.send_each(41)
         l = mc.receive_each()
         assert l == [42,42]
+
+    def test_Group_execmodel_setting(self):
+        gm = execnet.Group()
+        gm.set_execmodel("thread")
+        assert gm.execmodel.backend == "thread"
+        assert gm.remote_execmodel.backend == "thread"
+        gm._gateways.append(1)
+        try:
+            with pytest.raises(ValueError):
+                gm.set_execmodel("eventlet")
+            assert gm.execmodel.backend == "thread"
+        finally:
+            gm._gateways.pop()
+
 
     def test_multichannel_receive_queue_for_two_subprocesses(self):
         gm = execnet.Group(["popen"] * 2)
@@ -196,28 +209,36 @@ class TestGroup:
 
 
 @pytest.mark.skipif("sys.version_info < (2,6)")
-def test_safe_terminate():
+def test_safe_terminate(execmodel):
+    if execmodel.backend != "threading":
+        pytest.xfail("execution model %r does not support task count" %
+                     execmodel.backend)
+    import threading
     active = threading.active_count()
     l = []
     def term():
         py.std.time.sleep(3)
     def kill():
         l.append(1)
-    safe_terminate(1, [(term, kill)] * 10)
+    safe_terminate(execmodel, 1, [(term, kill)] * 10)
     assert len(l) == 10
     sleep(0.1)
     py.std.gc.collect()
-    assert threading.active_count() == active
+    assert execmodel.active_count() == active
 
 @pytest.mark.skipif("sys.version_info < (2,6)")
-def test_safe_terminate2():
+def test_safe_terminate2(execmodel):
+    if execmodel.backend != "threading":
+        pytest.xfail("execution model %r does not support task count" %
+                     execmodel.backend)
+    import threading
     active = threading.active_count()
     l = []
     def term():
         return
     def kill():
         l.append(1)
-    safe_terminate(3, [(term, kill)] * 10)
+    safe_terminate(execmodel, 3, [(term, kill)] * 10)
     assert len(l) == 0
     sleep(0.1)
     py.std.gc.collect()

@@ -282,7 +282,7 @@ class TestSshPopenGateway:
 
     def test_sshconfig_config_parsing(self, monkeypatch, makegateway):
         l = []
-        monkeypatch.setattr(gateway_io.concurrence, 'PopenPiped',
+        monkeypatch.setattr(gateway_io, "Popen2IOMaster",
             lambda *args, **kwargs: l.append(args[0]))
         py.test.raises(AttributeError, lambda:
             makegateway("ssh=xyz//ssh_config=qwe"))

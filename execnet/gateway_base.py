@@ -36,6 +36,8 @@ class EmptySemaphore:
     acquire = release = lambda self: None
 
 def get_execmodel(backend):
+    if hasattr(backend, "backend"):
+        return backend
     if backend == "thread":
         import threading
         try:
@@ -51,6 +53,7 @@ def get_execmodel(backend):
             thread.start_new_thread(func, args)
         from os import fdopen
         from subprocess import Popen, PIPE
+        import socket as socket_module
     elif backend == "eventlet":
         from eventlet.green import threading
         from eventlet.green import time
@@ -60,15 +63,23 @@ def get_execmodel(backend):
             spawn_n(func, *args)
         from eventlet.greenio import GreenPipe as fdopen
         from eventlet.green.subprocess import Popen, PIPE
+        from eventlet.green import socket as socket_module
+    else:
+        raise ValueError("unknown execmodel %r" %(backend,))
 
     class ExecModel:
         QueueEmpty = Empty
+        socket = socket_module
 
         def __init__(self, name):
             self.backend = name
+            self._count = 0
 
         def __repr__(self):
             return "<ExecModel %r>" % self.backend
+
+        def WorkerPool(self, size=None):
+            return WorkerPool(self, size)
 
         def Semaphore(self, size=None):
             if size is None:
@@ -196,8 +207,6 @@ class WorkerPool(object):
 
 
 
-concurrence = get_execmodel("thread")
-
 sysex = (KeyboardInterrupt, SystemExit)
 
 
@@ -234,7 +243,7 @@ else:
 class Popen2IO:
     error = (IOError, OSError, EOFError)
 
-    def __init__(self, outfile, infile):
+    def __init__(self, outfile, infile, execmodel):
         # we need raw byte streams
         self.outfile, self.infile = outfile, infile
         if sys.platform == "win32":
@@ -246,6 +255,7 @@ class Popen2IO:
                 pass
         self._read = getattr(infile, "buffer", infile).read
         self._write = getattr(outfile, "buffer", outfile).write
+        self.execmodel = execmodel
 
     def read(self, numbytes):
         """Read exactly 'numbytes' bytes from the pipe. """
@@ -426,9 +436,9 @@ class Channel(object):
         #XXX: defaults copied from Unserializer
         self._strconfig = getattr(gateway, '_strconfig', (True, False))
         self.id = id
-        self._items = concurrence.Queue()
+        self._items = self.gateway.execmodel.Queue()
         self._closed = False
-        self._receiveclosed = concurrence.Event()
+        self._receiveclosed = self.gateway.execmodel.Event()
         self._remoteerrors = []
 
     def _trace(self, *msg):
@@ -455,7 +465,7 @@ class Channel(object):
             while 1:
                 try:
                     olditem = items.get(block=False)
-                except concurrence.QueueEmpty:
+                except self.gateway.execmodel.QueueEmpty:
                     if not (self._closed or self._receiveclosed.isSet()):
                         _callbacks[self.id] = (
                             callback,
@@ -607,7 +617,7 @@ class Channel(object):
             raise IOError("cannot receive(), channel has receiver callback")
         try:
             x = itemqueue.get(timeout=timeout)
-        except concurrence.QueueEmpty:
+        except self.gateway.execmodel.QueueEmpty:
             raise self.TimeoutError("no item after %r seconds" %(timeout))
         if x is ENDMARKER:
             itemqueue.put(x)  # for other receivers
@@ -643,7 +653,7 @@ class ChannelFactory(object):
     def __init__(self, gateway, startcount=1):
         self._channels = weakref.WeakValueDictionary()
         self._callbacks = {}
-        self._writelock = concurrence.Lock()
+        self._writelock = gateway.execmodel.Lock()
         self.gateway = gateway
         self.count = startcount
         self.finished = False
@@ -809,11 +819,13 @@ class BaseGateway(object):
         pass
 
     def __init__(self, io, id, _startcount=2):
+        self.execmodel = io.execmodel
         self._io = io
         self.id = id
-        self._strconfig = Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str
+        self._strconfig = (Unserializer.py2str_as_py3str,
+                           Unserializer.py3str_as_py2str)
         self._channelfactory = ChannelFactory(self, _startcount)
-        self._receivelock = concurrence.RLock()
+        self._receivelock = self.execmodel.RLock()
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
@@ -822,7 +834,7 @@ class BaseGateway(object):
         self.__trace(self.id, *msg)
 
     def _initreceive(self):
-        self._workerpool = WorkerPool(concurrence)
+        self._workerpool = self.execmodel.WorkerPool()
         self._receiverthread = self._workerpool.spawn(self._thread_receiver)
 
     def _thread_receiver(self):
@@ -926,8 +938,8 @@ class SlaveGateway(BaseGateway):
         try:
             try:
                 self._trace("waiting for execution task")
-                self._execqueue = concurrence.Queue()
-                self._execfinished = concurrence.Event()
+                self._execqueue = self.execmodel.Queue()
+                self._execfinished = self.execmodel.Event()
                 self._initreceive()
                 while 1:
                     item = self._execqueue.get()
@@ -1359,9 +1371,9 @@ class _Serializer(object):
         self._write(opcode.CHANNEL)
         self._write_int4(channel.id)
 
-def init_popen_io():
+def init_popen_io(execmodel):
     if not hasattr(os, 'dup'): # jython
-        io = Popen2IO(sys.stdout, sys.stdin)
+        io = Popen2IO(sys.stdout, sys.stdin, execmodel)
         import tempfile
         sys.stdin = tempfile.TemporaryFile('r')
         sys.stdout = tempfile.TemporaryFile('w')
@@ -1374,24 +1386,24 @@ def init_popen_io():
             else:
                 devnull = '/dev/null'
         # stdin
-        stdin  = concurrence.fdopen(os.dup(0), 'r', 1)
+        stdin  = execmodel.fdopen(os.dup(0), 'r', 1)
         fd = os.open(devnull, os.O_RDONLY)
         os.dup2(fd, 0)
         os.close(fd)
 
         # stdout
-        stdout = concurrence.fdopen(os.dup(1), 'w', 1)
+        stdout = execmodel.fdopen(os.dup(1), 'w', 1)
         fd = os.open(devnull, os.O_WRONLY)
         os.dup2(fd, 1)
 
         # stderr for win32
         if os.name == 'nt':
-            sys.stderr = concurrence.fdopen(os.dup(2), 'w', 1)
+            sys.stderr = execmodel.fdopen(os.dup(2), 'w', 1)
             os.dup2(fd, 2)
         os.close(fd)
-        io = Popen2IO(stdout, stdin)
-        sys.stdin = concurrence.fdopen(0, 'r', 1)
-        sys.stdout = concurrence.fdopen(1, 'w', 1)
+        io = Popen2IO(stdout, stdin, execmodel)
+        sys.stdin = execmodel.fdopen(0, 'r', 1)
+        sys.stdout = execmodel.fdopen(1, 'w', 1)
     return io
 
 def serve(io, id):
