@@ -197,14 +197,12 @@ class WorkerPool(object):
         """ wait until all previosuly spawns have terminated. """
         with self._running_lock:
             if not self._running:
-                return
+                return True
             # if a Reply still runs, we let run_and_release
             # signal us -- note that we are still holding the
             # _running_lock to avoid race conditions
             self._waitall_event = self.execmodel.Event()
-        if not self._waitall_event.wait(timeout=timeout):
-            raise IOError("waitall TIMEOUT, still running: %s" % (self._running,))
-
+        return self._waitall_event.wait(timeout=timeout)
 
 
 sysex = (KeyboardInterrupt, SystemExit)
