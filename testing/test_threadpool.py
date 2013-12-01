@@ -31,7 +31,7 @@ def test_some(pool, execmodel):
     for i in range(num):
         q.get()
     #assert len(pool._running) == 4
-    pool.waitall(timeout=1.0)
+    assert pool.waitall(timeout=1.0)
     #execmodel.time.sleep(1)  helps on windows?
     assert len(pool._running) == 0
 
@@ -42,7 +42,7 @@ def test_running_semnatics(pool, execmodel):
     reply = pool.spawn(first)
     assert reply.running
     q.put(1)
-    pool.waitall()
+    assert pool.waitall()
     assert not reply.running
 
 def test_waitfinish_on_reply(pool):
@@ -71,11 +71,11 @@ def test_limited_size(execmodel):
     # which should block
     pool2 = WorkerPool(execmodel)
     pool2.spawn(pool.spawn, second)
-    pytest.raises(IOError, lambda: pool2.waitall(1.0))
+    assert not pool2.waitall(1.0)
     assert q3.qsize() == 0
     q2.put(2)
-    pool2.waitall()
-    pool.waitall()
+    assert pool2.waitall()
+    assert pool.waitall()
 
 def test_get(pool):
     def f():
@@ -106,10 +106,10 @@ def test_waitall_timeout(pool, execmodel):
     def f():
         q.get()
     reply = pool.spawn(f)
-    pytest.raises(IOError, pool.waitall, 0.01)
+    assert not pool.waitall(0.01)
     q.put(None)
     reply.get(timeout=1.0)
-    pool.waitall(timeout=0.1)
+    assert pool.waitall(timeout=0.1)
 
 @py.test.mark.skipif("not hasattr(os, 'dup')")
 def test_pool_clean_shutdown(pool):
@@ -118,7 +118,7 @@ def test_pool_clean_shutdown(pool):
         pass
     pool.spawn(f)
     pool.spawn(f)
-    pool.waitall(timeout=1.0)
+    assert pool.waitall(timeout=1.0)
     assert not pool._running
     out, err = capture.reset()
     print(out)
