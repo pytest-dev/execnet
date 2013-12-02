@@ -2,7 +2,7 @@ import pytest
 import execnet
 import subprocess
 import py
-from testing.test_gateway import TESTTIMEOUT
+from test_gateway import TESTTIMEOUT
 execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
 
 def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):

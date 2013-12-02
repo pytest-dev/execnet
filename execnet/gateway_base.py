@@ -174,7 +174,7 @@ class Reply(object):
         try:
             return self._result
         except AttributeError:
-            reraise(*(self._excinfo[:3]))
+            reraise(*(self._excinfo[:3]))  # noqa
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
