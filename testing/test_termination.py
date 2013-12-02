@@ -58,8 +58,6 @@ def test_close_initiating_remote_no_error(testdir, anypython):
         sys.path.insert(0, %r)
         import execnet
         gw = execnet.makegateway("popen")
-        print ("remoteinitthreads")
-        gw.remote_init_threads(num=2)
         print ("remote_exec1")
         ch1 = gw.remote_exec("channel.receive()")
         print ("remote_exec1")

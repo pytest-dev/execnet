@@ -61,7 +61,8 @@ def get_execmodel(backend):
         from eventlet import spawn_n
         def exec_start(func, args=()):
             spawn_n(func, *args)
-        from eventlet.greenio import GreenPipe as fdopen
+        from eventlet.green.os import fdopen
+        from eventlet.green import thread
         from eventlet.green.subprocess import Popen, PIPE
         from eventlet.green import socket as socket_module
     else:
@@ -78,8 +79,11 @@ def get_execmodel(backend):
         def __repr__(self):
             return "<ExecModel %r>" % self.backend
 
-        def WorkerPool(self, size=None):
-            return WorkerPool(self, size)
+        def get_ident(self):
+            return thread.get_ident()
+
+        def WorkerPool(self, size=None, hasprimary=False):
+            return WorkerPool(self, size, hasprimary=hasprimary)
 
         def Semaphore(self, size=None):
             if size is None:
@@ -164,13 +168,41 @@ class WorkerPool(object):
         to threads, returning a reply object on which you
         can ask for the result (and get exceptions reraised)
     """
-    def __init__(self, execmodel, size=None):
+    def __init__(self, execmodel, size=None, hasprimary=False):
         """ by default allow unlimited number of spawns. """
         self.execmodel = execmodel
         self._size = size
         self._running_lock = self.execmodel.Lock()
         self._sem = self.execmodel.Semaphore(size)
         self._running = set()
+        self._shutdown_event = self.execmodel.Event()
+        if hasprimary:
+            if self.execmodel.backend != "thread":
+                raise ValueError("hasprimary=True requires thread model")
+            self._primary_thread_event = self.execmodel.Event()
+
+    def integrate_as_primary_thread(self):
+        """ integrate the thread with which we are called as a primary
+        thread to dispatch to when spawn is called.
+        """
+        primary_thread_event = self._primary_thread_event
+        # XXX insert check if we really are in the main thread
+        while not self._shutdown_event.isSet():
+            primary_thread_event.wait()
+            func, args, kwargs = self._primary_thread_task
+            if func is None:  # waitall() woke us up to finish the loop
+                break
+            func(*args, **kwargs)
+            primary_thread_event.clear()
+
+    def shutdown(self):
+        self._shutdown_event.set()
+
+    def wait_for_shutdown(self, timeout=None):
+        return self._shutdown_event.wait(timeout=timeout)
+
+    def active_count(self):
+        return len(self._running)
 
     def spawn(self, func, *args, **kwargs):
         """ return Reply object for the asynchronous dispatch
@@ -190,11 +222,24 @@ class WorkerPool(object):
         self._sem.acquire()
         with self._running_lock:
             self._running.add(reply)
+            # in 'thread' model we may give priority to running in main thread
+            primary_thread_event = getattr(self, "_primary_thread_event", None)
+            if primary_thread_event is not None:
+                if not primary_thread_event.isSet():
+                    self._primary_thread_task = run_and_release, (), {}
+                    primary_thread_event.set()
+                    return reply
             self.execmodel.start(run_and_release, ())
         return reply
 
     def waitall(self, timeout=None):
         """ wait until all previosuly spawns have terminated. """
+        # if it exists signal primary_thread to finish its loop
+        self._primary_thread_task = None, None, None
+        try:
+            self._primary_thread_event.set()
+        except AttributeError:
+            pass
         with self._running_lock:
             if not self._running:
                 return True
@@ -333,16 +378,11 @@ def _setupmessages():
     def status(message, gateway):
         # we use the channelid to send back information
         # but don't instantiate a channel object
-        active_channels = gateway._channelfactory.channels()
-        numexec = 0
-        for ch in active_channels:
-            if getattr(ch, '_executing', False):
-                numexec += 1
-        d = {'execqsize': gateway._execqueue.qsize(),
-             'numchannels': len(active_channels),
-             'numexecuting': numexec
+        d = {'numchannels': len(gateway._channelfactory._channels),
+             'numexecuting': gateway._execpool.active_count(),
         }
         gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
+        gateway._send(Message.CHANNEL_CLOSE, message.channelid)
 
     def channel_exec(message, gateway):
         channel = gateway._channelfactory.new(message.channelid)
@@ -813,9 +853,6 @@ class BaseGateway(object):
     _sysex = sysex
     id = "<slave>"
 
-    class _StopExecLoop(Exception):
-        pass
-
     def __init__(self, io, id, _startcount=2):
         self.execmodel = io.execmodel
         self._io = io
@@ -827,12 +864,12 @@ class BaseGateway(object):
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
+        self._workerpool = self.execmodel.WorkerPool(1)
 
     def _trace(self, *msg):
         self.__trace(self.id, *msg)
 
     def _initreceive(self):
-        self._workerpool = self.execmodel.WorkerPool()
         self._receiverthread = self._workerpool.spawn(self._thread_receiver)
 
     def _thread_receiver(self):
@@ -906,57 +943,52 @@ class BaseGateway(object):
         self._receiverthread.waitfinish()
 
 class SlaveGateway(BaseGateway):
+
     def _local_schedulexec(self, channel, sourcetask):
         sourcetask = loads_internal(sourcetask)
-        self._execqueue.put((channel, sourcetask))
+        self._execpool.spawn(self.executetask, ((channel, sourcetask)))
 
     def _terminate_execution(self):
         # called from receiverthread
-        self._trace("putting None to execqueue")
-        self._execqueue.put(None)
-        self._execfinished.wait(1.0)
-        if self._execfinished.isSet():
-            return
-        self._trace("execution thread is busy, trying interrupt_main")
-        # We try hard to terminate execution based on the assumption
-        # that there is only one gateway object running per-process.
-        if sys.platform != "win32":
-            self._trace("sending ourselves a SIGINT")
-            os.kill(os.getpid(), 2)  # send ourselves a SIGINT
-        elif interrupt_main is not None:
-            self._trace("calling interrupt_main()")
-            interrupt_main()
-        self._execfinished.wait(10.0)
-        if not self._execfinished.isSet():
-            self._trace("execution did not finish in 10 secs, "
-                        "calling os._exit()")
-            os._exit(1)
+        self._trace("shutting down execution pool")
+        self._execpool.shutdown()
+        if not self._execpool.waitall(1.0):
+            self._trace("execution ongoing, trying interrupt_main")
+            # We try hard to terminate execution based on the assumption
+            # that there is only one gateway object running per-process.
+            if sys.platform != "win32":
+                self._trace("sending ourselves a SIGINT")
+                os.kill(os.getpid(), 2)  # send ourselves a SIGINT
+            elif interrupt_main is not None:
+                self._trace("calling interrupt_main()")
+                interrupt_main()
+            if not self._execpool.waitall(10.0):
+                self._trace("execution did not finish in 10 secs, "
+                            "calling os._exit()")
+                os._exit(1)
 
-    def serve(self, joining=True):
+    def serve(self):
+        trace = lambda msg: self._trace("[serve] " + msg)
+        hasprimary = self.execmodel.backend == "thread"
+        self._execpool = self.execmodel.WorkerPool(hasprimary=hasprimary)
+        trace("spawning receiver thread")
+        self._initreceive()
         try:
             try:
-                self._trace("waiting for execution task")
-                self._execqueue = self.execmodel.Queue()
-                self._execfinished = self.execmodel.Event()
-                self._initreceive()
-                while 1:
-                    item = self._execqueue.get()
-                    if item is None:
-                        break
-                    try:
-                        self.executetask(item)
-                    except self._StopExecLoop:
-                        break
+                if hasprimary:
+                    trace("integrating as main primary exec thread")
+                    self._execpool.integrate_as_primary_thread()
+                else:
+                    trace("waiting for execution to finish")
+                    self._execpool.wait_for_shutdown()
             finally:
-                self._execfinished.set()
-                self._trace("io.close_write()")
+                trace("execution finished, closing io write stream")
                 self._io.close_write()
-                self._trace("slavegateway.serve finished")
-            if joining:
-                self.join()
+            trace("joining receiver thread")
+            self.join()
         except KeyboardInterrupt:
             # in the slave we can't really do anything sensible
-            self._trace("swallowing keyboardinterrupt in main-thread")
+            trace("swallowing keyboardinterrupt, serve finished")
 
     def executetask(self, item):
         try:
@@ -984,19 +1016,19 @@ class SlaveGateway(BaseGateway):
             finally:
                 channel._executing = False
                 self._trace("execution finished")
-        except self._StopExecLoop:
-            channel.close()
-            raise
         except KeyboardInterrupt:
             channel.close(INTERRUPT_TEXT)
             raise
         except:
             excinfo = self.exc_info()
-            self._trace("got exception: %r" % (excinfo[1],))
-            errortext = self._geterrortext(excinfo)
-            channel.close(errortext)
-        else:
-            channel.close()
+            if not isinstance(excinfo[1], EOFError):
+                if not channel.gateway._channelfactory.finished:
+                    self._trace("got exception: %r" % (excinfo[1],))
+                    errortext = self._geterrortext(excinfo)
+                    channel.close(errortext)
+                    return
+            self._trace("ignoring EOFError because receiving finished")
+        channel.close()
 
 #
 # Cross-Python pickling code, tested from test_serializer.py
