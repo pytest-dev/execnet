@@ -12,33 +12,8 @@ help to manage creation and termination of sub interpreters.
 
 .. currentmodule:: execnet
 
-.. _`dumps/loads`:
-.. _`dumps/loads API`:
-
-cross-interpreter serialization of python objects
-=======================================================
-
-.. versionadded:: 1.1
-
-Execnet exposes a function pair which you can safely use to
-store and load values from different Python interpreters
-(e.g. Python2 and Python3, PyPy and Jython). Here is
-a basic example::
-
-    >>> import execnet
-    >>> dump = execnet.dumps([1,2,3])
-    >>> execnet.loads(dump)
-    [1,2,3]
-
-For more examples see :ref:`dumps/loads examples`.
-
-.. autofunction:: execnet.dumps(spec)
-.. autofunction:: execnet.loads(spec)
-
-
 Gateways: bootstrapping Python interpreters
 ===================================================
-
 
 All Gateways are instantiated via a call to ``makegateway()``
 passing it a gateway specification or URL.
@@ -57,15 +32,15 @@ gateways allow to `remote execute code`_ and
 examples for valid gateway specifications
 -------------------------------------------
 
-* ``ssh=wyvern//python=python2.4//chdir=mycache`` specifies a Python2.4
+* ``ssh=wyvern//python=python3.3//chdir=mycache`` specifies a Python3.3
   interpreter on the host ``wyvern``.  The remote process will have
   ``mycache`` as its current working directory.
 
 * ``ssh=-p 5000 myhost`` makes execnet pass "-p 5000 myhost" arguments
-  to the underlying ssh client binary, specifying a custom part.
+  to the underlying ssh client binary, effectively specifying a custom port.
 
-* ``popen//python=2.5//nice=20`` specification of a python2.5
-  subprocess; running with the lowest CPU priority ("nice" level).
+* ``popen//python=2.6//nice=20`` specification of 
+  a python2.6 subprocess; running with the lowest CPU priority ("nice" level).
   By default current dir will be the current dir of the instantiator.
 
 * ``popen//dont_write_bytecode`` uses the same executable as the current
@@ -76,6 +51,10 @@ examples for valid gateway specifications
 * ``popen//env:NAME=value`` specifies a subprocess that uses the
   same interpreter as the one it is initiated from and additionally
   remotely sets an environment variable ``NAME`` to ``value``.
+
+* ``popen//execmodel=eventlet`` specifies a subprocess that uses the
+  same interpreter as the one it is initiated from but will run the
+  other side using eventlet for handling IO and dispatching threads.
 
 * ``socket=192.168.1.4:8888`` specifies a Python Socket server
   process that listens on 192.168.1.4:8888``
@@ -88,7 +67,7 @@ remote_exec: execute source code remotely
 .. currentmodule:: execnet.gateway
 
 All gateways offer a simple method to execute source code
-in the connected interpreter:
+in the instantiated subprocess-interpreter:
 
 .. automethod:: Gateway.remote_exec(source)
 
@@ -148,41 +127,6 @@ you rather like to error out than hang.  If you start many
 processes then you often want to call ``group.terminate()``
 yourself and specify a larger or not timeout.
 
-remote_status: get low-level execution info
-===================================================
-
-.. currentmodule:: execnet.gateway
-
-All gateways offer a simple method to obtain some status
-information from the remote side.
-
-.. automethod:: Gateway.remote_status(source)
-
-Calling this method tells you e.g. how many execution
-tasks are queued, how many are executing and how many
-channels are active.  Note that ``remote_status()``
-works even if the other side is busy executing code
-and can thus be used to query status in a non-blocking manner.
-
-rsync: synchronise filesystem with remote
-===============================================================
-
-.. currentmodule:: execnet
-
-
-``execnet`` implements a simple efficient rsyncing protocol.
-Here is a basic example for using RSync::
-
-    rsync = execnet.RSync('/tmp/source')
-    gw = execnet.makegateway()
-    rsync.add_target(gw, '/tmp/dest')
-    rsync.send()
-
-
-And here is API info about the RSync class.
-
-.. autoclass:: RSync
-    :members: add_target,send
 
 gevent, eventlet and threading models
 ===========================================
@@ -224,6 +168,42 @@ or other code to behave correctly.  If you, however, start multiple
 executions concurrently, they will run in non-main threads.
 
 
+remote_status: get low-level execution info
+===================================================
+
+.. currentmodule:: execnet.gateway
+
+All gateways offer a simple method to obtain some status
+information from the remote side.
+
+.. automethod:: Gateway.remote_status(source)
+
+Calling this method tells you e.g. how many execution
+tasks are queued, how many are executing and how many
+channels are active.  Note that ``remote_status()``
+works even if the other side is busy executing code
+and can thus be used to query status in a non-blocking manner.
+
+rsync: synchronise filesystem with remote
+===============================================================
+
+.. currentmodule:: execnet
+
+
+``execnet`` implements a simple efficient rsyncing protocol.
+Here is a basic example for using RSync::
+
+    rsync = execnet.RSync('/tmp/source')
+    gw = execnet.makegateway()
+    rsync.add_target(gw, '/tmp/dest')
+    rsync.send()
+
+
+And here is API info about the RSync class.
+
+.. autoclass:: RSync
+    :members: add_target,send
+
 Debugging execnet
 ===============================================================
 
@@ -232,4 +212,28 @@ configure a tracing mechanism:
 
 :EXECNET_DEBUG=1:  write per-process trace-files to ``execnet-debug-PID``
 :EXECNET_DEUBG=2:  perform tracing to stderr (popen-gateway slaves will send this to their instantiator)
+
+
+.. _`dumps/loads`:
+.. _`dumps/loads API`:
+
+cross-interpreter serialization of python objects
+=======================================================
+
+.. versionadded:: 1.1
+
+Execnet exposes a function pair which you can safely use to
+store and load values from different Python interpreters
+(e.g. Python2 and Python3, PyPy and Jython). Here is
+a basic example::
+
+    >>> import execnet
+    >>> dump = execnet.dumps([1,2,3])
+    >>> execnet.loads(dump)
+    [1,2,3]
+
+For more examples see :ref:`dumps/loads examples`.
+
+.. autofunction:: execnet.dumps(spec)
+.. autofunction:: execnet.loads(spec)
 
