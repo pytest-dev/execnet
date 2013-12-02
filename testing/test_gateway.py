@@ -37,7 +37,6 @@ class TestBasicGateway:
 
     def test_gateway_status_simple(self, gw):
         status = gw.remote_status()
-        assert not status.execqsize
         assert status.numexecuting == 0
 
     def test_exc_info_is_clear_after_gateway_startup(self, gw):
@@ -69,15 +68,13 @@ class TestBasicGateway:
         ch2 = gw.remote_exec("channel.receive()")
         ch1.receive()
         status = gw.remote_status()
-        assert status.numexecuting == 1 # number of active execution threads
-        assert status.execqsize == 1 # one more queued
+        assert status.numexecuting == 2 # number of active execution threads
         assert status.numchannels == numchannels + 2
         ch1.send(None)
         ch2.send(None)
         ch1.waitclose()
         ch2.waitclose()
         status = gw.remote_status()
-        assert status.execqsize == 0
         assert status.numexecuting == 0
         # race condition
         assert status.numchannels <= numchannels + 1
@@ -335,27 +332,24 @@ class TestThreads:
 
     def test_status_with_threads(self, makegateway):
         gw = makegateway('popen')
-        gw.remote_init_threads(3)
         c1 = gw.remote_exec("channel.send(1) ; channel.receive()")
         c2 = gw.remote_exec("channel.send(2) ; channel.receive()")
         c1.receive()
         c2.receive()
         rstatus = gw.remote_status()
-        assert rstatus.numexecuting == 2 + 1
-        assert rstatus.execqsize == 0
+        assert rstatus.numexecuting == 2
         c1.send(1)
         c2.send(1)
         c1.waitclose()
         c2.waitclose()
-        rstatus = gw.remote_status()
-        assert rstatus.numexecuting == 0 + 1
-        assert rstatus.execqsize == 0
-
-    def test_threads_twice(self, makegateway):
-        gw = makegateway('popen')
-        gw.remote_init_threads(3)
-        py.test.raises(IOError, gw.remote_init_threads, 3)
-
+        # there is a slight chance that an execution thread
+        # is still active although it's accompanying channel
+        # is already closed.
+        for i in range(10):
+            rstatus = gw.remote_status()
+            if rstatus.numexecuting == 0:
+                return
+        assert 0, "numexecuting didn't drop to zero"
 
 class TestTracing:
     def test_popen_filetracing(self, testdir, monkeypatch, makegateway):

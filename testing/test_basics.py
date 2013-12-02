@@ -203,6 +203,9 @@ def test_stdouterrin_setnull(execmodel):
     assert not err
 
 class PseudoChannel:
+    class gateway:
+        class _channelfactory:
+            finished = False
     def __init__(self):
         self._sent = []
         self._closed = []

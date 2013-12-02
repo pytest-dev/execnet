@@ -121,18 +121,8 @@ class Gateway(gateway_base.BaseGateway):
         return channel
 
     def remote_init_threads(self, num=None):
-        """ start up to 'num' threads for subsequent
-            remote_exec() invocations to allow concurrent
-            execution.
-        """
-        if hasattr(self, '_remotechannelthread'):
-            raise IOError("remote threads already running")
-        from execnet import threadpool
-        source = inspect.getsource(threadpool)
-        self._remotechannelthread = self.remote_exec(source)
-        self._remotechannelthread.send(num)
-        status = self._remotechannelthread.receive()
-        assert status == "ok", status
+        """ DEPRECATED.  Is currently a NO-OPERATION already."""
+        print ("WARNING: remote_init_threads() is a no-operation in execnet-1.2")
 
 class RInfo:
     def __init__(self, kwargs):

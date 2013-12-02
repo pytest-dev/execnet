@@ -1,12 +1,23 @@
 1.X
 --------------------------------
 
+- majorly refactor internal thread and IO handling.
+  execnet can now operate on different thread models,
+  still defaults to "thread".
+
+- gateway.remote_exec() will now execute in multiple
+  threads on the other side by default.  The previous
+  neccessity of running "gateway.remote_init_threads()"
+  to allow for such concurrency is gone.  The latter
+  method is now a no-op and will be removed in future
+  versions of execnet.
+
 - streamline gateway termination and simplify proxy
   implementation. add more internal tracing.
 
 - if execution hangs in computation, we now try to 
-  send a SIGINT to ourselves instead of just calling
-  thread.interrupt_main()
+  send a SIGINT to ourselves on Unix platforms
+  instead of just calling thread.interrupt_main()
   
 - change license from GPL to MIT
 

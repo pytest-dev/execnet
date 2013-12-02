@@ -3,7 +3,7 @@ import pytest
 import py
 import sys
 import os
-from execnet.threadpool import WorkerPool
+from execnet.gateway_base import WorkerPool
 
 def test_execmodel(execmodel, tmpdir):
     assert execmodel.backend
@@ -41,8 +41,10 @@ def test_running_semnatics(pool, execmodel):
         q.get()
     reply = pool.spawn(first)
     assert reply.running
+    assert pool.active_count() == 1
     q.put(1)
     assert pool.waitall()
+    assert pool.active_count() == 0
     assert not reply.running
 
 def test_waitfinish_on_reply(pool):
@@ -114,13 +116,39 @@ def test_waitall_timeout(pool, execmodel):
 @py.test.mark.skipif("not hasattr(os, 'dup')")
 def test_pool_clean_shutdown(pool):
     capture = py.io.StdCaptureFD()
+    q = pool.execmodel.Queue()
     def f():
-        pass
+        q.get()
     pool.spawn(f)
-    pool.spawn(f)
-    assert pool.waitall(timeout=1.0)
-    assert not pool._running
+    assert not pool.waitall(timeout=1.0)
+    pool.shutdown()
+    def wait_then_put():
+        pool.execmodel.sleep(0.1)
+        q.put(1)
+    pool.execmodel.start(wait_then_put)
+    assert pool.wait_for_shutdown()
+    assert pool.waitall()
     out, err = capture.reset()
     print(out)
     sys.stderr.write(err + "\n")
     assert err == ''
+
+
+def test_primary_thread_integration(execmodel):
+    if execmodel.backend != "thread":
+        with pytest.raises(ValueError):
+            WorkerPool(execmodel=execmodel, hasprimary=True)
+        return
+    pool = WorkerPool(execmodel=execmodel, hasprimary=True)
+    queue = execmodel.Queue()
+    def do_integrate():
+        queue.put(execmodel.get_ident())
+        pool.integrate_as_primary_thread()
+    execmodel.start(do_integrate)
+    def func():
+        queue.put(execmodel.get_ident())
+    pool.spawn(func)
+    ident1 = queue.get()
+    ident2 = queue.get()
+    assert ident1 == ident2
+    pool.waitall()

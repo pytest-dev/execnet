@@ -3,7 +3,7 @@ import py
 import pytest
 import sys
 import subprocess
-from execnet.threadpool import get_execmodel, WorkerPool
+from execnet.gateway_base import get_execmodel, WorkerPool
 
 collect_ignore = ['build', 'doc/_build']
 
@@ -26,7 +26,8 @@ def pytest_runtest_setup(item, __multicall__):
         py.test.skip("pypy tests skipped, use --pypy to run them.")
     return res
 
-def pytest_funcarg__makegateway(request):
+@pytest.fixture
+def makegateway(request):
     group = execnet.Group()
     request.addfinalizer(lambda: group.terminate(0.5))
     return group.makegateway
