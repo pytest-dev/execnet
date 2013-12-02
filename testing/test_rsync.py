@@ -1,7 +1,7 @@
 import py
 from execnet import RSync
 import execnet
-from testing.test_serializer import _find_version
+from test_serializer import _find_version
 
 def pytest_funcarg__gw1(request):
     return request.cached_setup(

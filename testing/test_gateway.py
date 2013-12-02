@@ -6,7 +6,7 @@ import py
 import pytest
 import execnet
 from execnet import gateway_base, gateway_io
-from testing.test_serializer import _find_version
+from test_serializer import _find_version
 TESTTIMEOUT = 10.0 # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 

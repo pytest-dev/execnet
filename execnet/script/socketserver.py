@@ -114,7 +114,7 @@ if __name__ == '__main__':
     startserver(serversock, loop=False)
 
 elif __name__=='__channelexec__':
-    execmodel = channel.gateway.execmodel
+    execmodel = channel.gateway.execmodel # noqa
     bindname = channel.receive() # noqa
     sock = bind_and_listen(bindname, execmodel)
     port = sock.getsockname()

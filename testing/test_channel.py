@@ -4,7 +4,7 @@ mostly functional tests of gateways.
 import pytest
 import sys, time
 import py
-from testing.test_gateway import _find_version
+from test_gateway import _find_version
 needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
 queue = py.builtin._tryimport('queue', 'Queue')
