@@ -3,7 +3,8 @@
 
 - majorly refactor internal thread and IO handling.
   execnet can now operate on different thread models,
-  still defaults to "thread".
+  defaults to "thread" but allows for eventlet and
+  gevent if it is installed.
 
 - gateway.remote_exec() will now execute in multiple
   threads on the other side by default.  The previous

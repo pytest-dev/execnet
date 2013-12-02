@@ -14,12 +14,17 @@ def test_execmodel(execmodel, tmpdir):
     assert f.read() == "content"
     f.close()
 
+def test_execmodel_basic_attrs(execmodel):
+    m = execmodel
+    assert callable(m.start)
+    assert m.get_ident()
+
 def test_simple(pool):
     reply = pool.spawn(lambda: 42)
     assert reply.get() == 42
 
 def test_some(pool, execmodel):
-    q = execmodel.Queue()
+    q = execmodel.queue.Queue()
     num = 4
 
     def f(i):
@@ -32,11 +37,11 @@ def test_some(pool, execmodel):
         q.get()
     #assert len(pool._running) == 4
     assert pool.waitall(timeout=1.0)
-    #execmodel.time.sleep(1)  helps on windows?
+    #execmodel.sleep(1)  helps on windows?
     assert len(pool._running) == 0
 
 def test_running_semnatics(pool, execmodel):
-    q = execmodel.Queue()
+    q = execmodel.queue.Queue()
     def first():
         q.get()
     reply = pool.spawn(first)
@@ -59,9 +64,9 @@ def test_waitfinish_on_reply(pool):
 
 def test_limited_size(execmodel):
     pool = WorkerPool(execmodel, size=1)
-    q = execmodel.Queue()
-    q2 = execmodel.Queue()
-    q3 = execmodel.Queue()
+    q = execmodel.queue.Queue()
+    q2 = execmodel.queue.Queue()
+    q3 = execmodel.queue.Queue()
     def first():
         q.put(1)
         q2.get()
@@ -104,7 +109,7 @@ def test_get_excinfo(pool):
         reply.get(1.0)
 
 def test_waitall_timeout(pool, execmodel):
-    q = execmodel.Queue()
+    q = execmodel.queue.Queue()
     def f():
         q.get()
     reply = pool.spawn(f)
@@ -116,7 +121,7 @@ def test_waitall_timeout(pool, execmodel):
 @py.test.mark.skipif("not hasattr(os, 'dup')")
 def test_pool_clean_shutdown(pool):
     capture = py.io.StdCaptureFD()
-    q = pool.execmodel.Queue()
+    q = pool.execmodel.queue.Queue()
     def f():
         q.get()
     pool.spawn(f)
@@ -140,7 +145,7 @@ def test_primary_thread_integration(execmodel):
             WorkerPool(execmodel=execmodel, hasprimary=True)
         return
     pool = WorkerPool(execmodel=execmodel, hasprimary=True)
-    queue = execmodel.Queue()
+    queue = execmodel.queue.Queue()
     def do_integrate():
         queue.put(execmodel.get_ident())
         pool.integrate_as_primary_thread()

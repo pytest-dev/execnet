@@ -23,7 +23,7 @@ def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
     if execmodel.backend != "thread":
         pytest.xfail("test and execnet not compatible to greenlets yet")
     gw = makegateway('popen')
-    q = execmodel.Queue()
+    q = execmodel.queue.Queue()
     channel = gw.remote_exec(source='''
         import os, time
         channel.send(os.getpid())

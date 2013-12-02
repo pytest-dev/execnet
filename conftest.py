@@ -171,14 +171,11 @@ def gw(request, execmodel):
         return gw
 
 
-@pytest.fixture(params=["thread", "eventlet"], scope="module")
+@pytest.fixture(params=["thread", "eventlet", "gevent"], scope="session")
 def execmodel(request):
-    try:
-        return get_execmodel(request.param)
-    except ImportError:
-        if request.param == "eventlet":
-            pytest.skip("eventlet not installed")
-        raise
+    if request.param != "thread":
+        pytest.importorskip(request.param)
+    return get_execmodel(request.param)
 
 
 @pytest.fixture
