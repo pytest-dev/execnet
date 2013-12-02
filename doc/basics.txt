@@ -128,10 +128,10 @@ processes then you often want to call ``group.terminate()``
 yourself and specify a larger or not timeout.
 
 
-gevent, eventlet and threading models
+threading models: gevent, eventlet, thread
 ===========================================
 
-.. versionadded: 1.2
+.. versionadded:: 1.2 (status: experimental!)
 
 execnet supports "thread", "eventlet" and "gevent" as thread models
 on each of the two sides.  You need to decide which model to use 
@@ -142,13 +142,15 @@ before you create any gateways::
     # locally use "eventlet", remotely use "thread" model
     execnet.set_execmodel("eventlet", "thread")
     gw = execnet.makegateway()
+    print (gw)
     print (gw.remote_status())
     print (gw.remote_exec("channel.send(1)").receive())
 
-If you have eventlet installed in your environment you can execute this
-little test file::
+You need to have eventlet installed in your environment and then
+you can execute this little test file::
 
     $ python threadmodel.py
+    <Gateway id='gw0' receive-live, eventlet model, 0 active channels>
     <RInfo 'numchannels=0, numexecuting=0, execmodel=thread'>
     1
 
@@ -180,9 +182,7 @@ information from the remote side.
 
 Calling this method tells you e.g. how many execution
 tasks are queued, how many are executing and how many
-channels are active.  Note that ``remote_status()``
-works even if the other side is busy executing code
-and can thus be used to query status in a non-blocking manner.
+channels are active. 
 
 rsync: synchronise filesystem with remote
 ===============================================================
