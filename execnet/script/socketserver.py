@@ -16,10 +16,15 @@
 progname = 'socket_readline_exec_server-1.2'
 
 import sys, os
-try:
-    import fcntl
-except ImportError:
-    fcntl = None
+
+def get_fcntl():
+    try:
+        import fcntl
+    except ImportError:
+        fcntl = None
+    return fcntl
+
+fcntl = get_fcntl()
 
 debug = 0
 
