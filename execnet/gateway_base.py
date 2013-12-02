@@ -39,48 +39,87 @@ def get_execmodel(backend):
     if hasattr(backend, "backend"):
         return backend
     if backend == "thread":
-        import threading
-        try:
-            import thread
-        except ImportError:
-            import _thread as thread
-        try:
-            from queue import Queue, Empty
-        except ImportError:
-            from Queue import Queue, Empty
-        import time
-        def exec_start(func, args=()):
-            thread.start_new_thread(func, args)
-        from os import fdopen
-        from subprocess import Popen, PIPE
-        import socket as socket_module
+        importdef = {
+            'get_ident': ['thread::get_ident', '_thread::get_ident'],
+            '_start_new_thread': ['thread::start_new_thread',
+                                  '_thread::start_new_thread'],
+            'threading': ["threading",],
+            'queue': ["queue", "Queue"],
+            'sleep': ['time::sleep'],
+            'subprocess': ['subprocess'],
+            'socket': ['socket'],
+            '_fdopen': ['os::fdopen'],
+            '_lock': ['threading'],
+            '_event': ['threading'],
+        }
+        def exec_start(self, func, args=()):
+            self._start_new_thread(func, args)
+
     elif backend == "eventlet":
-        from eventlet.green import threading
-        from eventlet.green import time
-        from eventlet.green.Queue import Queue, Empty
-        from eventlet import spawn_n
-        def exec_start(func, args=()):
-            spawn_n(func, *args)
-        from eventlet.green.os import fdopen
-        from eventlet.green import thread
-        from eventlet.green.subprocess import Popen, PIPE
-        from eventlet.green import socket as socket_module
+        importdef = {
+            'get_ident': ['eventlet.green.thread::get_ident'],
+            '_spawn_n': ['eventlet::spawn_n'],
+            'threading': ['eventlet.green.threading'],
+            'queue': ["eventlet.queue"],
+            'sleep': ['eventlet::sleep'],
+            'subprocess': ['eventlet.green.subprocess'],
+            'socket': ['eventlet.green.socket'],
+            '_fdopen': ['eventlet.green.os::fdopen'],
+            '_lock': ['eventlet.green.threading'],
+            '_event': ['eventlet.green.threading'],
+        }
+        def exec_start(self, func, args=()):
+            self._spawn_n(func, *args)
+    elif backend == "gevent":
+        importdef = {
+            'get_ident': ['gevent.thread::get_ident'],
+            '_spawn_n': ['gevent::spawn'],
+            'threading': ['threading'],
+            'queue': ["gevent.queue"],
+            'sleep': ['gevent::sleep'],
+            'subprocess': ['gevent.subprocess'],
+            'socket': ['gevent.socket'],
+            # XXX
+            '_fdopen': ['gevent.fileobject::FileObjectThread'],
+            '_lock': ['gevent.lock'],
+            '_event': ['gevent.event'],
+        }
+        def exec_start(self, func, args=()):
+            self._spawn_n(func, *args)
     else:
         raise ValueError("unknown execmodel %r" %(backend,))
 
     class ExecModel:
-        QueueEmpty = Empty
-        socket = socket_module
-
         def __init__(self, name):
+            self._importdef = importdef
             self.backend = name
             self._count = 0
 
         def __repr__(self):
             return "<ExecModel %r>" % self.backend
 
-        def get_ident(self):
-            return thread.get_ident()
+        def __getattr__(self, name):
+            locs = self._importdef.get(name)
+            if locs is None:
+                raise AttributeError(name)
+            for loc in locs:
+                parts = loc.split("::")
+                loc = parts.pop(0)
+                try:
+                    mod = __import__(loc, None, None, "__doc__")
+                except ImportError:
+                    pass
+                else:
+                    if parts:
+                        mod = getattr(mod, parts[0])
+                    setattr(self, name, mod)
+                    return mod
+            raise AttributeError(name)
+
+        start = exec_start
+
+        def fdopen(self, fd, mode, bufsize=1):
+            return self._fdopen(fd, mode, bufsize)
 
         def WorkerPool(self, size=None, hasprimary=False):
             return WorkerPool(self, size, hasprimary=hasprimary)
@@ -88,25 +127,16 @@ def get_execmodel(backend):
         def Semaphore(self, size=None):
             if size is None:
                 return EmptySemaphore()
-            return threading.Semaphore(size)
-
-        def fdopen(self, fileno, mode, blocking=1):
-            return fdopen(fileno, mode, blocking)
-
-        def sleep(self, secs):
-            return time.sleep(secs)
-
-        def Queue(self, maxsize=0):
-            return Queue(maxsize)
+            return self._lock.Semaphore(size)
 
         def Lock(self):
-            return threading.Lock()
+            return self._lock.RLock()
 
         def RLock(self):
-            return threading.RLock()
+            return self._lock.RLock()
 
         def Event(self):
-            event = threading.Event()
+            event = self._event.Event()
             if sys.version_info < (2,7):
                 # patch wait function to return event state instead of None
                 real_wait = event.wait
@@ -117,10 +147,9 @@ def get_execmodel(backend):
             return event
 
         def PopenPiped(self, args):
-            return Popen(args, stdout=PIPE, stdin=PIPE)
+            PIPE = self.subprocess.PIPE
+            return self.subprocess.Popen(args, stdout=PIPE, stdin=PIPE)
 
-        def start(self, func, args=()):
-            exec_start(func, args)
 
     return ExecModel(backend)
 
@@ -185,8 +214,10 @@ class WorkerPool(object):
         """ integrate the thread with which we are called as a primary
         thread to dispatch to when spawn is called.
         """
-        primary_thread_event = self._primary_thread_event
+        assert self.execmodel.backend == "thread", self.execmodel
         # XXX insert check if we really are in the main thread
+        primary_thread_event = self._primary_thread_event
+        # interacts with code at REF1
         while not self._shutdown_event.isSet():
             primary_thread_event.wait()
             func, args, kwargs = self._primary_thread_task
@@ -222,7 +253,7 @@ class WorkerPool(object):
         self._sem.acquire()
         with self._running_lock:
             self._running.add(reply)
-            # in 'thread' model we may give priority to running in main thread
+            # REF1 in 'thread' model we give priority to running in main thread
             primary_thread_event = getattr(self, "_primary_thread_event", None)
             if primary_thread_event is not None:
                 if not primary_thread_event.isSet():
@@ -380,6 +411,7 @@ def _setupmessages():
         # but don't instantiate a channel object
         d = {'numchannels': len(gateway._channelfactory._channels),
              'numexecuting': gateway._execpool.active_count(),
+             'execmodel': gateway.execmodel.backend,
         }
         gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
         gateway._send(Message.CHANNEL_CLOSE, message.channelid)
@@ -474,7 +506,7 @@ class Channel(object):
         #XXX: defaults copied from Unserializer
         self._strconfig = getattr(gateway, '_strconfig', (True, False))
         self.id = id
-        self._items = self.gateway.execmodel.Queue()
+        self._items = self.gateway.execmodel.queue.Queue()
         self._closed = False
         self._receiveclosed = self.gateway.execmodel.Event()
         self._remoteerrors = []
@@ -503,7 +535,7 @@ class Channel(object):
             while 1:
                 try:
                     olditem = items.get(block=False)
-                except self.gateway.execmodel.QueueEmpty:
+                except self.gateway.execmodel.queue.Empty:
                     if not (self._closed or self._receiveclosed.isSet()):
                         _callbacks[self.id] = (
                             callback,
@@ -655,7 +687,7 @@ class Channel(object):
             raise IOError("cannot receive(), channel has receiver callback")
         try:
             x = itemqueue.get(timeout=timeout)
-        except self.gateway.execmodel.QueueEmpty:
+        except self.gateway.execmodel.queue.Empty:
             raise self.TimeoutError("no item after %r seconds" %(timeout))
         if x is ENDMARKER:
             itemqueue.put(x)  # for other receivers

@@ -247,7 +247,7 @@ class MultiChannel:
             self._queue = None
             for ch in self._channels:
                 if self._queue is None:
-                    self._queue = ch.gateway.execmodel.Queue()
+                    self._queue = ch.gateway.execmodel.queue.Queue()
                 def putreceived(obj, channel=ch):
                     self._queue.put((channel, obj))
                 if endmarker is NO_ENDMARKER_WANTED:
@@ -291,4 +291,5 @@ def safe_terminate(execmodel, timeout, list_of_paired_functions):
 
 default_group = Group()
 makegateway = default_group.makegateway
+set_execmodel = default_group.set_execmodel
 
