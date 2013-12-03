@@ -74,10 +74,14 @@ class TestBasicGateway:
         ch2.send(None)
         ch1.waitclose()
         ch2.waitclose()
-        status = gw.remote_status()
-        assert status.numexecuting == 0
+        for i in range(10):
+            status = gw.remote_status()
+            if status.numexecuting == 0:
+                break
+        else:
+            pytest.fail("did not get correct remote status")
         # race condition
-        assert status.numchannels <= numchannels + 1
+        assert status.numchannels <= numchannels
 
     def test_remote_exec_module(self, tmpdir, gw):
         p = tmpdir.join("remotetest.py")
