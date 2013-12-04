@@ -1,6 +1,6 @@
 import pytest, py
 import execnet
-from execnet.gateway_io import ssh_args
+from execnet.gateway_io import ssh_args, popen_args
 
 XSpec = execnet.XSpec
 
@@ -49,6 +49,13 @@ class TestXSpec:
         spec.ssh_config = "/home/user/ssh_config"
         assert ssh_args(spec)[:6] == [
             "ssh", "-C", "-F", spec.ssh_config, "-p", "22100"]
+
+    def test_popen_with_sudo_python(self):
+        spec = XSpec("popen//python=sudo python3")
+        assert popen_args(spec) == [
+            'sudo', 'python3', '-u', '-c',
+            'import sys;exec(eval(sys.stdin.readline()))'
+        ]
 
     def test_env(self):
         xspec = XSpec("popen//env:NAME=value1")
