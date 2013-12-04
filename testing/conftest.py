@@ -175,7 +175,7 @@ def gw(request, execmodel):
 def execmodel(request):
     if request.param != "thread":
         pytest.importorskip(request.param)
-	if sys.platform == "win32":
+    if sys.platform == "win32":
              pytest.xfail("eventlet/gevent do not work onwin32")
     return get_execmodel(request.param)
 
