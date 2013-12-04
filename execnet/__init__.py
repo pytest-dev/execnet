@@ -5,9 +5,9 @@ execnet: pure python lib for connecting to local and remote Python Interpreters.
 """
 __version__ = '1.2.0.dev1'
 
-import execnet.apipkg
+from . import apipkg
 
-execnet.apipkg.initpkg(__name__, {
+apipkg.initpkg(__name__, {
     'PopenGateway':     '.deprecated:PopenGateway',
     'SocketGateway':    '.deprecated:SocketGateway',
     'SshGateway':       '.deprecated:SshGateway',
