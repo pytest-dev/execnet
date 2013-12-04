@@ -64,7 +64,8 @@ popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
 
 def popen_args(spec):
     python = spec.python or sys.executable
-    args = [str(python), '-u']
+    args = str(python).split(' ')
+    args.append('-u')
     if spec is not None and spec.dont_write_bytecode:
         args.append("-B")
     # Slight gymnastics in ordering these arguments because CPython (as of
