@@ -13,6 +13,10 @@
   method is now a no-op and will be removed in future
   versions of execnet.
 
+- fix issue21: allow to create local gateways with sudo aka
+  makegateway("popen//python=sudo python").
+  Thanks Alfredo Deza for the PR. 
+
 - streamline gateway termination and simplify proxy
   implementation. add more internal tracing.
 
