@@ -573,14 +573,19 @@ class Channel(object):
             pass
         else:
             # state transition "opened" --> "deleted"
-            if self._items is None:    # has_callback
-                msgcode = Message.CHANNEL_LAST_MESSAGE
-            else:
-                msgcode = Message.CHANNEL_CLOSE
-            try:
-                self.gateway._send(msgcode, self.id)
-            except (IOError, ValueError): # ignore problems with sending
-                pass
+            # check if we are in the middle of interpreter shutdown
+            # in which case the process will go away and we probably
+            # don't need to try to send a closing or last message
+            # (and often it won't work anymore to send things out)
+            if Message is not None:
+                if self._items is None:    # has_callback
+                    msgcode = Message.CHANNEL_LAST_MESSAGE
+                else:
+                    msgcode = Message.CHANNEL_CLOSE
+                try:
+                    self.gateway._send(msgcode, self.id)
+                except (IOError, ValueError): # ignore problems with sending
+                    pass
 
     def _getremoteerror(self):
         try:

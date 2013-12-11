@@ -13,6 +13,10 @@
   method is now a no-op and will be removed in future
   versions of execnet.
 
+- fix issue20: prevent AttributError at interpreter shutdown
+  by not trying to send close/last_message messages if the
+  world around is half destroyed.
+
 - fix issue21: allow to create local gateways with sudo aka
   makegateway("popen//python=sudo python").
   Thanks Alfredo Deza for the PR. 
