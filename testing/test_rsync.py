@@ -1,3 +1,4 @@
+import pytest
 import py
 from execnet import RSync
 import execnet
@@ -10,6 +11,9 @@ def pytest_funcarg__gw1(request):
         scope="module"
     )
 pytest_funcarg__gw2 = pytest_funcarg__gw1
+
+needssymlink = pytest.mark.skipif(not hasattr(py.path.local, "mksymlinkto"),
+                                  reason="py.path.local has no mksymlinkto() on this platform")
 
 def pytest_funcarg__dirs(request):
     t = request.getfuncargvalue('tmpdir')
@@ -129,7 +133,7 @@ class TestRSync:
         mode = destdir.stat().mode
         assert mode & 511 == 504
 
-    @py.test.mark.skipif("not hasattr(os, 'symlink')")
+    @needssymlink
     def test_symlink_rsync(self, dirs, gw1):
         source = dirs.source
         dest = dirs.dest1
@@ -145,7 +149,7 @@ class TestRSync:
         assert dest.join('rellink').readlink() == "subdir/existant"
         assert dest.join('abslink').readlink() == expected
 
-    @py.test.mark.skipif("not hasattr(os, 'symlink')")
+    @needssymlink
     def test_symlink2_rsync(self, dirs, gw1):
         source = dirs.source
         dest = dirs.dest1
