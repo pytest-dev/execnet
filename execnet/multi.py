@@ -9,6 +9,7 @@ import sys, atexit
 from execnet import XSpec
 from execnet import gateway_io, gateway_bootstrap
 from execnet.gateway_base import reraise, trace, get_execmodel
+from threading import Lock
 
 NO_ENDMARKER_WANTED = object()
 
@@ -21,6 +22,7 @@ class Group(object):
         """
         self._gateways = []
         self._autoidcounter = 0
+        self._autoidlock = Lock()
         self._gateways_to_join = []
         # we use the same execmodel for all of the Gateway objects
         # we spawn on our side.  Probably we should not allow different
@@ -149,13 +151,14 @@ class Group(object):
         return gw
 
     def allocate_id(self, spec):
-        """ allocate id for the given xspec object. """
+        """ (re-entrant) allocate id for the given xspec object. """
         if spec.id is None:
-            id = "gw" + str(self._autoidcounter)
-            self._autoidcounter += 1
-            if id in self:
-                raise ValueError("already have gateway with id %r" %(id,))
-            spec.id = id
+            with self._autoidlock:
+                id = "gw" + str(self._autoidcounter)
+                self._autoidcounter += 1
+                if id in self:
+                    raise ValueError("already have gateway with id %r" %(id,))
+                spec.id = id
 
     def _register(self, gateway):
         assert not hasattr(gateway, '_group')
