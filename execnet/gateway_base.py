@@ -413,7 +413,8 @@ def _setupmessages():
              'numexecuting': gateway._execpool.active_count(),
              'execmodel': gateway.execmodel.backend,
         }
-        gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
+        gateway._send(Message.CHANNEL_DATA, message.channelid,
+                      dumps_internal(d))
         gateway._send(Message.CHANNEL_CLOSE, message.channelid)
 
     def channel_exec(message, gateway):
@@ -525,9 +526,7 @@ class Channel(object):
             be called with the endmarker when the channel closes.
         """
         _callbacks = self.gateway._channelfactory._callbacks
-        _receivelock = self.gateway._receivelock
-        _receivelock.acquire()
-        try:
+        with self.gateway._receivelock:
             if self._items is None:
                 raise IOError("%r has callback already registered" %(self,))
             items = self._items
@@ -551,8 +550,6 @@ class Channel(object):
                         break
                     else:
                         callback(olditem)
-        finally:
-            _receivelock.release()
 
     def __repr__(self):
         flag = self.isclosed() and "closed" or "open"
@@ -636,7 +633,8 @@ class Channel(object):
             if not self._receiveclosed.isSet():
                 put = self.gateway._send
                 if error is not None:
-                    put(Message.CHANNEL_CLOSE_ERROR, self.id, dumps_internal(error))
+                    put(Message.CHANNEL_CLOSE_ERROR, self.id,
+                        dumps_internal(error))
                 else:
                     put(Message.CHANNEL_CLOSE, self.id)
                 self._trace("sent channel close message")
@@ -736,8 +734,7 @@ class ChannelFactory(object):
 
     def new(self, id=None):
         """ create a new Channel with 'id' (or create new id if None). """
-        self._writelock.acquire()
-        try:
+        with self._writelock:
             if self.finished:
                 raise IOError("connexion already closed: %s" % (self.gateway,))
             if id is None:
@@ -748,8 +745,6 @@ class ChannelFactory(object):
             except KeyError:
                 channel = self._channels[id] = Channel(self.gateway, id)
             return channel
-        finally:
-            self._writelock.release()
 
     def channels(self):
         return self._list(self._channels.values())
@@ -791,11 +786,10 @@ class ChannelFactory(object):
 
     def _local_receive(self, id, data):
         # executes in receiver thread
+        channel = self._channels.get(id)
         try:
-            callback, endmarker, strconfig= self._callbacks[id]
-            channel = self._channels.get(id)
+            callback, endmarker, strconfig = self._callbacks[id]
         except KeyError:
-            channel = self._channels.get(id)
             queue = channel and channel._items
             if queue is None:
                 pass    # drop data
@@ -806,22 +800,19 @@ class ChannelFactory(object):
             try:
                 data = loads_internal(data, channel, strconfig)
                 callback(data)   # even if channel may be already closed
-            except KeyboardInterrupt:
-                raise
-            except:
+            except Exception:
                 excinfo = sys.exc_info()
-                self.gateway._trace("exception during callback: %s" % excinfo[1])
+                self.gateway._trace("exception during callback: %s" %
+                                    excinfo[1])
                 errortext = self.gateway._geterrortext(excinfo)
-                self.gateway._send(Message.CHANNEL_CLOSE_ERROR, id, dumps_internal(errortext))
+                self.gateway._send(Message.CHANNEL_CLOSE_ERROR,
+                                   id, dumps_internal(errortext))
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):
         self.gateway._trace("finished receiving")
-        self._writelock.acquire()
-        try:
+        with self._writelock:
             self.finished = True
-        finally:
-            self._writelock.release()
         for id in self._list(self._channels):
             self._local_close(id, sendonly=True)
         for id in self._list(self._callbacks):
@@ -920,13 +911,9 @@ class BaseGateway(object):
                 while 1:
                     msg = Message.from_io(io)
                     log("received", msg)
-                    _receivelock = self._receivelock
-                    _receivelock.acquire()
-                    try:
+                    with self._receivelock:
                         msg.received(self)
                         del msg
-                    finally:
-                        _receivelock.release()
             except self._sysex:
                 log("io.close_read()")
                 self._io.close_read()
@@ -1021,6 +1008,7 @@ class SlaveGateway(BaseGateway):
             finally:
                 trace("execution finished, closing io write stream")
                 self._io.close_write()
+
             trace("joining receiver thread")
             self.join()
         except KeyboardInterrupt:
