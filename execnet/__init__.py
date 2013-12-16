@@ -3,7 +3,7 @@ execnet: pure python lib for connecting to local and remote Python Interpreters.
 
 (c) 2012, Holger Krekel and others
 """
-__version__ = '1.2.0.dev1'
+__version__ = '1.2.0.dev2'
 
 from . import apipkg
 
