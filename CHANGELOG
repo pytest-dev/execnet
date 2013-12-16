@@ -1,6 +1,10 @@
 1.X
 --------------------------------
 
+- fix issue24 -- allow concurrent creation of gateways
+  by guarding automatic id creation by a look.
+  Thanks tlecomte.
+
 - majorly refactor internal thread and IO handling.
   execnet can now operate on different thread models,
   defaults to "thread" but allows for eventlet and
