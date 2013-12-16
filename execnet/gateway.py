@@ -48,7 +48,7 @@ class Gateway(gateway_base.BaseGateway):
             self._send(Message.GATEWAY_TERMINATE)
             self._trace("--> io.close_write")
             self._io.close_write()
-        except IOError:
+        except (ValueError, EOFError, IOError):
             v = sys.exc_info()[1]
             self._trace("io-error: could not send termination sequence")
             self._trace(" exception: %r" % v)
