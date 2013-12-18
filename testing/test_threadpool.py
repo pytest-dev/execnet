@@ -62,6 +62,7 @@ def test_waitfinish_on_reply(pool):
     pytest.raises(ZeroDivisionError, reply.get)
 
 
+@pytest.mark.xfail(reason="WorkerPool does not implement limited size")
 def test_limited_size(execmodel):
     pool = WorkerPool(execmodel, size=1)
     q = execmodel.queue.Queue()
@@ -126,18 +127,18 @@ def test_pool_clean_shutdown(pool):
         q.get()
     pool.spawn(f)
     assert not pool.waitall(timeout=1.0)
-    pool.shutdown()
+    pool.trigger_shutdown()
+    with pytest.raises(ValueError):
+        pool.spawn(f)
     def wait_then_put():
         pool.execmodel.sleep(0.1)
         q.put(1)
     pool.execmodel.start(wait_then_put)
-    assert pool.wait_for_shutdown()
     assert pool.waitall()
     out, err = capture.reset()
-    print(out)
+    sys.stdout.write(out + "\n")
     sys.stderr.write(err + "\n")
     assert err == ''
-
 
 def test_primary_thread_integration(execmodel):
     if execmodel.backend != "thread":
@@ -156,4 +157,28 @@ def test_primary_thread_integration(execmodel):
     ident1 = queue.get()
     ident2 = queue.get()
     assert ident1 == ident2
-    pool.waitall()
+    pool.terminate()
+
+def test_primary_thread_integration_shutdown(execmodel):
+    if execmodel.backend != "thread":
+        pytest.skip("can only run with threading")
+    pool = WorkerPool(execmodel=execmodel, hasprimary=True)
+    queue = execmodel.queue.Queue()
+    def do_integrate():
+        queue.put(execmodel.get_ident())
+        pool.integrate_as_primary_thread()
+    execmodel.start(do_integrate)
+    queue.get()
+
+    queue2 = execmodel.queue.Queue()
+    def get_two():
+        queue.put(execmodel.get_ident())
+        queue2.get()
+    reply = pool.spawn(get_two)
+    # make sure get_two is running and blocked on queue2
+    queue.get()
+    # then shut down
+    pool.trigger_shutdown()
+    # and let get_two finish
+    queue2.put(1)
+    assert pool.waitall(5.0)
