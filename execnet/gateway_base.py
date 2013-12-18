@@ -32,6 +32,11 @@ else:
     except ImportError:
         interrupt_main = None
 
+#f = open("/tmp/execnet-%s" % os.getpid(), "w")
+#def log_extra(*msg):
+#    f.write(" ".join([str(x) for x in msg]) + "\n")
+
+
 class EmptySemaphore:
     acquire = release = lambda self: None
 
@@ -121,8 +126,8 @@ def get_execmodel(backend):
         def fdopen(self, fd, mode, bufsize=1):
             return self._fdopen(fd, mode, bufsize)
 
-        def WorkerPool(self, size=None, hasprimary=False):
-            return WorkerPool(self, size, hasprimary=hasprimary)
+        def WorkerPool(self, hasprimary=False):
+            return WorkerPool(self, hasprimary=hasprimary)
 
         def Semaphore(self, size=None):
             if size is None:
@@ -195,90 +200,106 @@ class Reply(object):
 class WorkerPool(object):
     """ A WorkerPool allows to spawn function executions
         to threads, returning a reply object on which you
-        can ask for the result (and get exceptions reraised)
+        can ask for the result (and get exceptions reraised).
+
+        This implementation allows the main thread to integrate
+        itself into performing function execution through
+        calling integrate_as_primary_thread() which will return
+        when the pool received a trigger_shutdown().
     """
-    def __init__(self, execmodel, size=None, hasprimary=False):
+    def __init__(self, execmodel, hasprimary=False):
         """ by default allow unlimited number of spawns. """
         self.execmodel = execmodel
-        self._size = size
         self._running_lock = self.execmodel.Lock()
-        self._sem = self.execmodel.Semaphore(size)
         self._running = set()
-        self._shutdown_event = self.execmodel.Event()
+        self._shuttingdown = False
+        self._waitall_events = []
         if hasprimary:
             if self.execmodel.backend != "thread":
                 raise ValueError("hasprimary=True requires thread model")
-            self._primary_thread_event = self.execmodel.Event()
+            self._primary_thread_task_ready = self.execmodel.Event()
+        else:
+            self._primary_thread_task_ready = None
 
     def integrate_as_primary_thread(self):
         """ integrate the thread with which we are called as a primary
-        thread to dispatch to when spawn is called.
+        thread for executing functions triggered with spawn().
         """
         assert self.execmodel.backend == "thread", self.execmodel
-        # XXX insert check if we really are in the main thread
-        primary_thread_event = self._primary_thread_event
+        primary_thread_task_ready = self._primary_thread_task_ready
         # interacts with code at REF1
-        while not self._shutdown_event.isSet():
-            primary_thread_event.wait()
-            func, args, kwargs = self._primary_thread_task
-            if func is None:  # waitall() woke us up to finish the loop
+        while 1:
+            primary_thread_task_ready.wait()
+            reply = self._primary_thread_task
+            if reply is None:  # trigger_shutdown() woke us up
                 break
-            func(*args, **kwargs)
-            primary_thread_event.clear()
+            self._perform_spawn(reply)
+            # we are concurrent with trigger_shutdown and spawn
+            with self._running_lock:
+                if self._shuttingdown:
+                    break
+                primary_thread_task_ready.clear()
 
-    def shutdown(self):
-        self._shutdown_event.set()
-
-    def wait_for_shutdown(self, timeout=None):
-        return self._shutdown_event.wait(timeout=timeout)
+    def trigger_shutdown(self):
+        with self._running_lock:
+            self._shuttingdown = True
+            if self._primary_thread_task_ready is not None:
+                self._primary_thread_task = None
+                self._primary_thread_task_ready.set()
 
     def active_count(self):
         return len(self._running)
+
+    def _perform_spawn(self, reply):
+        reply.run()
+        with self._running_lock:
+            self._running.remove(reply)
+            if not self._running:
+                while self._waitall_events:
+                    waitall_event = self._waitall_events.pop()
+                    waitall_event.set()
+
+    def _try_send_to_primary_thread(self, reply):
+        # REF1 in 'thread' model we give priority to running in main thread
+        # note that we should be called with _running_lock hold
+        primary_thread_task_ready = self._primary_thread_task_ready
+        if primary_thread_task_ready is not None:
+            if not primary_thread_task_ready.isSet():
+                self._primary_thread_task = reply
+                # wake up primary thread
+                primary_thread_task_ready.set()
+                return True
+        return False
 
     def spawn(self, func, *args, **kwargs):
         """ return Reply object for the asynchronous dispatch
             of the given func(*args, **kwargs).
         """
         reply = Reply((func, args, kwargs), self.execmodel)
-        def run_and_release():
-            reply.run()
-            with self._running_lock:
-                self._running.remove(reply)
-                self._sem.release()
-                if not self._running:
-                    try:
-                        self._waitall_event.set()
-                    except AttributeError:
-                        pass
-        self._sem.acquire()
         with self._running_lock:
+            if self._shuttingdown:
+                raise ValueError("pool is shutting down")
             self._running.add(reply)
-            # REF1 in 'thread' model we give priority to running in main thread
-            primary_thread_event = getattr(self, "_primary_thread_event", None)
-            if primary_thread_event is not None:
-                if not primary_thread_event.isSet():
-                    self._primary_thread_task = run_and_release, (), {}
-                    primary_thread_event.set()
-                    return reply
-            self.execmodel.start(run_and_release, ())
+            if not self._try_send_to_primary_thread(reply):
+                self.execmodel.start(self._perform_spawn, (reply,))
         return reply
 
+    def terminate(self, timeout=None):
+        """ trigger shutdown and wait for completion of all executions. """
+        self.trigger_shutdown()
+        return self.waitall(timeout=timeout)
+
     def waitall(self, timeout=None):
-        """ wait until all previosuly spawns have terminated. """
-        # if it exists signal primary_thread to finish its loop
-        self._primary_thread_task = None, None, None
-        try:
-            self._primary_thread_event.set()
-        except AttributeError:
-            pass
+        """ wait until all active spawns have finished executing. """
         with self._running_lock:
             if not self._running:
                 return True
             # if a Reply still runs, we let run_and_release
             # signal us -- note that we are still holding the
             # _running_lock to avoid race conditions
-            self._waitall_event = self.execmodel.Event()
-        return self._waitall_event.wait(timeout=timeout)
+            my_waitall_event = self.execmodel.Event()
+            self._waitall_events.append(my_waitall_event)
+        return my_waitall_event.wait(timeout=timeout)
 
 
 sysex = (KeyboardInterrupt, SystemExit)
@@ -384,26 +405,9 @@ class Message:
         self._types[self.msgcode](self, gateway)
 
     def __repr__(self):
-        class FakeChannel(object):
-            _strconfig = False, False # never transform, never fail
-            def __init__(self, id):
-                self.id = id
-            def __repr__(self):
-                return '<Channel %s>' % self.id
-        FakeChannel.new = FakeChannel
-        FakeChannel.gateway = FakeChannel
         name = self._types[self.msgcode].__name__.upper()
-        try:
-            data = loads_internal(self.data, FakeChannel)
-        except LoadError:
-            data = self.data
-        r = repr(data)
-        if len(r) > 90:
-            return "<Message.%s channelid=%d len=%d>" %(name,
-                        self.channelid, len(r))
-        else:
-            return "<Message.%s channelid=%d %s>" %(name,
-                        self.channelid, r)
+        return "<Message %s channel=%s lendata=%s>" %(
+                    name, self.channelid, len(self.data))
 
 class GatewayReceivedTerminate(Exception):
     """ Receiverthread got termination message. """
@@ -810,7 +814,6 @@ class ChannelFactory(object):
                 self._local_close(id, errortext)
 
     def _finished_receiving(self):
-        self.gateway._trace("finished receiving")
         with self._writelock:
             self.finished = True
         for id in self._list(self._channels):
@@ -892,13 +895,13 @@ class BaseGateway(object):
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
-        self._receivepool = self.execmodel.WorkerPool(1)
+        self._receivepool = self.execmodel.WorkerPool()
 
     def _trace(self, *msg):
         self.__trace(self.id, *msg)
 
     def _initreceive(self):
-        self._receiverthread = self._receivepool.spawn(self._thread_receiver)
+        self._receivepool.spawn(self._thread_receiver)
 
     def _thread_receiver(self):
         def log(*msg):
@@ -907,34 +910,30 @@ class BaseGateway(object):
         log("RECEIVERTHREAD: starting to run")
         io = self._io
         try:
-            try:
-                while 1:
-                    msg = Message.from_io(io)
-                    log("received", msg)
-                    with self._receivelock:
-                        msg.received(self)
-                        del msg
-            except (KeyboardInterrupt, GatewayReceivedTerminate):
-                pass
-            except EOFError:
-                log("EOF without prior gateway termination message")
-                self._error = self.exc_info()[1]
-            except Exception:
-                log(self._geterrortext(self.exc_info()))
-        finally:
-            try:
-                log('entering finalization')
-                # wake up and terminate any execution waiting to receive
-                self._channelfactory._finished_receiving()
-                log('terminating execution')
-                self._terminate_execution()
-                log('closing read')
-                self._io.close_read()
-                log('closing write')
-                self._io.close_write()
-                log('leaving finalization')
-            except:  # be silent at shutdown
-                pass
+            while 1:
+                msg = Message.from_io(io)
+                log("received", msg)
+                with self._receivelock:
+                    msg.received(self)
+                    del msg
+        except (KeyboardInterrupt, GatewayReceivedTerminate):
+            pass
+        except EOFError:
+            log("EOF without prior gateway termination message")
+            self._error = self.exc_info()[1]
+        except Exception:
+            log(self._geterrortext(self.exc_info()))
+        log('finishing receiving thread')
+        # wake up and terminate any execution waiting to receive
+        self._channelfactory._finished_receiving()
+        log('terminating execution')
+        self._terminate_execution()
+        log('closing read')
+        self._io.close_read()
+        log('closing write')
+        self._io.close_write()
+        log('terminating our receive pseudo pool')
+        self._receivepool.trigger_shutdown()
 
     def _terminate_execution(self):
         pass
@@ -965,7 +964,7 @@ class BaseGateway(object):
     def join(self, timeout=None):
         """ Wait for receiverthread to terminate. """
         self._trace("waiting for receiver thread to finish")
-        self._receiverthread.waitfinish()
+        self._receivepool.waitall()
 
 class SlaveGateway(BaseGateway):
 
@@ -976,7 +975,7 @@ class SlaveGateway(BaseGateway):
     def _terminate_execution(self):
         # called from receiverthread
         self._trace("shutting down execution pool")
-        self._execpool.shutdown()
+        self._execpool.trigger_shutdown()
         if not self._execpool.waitall(5.0):
             self._trace("execution ongoing after 5 secs, trying interrupt_main")
             # We try hard to terminate execution based on the assumption
@@ -988,7 +987,7 @@ class SlaveGateway(BaseGateway):
                 self._trace("calling interrupt_main()")
                 interrupt_main()
             if not self._execpool.waitall(10.0):
-                self._trace("execution did not finish in 10 secs, "
+                self._trace("execution did not finish in another 10 secs, "
                             "calling os._exit()")
                 os._exit(1)
 
@@ -999,16 +998,10 @@ class SlaveGateway(BaseGateway):
         trace("spawning receiver thread")
         self._initreceive()
         try:
-            try:
-                if hasprimary:
-                    trace("integrating as main primary exec thread")
-                    self._execpool.integrate_as_primary_thread()
-                else:
-                    trace("waiting for execution to finish")
-                    self._execpool.wait_for_shutdown()
-            finally:
-                trace("execution finished")
-
+            if hasprimary:
+                # this will return when we are in shutdown
+                trace("integrating as primary thread")
+                self._execpool.integrate_as_primary_thread()
             trace("joining receiver thread")
             self.join()
         except KeyboardInterrupt:

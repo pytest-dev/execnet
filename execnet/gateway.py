@@ -73,7 +73,7 @@ class Gateway(gateway_base.BaseGateway):
 
     def hasreceiver(self):
         """ return True if gateway is able to receive data. """
-        return self._receiverthread.running  # approxmimation
+        return self._receivepool.active_count() > 0
 
     def remote_status(self):
         """ return information object about remote execution status. """
