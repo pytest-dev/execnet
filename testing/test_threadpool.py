@@ -181,4 +181,5 @@ def test_primary_thread_integration_shutdown(execmodel):
     pool.trigger_shutdown()
     # and let get_two finish
     queue2.put(1)
+    reply.get()
     assert pool.waitall(5.0)
