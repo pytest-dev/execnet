@@ -1094,7 +1094,7 @@ class Unserializer(object):
         if versioned:
             ver = self.stream.read(1)
             if ver != DUMPFORMAT_VERSION:
-                raise LoadError("wrong dumpformat version")
+                raise LoadError("wrong dumpformat version %r" % ver)
         self.stack = []
         try:
             while True:
