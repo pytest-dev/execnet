@@ -77,9 +77,7 @@ The current 1.0 series aims at :doc:`basic API <basics>` stabilization, improved
 The 1.1 series will target setting up permanent networks and offering unix-shell-like capabilities to spawn processes and applications.
 
 execnet was conceived and is `actively developed`_ by `Holger Krekel`_.
-The package is licensed under the GPL Version 2 or later, at your choice.
-Armin Rigo and Benjamin Peterson have done major contributions which
-are MIT-licensed.
+The package is licensed under the MIT license since version 1.2.
 
 .. _`basic API`: basics.html
 .. _`actively developed`: http://bitbucket.org/hpk42/execnet/changesets
