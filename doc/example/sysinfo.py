@@ -3,7 +3,7 @@ sysinfo.py [host1] [host2] [options]
 
 obtain system info from remote machine.
 
-(c) Holger Krekel, GPLv2 or 3
+(c) Holger Krekel, MIT license
 """
 
 import py
