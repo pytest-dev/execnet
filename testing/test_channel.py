@@ -72,7 +72,6 @@ class TestChannelBasicBehaviour:
             channel.receive()
         except channel.RemoteError:
             e = sys.exc_info()[1]
-            print(e)
             assert str(e).startswith('Traceback (most recent call last):')
             assert str(e).find('NameError') > -1
             assert str(e).find('foobar') > -1
