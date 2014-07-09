@@ -191,7 +191,9 @@ class Reply(object):
             try:
                 self._result = func(*args, **kwargs)
             except:
-                self._excinfo = sys.exc_info()
+                # sys may be already None when shutting down the interpreter
+                if sys is not None:
+                    self._excinfo = sys.exc_info()
         finally:
             self._result_ready.set()
             self.running = False
