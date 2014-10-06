@@ -101,7 +101,7 @@ Use simple execution to obtain information from remote environments::
   >>> platform
   'linux2'
   >>> version_info
-  (2, 4, 2, 'final', 0)
+  (2, 6, 6, 'final', 0)
 
 Use a callback instead of receive() and wait for completion
 -------------------------------------------------------------
