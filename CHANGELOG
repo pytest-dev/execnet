@@ -3,6 +3,8 @@ XXX
 
 - fix issue33: index.txt to correctly mention MIT instead of GPL.
 
+- fix issue35: adapt some doctests, fix some channel tests for py3.
+
 1.2
 --------------------------------
 
