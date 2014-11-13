@@ -5,6 +5,9 @@ XXX
 
 - fix issue35: adapt some doctests, fix some channel tests for py3.
 
+- use subprocess32 when available for python < 3.
+
+
 1.2
 --------------------------------
 
@@ -34,15 +37,15 @@ XXX
 
 - fix issue21: allow to create local gateways with sudo aka
   makegateway("popen//python=sudo python").
-  Thanks Alfredo Deza for the PR. 
+  Thanks Alfredo Deza for the PR.
 
 - streamline gateway termination and simplify proxy
   implementation. add more internal tracing.
 
-- if execution hangs in computation, we now try to 
+- if execution hangs in computation, we now try to
   send a SIGINT to ourselves on Unix platforms
   instead of just calling thread.interrupt_main()
-  
+
 - change license from GPL to MIT
 
 - introduce execnet.dump/load variants of dumps/loads
@@ -50,19 +53,19 @@ XXX
 
 - improve channel.receive() communication latency on python2
   by changing the default timeout of the underlying Queue.get
-  to a regular None instead of the previous default -1 
+  to a regular None instead of the previous default -1
   which caused an internal positive timeout value
   (a hack probably introduced to allow CTRL-C to pass
   through for <python2.5 versions).
 
-- extended ssh-syntax to allow passing of command line args, 
-  e.g.  "ssh= -p 50 hostname". The options are passed to 
+- extended ssh-syntax to allow passing of command line args,
+  e.g.  "ssh= -p 50 hostname". The options are passed to
   the underlying ssh client binary.  Thanks tundish.
 
 - fix issue15: interoperability with inspect.getstack().
   Thanks Peter Feiner.
 
-- fix issue10 : skip PYTHONDONTWRITEBYTECODE test if 
+- fix issue10 : skip PYTHONDONTWRITEBYTECODE test if
   it we are running with PYTHONDONTWRITEBYTECODE set.
 
 - dont try the jython pid fixup on a RemoteIO
