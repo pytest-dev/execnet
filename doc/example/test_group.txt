@@ -14,7 +14,7 @@ of multiple gateways::
     >>> group
     <Group ['gw0', 'gw1']>
     >>> list(group)
-    [<PopenGateway id='gw0' receive-live, 0 active channels>, <PopenGateway id='gw1' receive-live, 0 active channels>]
+    [<Gateway id='gw0' receive-live, thread model, 0 active channels>, <Gateway id='gw1' receive-live, thread model, 0 active channels>]
     >>> 'gw0' in group and 'gw1' in group
     True
     >>> group['gw0'] == group[0]
@@ -37,7 +37,7 @@ Pass an ``id=MYNAME`` part to ``group.makegateway``. Example::
     >>> gw = group.makegateway("popen//id=sub1")
     >>> assert gw.id == "sub1"
     >>> group['sub1']
-    <PopenGateway id='sub1' receive-live, 0 active channels>
+    <Gateway id='sub1' receive-live, thread model, 0 active channels>
 
 Getting (auto) IDs before instantiation
 ------------------------------------------------------

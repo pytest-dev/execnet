@@ -21,6 +21,7 @@ if ISPY3:
     unicode = str
     _long_type = int
     from _thread import interrupt_main
+    SUBPROCESS32 = False
 else:
     from StringIO import StringIO as BytesIO
     exec("def do_exec(co, loc): exec co in loc\n"
@@ -31,6 +32,12 @@ else:
         from thread import interrupt_main
     except ImportError:
         interrupt_main = None
+    try:
+        import subprocess32  # NOQA
+        SUBPROCESS32 = True
+    except ImportError:
+        SUBPROCESS32 = False
+
 
 #f = open("/tmp/execnet-%s" % os.getpid(), "w")
 #def log_extra(*msg):
@@ -51,7 +58,7 @@ def get_execmodel(backend):
             'threading': ["threading",],
             'queue': ["queue", "Queue"],
             'sleep': ['time::sleep'],
-            'subprocess': ['subprocess'],
+            'subprocess': ['subprocess32' if SUBPROCESS32 else 'subprocess'],
             'socket': ['socket'],
             '_fdopen': ['os::fdopen'],
             '_lock': ['threading'],

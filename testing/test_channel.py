@@ -68,25 +68,19 @@ class TestChannelBasicBehaviour:
 
     def test_channel_error_reporting(self, gw):
         channel = gw.remote_exec('def foo():\n  return foobar()\nfoo()\n')
-        try:
-            channel.receive()
-        except channel.RemoteError:
-            e = sys.exc_info()[1]
-            assert str(e).startswith('Traceback (most recent call last):')
-            assert str(e).find('NameError') > -1
-            assert str(e).find('foobar') > -1
-        else:
-            pytest.fail('No exception raised')
+        excinfo = pytest.raises(channel.RemoteError, channel.receive)
+        msg = str(excinfo.value)
+        assert msg.startswith('Traceback (most recent call last):')
+        assert "NameError" in msg
+        assert "foobar" in msg
 
     def test_channel_syntax_error(self, gw):
         # missing colon
         channel = gw.remote_exec('def foo()\n return 1\nfoo()\n')
-        try:
-            channel.receive()
-        except channel.RemoteError:
-            e = sys.exc_info()[1]
-            assert str(e).startswith('Traceback (most recent call last):')
-            assert str(e).find('SyntaxError') > -1
+        excinfo = pytest.raises(channel.RemoteError, channel.receive)
+        msg = str(excinfo.value)
+        assert msg.startswith('Traceback (most recent call last):')
+        assert "SyntaxError" in msg
 
     def test_channel_iter(self, gw):
         channel = gw.remote_exec("""
