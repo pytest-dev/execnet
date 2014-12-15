@@ -7,6 +7,9 @@ XXX
 
 - use subprocess32 when available for python < 3.
 
+- try to be a bit more careful when interpreter is shutting down
+  to avoid random exceptions, thanks Alfredo Deza.
+
 
 1.2
 --------------------------------
