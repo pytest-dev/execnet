@@ -10,6 +10,7 @@ XXX
 - try to be a bit more careful when interpreter is shutting down
   to avoid random exceptions, thanks Alfredo Deza.
 
+- ignore errors on orphan file removal when rsyncing
 
 1.2
 --------------------------------
