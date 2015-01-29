@@ -1,0 +1,12 @@
+doc/_build
+build/
+execnet.egg-info/
+dist/
+\.cache/
+
+syntax:glob
+*.pyc
+*$py.class
+*.orig
+*~
+.tox

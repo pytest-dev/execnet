@@ -1,0 +1,45 @@
+refactoring 
+execnet-1.1 is a backward compatible beta release.  execnet provides a
+share-nothing model with channel-send/receive communication for
+distributing execution across many Python interpreters across version,
+platform and network barriers. 
+
+See below for more change info and here for extensive documentation
+and tested examples:
+
+    http://codespeak.net/execnet
+
+Particular thanks to Ronny Pfannschmidt for a lot of internal cleanups
+and to Alex Gaynor for providing feature patches.
+
+Have fun,
+holger
+
+
+1.1 (compared to 1.0.9)
+--------------------------------
+
+- introduce execnet.dumps/loads providing serialization between
+  python interpreters.
+
+- group.remote_exec now supports kwargs as well
+
+- support per channel string coercion configuration
+
+- Popen2IO.read now reads correct amounts of bytes from nonblocking fd's
+
+- added a ``dont_write_bytecode`` option to Popen gateways, this sets the
+  ``sys.dont_write_bytecode`` flag on the spawned process, this only works on
+  CPython 2.6 and higher.  Thanks to Alex Gaynor.
+
+- added a pytest --broken-isp option to skip tests that assume
+  DNS queries for unknown hosts actually are resolved as such (Thanks
+  Alex Gaynor)
+
+- fix issue 1 - decouple string coercion of channels and gateway
+
+- fix issue #2 - properly reconfigure the channels string coercion for rsync,
+  so it can send from python2 to python3
+
+- refactor socketserver, so it can be directly remote_exec'd for starting a socket gateway on a remote
+
