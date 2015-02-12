@@ -16,7 +16,7 @@ def serve_rsync(channel):
             os.unlink(path)
         except OSError:
             # assume it's a dir
-            shutil.rmtree(path)
+            shutil.rmtree(path, True)
 
     def receive_directory_structure(path, relcomponents):
         try:
