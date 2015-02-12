@@ -39,10 +39,10 @@ examples for valid gateway specifications
 * ``ssh=-p 5000 myhost`` makes execnet pass "-p 5000 myhost" arguments
   to the underlying ssh client binary, effectively specifying a custom port.
 
-* ``popen//python=python2.6//nice=20`` specification of 
-  a python subprocess using the ``python2.6`` executable which must be 
-  discoverable through the system ``PATH``; running with the lowest 
-  CPU priority ("nice" level).  By default current dir will be the 
+* ``popen//python=python2.6//nice=20`` specification of
+  a python subprocess using the ``python2.6`` executable which must be
+  discoverable through the system ``PATH``; running with the lowest
+  CPU priority ("nice" level).  By default current dir will be the
   current dir of the instantiator.
 
 * ``popen//dont_write_bytecode`` uses the same executable as the current
@@ -59,7 +59,7 @@ examples for valid gateway specifications
   other side using eventlet for handling IO and dispatching threads.
 
 * ``socket=192.168.1.4:8888`` specifies a Python Socket server
-  process that listens on 192.168.1.4:8888``
+  process that listens on ``192.168.1.4:8888``
 
 .. _`remote execute code`:
 
@@ -136,7 +136,7 @@ threading models: gevent, eventlet, thread
 .. versionadded:: 1.2 (status: experimental!)
 
 execnet supports "thread", "eventlet" and "gevent" as thread models
-on each of the two sides.  You need to decide which model to use 
+on each of the two sides.  You need to decide which model to use
 before you create any gateways::
 
     # content of threadmodel.py
@@ -156,7 +156,7 @@ you can execute this little test file::
     <RInfo 'numchannels=0, numexecuting=0, execmodel=thread'>
     1
 
-.. note:: 
+.. note::
 
     With python3 you can (as of December 2013) only use the thread model
     because neither eventlet-0.14.0 nor gevent-1.0 support Python3.
@@ -184,7 +184,7 @@ information from the remote side.
 
 Calling this method tells you e.g. how many execution
 tasks are queued, how many are executing and how many
-channels are active. 
+channels are active.
 
 rsync: synchronise filesystem with remote
 ===============================================================
