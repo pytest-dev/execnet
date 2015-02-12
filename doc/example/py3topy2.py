@@ -1,6 +1,6 @@
 
 import execnet
-gw = execnet.PopenGateway("python2.6")
+gw = execnet.makegateway("popen//python=python2")
 channel = gw.remote_exec("""
     import numpy
     array = numpy.array([1,2,3])
