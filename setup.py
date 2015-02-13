@@ -34,23 +34,19 @@ Features
 
 """
 
-try:
-    from setuptools import setup, Command
-except ImportError:
-    from distutils.core import setup, Command
 
 def main():
+    from setuptools import setup
     setup(
         name='execnet',
         description='execnet: rapid multi-Python deployment',
-        long_description = __doc__,
-        version='1.2.0',
+        long_description=__doc__,
+        get_version_from_scm=True,
         url='http://codespeak.net/execnet',
         license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
         author='holger krekel and others',
         author_email='holger at merlinux.eu',
-        cmdclass = {'test': PyTest},
         classifiers=[
             'Development Status :: 4 - Beta',
             'Intended Audience :: Developers',
@@ -64,18 +60,12 @@ def main():
             'Programming Language :: Python',
             'Programming Language :: Python :: 3'],
         packages=['execnet', 'execnet.script'],
+        setup_requires=[
+            # this is a setup/release time dependency
+            # we are supposed to use wheels
+            'hgdistver',
+        ]
     )
-
-class PyTest(Command):
-    user_options = []
-    def initialize_options(self):
-        pass
-    def finalize_options(self):
-        pass
-    def run(self):
-        import sys,subprocess
-        errno = subprocess.call([sys.executable, 'testing/runtest.py'])
-        raise SystemExit(errno)
 
 if __name__ == '__main__':
     main()
