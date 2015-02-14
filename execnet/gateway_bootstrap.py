@@ -13,7 +13,7 @@ class HostNotFound(Exception):
     pass
 
 
-def bootstrap_popen(io, spec):
+def bootstrap_import(io, spec):
     sendexec(io,
         "import sys",
         "sys.path.insert(0, %r)" % importdir,
@@ -27,7 +27,7 @@ def bootstrap_popen(io, spec):
     assert s == "1".encode('ascii'), repr(s)
 
 
-def bootstrap_ssh(io, spec):
+def bootstrap_exec(io, spec):
     try:
         sendexec(io,
             inspect.getsource(gateway_base),
@@ -83,9 +83,12 @@ def fix_pid_for_jython_popen(gw):
 
 def bootstrap(io, spec):
     if spec.popen:
-        bootstrap_popen(io, spec)
+        if spec.via or spec.python:
+            bootstrap_exec(io, spec)
+        else:
+            bootstrap_import(io, spec)
     elif spec.ssh:
-        bootstrap_ssh(io, spec)
+        bootstrap_exec(io, spec)
     elif spec.socket:
         bootstrap_socket(io, spec)
     else:
