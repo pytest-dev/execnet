@@ -4,24 +4,43 @@ from execnet import RSync
 import execnet
 from test_serializer import _find_version
 
-def pytest_funcarg__gw1(request):
-    return request.cached_setup(
-        setup=lambda: execnet.makegateway("popen"),
-        teardown=lambda val: val.exit(),
-        scope="module"
-    )
-pytest_funcarg__gw2 = pytest_funcarg__gw1
 
-needssymlink = pytest.mark.skipif(not hasattr(py.path.local, "mksymlinkto"),
-                                  reason="py.path.local has no mksymlinkto() on this platform")
+@pytest.fixture(scope='module')
+def group(request):
+    group = execnet.Group()
+    request.addfinalizer(group.terminate)
+    return group
 
-def pytest_funcarg__dirs(request):
-    t = request.getfuncargvalue('tmpdir')
+
+@pytest.fixture(scope='module')
+def gw1(request, group):
+    gw = group.makegateway('popen//id=gw1')
+    request.addfinalizer(gw.exit)
+    return gw
+
+
+@pytest.fixture(scope='module')
+def gw2(request, group):
+    gw = group.makegateway('popen//id=gw2')
+    request.addfinalizer(gw.exit)
+    return gw
+
+
+needssymlink = pytest.mark.skipif(
+    not hasattr(py.path.local, "mksymlinkto"),
+    reason="py.path.local has no mksymlinkto() on this platform")
+
+
+@pytest.fixture
+def dirs(request, tmpdir):
+    t = tmpdir
+
     class dirs:
         source = t.join("source")
         dest1 = t.join("dest1")
         dest2 = t.join("dest2")
     return dirs
+
 
 class TestRSync:
     def test_notargets(self, dirs):
@@ -174,15 +193,20 @@ class TestRSync:
         source.ensure("existant").write("a" * 100)
         source.ensure("existant2").write("a" * 10)
         total = {}
+
         def callback(cmd, lgt, channel):
             total[(cmd, lgt)] = True
 
         rsync = RSync(source, callback=callback)
-        #rsync = RSync()
+        # rsync = RSync()
         rsync.add_target(gw1, dest)
         rsync.send()
 
-        assert total == {("list", 110):True, ("ack", 100):True, ("ack", 10):True}
+        assert total == {
+            ("list", 110): True,
+            ("ack", 100): True,
+            ("ack", 10): True,
+        }
 
     def test_file_disappearing(self, dirs, gw1):
         dest = dirs.dest1
@@ -205,11 +229,10 @@ class TestRSync:
         assert len(dest.listdir()) == 1
         assert len(source.listdir()) == 1
 
-
     @py.test.mark.skip_if('sys.version_info >= (3)')
     def test_2_to_3_bridge_can_send_binary_files(self, tmpdir, makegateway):
         python = _find_version('3')
-        gw = makegateway('popen//python=%s'%(python,))
+        gw = makegateway('popen//python=%s' % python)
         source = tmpdir.ensure('source', dir=1)
         for i, content in enumerate('foo bar baz \x10foo'):
             source.join(str(i)).write(content)
