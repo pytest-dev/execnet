@@ -4,7 +4,7 @@ import tempfile
 import subprocess
 import py
 import execnet
-
+import pytest
 
 MINOR_VERSIONS = {
     '3': '543210',
@@ -99,14 +99,28 @@ sys.stdout.write(repr(obj))""" % (pyimportdir, option_args,))
         return "<PythonWrapper for %s>" % (self.executable,)
 
 
-def pytest_funcarg__py2(request):
+@pytest.fixture
+def py2(request):
     return _py2_wrapper
 
-def pytest_funcarg__py3(request):
+
+@pytest.fixture
+def py3(request):
     return _py3_wrapper
 
+
+@pytest.fixture(params=['py2', 'py3'])
+def dump(request):
+    return request.getfuncargvalue(request.param).dump
+
+
+@pytest.fixture(params=['py2', 'py3'])
+def load(request):
+    return request.getfuncargvalue(request.param).load
+
+
 simple_tests = [
-#   type: expected before/after repr
+    # type: expected before/after repr
     ('int', '4'),
     ('float', '3.25'),
     ('list', '[1, 2, 3]'),
@@ -114,53 +128,53 @@ simple_tests = [
     ('dict', '{(1, 2, 3): 32}'),
 ]
 
+
 @py.test.mark.parametrize(["tp_name", "repr"], simple_tests)
-def test_simple(tp_name, repr, py2, py3):
-    for load in py2.load, py3.load:
-        for dump in py3.dump, py2.dump:
-            p = dump(repr)
-            tp , v = load(p)
-            assert tp == tp_name
-            assert v == repr
+def test_simple(tp_name, repr, dump, load):
+    p = dump(repr)
+    tp, v = load(p)
+    assert tp == tp_name
+    assert v == repr
 
-def test_set(py2, py3):
-    for dump in py2.dump, py3.dump:
-        p = dump("set((1, 2, 3))")
-        tp, v = py2.load(p)
-        assert tp == "set"
-        #assert v == "set([1, 2, 3])" # ordering prevents this assertion
-        assert v.startswith("set([") and v.endswith("])")
-        assert '1' in v and '2' in v and '3' in v
 
-        tp, v = py3.load(p)
-        assert tp == "set"
-        #assert v == "{1, 2, 3}" # ordering prevents this assertion
-        assert v.startswith("{") and v.endswith("}")
-        assert '1' in v and '2' in v and '3' in v
-        p = dump("set()")
-        tp, v = py2.load(p)
-        assert tp == "set"
-        assert v == "set([])"
-        tp, v = py3.load(p)
-        assert tp == "set"
-        assert v == "set()"
+def test_set(py2, py3, dump):
+    p = dump("set((1, 2, 3))")
+    tp, v = py2.load(p)
+    assert tp == "set"
+    # assert v == "set([1, 2, 3])" # ordering prevents this assertion
+    assert v.startswith("set([") and v.endswith("])")
+    assert '1' in v and '2' in v and '3' in v
 
-def test_frozenset(py2, py3):
-    for dump in py2.dump, py3.dump:
-        p = dump("frozenset((1, 2, 3))")
-        tp, v = py2.load(p)
-        assert tp == "frozenset"
-        assert v == "frozenset([1, 2, 3])"
-        tp, v = py3.load(p)
-        assert tp == "frozenset"
-        assert v == "frozenset({1, 2, 3})"
-        p = dump("frozenset()")
-        tp, v = py2.load(p)
-        assert tp == "frozenset"
-        assert v == "frozenset([])"
-        tp, v = py3.load(p)
-        assert tp == "frozenset"
-        assert v == "frozenset()"
+    tp, v = py3.load(p)
+    assert tp == "set"
+    # assert v == "{1, 2, 3}" # ordering prevents this assertion
+    assert v.startswith("{") and v.endswith("}")
+    assert '1' in v and '2' in v and '3' in v
+    p = dump("set()")
+    tp, v = py2.load(p)
+    assert tp == "set"
+    assert v == "set([])"
+    tp, v = py3.load(p)
+    assert tp == "set"
+    assert v == "set()"
+
+
+def test_frozenset(py2, py3, dump):
+    p = dump("frozenset((1, 2, 3))")
+    tp, v = py2.load(p)
+    assert tp == "frozenset"
+    assert v == "frozenset([1, 2, 3])"
+    tp, v = py3.load(p)
+    assert tp == "frozenset"
+    assert v == "frozenset({1, 2, 3})"
+    p = dump("frozenset()")
+    tp, v = py2.load(p)
+    assert tp == "frozenset"
+    assert v == "frozenset([])"
+    tp, v = py3.load(p)
+    assert tp == "frozenset"
+    assert v == "frozenset()"
+
 
 def test_long(py2, py3):
     really_big = "9223372036854775807324234"
@@ -179,12 +193,14 @@ def test_long(py2, py3):
     assert tp == "long"
     assert v == really_big + "L"
 
+
 def test_small_long(py2, py3):
     p = py2.dump("123L")
     tp, s = py2.load(p)
     assert s == "123L"
     tp, s = py3.load(p)
     assert s == "123"
+
 
 def test_bytes(py2, py3):
     p = py3.dump("b'hi'")
@@ -194,6 +210,7 @@ def test_bytes(py2, py3):
     tp, v = py3.load(p)
     assert tp == "bytes"
     assert v == "b'hi'"
+
 
 def test_str(py2, py3):
     p = py2.dump("'xyz'")
@@ -206,6 +223,7 @@ def test_str(py2, py3):
     tp, s = py3.load(p, "py2str_as_py3str=False")
     assert s == "b'xyz'"
     assert tp == "bytes"
+
 
 def test_unicode(py2, py3):
     p = py2.dump("u'hi'")
@@ -220,8 +238,10 @@ def test_unicode(py2, py3):
     assert tp == "str"
     assert s == "'hi'"
     tp, s = py2.load(p)
-    assert tp == "unicode" # depends on unserialization defaults
+    # depends on unserialization defaults
+    assert tp == "unicode"
     assert s == "u'hi'"
+
 
 def test_bool(py2, py3):
     p = py2.dump("True")
@@ -235,12 +255,12 @@ def test_bool(py2, py3):
     tp, s = py2.load(p)
     assert s == "False"
 
-def test_none(py2, py3):
-    p = py2.dump("None")
-    tp, s = py2.load(p)
+
+def test_none(dump, load):
+    p = dump("None")
+    tp, s = load(p)
     assert s == "None"
-    tp, s = py3.load(p)
-    assert s == "None"
+
 
 def test_tuple_nested_with_empty_in_between(py2):
     p = py2.dump("(1, (), 3)")
