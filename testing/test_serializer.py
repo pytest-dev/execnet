@@ -6,26 +6,28 @@ import py
 import execnet
 
 
+MINOR_VERSIONS = {
+    '3': '543210',
+    '2': '76',
+}
+
+
 def _find_version(suffix=""):
     name = "python" + suffix
     executable = py.path.local.sysfind(name)
     if executable is None:
-        if suffix == "2":
-            for name in ('python2.6', 'python2.7'):
-                executable = py.path.local.sysfind(name)
-                if executable:
-                    return executable
-        elif suffix == "3":
-            for name in ('python3.1', 'python3.2'):
-                executable = py.path.local.sysfind(name)
-                if executable:
-                    return executable
         if sys.platform == "win32" and suffix == "3":
             for name in ('python31', 'python30'):
                 executable = py.path.local(r"c:\\%s\python.exe" % (name,))
                 if executable.check():
                     return executable
-        py.test.skip("can't find a %r executable" % (name,))
+        for tail in MINOR_VERSIONS.get(suffix, ''):
+            path = py.path.local.sysfind('%s.%s' % (name, tail))
+            if path.check():
+                return path
+
+        else:
+            py.test.skip("can't find a %r executable" % (name,))
     return executable
 
 TEMPDIR = _py2_wrapper = _py3_wrapper = None
