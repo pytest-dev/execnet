@@ -871,7 +871,7 @@ class ChannelFile(object):
 
     def __repr__(self):
         state = self.channel.isclosed() and 'closed' or 'open'
-        return '<ChannelFile %d %s>' %(self.channel.id, state)
+        return '<ChannelFile %d %s>' % (self.channel.id, state)
 
 
 class ChannelFileWrite(ChannelFile):
@@ -1064,7 +1064,7 @@ class SlaveGateway(BaseGateway):
                 kwargs = newkwargs
             loc = {'channel': channel, '__name__': '__channelexec__'}
             self._trace("execution starts[%s]: %s" %
-                            (channel.id, repr(source)[:50]))
+                        (channel.id, repr(source)[:50]))
             channel._executing = True
             try:
                 co = compile(source+'\n', '<remote exec>', 'exec')
@@ -1152,7 +1152,8 @@ class Unserializer(object):
                 try:
                     loader = self.num2func[opcode]
                 except KeyError:
-                    raise LoadError("unkown opcode %r - "
+                    raise LoadError(
+                        "unkown opcode %r - "
                         "wire protocol corruption?" % (opcode,))
                 loader(self)
         except _Stop:
