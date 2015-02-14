@@ -1,4 +1,8 @@
 XXX
+----
+
+
+1.3.0
 --------------------------------
 
 - fix issue33: index.txt to correctly mention MIT instead of GPL.
@@ -11,6 +15,8 @@ XXX
   to avoid random exceptions, thanks Alfredo Deza.
 
 - ignore errors on orphan file removal when rsyncing
+
+- fix issue34: limit use of import based bootstrap
 
 1.2
 --------------------------------
