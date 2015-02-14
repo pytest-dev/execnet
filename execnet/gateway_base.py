@@ -37,6 +37,7 @@ else:
         SUBPROCESS32 = True
     except ImportError:
         SUBPROCESS32 = False
+        sys.exc_clear()
 
 
 #f = open("/tmp/execnet-%s" % os.getpid(), "w")
