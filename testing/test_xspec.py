@@ -1,19 +1,24 @@
-import pytest, py
+import os
+import py
+import sys
+import pytest
 import execnet
 from execnet.gateway_io import ssh_args, popen_args
 
 XSpec = execnet.XSpec
 
+
 class TestXSpec:
     def test_norm_attributes(self):
-        spec = XSpec("socket=192.168.102.2:8888//python=c:/this/python2.5//chdir=d:\hello")
+        spec = XSpec("socket=192.168.102.2:8888//python=c:/this/python2.5"
+                     "//chdir=d:\hello")
         assert spec.socket == "192.168.102.2:8888"
         assert spec.python == "c:/this/python2.5"
         assert spec.chdir == "d:\hello"
         assert spec.nice is None
         assert not hasattr(spec, '_xyz')
 
-        py.test.raises(AttributeError, "spec._hello")
+        pytest.raises(AttributeError, "spec._hello")
 
         spec = XSpec("socket=192.168.102.2:8888//python=python2.5//nice=3")
         assert spec.socket == "192.168.102.2:8888"
@@ -21,21 +26,25 @@ class TestXSpec:
         assert spec.chdir is None
         assert spec.nice == "3"
 
-        spec = XSpec("ssh=user@host//chdir=/hello/this//python=/usr/bin/python2.5")
+        spec = XSpec("ssh=user@host"
+                     "//chdir=/hello/this//python=/usr/bin/python2.5")
         assert spec.ssh == "user@host"
         assert spec.python == "/usr/bin/python2.5"
         assert spec.chdir == "/hello/this"
 
         spec = XSpec("popen")
-        assert spec.popen == True
+        assert spec.popen is True
 
     def test_ssh_options(self):
         spec = XSpec("ssh=-p 22100 user@host//python=python3")
         assert spec.ssh == "-p 22100 user@host"
         assert spec.python == "python3"
 
-        spec = XSpec("ssh=-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host//python=python3")
-        assert spec.ssh == "-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host"
+        spec = XSpec(
+            "ssh=-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host"
+            "//python=python3")
+        assert spec.ssh == \
+            "-i ~/.ssh/id_rsa-passwordless_login -p 22100 user@host"
         assert spec.python == "python3"
 
     def test_execmodel(self):
@@ -71,8 +80,8 @@ class TestXSpec:
             assert XSpec(x)._spec == x
 
     def test_samekeyword_twice_raises(self):
-        py.test.raises(ValueError, "XSpec('popen//popen')")
-        py.test.raises(ValueError, "XSpec('popen//popen=123')")
+        pytest.raises(ValueError, XSpec, 'popen//popen')
+        pytest.raises(ValueError, XSpec, 'popen//popen=123')
 
     def test_unknown_keys_allowed(self):
         xspec = XSpec("hello=3")
@@ -89,22 +98,24 @@ class TestXSpec:
         assert XSpec("popen//python=123") != XSpec("popen")
         assert hash(XSpec("socket=hello:8080")) != hash(XSpec("popen"))
 
+
 class TestMakegateway:
     def test_no_type(self, makegateway):
-        py.test.raises(ValueError, lambda: makegateway('hello'))
+        pytest.raises(ValueError, lambda: makegateway('hello'))
 
     def test_popen_default(self, makegateway):
         gw = makegateway("")
         assert gw.spec.popen
-        assert gw.spec.python == None
+        assert gw.spec.python is None
         rinfo = gw._rinfo()
-        #assert rinfo.executable == py.std.sys.executable
-        assert rinfo.cwd == py.std.os.getcwd()
-        assert rinfo.version_info == py.std.sys.version_info
+        # assert rinfo.executable == sys.executable
+        assert rinfo.cwd == os.getcwd()
+        assert rinfo.version_info == sys.version_info
 
     @pytest.mark.skipif("not hasattr(os, 'nice')")
     def test_popen_nice(self, makegateway):
         gw = makegateway("popen")
+
         def getnice(channel):
             import os
             if hasattr(os, 'nice'):
@@ -128,12 +139,12 @@ class TestMakegateway:
         assert value == "123"
 
     def test_popen_explicit(self, makegateway):
-        gw = makegateway("popen//python=%s" % py.std.sys.executable)
-        assert gw.spec.python == py.std.sys.executable
+        gw = makegateway("popen//python=%s" % sys.executable)
+        assert gw.spec.python == sys.executable
         rinfo = gw._rinfo()
-        assert rinfo.executable == py.std.sys.executable
-        assert rinfo.cwd == py.std.os.getcwd()
-        assert rinfo.version_info == py.std.sys.version_info
+        assert rinfo.executable == sys.executable
+        assert rinfo.cwd == os.getcwd()
+        assert rinfo.version_info == sys.version_info
 
     def test_popen_cpython25(self, makegateway):
         for trypath in ('python2.5', r'C:\Python25\python.exe'):
@@ -142,13 +153,13 @@ class TestMakegateway:
                 cpython25 = cpython25.realpath()
                 break
         else:
-            py.test.skip("cpython2.5 not found")
+            pytest.skip("cpython2.5 not found")
         gw = makegateway("popen//python=%s" % cpython25)
         rinfo = gw._rinfo()
-        if py.std.sys.platform != "darwin": # it's confusing there
+        if sys.platform != "darwin":  # it's confusing there
             assert rinfo.executable == cpython25
-        assert rinfo.cwd == py.std.os.getcwd()
-        assert rinfo.version_info[:2] == (2,5)
+        assert rinfo.cwd == os.getcwd()
+        assert rinfo.version_info[:2] == (2, 5)
 
     def test_popen_cpython26(self, makegateway):
         for trypath in ('python2.6', r'C:\Python26\python.exe'):
@@ -159,9 +170,9 @@ class TestMakegateway:
             py.test.skip("cpython2.6 not found")
         gw = makegateway("popen//python=%s" % cpython26)
         rinfo = gw._rinfo()
-        #assert rinfo.executable == cpython26
-        assert rinfo.cwd == py.std.os.getcwd()
-        assert rinfo.version_info[:2] == (2,6)
+        # assert rinfo.executable == cpython26
+        assert rinfo.cwd == os.getcwd()
+        assert rinfo.version_info[:2] == (2, 6)
 
     def test_popen_chdir_absolute(self, testdir, makegateway):
         gw = makegateway("popen//chdir=%s" % testdir.tmpdir)
@@ -172,7 +183,8 @@ class TestMakegateway:
         testdir.chdir()
         gw = makegateway("popen//chdir=hello")
         rinfo = gw._rinfo()
-        assert rinfo.cwd.lower() == str(testdir.tmpdir.join("hello").realpath()).lower()
+        expected = str(testdir.tmpdir.join("hello").realpath()).lower()
+        assert rinfo.cwd.lower() == expected
 
     def test_ssh(self, specssh, makegateway):
         sshhost = specssh.ssh
@@ -194,11 +206,15 @@ class TestMakegateway:
         assert gw.id == "sock1"
         # we cannot instantiate a second gateway
 
-        #gw2 = execnet.SocketGateway(*specsocket.socket.split(":"))
-        #rinfo2 = gw2._rinfo()
-        #assert rinfo.executable == rinfo2.executable
-        #assert rinfo.cwd == rinfo2.cwd
-        #assert rinfo.version_info == rinfo2.version_info
+    @pytest.mark.xfail(reason='we can\'t instantiate a second gateway')
+    def test_socket_second(self, specsocket, makegateway):
+        gw = makegateway("socket=%s//id=sock1" % specsocket.socket)
+        gw2 = makegateway("socket=%s//id=sock1" % specsocket.socket)
+        rinfo = gw._rinfo()
+        rinfo2 = gw2._rinfo()
+        assert rinfo.executable == rinfo2.executable
+        assert rinfo.cwd == rinfo2.cwd
+        assert rinfo.version_info == rinfo2.version_info
 
     def test_socket_installvia(self):
         group = execnet.Group()
