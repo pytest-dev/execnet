@@ -32,6 +32,7 @@ def _find_version(suffix=""):
 
 TEMPDIR = _py2_wrapper = _py3_wrapper = None
 
+
 def setup_module(mod):
     mod.TEMPDIR = py.path.local(tempfile.mkdtemp())
     if sys.version_info > (3, 0):
@@ -41,10 +42,13 @@ def setup_module(mod):
         mod._py3_wrapper = PythonWrapper(_find_version("3"))
         mod._py2_wrapper = PythonWrapper(py.path.local(sys.executable))
 
+
 def teardown_module(mod):
     TEMPDIR.remove(True)
 
 pyimportdir = str(py.path.local(execnet.__file__).dirpath().dirpath())
+
+
 class PythonWrapper(object):
 
     def __init__(self, executable):
