@@ -5,12 +5,14 @@ import py
 from test_gateway import TESTTIMEOUT
 execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
 
+
 def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):
     gateway = makegateway('popen//python=%s' % anypython)
     gateway.remote_exec("""
         import time
         time.sleep(10.0)
     """)
+
     def doit():
         gateway.exit()
         return 17
@@ -18,6 +20,7 @@ def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):
     reply = pool.spawn(doit)
     x = reply.get(timeout=5.0)
     assert x == 17
+
 
 def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
     if execmodel.backend != "thread":
@@ -37,6 +40,7 @@ def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
     err = channel._getremoteerror()
     assert isinstance(err, EOFError)
 
+
 def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     if not py.path.local.sysfind('ps'):
         py.test.skip("need 'ps' command to externally check process status")
@@ -52,6 +56,7 @@ def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     out = py.builtin._totext(out, 'utf8')
     assert str(pid) not in out, out
 
+
 def test_close_initiating_remote_no_error(testdir, anypython):
     p = testdir.makepyfile("""
         import sys
@@ -65,15 +70,18 @@ def test_close_initiating_remote_no_error(testdir, anypython):
         print ("termination")
         execnet.default_group.terminate()
     """ % str(execnetdir))
-    popen = subprocess.Popen([str(anypython), str(p)],
-            stdout=None, stderr=subprocess.PIPE,)
+    popen = subprocess.Popen(
+        [str(anypython), str(p)],
+        stdout=None, stderr=subprocess.PIPE,)
     out, err = popen.communicate()
     print (err)
     err = err.decode('utf8')
-    lines = [x for x in err.splitlines()
-               if '*sys-package' not in x]
-    #print (lines)
+    lines = [
+        x for x in err.splitlines()
+        if '*sys-package' not in x]
+    # print (lines)
     assert not lines
+
 
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
     if pool.execmodel != "thread":
@@ -92,7 +100,8 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
         class FlushNoOp(object):
             def flush(self):
                 pass
-        #replace stdout since some python implementations flush and print errors (for example 3.2)
+        # replace stdout since some python implementations
+        # flush and print errors (for example 3.2)
         # see Issue #5319 (from the release notes of 3.2 Alpha 2)
         sys.stdout = FlushNoOp()
 
@@ -104,6 +113,7 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
     reply = pool.spawn(popen.communicate)
     reply.get(timeout=50)
     out, err = capfd.readouterr()
-    lines = [x for x in err.splitlines()
-               if '*sys-package' not in x]
+    lines = [
+        x for x in err.splitlines()
+        if '*sys-package' not in x]
     assert not lines or "Killed" in err
