@@ -3,7 +3,8 @@
 
 (c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
-import os, stat
+import os
+import stat
 
 try:
     from hashlib import md5
@@ -16,6 +17,7 @@ except ImportError:
     from Queue import Queue
 
 import execnet.rsync_remote
+
 
 class RSync(object):
     """ This class allows to send a directory structure (recursively)
@@ -86,7 +88,7 @@ class RSync(object):
         if channel not in self._to_send:
             self._to_send[channel] = []
         self._to_send[channel].append(modified_rel_path)
-        #print "sending", modified_rel_path, data and len(data) or 0, checksum
+        # print "sending", modified_rel_path, data and len(data) or 0, checksum
 
         if data is not None:
             f.close()
@@ -98,7 +100,7 @@ class RSync(object):
 
     def _report_send_file(self, gateway, modified_rel_path):
         if self._verbose:
-            print("%s <= %s" %(gateway, modified_rel_path))
+            print("%s <= %s" % (gateway, modified_rel_path))
 
     def send(self, raises=True):
         """ Sends a sourcedir to all added targets. Flag indicates
@@ -149,11 +151,12 @@ class RSync(object):
         """
         for name in options:
             assert name in ('delete',)
+
         def itemcallback(req):
             self._receivequeue.put((channel, req))
         channel = gateway.remote_exec(execnet.rsync_remote)
         channel.reconfigure(py2str_as_py3str=False, py3str_as_py2str=False)
-        channel.setcallback(itemcallback, endmarker = None)
+        channel.setcallback(itemcallback, endmarker=None)
         channel.send((str(destdir), options))
         self._channels[channel] = finishedcallback
 
@@ -182,7 +185,8 @@ class RSync(object):
         linkpoint = os.readlink(path)
         basename = path[len(self._sourcedir) + 1:]
         if linkpoint.startswith(self._sourcedir):
-            self._send_link("linkbase", basename,
+            self._send_link(
+                "linkbase", basename,
                 linkpoint[len(self._sourcedir) + 1:])
         else:
             # relative or absolute link, just send it
@@ -204,4 +208,3 @@ class RSync(object):
             self._send_link_structure(path)
         else:
             raise ValueError("cannot sync %r" % (path,))
-

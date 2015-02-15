@@ -11,6 +11,7 @@ try:
 except ImportError:
     from __main__ import Popen2IO, Message
 
+
 class Popen2IOMaster(Popen2IO):
     def __init__(self, args, execmodel):
         self.popen = p = execmodel.PopenPiped(args)
@@ -25,6 +26,7 @@ class Popen2IOMaster(Popen2IO):
     def kill(self):
         killpopen(self.popen)
 
+
 def killpopen(popen):
     try:
         if hasattr(popen, 'kill'):
@@ -32,8 +34,9 @@ def killpopen(popen):
         else:
             killpid(popen.pid)
     except EnvironmentError:
-        sys.stderr.write("ERROR killing: %s\n" %(sys.exc_info()[1]))
+        sys.stderr.write("ERROR killing: %s\n" % (sys.exc_info()[1]))
         sys.stderr.flush()
+
 
 def killpid(pid):
     if hasattr(os, 'kill'):
@@ -44,10 +47,10 @@ def killpid(pid):
         except ImportError:
             import subprocess
             # T: treekill, F: Force
-            cmd = ("taskkill /T /F /PID %d" %(pid)).split()
+            cmd = ("taskkill /T /F /PID %d" % (pid)).split()
             ret = subprocess.call(cmd)
             if ret != 0:
-                raise EnvironmentError("taskkill returned %r" %(ret,))
+                raise EnvironmentError("taskkill returned %r" % (ret,))
         else:
             PROCESS_TERMINATE = 1
             handle = ctypes.windll.kernel32.OpenProcess(
@@ -55,8 +58,7 @@ def killpid(pid):
             ctypes.windll.kernel32.TerminateProcess(handle, -1)
             ctypes.windll.kernel32.CloseHandle(handle)
     else:
-        raise EnvironmentError("no method to kill %s" %(pid,))
-
+        raise EnvironmentError("no method to kill %s" % (pid,))
 
 
 popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
@@ -76,7 +78,7 @@ def popen_args(spec):
 
 def ssh_args(spec):
     remotepython = spec.python or "python"
-    args = ["ssh", "-C" ]
+    args = ["ssh", "-C"]
     if spec.ssh_config is not None:
         args.extend(['-F', str(spec.ssh_config)])
 
@@ -84,6 +86,7 @@ def ssh_args(spec):
     remotecmd = '%s -c "%s"' % (remotepython, popen_bootstrapline)
     args.append(remotecmd)
     return args
+
 
 def create_io(spec, execmodel):
     if spec.popen:
@@ -106,6 +109,7 @@ RIO_KILL = 1
 RIO_WAIT = 2
 RIO_REMOTEADDRESS = 3
 RIO_CLOSE_WRITE = 4
+
 
 class ProxyIO(object):
     """ A Proxy IO object allows to instantiate a Gateway
@@ -150,16 +154,20 @@ class ProxyIO(object):
     def __repr__(self):
         return '<RemoteIO via %s>' % (self.iochan.gateway.id, )
 
+
 class PseudoSpec:
     def __init__(self, vars):
         self.__dict__.update(vars)
+
     def __getattr__(self, name):
         return None
+
 
 def serve_proxy_io(proxy_channelX):
     execmodel = proxy_channelX.gateway.execmodel
     _trace = proxy_channelX.gateway._trace
     tag = "serve_proxy_io:%s " % proxy_channelX.id
+
     def log(*msg):
         _trace(tag + msg[0], *msg[1:])
     spec = PseudoSpec(proxy_channelX.receive())
@@ -176,13 +184,13 @@ def serve_proxy_io(proxy_channelX):
     proxy_channelX.setcallback(forward_to_sub)
 
     def controll(data):
-        if data==RIO_WAIT:
+        if data == RIO_WAIT:
             control_chan.send(sub_io.wait())
-        elif data==RIO_KILL:
+        elif data == RIO_KILL:
             control_chan.send(sub_io.kill())
-        elif data==RIO_REMOTEADDRESS:
+        elif data == RIO_REMOTEADDRESS:
             control_chan.send(sub_io.remoteaddress)
-        elif data==RIO_CLOSE_WRITE:
+        elif data == RIO_CLOSE_WRITE:
             control_chan.send(sub_io.close_write())
     control_chan.setcallback(controll)
 
@@ -207,4 +215,4 @@ def serve_proxy_io(proxy_channelX):
     # proxy_channelX will be closed from remote_exec's finalization code
 
 if __name__ == "__channelexec__":
-    serve_proxy_io(channel) # noqa
+    serve_proxy_io(channel)  # noqa

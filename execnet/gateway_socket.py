@@ -1,8 +1,11 @@
 from execnet.gateway_bootstrap import HostNotFound
 import sys
 
-try: bytes
-except NameError: bytes = str
+try:
+    bytes
+except NameError:
+    bytes = str
+
 
 class SocketIO:
     def __init__(self, sock, execmodel):
@@ -10,7 +13,8 @@ class SocketIO:
         self.execmodel = execmodel
         socket = execmodel.socket
         try:
-            sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x10)# IPTOS_LOWDELAY
+            # IPTOS_LOWDELAY
+            sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x10)
             sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
         except (AttributeError, socket.error):
             sys.stderr.write("WARNING: cannot set socketoption")
@@ -33,6 +37,7 @@ class SocketIO:
             self.sock.shutdown(0)
         except self.execmodel.socket.error:
             pass
+
     def close_write(self):
         try:
             self.sock.shutdown(1)
@@ -61,9 +66,9 @@ def start_via(gateway, hostport=None):
     channel = gateway.remote_exec(socketserver)
     channel.send((host, port))
     (realhost, realport) = channel.receive()
-    #self._trace("new_remote received"
+    # self._trace("new_remote received"
     #               "port=%r, hostname = %r" %(realport, hostname))
-    if not realhost or realhost=="0.0.0.0":
+    if not realhost or realhost == "0.0.0.0":
         realhost = "localhost"
     return realhost, realport
 

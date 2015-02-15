@@ -5,6 +5,7 @@ some deprecated calls
 """
 import execnet
 
+
 def PopenGateway(python=None):
     """ instantiate a gateway to a subprocess
         started with the given 'python' executable.
@@ -13,6 +14,7 @@ def PopenGateway(python=None):
     spec = execnet.XSpec("popen")
     spec.python = python
     return execnet.default_group.makegateway(spec)
+
 
 def SocketGateway(host, port):
     """ This Gateway provides interaction with a remote process
@@ -23,8 +25,9 @@ def SocketGateway(host, port):
         new_remote() method on existing gateways.
     """
     APIWARN("1.0.0b4", "use makegateway('socket=host:port')")
-    spec = execnet.XSpec("socket=%s:%s" %(host, port))
+    spec = execnet.XSpec("socket=%s:%s" % (host, port))
     return execnet.default_group.makegateway(spec)
+
 
 def SshGateway(sshaddress, remotepython=None, ssh_config=None):
     """ instantiate a remote ssh process with the
@@ -37,7 +40,8 @@ def SshGateway(sshaddress, remotepython=None, ssh_config=None):
     spec.ssh_config = ssh_config
     return execnet.default_group.makegateway(spec)
 
+
 def APIWARN(version, msg, stacklevel=3):
     import warnings
-    Warn = DeprecationWarning("(since version %s) %s" %(version, msg))
+    Warn = DeprecationWarning("(since version %s) %s" % (version, msg))
     warnings.warn(Warn, stacklevel=stacklevel)

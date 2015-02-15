@@ -12,10 +12,15 @@ import execnet
 
 
 parser = py.std.optparse.OptionParser(usage=__doc__)
-parser.add_option("-f", "--sshconfig", action="store", dest="ssh_config", default=None,
-                  help="use given ssh config file, and add info all contained hosts for getting info")
-parser.add_option("-i", "--ignore", action="store", dest="ignores", default=None,
-                  help="ignore hosts (useful if the list of hostnames come from a file list)")
+parser.add_option(
+    "-f", "--sshconfig", action="store", dest="ssh_config", default=None,
+    help="use given ssh config file,"
+         " and add info all contained hosts for getting info")
+parser.add_option(
+    "-i", "--ignore", action="store", dest="ignores", default=None,
+    help="ignore hosts "
+         "(useful if the list of hostnames come from a file list)")
+
 
 def parsehosts(path):
     path = py.path.local(path)
@@ -27,6 +32,7 @@ def parsehosts(path):
             sshname, = m.groups()
             l.append(sshname)
     return l
+
 
 class RemoteInfo:
     def __init__(self, gateway):
@@ -44,7 +50,7 @@ class RemoteInfo:
         return self.exreceive("""
             import %s
             channel.send(%s)
-        """ %(module, modpath))
+        """ % (module, modpath))
 
     def islinux(self):
         return self.getmodattr('sys.platform').find("linux") != -1
@@ -90,10 +96,14 @@ class RemoteInfo:
                 channel.send((numcpus, model))
             """)
 
+
 def debug(*args):
     print >>sys.stderr, " ".join(map(str, args))
+
+
 def error(*args):
     debug("ERROR", args[0] + ":", *args[1:])
+
 
 def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
     if ssh_config:
@@ -107,14 +117,14 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
         error("could not get sshgatway", sshname)
     else:
         ri = RemoteInfo(gw)
-        #print "%s info:" % sshname
+        # print "%s info:" % sshname
         prefix = sshname.upper() + " "
         print >>loginfo, prefix, "fqdn:", ri.getfqdn()
         for attr in (
             "sys.platform",
             "sys.version_info",
         ):
-            loginfo.write("%s %s: " %(prefix, attr,))
+            loginfo.write("%s %s: " % (prefix, attr,))
             loginfo.flush()
             value = ri.getmodattr(attr)
             loginfo.write(str(value))
@@ -122,7 +132,7 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
             loginfo.flush()
         memswap = ri.getmemswap()
         if memswap:
-            mem,swap = memswap
+            mem, swap = memswap
             print >>loginfo, prefix, "Memory:", mem, "Swap:", swap
         cpuinfo = ri.getcpuinfo()
         if cpuinfo:
@@ -143,4 +153,3 @@ if __name__ == '__main__':
     for host in hosts:
         if host not in ignores:
             getinfo(host, ssh_config=ssh_config)
-

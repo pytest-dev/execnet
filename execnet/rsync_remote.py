@@ -1,8 +1,12 @@
 """
 (c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
+
+
 def serve_rsync(channel):
-    import os, stat, shutil
+    import os
+    import stat
+    import shutil
     try:
         from hashlib import md5
     except ImportError:
@@ -36,7 +40,8 @@ def serve_rsync(channel):
             entrynames = {}
             for entryname in msg:
                 destpath = os.path.join(path, entryname)
-                receive_directory_structure(destpath, relcomponents + [entryname])
+                receive_directory_structure(
+                    destpath, relcomponents + [entryname])
                 entrynames[entryname] = True
             if options.get('delete'):
                 for othername in os.listdir(path):
@@ -106,4 +111,4 @@ def serve_rsync(channel):
     channel.send(("done", None))
 
 if __name__ == '__channelexec__':
-    serve_rsync(channel) # noqa
+    serve_rsync(channel)  # noqa

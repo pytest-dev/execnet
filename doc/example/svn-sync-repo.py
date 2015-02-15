@@ -6,21 +6,24 @@ small utility for hot-syncing a svn repository through ssh.
 uses execnet.
 
 """
+import execnet
+import py
+import sys
+import os
 
-import py, execnet
-import sys, os
 
 def usage():
     arg0 = sys.argv[0]
-    print "%s [user@]remote-host:/repo/location localrepo [ssh-config-file]" % (arg0,)
+    print arg0, \
+        "[user@]remote-host:/repo/location localrepo [ssh-config-file]"
 
 
 def main(args):
     remote = args[0]
     localrepo = py.path.local(args[1])
     if not localrepo.check(dir=1):
-        raise SystemExit("localrepo %s does not exist" %(localrepo,))
-    if len(args) ==3:
+        raise SystemExit("localrepo %s does not exist" % (localrepo,))
+    if len(args) == 3:
         configfile = args[2]
     else:
         configfile = None
@@ -73,7 +76,7 @@ def main(args):
     """)
 
     c.send((local_rev, path))
-    print "checking revisions from %d in %s" %(local_rev, remote)
+    print "checking revisions from %d in %s" % (local_rev, remote)
     while 1:
         revstart, revend = c.receive()
         dumpchannel = c.receive()
@@ -81,13 +84,14 @@ def main(args):
         svn_load(localrepo, dumpchannel)
         print "current revision", revend
 
+
 def svn_load(repo, dumpchannel, maxcount=100):
     # every maxcount we will send an ACK to the other
     # side in order to synchronise and avoid our side
     # growing buffers  (execnet does not control
     # RAM usage or receive queue sizes)
     dumpchannel.send(maxcount)
-    f = os.popen("svnadmin load -q %s" %(repo, ), "w")
+    f = os.popen("svnadmin load -q %s" % (repo,), "w")
     count = maxcount
     for x in dumpchannel:
         sys.stdout.write(".")
@@ -100,9 +104,11 @@ def svn_load(repo, dumpchannel, maxcount=100):
     print >>sys.stdout
     f.close()
 
+
 def get_svn_youngest(repo):
     rev = py.process.cmdexec('svnlook youngest "%s"' % repo)
     return int(rev)
+
 
 def getgateway(host, configfile=None):
     xspec = "ssh=%s" % host
@@ -116,4 +122,3 @@ if __name__ == '__main__':
         raise SystemExit(1)
 
     main(sys.argv[1:])
-
