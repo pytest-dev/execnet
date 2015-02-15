@@ -7,18 +7,24 @@ import pytest
 import execnet
 from execnet import gateway_base, gateway_io
 from test_serializer import _find_version
-TESTTIMEOUT = 10.0 # seconds
+TESTTIMEOUT = 10.0  # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
+
+
+def fails(*args, **kwargs):
+    0/0
+
 
 def test_deprecation(recwarn, monkeypatch):
     execnet.PopenGateway().exit()
     assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(py.std.socket, 'socket', lambda *args: 0/0)
+    monkeypatch.setattr(py.std.socket, 'socket', fails)
     py.test.raises(Exception, 'execnet.SocketGateway("localhost", 8811)')
     assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(py.std.subprocess, 'Popen', lambda *args,**kwargs: 0/0)
+    monkeypatch.setattr(py.std.subprocess, 'Popen', fails)
     py.test.raises(Exception, 'execnet.SshGateway("not-existing")')
     assert recwarn.pop(DeprecationWarning)
+
 
 class TestBasicGateway:
     def test_correct_setup(self, gw):
@@ -51,7 +57,7 @@ class TestBasicGateway:
         """)
         res = ch.receive()
         if res != 0:
-           pytest.fail("remote raised\n%s" % res)
+            pytest.fail("remote raised\n%s" % res)
 
     def test_gateway_status_no_real_channel(self, gw):
         numchan = gw._channelfactory.channels()
@@ -68,7 +74,7 @@ class TestBasicGateway:
         ch2 = gw.remote_exec("channel.receive()")
         ch1.receive()
         status = gw.remote_status()
-        assert status.numexecuting == 2 # number of active execution threads
+        assert status.numexecuting == 2  # number of active execution threads
         assert status.numchannels == numchannels + 2
         ch1.send(None)
         ch2.send(None)
@@ -124,7 +130,8 @@ class TestBasicGateway:
 
     def test_remote_exec_no_explicit_close(self, gw):
         channel = gw.remote_exec('channel.close()')
-        excinfo = py.test.raises(channel.RemoteError,
+        excinfo = py.test.raises(
+            channel.RemoteError,
             "channel.waitclose(TESTTIMEOUT)")
         assert "explicit" in excinfo.value.formatted
 
@@ -188,6 +195,7 @@ class TestBasicGateway:
             gw._cache_rinfo = rinfo
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
 
+
 class TestPopenGateway:
     gwtype = 'popen'
 
@@ -202,7 +210,8 @@ class TestPopenGateway:
         assert x.lower() == str(waschangedir).lower()
 
     def test_remoteerror_readable_traceback(self, gw):
-        e = py.test.raises(gateway_base.RemoteError,
+        e = py.test.raises(
+            gateway_base.RemoteError,
             'gw.remote_exec("x y").waitclose()')
         assert "gateway_base" in e.value.formatted
 
@@ -215,17 +224,6 @@ class TestPopenGateway:
         for gw in l:
             channel = gw.remote_exec("""channel.send(42)""")
             channels.append(channel)
-##        try:
-##            while channels:
-##                channel = channels.pop()
-##                try:
-##                    ret = channel.receive()
-##                    assert ret == 42
-##                finally:
-##                    channel.gateway.exit()
-##        finally:
-##            for x in channels:
-##                x.gateway.exit()
         while channels:
             channel = channels.pop()
             ret = channel.receive()
@@ -273,19 +271,24 @@ class TestPopenGateway:
         ret = channel.receive()
         assert ret
 
+
 @py.test.mark.skipif("config.option.broken_isp")
 def test_socket_gw_host_not_found(gw, makegateway):
-    py.test.raises(execnet.HostNotFound, lambda:
+    py.test.raises(
+        execnet.HostNotFound, lambda:
             makegateway("socket=qwepoipqwe:9000"))
+
 
 class TestSshPopenGateway:
     gwtype = "ssh"
 
     def test_sshconfig_config_parsing(self, monkeypatch, makegateway):
         l = []
-        monkeypatch.setattr(gateway_io, "Popen2IOMaster",
+        monkeypatch.setattr(
+            gateway_io, "Popen2IOMaster",
             lambda *args, **kwargs: l.append(args[0]))
-        py.test.raises(AttributeError, lambda:
+        py.test.raises(
+            AttributeError, lambda:
             makegateway("ssh=xyz//ssh_config=qwe"))
 
         assert len(l) == 1
@@ -297,8 +300,10 @@ class TestSshPopenGateway:
         assert gw.remoteaddress == specssh.ssh
 
     def test_host_not_found(self, gw, makegateway):
-        py.test.raises(execnet.HostNotFound, lambda:
+        py.test.raises(
+            execnet.HostNotFound, lambda:
             makegateway('ssh=nowhere.codespeak.net'))
+
 
 class TestThreads:
     def test_threads(self, makegateway):
@@ -355,11 +360,12 @@ class TestThreads:
                 return
         assert 0, "numexecuting didn't drop to zero"
 
+
 class TestTracing:
     def test_popen_filetracing(self, testdir, monkeypatch, makegateway):
         tmpdir = testdir.tmpdir
         monkeypatch.setenv("TMP", tmpdir)
-        monkeypatch.setenv("TEMP", tmpdir) # windows
+        monkeypatch.setenv("TEMP", tmpdir)  # windows
         monkeypatch.setenv('EXECNET_DEBUG', "1")
         gw = makegateway("popen")
         #  hack out the debuffilename
@@ -373,7 +379,7 @@ class TestTracing:
             if slave_line in line:
                 break
         else:
-            py.test.fail("did not find %r in tracefile" %(slave_line,))
+            py.test.fail("did not find %r in tracefile" % (slave_line,))
         gw.exit()
 
     def test_popen_stderr_tracing(self, capfd, monkeypatch, makegateway):
@@ -389,11 +395,12 @@ class TestTracing:
         assert gateway_base.trace == gateway_base.notrace, \
                 "trace does not to default to empty tracing"
 
+
 class TestStringCoerce:
     @py.test.mark.skipif('sys.version>="3.0"')
     def test_2to3(self, makegateway):
         python = _find_version('3')
-        gw = makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s' % python)
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send('a')
         res = ch.receive()
@@ -410,7 +417,7 @@ class TestStringCoerce:
     @py.test.mark.skipif('sys.version<"3.0"')
     def test_3to2(self, makegateway):
         python = _find_version('2')
-        gw = makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s' % python)
 
         ch = gw.remote_exec('channel.send(channel.receive())')
         ch.send(bytes('a', 'ascii'))
@@ -424,4 +431,3 @@ class TestStringCoerce:
         res = ch.receive()
         assert isinstance(res, bytes)
         gw.exit()
-

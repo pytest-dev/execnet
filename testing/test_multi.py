@@ -9,6 +9,8 @@ import py
 from execnet.gateway_base import Channel
 from execnet import XSpec
 from execnet.multi import safe_terminate
+from execnet.multi import Group
+
 
 class TestMultiChannelAndGateway:
     def test_multichannel_container_basics(self, gw, execmodel):
@@ -36,7 +38,7 @@ class TestMultiChannelAndGateway:
         assert len(l) == 2
         assert l == [(pc1, 12), (pc2, 12)]
         l = multichannel.receive_each(withchannel=False)
-        assert l == [12,12]
+        assert l == [12, 12]
 
     def test_multichannel_send_each(self):
         gm = execnet.Group(["popen"] * 2)
@@ -46,7 +48,7 @@ class TestMultiChannelAndGateway:
         """)
         mc.send_each(41)
         l = mc.receive_each()
-        assert l == [42,42]
+        assert l == [42, 42]
 
     def test_Group_execmodel_setting(self):
         gm = execnet.Group()
@@ -60,7 +62,6 @@ class TestMultiChannelAndGateway:
             assert gm.execmodel.backend == "thread"
         finally:
             gm._gateways.pop()
-
 
     def test_multichannel_receive_queue_for_two_subprocesses(self):
         gm = execnet.Group(["popen"] * 2)
@@ -78,6 +79,7 @@ class TestMultiChannelAndGateway:
 
     def test_multichannel_waitclose(self):
         l = []
+
         class pseudochannel:
             def waitclose(self):
                 l.append(0)
@@ -86,7 +88,6 @@ class TestMultiChannelAndGateway:
         assert len(l) == 2
 
 
-from execnet.multi import Group
 class TestGroup:
     def test_basic_group(self, monkeypatch):
         import atexit
@@ -108,9 +109,11 @@ class TestGroup:
             id = "9999"
             _io = PseudoIO()
             spec = PseudoSpec()
+
             def exit(self):
                 exitlist.append(self)
                 group._unregister(self)
+
             def join(self):
                 joinlist.append(self)
         gw = PseudoGW()
@@ -164,7 +167,8 @@ class TestGroup:
         assert gw.id == "hello"
         gw = group.makegateway(specs[0])
         assert gw.id == "gw0"
-        #py.test.raises(ValueError, group.allocate_id, XSpec("popen//id=hello"))
+        # py.test.raises(ValueError,
+        #    group.allocate_id, XSpec("popen//id=hello"))
         group.terminate()
 
     def test_gateway_and_id(self):
@@ -216,8 +220,10 @@ def test_safe_terminate(execmodel):
     import threading
     active = threading.active_count()
     l = []
+
     def term():
         py.std.time.sleep(3)
+
     def kill():
         l.append(1)
     safe_terminate(execmodel, 1, [(term, kill)] * 10)
@@ -225,6 +231,7 @@ def test_safe_terminate(execmodel):
     sleep(0.1)
     py.std.gc.collect()
     assert execmodel.active_count() == active
+
 
 @pytest.mark.skipif("sys.version_info < (2,6)")
 def test_safe_terminate2(execmodel):
@@ -234,8 +241,10 @@ def test_safe_terminate2(execmodel):
     import threading
     active = threading.active_count()
     l = []
+
     def term():
         return
+
     def kill():
         l.append(1)
     safe_terminate(execmodel, 3, [(term, kill)] * 10)

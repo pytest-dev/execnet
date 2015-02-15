@@ -2,13 +2,14 @@
 mostly functional tests of gateways.
 """
 import pytest
-import sys, time
+import time
 import py
 from test_gateway import _find_version
 needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
 queue = py.builtin._tryimport('queue', 'Queue')
-TESTTIMEOUT = 10.0 # seconds
+TESTTIMEOUT = 10.0  # seconds
+
 
 class TestChannelBasicBehaviour:
     def test_serialize_error(self, gw):
@@ -63,7 +64,7 @@ class TestChannelBasicBehaviour:
     def test_channel__local_close_error(self, gw):
         channel = gw._channelfactory.new()
         gw._channelfactory._local_close(channel.id,
-                                            channel.RemoteError("error"))
+                                        channel.RemoteError("error"))
         pytest.raises(channel.RemoteError, channel.waitclose, 0.01)
 
     def test_channel_error_reporting(self, gw):
@@ -101,7 +102,7 @@ class TestChannelBasicBehaviour:
         channel.send((newchan1, newchan2))
         newchan1.send(1)
         data = newchan2.receive()
-        assert data ==2
+        assert data == 2
 
     def test_channel_multipass(self, gw):
         channel = gw.remote_exec('''
@@ -126,7 +127,7 @@ class TestChannelBasicBehaviour:
 
         # check that the both sides previous channels are really gone
         channel.waitclose(TESTTIMEOUT)
-        #assert c.id not in gw._channelfactory
+        # assert c.id not in gw._channelfactory
         newchan = gw.remote_exec('''
                     assert %d not in channel.gateway._channelfactory._channels
                   ''' % (channel.id))
@@ -135,7 +136,7 @@ class TestChannelBasicBehaviour:
 
     def test_channel_receiver_callback(self, gw):
         l = []
-        #channel = gw.newchannel(receiver=l.append)
+        # channel = gw.newchannel(receiver=l.append)
         channel = gw.remote_exec(source='''
             channel.send(42)
             channel.send(13)
@@ -145,7 +146,7 @@ class TestChannelBasicBehaviour:
         pytest.raises(IOError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 3
-        assert l[:2] == [42,13]
+        assert l[:2] == [42, 13]
         assert isinstance(l[2], channel.__class__)
 
     def test_channel_callback_after_receive(self, gw):
@@ -166,8 +167,10 @@ class TestChannelBasicBehaviour:
 
     def test_waiting_for_callbacks(self, gw):
         l = []
+
         def callback(msg):
-            import time; time.sleep(0.2)
+            import time
+            time.sleep(0.2)
             l.append(msg)
         channel = gw.remote_exec(source='''
             channel.send(42)
@@ -232,7 +235,7 @@ class TestChannelBasicBehaviour:
         pytest.raises(IOError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 4
-        assert l[:2] == [42,13]
+        assert l[:2] == [42, 13]
         assert isinstance(l[2], channel.__class__)
         assert l[3] == 999
 
@@ -260,11 +263,13 @@ class TestChannelBasicBehaviour:
         """)
         subchan = channel.receive()
         subchan.send(1)
-        excinfo = pytest.raises(subchan.RemoteError,
+        excinfo = pytest.raises(
+            subchan.RemoteError,
             "subchan.waitclose(TESTTIMEOUT)")
         assert "42" in excinfo.value.formatted
         channel.send(1)
         channel.waitclose()
+
 
 class TestChannelFile:
     def test_channel_file_write(self, gw):
@@ -340,7 +345,7 @@ class TestStringCoerce:
     @pytest.mark.skipif('sys.version>="3.0"')
     def test_2to3(self, makegateway):
         python = _find_version('3')
-        gw = makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s' % python)
         ch = gw.remote_exec('channel.send(channel.receive());'*2)
         ch.send('a')
         res = ch.receive()
@@ -368,7 +373,7 @@ class TestStringCoerce:
     @pytest.mark.skipif('sys.version<"3.0"')
     def test_3to2(self, makegateway):
         python = _find_version('2')
-        gw = makegateway('popen//python=%s'%python)
+        gw = makegateway('popen//python=%s' % python)
 
         ch = gw.remote_exec('channel.send(channel.receive());'*2)
         ch.send(bytes('a', 'ascii'))
@@ -394,4 +399,3 @@ class TestStringCoerce:
         assert isinstance(res, str)
 
         gw.exit()
-

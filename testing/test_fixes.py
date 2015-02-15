@@ -11,7 +11,6 @@ def test_jython_bootstrap_not_on_remote():
         group.terminate(timeout=1.0)
 
 
-
 def test_jython_bootstrap_fix():
     group = Group()
     gw = group.makegateway('popen')
