@@ -23,7 +23,7 @@ def _find_version(suffix=""):
                     return executable
         for tail in MINOR_VERSIONS.get(suffix, ''):
             path = py.path.local.sysfind('%s.%s' % (name, tail))
-            if path.check():
+            if path:
                 return path
 
         else:
