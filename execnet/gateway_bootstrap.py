@@ -14,7 +14,8 @@ class HostNotFound(Exception):
 
 
 def bootstrap_import(io, spec):
-    sendexec(io,
+    sendexec(
+        io,
         "import sys",
         "sys.path.insert(0, %r)" % importdir,
         "from execnet.gateway_base import serve, init_popen_io, get_execmodel",
@@ -29,7 +30,8 @@ def bootstrap_import(io, spec):
 
 def bootstrap_exec(io, spec):
     try:
-        sendexec(io,
+        sendexec(
+            io,
             inspect.getsource(gateway_base),
             "execmodel = get_execmodel(%r)" % spec.execmodel,
             'io = init_popen_io(execmodel)',
@@ -45,10 +47,11 @@ def bootstrap_exec(io, spec):
 
 
 def bootstrap_socket(io, id):
-    #XXX: switch to spec
+    # XXX: switch to spec
     from execnet.gateway_socket import SocketIO
 
-    sendexec(io,
+    sendexec(
+        io,
         inspect.getsource(gateway_base),
         'import socket',
         inspect.getsource(SocketIO),
@@ -65,7 +68,7 @@ def bootstrap_socket(io, id):
 
 def sendexec(io, *sources):
     source = "\n".join(sources)
-    io.write((repr(source)+ "\n").encode('ascii'))
+    io.write((repr(source) + "\n").encode('ascii'))
 
 
 def fix_pid_for_jython_popen(gw):
@@ -74,8 +77,8 @@ def fix_pid_for_jython_popen(gw):
     """
     spec, io = gw.spec, gw._io
     if spec.popen and not spec.via:
-        #XXX: handle the case of remote being jython
-        #     and not having the popen pid
+        # XXX: handle the case of remote being jython
+        #      and not having the popen pid
         if io.popen.pid is None:
             io.popen.pid = gw.remote_exec(
                 "import os; channel.send(os.getpid())").receive()
@@ -96,5 +99,3 @@ def bootstrap(io, spec):
     gw = Gateway(io, spec)
     fix_pid_for_jython_popen(gw)
     return gw
-
-

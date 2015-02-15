@@ -4,7 +4,8 @@ Managing Gateway Groups and interactions with multiple channels.
 (c) 2008-2014, Holger Krekel and others
 """
 
-import sys, atexit
+import sys
+import atexit
 
 from execnet import XSpec
 from execnet import gateway_io, gateway_bootstrap
@@ -13,9 +14,11 @@ from threading import Lock
 
 NO_ENDMARKER_WANTED = object()
 
+
 class Group(object):
     """ Gateway Groups. """
     defaultspec = "popen"
+
     def __init__(self, xspecs=(), execmodel="thread"):
         """ initialize group and make gateways as specified.
         execmodel can be 'thread' or 'eventlet'.
@@ -63,7 +66,7 @@ class Group(object):
 
     def __repr__(self):
         idgateways = [gw.id for gw in self]
-        return "<Group %r>" %(idgateways)
+        return "<Group %r>" % (idgateways)
 
     def __getitem__(self, key):
         if isinstance(key, int):
@@ -157,7 +160,7 @@ class Group(object):
                 id = "gw" + str(self._autoidcounter)
                 self._autoidcounter += 1
                 if id in self:
-                    raise ValueError("already have gateway with id %r" %(id,))
+                    raise ValueError("already have gateway with id %r" % (id,))
                 spec.id = id
 
     def _register(self, gateway):
@@ -172,7 +175,7 @@ class Group(object):
         self._gateways_to_join.append(gateway)
 
     def _cleanup_atexit(self):
-        trace("=== atexit cleanup %r ===" %(self,))
+        trace("=== atexit cleanup %r ===" % (self,))
         self.terminate(timeout=1.0)
 
     def terminate(self, timeout=None):
@@ -195,6 +198,7 @@ class Group(object):
             def join_wait(gw):
                 gw.join()
                 gw._io.wait()
+
             def kill(gw):
                 trace("Gateways did not come down after timeout: %r" % gw)
                 gw._io.kill()
@@ -212,6 +216,7 @@ class Group(object):
         for gw in self:
             channels.append(gw.remote_exec(source, **kwargs))
         return MultiChannel(channels)
+
 
 class MultiChannel:
     def __init__(self, channels):
@@ -252,6 +257,7 @@ class MultiChannel:
             for ch in self._channels:
                 if self._queue is None:
                     self._queue = ch.gateway.execmodel.queue.Queue()
+
                 def putreceived(obj, channel=ch):
                     self._queue.put((channel, obj))
                 if endmarker is NO_ENDMARKER_WANTED:
@@ -259,7 +265,6 @@ class MultiChannel:
                 else:
                     ch.setcallback(putreceived, endmarker=endmarker)
             return self._queue
-
 
     def waitclose(self):
         first = None
@@ -271,7 +276,6 @@ class MultiChannel:
                     first = sys.exc_info()
         if first:
             reraise(*first)
-
 
 
 def safe_terminate(execmodel, timeout, list_of_paired_functions):
@@ -296,4 +300,3 @@ def safe_terminate(execmodel, timeout, list_of_paired_functions):
 default_group = Group()
 makegateway = default_group.makegateway
 set_execmodel = default_group.set_execmodel
-

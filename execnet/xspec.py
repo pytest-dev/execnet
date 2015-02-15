@@ -1,6 +1,8 @@
 """
 (c) 2008-2013, holger krekel
 """
+
+
 class XSpec:
     """ Execution Specification: key1=value1//key2=value2 ...
         * keys need to be unique within the specification scope
@@ -11,7 +13,7 @@ class XSpec:
     """
     # XXX allow customization, for only allow specific key names
     popen = ssh = socket = python = chdir = nice = \
-            dont_write_bytecode = execmodel = None
+        dont_write_bytecode = execmodel = None
 
     def __init__(self, string):
         self._spec = string
@@ -25,7 +27,7 @@ class XSpec:
             if key[0] == "_":
                 raise AttributeError("%r not a valid XSpec key" % key)
             if key in self.__dict__:
-                raise ValueError("duplicate key: %r in %r" %(key, string))
+                raise ValueError("duplicate key: %r in %r" % (key, string))
             if key.startswith("env:"):
                 self.env[key[4:]] = value
             else:
@@ -37,17 +39,19 @@ class XSpec:
         return None
 
     def __repr__(self):
-        return "<XSpec %r>" %(self._spec,)
+        return "<XSpec %r>" % (self._spec,)
+
     def __str__(self):
         return self._spec
 
     def __hash__(self):
         return hash(self._spec)
+
     def __eq__(self, other):
         return self._spec == getattr(other, '_spec', None)
+
     def __ne__(self, other):
         return self._spec != getattr(other, '_spec', None)
 
     def _samefilesystem(self):
-        return bool(self.popen and not self.chdir)
-
+        return self.popen is not None and self.chdir is None

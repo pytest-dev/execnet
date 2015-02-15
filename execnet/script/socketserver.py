@@ -13,9 +13,11 @@
 # this part of the program only executes on the server side
 #
 
+import sys
+import os
+
 progname = 'socket_readline_exec_server-1.2'
 
-import sys, os
 
 def get_fcntl():
     try:
@@ -28,10 +30,11 @@ fcntl = get_fcntl()
 
 debug = 0
 
-if debug: #  and not os.isatty(sys.stdin.fileno()):
+if debug:  # and not os.isatty(sys.stdin.fileno())
     f = open('/tmp/execnet-socket-pyout.log', 'w')
     old = sys.stdout, sys.stderr
     sys.stdout = sys.stderr = f
+
 
 def print_(*args):
     print(" ".join(str(arg) for arg in args))
@@ -43,26 +46,32 @@ else:
     exec("""def exec_(source, locs):
     exec source in locs""")
 
+
 def exec_from_one_connection(serversock):
     print_(progname, 'Entering Accept loop', serversock.getsockname())
-    clientsock,address = serversock.accept()
+    clientsock, address = serversock.accept()
     print_(progname, 'got new connection from %s %s' % address)
     clientfile = clientsock.makefile('rb')
     print_("reading line")
     # rstrip so that we can use \r\n for telnet testing
     source = clientfile.readline().rstrip()
     clientfile.close()
-    g = {'clientsock' : clientsock, 'address' : address, 'execmodel': execmodel}
+    g = {
+        'clientsock': clientsock,
+        'address': address,
+        'execmodel': execmodel,
+    }
     source = eval(source)
     if source:
         co = compile(source+'\n', source, 'exec')
         print_(progname, 'compiled source, executing')
         try:
-            exec_(co, g) # noqa
+            exec_(co, g)  # noqa
         finally:
             print_(progname, 'finished executing code')
             # background thread might hold a reference to this (!?)
-            #clientsock.close()
+            # clientsock.close()
+
 
 def bind_and_listen(hostport, execmodel):
     socket = execmodel.socket
@@ -81,6 +90,7 @@ def bind_and_listen(hostport, execmodel):
     serversock.bind(hostport)
     serversock.listen(5)
     return serversock
+
 
 def startserver(serversock, loop=False):
     try:
@@ -104,7 +114,7 @@ def startserver(serversock, loop=False):
 
 if __name__ == '__main__':
     import sys
-    if len(sys.argv)>1:
+    if len(sys.argv) > 1:
         hostport = sys.argv[1]
     else:
         hostport = ':8888'
@@ -112,11 +122,11 @@ if __name__ == '__main__':
     execmodel = get_execmodel("thread")
     serversock = bind_and_listen(hostport, execmodel)
     startserver(serversock, loop=False)
-
-elif __name__=='__channelexec__':
-    execmodel = channel.gateway.execmodel # noqa
-    bindname = channel.receive() # noqa
+elif __name__ == '__channelexec__':
+    chan = globals()['channel']
+    execmodel = chan.gateway.execmodel
+    bindname = chan.receive()
     sock = bind_and_listen(bindname, execmodel)
     port = sock.getsockname()
-    channel.send(port) # noqa
+    chan.send(port)
     startserver(sock)

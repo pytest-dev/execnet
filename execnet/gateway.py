@@ -3,12 +3,17 @@ gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2013, Holger Krekel and others
 """
 
-import sys, os, inspect, types, linecache
+import sys
+import os
+import inspect
+import types
+import linecache
 import textwrap
 import execnet
 from execnet.gateway_base import Message
 from execnet import gateway_base
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
+
 
 class Gateway(gateway_base.BaseGateway):
     """ Gateway to a local or remote Python Intepreter. """
@@ -30,7 +35,7 @@ class Gateway(gateway_base.BaseGateway):
         except AttributeError:
             r = "uninitialized"
             i = "no"
-        return "<%s id=%r %s, %s model, %s active channels>" %(
+        return "<%s id=%r %s, %s model, %s active channels>" % (
                 self.__class__.__name__, self.id, r, self.execmodel.backend, i)
 
     def exit(self):
@@ -62,7 +67,6 @@ class Gateway(gateway_base.BaseGateway):
         self._strconfig = (py2str_as_py3str, py3str_as_py2str)
         data = gateway_base.dumps_internal(self._strconfig)
         self._send(Message.RECONFIGURE, data=data)
-
 
     def _rinfo(self, update=False):
         """ return some sys/env information from remote. """
@@ -122,27 +126,31 @@ class Gateway(gateway_base.BaseGateway):
 
     def remote_init_threads(self, num=None):
         """ DEPRECATED.  Is currently a NO-OPERATION already."""
-        print ("WARNING: remote_init_threads() is a no-operation in execnet-1.2")
+        print ("WARNING: remote_init_threads()"
+               " is a no-operation in execnet-1.2")
+
 
 class RInfo:
     def __init__(self, kwargs):
         self.__dict__.update(kwargs)
 
     def __repr__(self):
-        info = ", ".join(["%s=%s" % item
-                for item in self.__dict__.items()])
+        info = ", ".join(
+            "%s=%s" % item for item in sorted(self.__dict__.items()))
         return "<RInfo %r>" % info
 
 RemoteStatus = RInfo
 
+
 def rinfo_source(channel):
-    import sys, os
+    import sys
+    import os
     channel.send(dict(
-        executable = sys.executable,
-        version_info = sys.version_info[:5],
-        platform = sys.platform,
-        cwd = os.getcwd(),
-        pid = os.getpid(),
+        executable=sys.executable,
+        version_info=sys.version_info[:5],
+        platform=sys.platform,
+        cwd=os.getcwd(),
+        pid=os.getpid(),
     ))
 
 
@@ -157,24 +165,24 @@ def _find_non_builtin_globals(source, codeobj):
         import builtins as __builtin__
 
     vars = dict.fromkeys(codeobj.co_varnames)
-    all = []
-    for node in ast.walk(ast.parse(source)):
-        if (isinstance(node, ast.Name) and node.id not in vars and
-            node.id not in __builtin__.__dict__):
-            all.append(node.id)
-    return all
+    return [
+        node.id for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Name) and
+        node.id not in vars and
+        node.id not in __builtin__.__dict__
+    ]
 
 
 def _source_of_function(function):
     if function.__name__ == '<lambda>':
         raise ValueError("can't evaluate lambda functions'")
-    #XXX: we dont check before remote instanciation
-    #     if arguments are used propperly
+    # XXX: we dont check before remote instanciation
+    #      if arguments are used propperly
     args, varargs, keywords, defaults = inspect.getargspec(function)
     if args[0] != 'channel':
         raise ValueError('expected first function argument to be `channel`')
 
-    if sys.version_info < (3,0):
+    if gateway_base.ISPY3:
         closure = function.func_closure
         codeobj = function.func_code
     else:
@@ -189,7 +197,7 @@ def _source_of_function(function):
     except IOError:
         raise ValueError("can't find source file for %s" % function)
 
-    source = textwrap.dedent(source) # just for inner functions
+    source = textwrap.dedent(source)  # just for inner functions
 
     used_globals = _find_non_builtin_globals(source, codeobj)
     if used_globals:
@@ -199,4 +207,3 @@ def _source_of_function(function):
         )
 
     return source
-

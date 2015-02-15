@@ -3,15 +3,17 @@
 import execnet
 
 group = execnet.Group()
-for i in range(4): # 4 CPUs
+for i in range(4):  # 4 CPUs
     group.makegateway()
+
 
 def process_item(channel):
     # task processor, sits on each CPU
-    import time, random
+    import time
+    import random
     channel.send("ready")
     for x in channel:
-        if x is None: # we can shutdown
+        if x is None:  # we can shutdown
             break
         # sleep random time, send result
         time.sleep(random.randrange(3))
@@ -22,7 +24,7 @@ mch = group.remote_exec(process_item)
 
 # get a queue that gives us results
 q = mch.make_receive_queue(endmarker=-1)
-tasks = range(10) # a list of tasks, here just integers
+tasks = range(10)  # a list of tasks, here just integers
 terminated = 0
 while 1:
     channel, item = q.get()
@@ -31,7 +33,7 @@ while 1:
         print "terminated %s" % channel.gateway.id
         if terminated == len(mch):
             print "got all results, terminating"
-            break 
+            break
         continue
     if item != "ready":
         print "other side %s returned %r" % (channel.gateway.id, item)

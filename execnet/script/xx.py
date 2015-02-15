@@ -1,7 +1,9 @@
 import rlcompleter2
+
+import register
+import sys
 rlcompleter2.setup()
 
-import register, sys
 try:
     hostport = sys.argv[1]
 except:
