@@ -60,11 +60,8 @@ def main():
             'Programming Language :: Python',
             'Programming Language :: Python :: 3'],
         packages=['execnet', 'execnet.script'],
-        setup_requires=[
-            # this is a setup/release time dependency
-            # we are supposed to use wheels
-            'hgdistver',
-        ]
+        install_requires=['apipkg'],
+        setup_requires=['hgdistver']
     )
 
 if __name__ == '__main__':
