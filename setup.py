@@ -41,7 +41,7 @@ def main():
         name='execnet',
         description='execnet: rapid multi-Python deployment',
         long_description=__doc__,
-        get_version_from_scm=True,
+        use_scm_version=True,
         url='http://codespeak.net/execnet',
         license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
@@ -61,7 +61,7 @@ def main():
             'Programming Language :: Python :: 3'],
         packages=['execnet', 'execnet.script'],
         install_requires=['apipkg>=1.3'],
-        setup_requires=['hgdistver']
+        setup_requires=['setuptools_scm']
     )
 
 if __name__ == '__main__':
