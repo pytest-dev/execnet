@@ -1,0 +1,132 @@
+rsync links from posix to windows
+-----------------------------------------
+tags: 1.1 feature
+bb: http://bitbucket.org/hpk42/py-trunk/issue/35
+path: execnet/rsync.py
+
+currently rsyncing bails out with a strange message when trying to rsync
+links. should provide better message or even some support for doing it.
+
+http process for mediating client/remote-subprocess execution
+------------------------------------------------------------------
+
+tags: 1.2 feature newdist
+
+A client client connects to an http-execserver.  An http-execserver
+routes incoming "POST /exec" requests to a subprocess and returns a PID.
+The PID identifies the subprocess which is used for further communication.
+
+Client             http-exec              subprocess
+
+makegw("...") ->   POST /popen     ->     Popen() with bootstrap
+                   (bootstrap) 
+                   <- PID
+
+c=rexec(...)       POST /exec/PID         exec source
+(source)                                                 
+
+c.send(1)          POST /exec/PID         x = c.receive()
+                   (1)                    assert x == 1
+                                          c.send(2)
+
+z = c.receive()    GET /exec/PID           
+                   <- (2)
+assert z == 2
+
+The client connects via "POST /exec/PID" 
+and pushes data to the remotely-executing code 
+in the subprocess.
+
+The client connects via "GET /exec/PID" 
+and receives data from the remotely-executing code.
+
+The client constructs a Channel() object which triggers
+these two connections, presenting a nice send/receive
+abstractions.
+
+The code executing in the http-execserver controled
+subprocess is a PopenGateway.  It does not know that it
+is connected via the http client/server machinery.
+
+The http-execserver proxies data from the subprocess 
+to the client.  If there is no active GET request, the
+data is queued.
+
+The http-execserver forwards data from the client to the
+subprocess, using the PID.  If the subprocess is not 
+connected, an ERROR code is returned.
+
+Example session:
+
+    gw = group.makegateway("http=codespeak.net")
+           
+    def fun(channel):
+        return channel.send(channel.receive()+1)
+                            
+    ch = gw.remote_exec(fun)
+    ch.send(1)
+    x = ch.receive()
+    assert x == 2
+
+
+a channel-IO based gateway
+--------------------------------------------------
+tags: 1.1 feature newdist
+
+A building block for establishing a permanent hierarchy
+of processes is a Gateway that operates on a Channel object.
+This way a gateway can be instantiated through another
+intermediating gateway which bi-directionallry forwads
+Messages through a existing channel.
+
+A code example could look like this:
+
+    group.setlocalfactory(port=8888)
+    gw = group.makegateway("ssh=codespeak.net")
+    # local ssh-process would be a child of the factory service
+    # which could have timeouts for killing, or allow resuming.
+    # for instantiating remote it could also install a multiplexer
+    # on the remote place such that the same ssh connection is re-used
+    # for multiple ssh=codespeak.net connections, makes for small latency.
+
+some first simple implemenation might look like this::
+
+    gw = group.makegateway("socketservice//port=8888")
+    # we can rely that the subprocess gw can import execnet
+    ch = gw.remote_exec("""
+        import execnet.service
+        execnet.service.gatewaymaker(channel)
+    """)
+    ch.send(xspec)
+    subchannel = ch.receive()
+    return ChannelGateway(subchannel)
+
+creating virtualenv environments on the fly
+-----------------------------------------------
+tags: 1.1 wish
+
+there should be a (plugin-provided?) way to create
+a virtual environment:
+    gw = makegateway("ssh=codespeak.net")
+    newgw = xdeploy.create_venv_gateway(gw, "venvname", depstring)
+    newgw # lives in home/ dir of remote virtualenv
+          # maybe have get_temproot default to tmp/ there?
+    sf = xdeploy.SetupFile("..setup.py")
+    sf.sdist_remote_install(newgw)
+
+
+have callback accept errors / errback
+-----------------------------------------------
+tags: 1.1 wish
+
+If using channel.setcallback() it currently is not
+possible to notice the exact errors that might happen
+on the other side.  Either introduce an "errback" 
+or (probably better) optionally allow an extra 'error' 
+parameter to execnet callbacks.
+
+fix rsync between python/jython
+-----------------------------------------------
+tags: 1.0 bug
+
+rsync does not complete with jython.
