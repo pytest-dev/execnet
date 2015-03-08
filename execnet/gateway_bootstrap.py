@@ -90,7 +90,7 @@ def bootstrap(io, spec):
             bootstrap_exec(io, spec)
         else:
             bootstrap_import(io, spec)
-    elif spec.ssh:
+    elif spec.ssh or spec.vagrant:
         bootstrap_exec(io, spec)
     elif spec.socket:
         bootstrap_socket(io, spec)

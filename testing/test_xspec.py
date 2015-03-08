@@ -3,7 +3,7 @@ import py
 import sys
 import pytest
 import execnet
-from execnet.gateway_io import ssh_args, popen_args
+from execnet.gateway_io import ssh_args, popen_args, vagrant_args
 
 XSpec = execnet.XSpec
 
@@ -58,6 +58,11 @@ class TestXSpec:
         spec.ssh_config = "/home/user/ssh_config"
         assert ssh_args(spec)[:6] == [
             "ssh", "-C", "-F", spec.ssh_config, "-p", "22100"]
+
+    def test_vagrant_options(self):
+        spec = XSpec("vagrant=default//python=python3")
+        assert vagrant_args(spec)[:-1] == [
+            'vagrant', 'ssh', 'default', '--', '-C']
 
     def test_popen_with_sudo_python(self):
         spec = XSpec("popen//python=sudo python3")
@@ -196,6 +201,17 @@ class TestMakegateway:
         assert rinfo.executable == rinfo2.executable
         assert rinfo.cwd == rinfo2.cwd
         assert rinfo.version_info == rinfo2.version_info
+
+    def test_vagrant(self, makegateway, tmpdir):
+        os.chdir(str(tmpdir))
+        os.system("vagrant init hashicorp/precise32")
+        os.system("vagrant up")
+        gw = makegateway("vagrant=default")
+        rinfo = gw._rinfo()
+        rinfo.cwd == '/home/vagrant'
+        rinfo.executable == '/usr/bin/python'
+        rinfo.version_info == (2, 7, 3, 'final', 0)
+        os.system("vagrant halt")
 
     def test_socket(self, specsocket, makegateway):
         gw = makegateway("socket=%s//id=sock1" % specsocket.socket)
