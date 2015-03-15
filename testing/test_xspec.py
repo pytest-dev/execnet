@@ -3,7 +3,7 @@ import py
 import sys
 import pytest
 import execnet
-from execnet.gateway_io import ssh_args, popen_args, vagrant_args
+from execnet.gateway_io import ssh_args, popen_args, vagrant_ssh_args
 
 XSpec = execnet.XSpec
 
@@ -60,8 +60,8 @@ class TestXSpec:
             "ssh", "-C", "-F", spec.ssh_config, "-p", "22100"]
 
     def test_vagrant_options(self):
-        spec = XSpec("vagrant=default//python=python3")
-        assert vagrant_args(spec)[:-1] == [
+        spec = XSpec("vagrant_ssh=default//python=python3")
+        assert vagrant_ssh_args(spec)[:-1] == [
             'vagrant', 'ssh', 'default', '--', '-C']
 
     def test_popen_with_sudo_python(self):
@@ -206,7 +206,7 @@ class TestMakegateway:
         os.chdir(str(tmpdir))
         os.system("vagrant init hashicorp/precise32")
         os.system("vagrant up")
-        gw = makegateway("vagrant=default")
+        gw = makegateway("vagrant_ssh=default")
         rinfo = gw._rinfo()
         rinfo.cwd == '/home/vagrant'
         rinfo.executable == '/usr/bin/python'

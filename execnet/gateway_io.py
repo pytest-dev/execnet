@@ -91,7 +91,7 @@ def ssh_args(spec):
     return args
 
 
-def vagrant_args(spec):
+def vagrant_ssh_args(spec):
     # This is the vagrant-wrapped version of SSH. Unfortunately the
     # command lines are incompatible to just channel through ssh_args
     # due to ordering/templating issues.
@@ -99,7 +99,7 @@ def vagrant_args(spec):
     # spec.vagrant is identical to spec.ssh in that they both carry
     # the remote host "address".
     remotepython = spec.python or 'python'
-    args = ['vagrant', 'ssh', spec.vagrant, '--', '-C']
+    args = ['vagrant', 'ssh', spec.vagrant_ssh, '--', '-C']
     if spec.ssh_config is not None:
         args.extend(['-F', str(spec.ssh_config)])
     remotecmd = '%s -c "%s"' % (remotepython, popen_bootstrapline)
@@ -116,10 +116,10 @@ def create_io(spec, execmodel):
         io = Popen2IOMaster(args, execmodel)
         io.remoteaddress = spec.ssh
         return io
-    if spec.vagrant:
-        args = vagrant_args(spec)
+    if spec.vagrant_ssh:
+        args = vagrant_ssh_args(spec)
         io = Popen2IOMaster(args, execmodel)
-        io.remoteaddress = spec.vagrant
+        io.remoteaddress = spec.vagrant_ssh
         return io
 
 #

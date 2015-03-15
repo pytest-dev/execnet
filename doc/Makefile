@@ -30,7 +30,7 @@ help:
 clean:
 	-rm -rf $(BUILDDIR)/*
 
-install: clean html 
+install: clean html
 	rsync -avz $(BUILDDIR)/html/ code:www-execnet/
 
 html:

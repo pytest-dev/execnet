@@ -123,7 +123,7 @@ class Group(object):
             proxy_channel.send(vars(spec))
             proxy_io_master = gateway_io.ProxyIO(proxy_channel, self.execmodel)
             gw = gateway_bootstrap.bootstrap(proxy_io_master, spec)
-        elif spec.popen or spec.ssh or spec.vagrant:
+        elif spec.popen or spec.ssh or spec.vagrant_ssh:
             io = gateway_io.create_io(spec, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
         elif spec.socket:

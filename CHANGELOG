@@ -1,6 +1,8 @@
 XXX
 ----
 
+- Fix issue38: provide ability to connect to Vagrant VMs easily and reliably.
+
 
 1.3.0
 --------------------------------
