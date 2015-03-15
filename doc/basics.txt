@@ -39,6 +39,10 @@ examples for valid gateway specifications
 * ``ssh=-p 5000 myhost`` makes execnet pass "-p 5000 myhost" arguments
   to the underlying ssh client binary, effectively specifying a custom port.
 
+* ``vagrant_ssh=default`` makes execnet connect to a Vagrant VM named
+  ``default`` via SSH through Vagrant's ``vagrant ssh`` command. It supports
+  the same additional parameters as regular SSH connections.
+
 * ``popen//python=python2.6//nice=20`` specification of
   a python subprocess using the ``python2.6`` executable which must be
   discoverable through the system ``PATH``; running with the lowest
