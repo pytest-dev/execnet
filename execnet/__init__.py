@@ -7,6 +7,11 @@ pure python lib for connecting to local and remote Python Interpreters.
 (c) 2012, Holger Krekel and others
 """
 import apipkg
+
+
+__version__ = '1.4.dev1'
+
+
 apipkg.initpkg(__name__, {
     'PopenGateway':     '.deprecated:PopenGateway',
     'SocketGateway':    '.deprecated:SocketGateway',
