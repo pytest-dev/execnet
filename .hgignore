@@ -1,10 +1,11 @@
+syntax:glob
+
 doc/_build
 build/
 execnet.egg-info/
 dist/
-\.cache/
+.cache/
 
-syntax:glob
 *.pyc
 *$py.class
 *.orig
@@ -15,3 +16,4 @@ lib/
 bin/
 include/
 .Python
+.env/
