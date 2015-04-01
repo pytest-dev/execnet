@@ -33,6 +33,13 @@ Features
   os threads, eventlet and gevent based systems.
 
 """
+import re
+
+
+def get_version():
+    VERSION_RE = re.compile("__version__ = \'(.*)\'", re.M)
+    with open('execnet/__init__.py') as fp:
+        return VERSION_RE.search(fp.read()).group(1)
 
 
 def main():
@@ -41,7 +48,7 @@ def main():
         name='execnet',
         description='execnet: rapid multi-Python deployment',
         long_description=__doc__,
-        use_scm_version=True,
+        version=get_version(),
         url='http://codespeak.net/execnet',
         license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
@@ -60,8 +67,7 @@ def main():
             'Programming Language :: Python',
             'Programming Language :: Python :: 3'],
         packages=['execnet', 'execnet.script'],
-        install_requires=['apipkg>=1.3'],
-        setup_requires=['setuptools_scm']
+        install_requires=['apipkg>=1.5'],
     )
 
 if __name__ == '__main__':

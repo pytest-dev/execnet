@@ -64,7 +64,7 @@ Known uses
 .. _`connecting CPython and PyPy`: http://www.quora.com/Quora-Infrastructure/Did-Quoras-switch-to-PyPy-result-in-increased-memory-consumption
 
 .. _`py.test`: http://pytest.org
-.. _`distributed testing`: http://codespeak.net/py/dist/test/dist.html
+.. _`distributed testing`: https://pypi.python.org/pypi/pytest-xdist
 .. _`Distributed NTLK with execnet`: http://streamhacker.com/2009/11/29/distributed-nltk-execnet/
 .. _`disco and execnet`: http://streamhacker.com/2009/12/14/execnet-disco-distributed-nltk/
 .. _`anyvc`: http://bitbucket.org/RonnyPfannschmidt/anyvc/
