@@ -65,6 +65,11 @@ examples for valid gateway specifications
 * ``socket=192.168.1.4:8888`` specifies a Python Socket server
   process that listens on ``192.168.1.4:8888``
 
+.. versionadded:: 1.5
+
+* ``vagarant_ssh`` opens a python interpreter via the vagarant ssh command
+
+
 .. _`remote execute code`:
 
 remote_exec: execute source code remotely
