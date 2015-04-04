@@ -1,10 +1,11 @@
-XXX
+1.4
 ----
 
+- de-vendor apipkg and use the pypi dependency instead
 - Fix issue38: provide ability to connect to Vagrant VMs easily and reliably.
 
 
-1.3.0
+1.3
 --------------------------------
 
 - fix issue33: index.txt to correctly mention MIT instead of GPL.
