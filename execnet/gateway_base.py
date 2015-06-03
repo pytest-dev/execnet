@@ -1120,6 +1120,8 @@ FOUR_BYTE_INT_MAX = 2147483647
 
 FLOAT_FORMAT = "!d"
 FLOAT_FORMAT_SIZE = struct.calcsize(FLOAT_FORMAT)
+COMPLEX_FORMAT = "!dd"
+COMPLEX_FORMAT_SIZE = struct.calcsize(COMPLEX_FORMAT)
 
 
 class _Stop(Exception):
@@ -1196,6 +1198,10 @@ class Unserializer(object):
     def load_float(self):
         binary = self.stream.read(FLOAT_FORMAT_SIZE)
         self.stack.append(struct.unpack(FLOAT_FORMAT, binary)[0])
+
+    def load_complex(self):
+        binary = self.stream.read(COMPLEX_FORMAT_SIZE)
+        self.stack.append(complex(*struct.unpack(COMPLEX_FORMAT, binary)))
 
     def _read_int4(self):
         return struct.unpack("!i", self.stream.read(4))[0]
@@ -1433,6 +1439,10 @@ class _Serializer(object):
     def save_float(self, flt):
         self._write(opcode.FLOAT)
         self._write(struct.pack(FLOAT_FORMAT, flt))
+
+    def save_complex(self, cpx):
+        self._write(opcode.COMPLEX)
+        self._write(struct.pack(COMPLEX_FORMAT, cpx.real, cpx.imag))
 
     def _write_int4(self, i, error="int must be less than %i" %
                     (FOUR_BYTE_INT_MAX,)):
