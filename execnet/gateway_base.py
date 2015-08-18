@@ -435,7 +435,7 @@ class Message:
     def __repr__(self):
         name = self._types[self.msgcode].__name__.upper()
         return "<Message %s channel=%s lendata=%s>" % (
-                    name, self.channelid, len(self.data))
+            name, self.channelid, len(self.data))
 
 
 class GatewayReceivedTerminate(Exception):
