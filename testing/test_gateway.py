@@ -109,7 +109,7 @@ class TestBasicGateway:
         """)
         remotemodules = channel.receive()
         assert 'py' not in remotemodules, (
-                "py should not be imported on remote side")
+            "py should not be imported on remote side")
 
     def test_remote_exec_waitclose(self, gw):
         channel = gw.remote_exec('pass')
@@ -393,7 +393,7 @@ class TestTracing:
 
     def test_no_tracing_by_default(self):
         assert gateway_base.trace == gateway_base.notrace, \
-                "trace does not to default to empty tracing"
+            "trace does not to default to empty tracing"
 
 
 class TestStringCoerce:

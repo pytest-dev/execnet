@@ -36,7 +36,12 @@ class Gateway(gateway_base.BaseGateway):
             r = "uninitialized"
             i = "no"
         return "<%s id=%r %s, %s model, %s active channels>" % (
-                self.__class__.__name__, self.id, r, self.execmodel.backend, i)
+            self.__class__.__name__,
+            self.id,
+            r,
+            self.execmodel.backend,
+            i,
+        )
 
     def exit(self):
         """ trigger gateway exit.  Defer waiting for finishing
