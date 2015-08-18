@@ -35,20 +35,13 @@ Features
 """
 import re
 
-
-def get_version():
-    VERSION_RE = re.compile("__version__ = \'(.*)\'", re.M)
-    with open('execnet/__init__.py') as fp:
-        return VERSION_RE.search(fp.read()).group(1)
-
-
 def main():
     from setuptools import setup
     setup(
         name='execnet',
         description='execnet: rapid multi-Python deployment',
         long_description=__doc__,
-        version=get_version(),
+        use_scm_version={'write_to': 'execnet/_version.py'},
         url='http://codespeak.net/execnet',
         license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
@@ -68,6 +61,7 @@ def main():
             'Programming Language :: Python :: 3'],
         packages=['execnet', 'execnet.script'],
         install_requires=['apipkg>=1.4'],
+        setup_requires=['setuptools_scm'],
     )
 
 if __name__ == '__main__':
