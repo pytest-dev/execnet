@@ -67,7 +67,7 @@ def main():
             'Programming Language :: Python',
             'Programming Language :: Python :: 3'],
         packages=['execnet', 'execnet.script'],
-        install_requires=['apipkg>=1.5'],
+        install_requires=['apipkg>=1.4'],
     )
 
 if __name__ == '__main__':
