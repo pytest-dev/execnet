@@ -9,7 +9,7 @@ pure python lib for connecting to local and remote Python Interpreters.
 import apipkg
 
 
-__version__ = '1.4.dev1'
+__version__ = '1.4.0'
 
 
 apipkg.initpkg(__name__, {
