@@ -3,6 +3,7 @@ syntax:glob
 doc/_build
 build/
 execnet.egg-info/
+execnet/_version.py
 dist/
 .cache/
 

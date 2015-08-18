@@ -8,11 +8,8 @@ pure python lib for connecting to local and remote Python Interpreters.
 """
 import apipkg
 
-
-__version__ = '1.4.0'
-
-
 apipkg.initpkg(__name__, {
+    '__version__':      '._version:version',
     'PopenGateway':     '.deprecated:PopenGateway',
     'SocketGateway':    '.deprecated:SocketGateway',
     'SshGateway':       '.deprecated:SshGateway',
