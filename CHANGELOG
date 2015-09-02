@@ -1,7 +1,7 @@
 1.4.1
 ------
 
-- fix a regression of the Serializer created by the imlied opcode ordering
+- fix a regression of the Serializer created by the implied opcode ordering
   which resulted in a incompatible opcode mapping
 
   *warning* stored serialized objects created with 1.4.0 are incompatible
@@ -10,7 +10,8 @@
   have a incompatible opcode when read with execnet < 1.4.0
   and wont be loadable with execnet 1.4.0 either
 
-  its strongly suggested to avoid using the serializer of execnet 1.4.0
+  its strongly suggested to avoid using the Serializer of execnet 1.4.0
+  this affects devpi and the external pytest-cache plugin
 
 1.4
 ----
