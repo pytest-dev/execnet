@@ -1283,11 +1283,15 @@ class opcode:
 
 def _buildopcodes():
     l = []
+    later_added = {
+        'COMPLEX': 1,
+    }
     for name, func in Unserializer.__dict__.items():
         if name.startswith("load_"):
             opname = name[5:].upper()
             l.append((opname, func))
-    l.sort()
+    l.sort(key=lambda x: (later_added.get(x[0], 0), x[0]))
+
     for i, (opname, func) in enumerate(l):
         assert i < 26, "xxx"
         i = bchr(64+i)

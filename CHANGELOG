@@ -1,3 +1,17 @@
+1.4.1
+------
+
+- fix a regression of the Serializer created by the imlied opcode ordering
+  which resulted in a incompatible opcode mapping
+
+  *warning* stored serialized objects created with 1.4.0 are incompatible
+  with previous versions and future versions
+  additionally stored serialized objects containing complex objects will
+  have a incompatible opcode when read with execnet < 1.4.0
+  and wont be loadable with execnet 1.4.0 either
+
+  its strongly suggested to avoid using the serializer of execnet 1.4.0
+
 1.4
 ----
 
