@@ -33,7 +33,7 @@ Features
   os threads, eventlet and gevent based systems.
 
 """
-import re
+
 
 def main():
     from setuptools import setup
