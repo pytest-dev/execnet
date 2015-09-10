@@ -67,7 +67,7 @@ def get_execmodel(backend):
             '_start_new_thread': ['thread::start_new_thread',
                                   '_thread::start_new_thread'],
             'threading': ["threading"],
-            'queue': ["queue", "Queue"],
+            'queue': ["queue" if ISPY3 else "Queue"],
             'sleep': ['time::sleep'],
             'subprocess': ['subprocess32' if SUBPROCESS32 else 'subprocess'],
             'socket': ['socket'],
