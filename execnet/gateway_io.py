@@ -12,6 +12,8 @@ try:
 except ImportError:
     from __main__ import Popen2IO, Message
 
+from functools import partial
+
 
 class Popen2IOMaster(Popen2IO):
     def __init__(self, args, execmodel):
@@ -189,11 +191,9 @@ class PseudoSpec:
 
 def serve_proxy_io(proxy_channelX):
     execmodel = proxy_channelX.gateway.execmodel
-    _trace = proxy_channelX.gateway._trace
-    tag = "serve_proxy_io:%s " % proxy_channelX.id
-
-    def log(*msg):
-        _trace(tag + msg[0], *msg[1:])
+    log = partial(
+        proxy_channelX.gateway._trace,
+        "serve_proxy_io:%s" % proxy_channelX.id)
     spec = PseudoSpec(proxy_channelX.receive())
     # create sub IO object which we will proxy back to our proxy initiator
     sub_io = create_io(spec, execmodel)
