@@ -46,7 +46,8 @@ def setup_module(mod):
 def teardown_module(mod):
     TEMPDIR.remove(True)
 
-pyimportdir = str(py.path.local(execnet.__file__).dirpath().dirpath())
+# we use the execnet folder in order to avoid tiggering a missing apipkg
+pyimportdir = str(py.path.local(execnet.__file__).dirpath())
 
 
 class PythonWrapper(object):
@@ -59,7 +60,7 @@ class PythonWrapper(object):
         script_file.write("""
 import sys
 sys.path.insert(0, %r)
-from execnet import gateway_base as serializer
+import gateway_base as serializer
 if sys.version_info > (3, 0): # Need binary output
     sys.stdout = sys.stdout.detach()
 sys.stdout.write(serializer.dumps_internal(%s))
@@ -80,7 +81,7 @@ sys.stdout.write(serializer.dumps_internal(%s))
         script_file.write(r"""
 import sys
 sys.path.insert(0, %r)
-from execnet import gateway_base as serializer
+import gateway_base as serializer
 if sys.version_info > (3, 0):
     sys.stdin = sys.stdin.detach()
 loader = serializer.Unserializer(sys.stdin)
