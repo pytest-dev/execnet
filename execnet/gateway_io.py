@@ -5,6 +5,7 @@ creates io instances used for gateway io
 """
 import os
 import sys
+import shlex
 
 try:
     from execnet.gateway_base import Popen2IO, Message
@@ -65,8 +66,7 @@ popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
 
 
 def popen_args(spec):
-    python = spec.python or sys.executable
-    args = str(python).split(' ')
+    args = shlex.split(spec.python) or [sys.executable]
     args.append('-u')
     if spec is not None and spec.dont_write_bytecode:
         args.append("-B")

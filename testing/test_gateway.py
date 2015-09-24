@@ -431,3 +431,16 @@ class TestStringCoerce:
         res = ch.receive()
         assert isinstance(res, bytes)
         gw.exit()
+
+
+@pytest.mark.parametrize('spec, expected_args', [
+    ('popen//python=python', ['python']),
+    ('popen//python=sudo -u test python', ['sudo', '-u', 'test', 'python']),
+    ('popen//python=/hans\ alt/bin/python', ['/hans alt/bin/python']),
+    ('popen//python="/u/test me/python" -e', ['/u/test me/python', '-e']),
+])
+def test_popen_args(spec, expected_args):
+    expected_args = expected_args + [
+        '-u', '-c', gateway_io.popen_bootstrapline]
+    args = gateway_io.popen_args(execnet.XSpec(spec))
+    assert args == expected_args
