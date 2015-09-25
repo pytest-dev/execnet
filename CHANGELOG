@@ -1,18 +1,13 @@
 1.5.0.dev
 -------
 
-- support shell escaping in python pathnames of popen
+- support shell escaping in python pathnames of popen.
 
-  it has been discovered that execnet horribly breaks
-  if you just use pathnames with spaces in them.
-
-  this was discovered thanks to Eugene Ciurana
-  who also helped with coming up with various solutions
-
-  we now use shlex.split to split the string,
-  there is a potential for regressions
-  if you use quote or escape sequences as part of your python command
-
+  Eugene Ciurana discovered that execnet breaks if you use 
+  pathnames with spaces in a "python=" part of a spec.
+  We now use shlex.split to split the string.  There is a 
+  potential for regressions if you used quote or escape 
+  sequences as part of your python command.
 
 
 1.4.1
