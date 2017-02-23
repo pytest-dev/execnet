@@ -17,7 +17,8 @@ def bootstrap_import(io, spec):
     sendexec(
         io,
         "import sys",
-        "sys.path.insert(0, %r)" % importdir,
+        "if %r not in sys.path:" % importdir,
+        "    sys.path.insert(0, %r)" % importdir,
         "from execnet.gateway_base import serve, init_popen_io, get_execmodel",
         "sys.stdout.write('1')",
         "sys.stdout.flush()",
