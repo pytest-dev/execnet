@@ -3,12 +3,23 @@
 
 - support shell escaping in python pathnames of popen.
 
-  Eugene Ciurana discovered that execnet breaks if you use 
+  Eugene Ciurana discovered that execnet breaks if you use
   pathnames with spaces in a "python=" part of a spec.
-  We now use shlex.split to split the string.  There is a 
-  potential for regressions if you used quote or escape 
+  We now use shlex.split to split the string.  There is a
+  potential for regressions if you used quote or escape
   sequences as part of your python command.
 
+- Only insert importdir into sys.path if it is not already in the path.
+
+  This prevents a bug when using enum34 with python 3.6 and
+  pytest-xdist.
+
+  The issue is that enum34 installs an 'enum' module in site-packages
+  which is normally shadowed by the stdlib version of enum, however in
+  gateway_bootstrap.py site-packages is added at the front the the
+  search path. This means on the workers enum34 is hit for import enum
+  which in turn causes import re to fail (as it makes use of the new
+  enum features in 3.6).
 
 1.4.1
 ------
