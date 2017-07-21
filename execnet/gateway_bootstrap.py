@@ -14,10 +14,14 @@ class HostNotFound(Exception):
 
 
 def bootstrap_import(io, spec):
+    # only insert the importdir into the path if we must.  This prevents
+    # bugs where backports expect to be shadowed by the standard library on
+    # newer versions of python but would instead shadow the standard library
     sendexec(
         io,
         "import sys",
-        "sys.path.insert(0, %r)" % importdir,
+        "if %r not in sys.path:" % importdir,
+        "    sys.path.insert(0, %r)" % importdir,
         "from execnet.gateway_base import serve, init_popen_io, get_execmodel",
         "sys.stdout.write('1')",
         "sys.stdout.flush()",
