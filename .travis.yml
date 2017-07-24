@@ -9,7 +9,7 @@ install:
 - pip install -U setuptools setuptools_scm pytest
 - pip install -e .
 
-script: pytest
+script: pytest testing
 
 notifications:
   irc:
