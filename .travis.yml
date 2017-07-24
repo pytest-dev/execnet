@@ -1,0 +1,20 @@
+language: python
+cache: pip
+python:
+- '2.7'
+- '3.6'
+- pypy
+install:
+- pip install -U pip 
+- pip install -U setuptools setuptools_scm pytest
+- pip install -e .
+
+script: pytest
+
+notifications:
+  irc:
+    channels:
+      - "chat.freenode.net#pylib"
+    on_success: change
+    on_failure: change
+    skip_join: true
