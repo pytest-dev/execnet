@@ -1,6 +1,21 @@
 execnet: distributed Python deployment and communication
 ========================================================
 
+.. image:: https://img.shields.io/pypi/v/execnet.svg
+    :target: https://pypi.org/project/execnet/
+
+.. image:: https://anaconda.org/conda-forge/execnet/badges/version.svg
+    :target: https://anaconda.org/conda-forge/execnet
+
+.. image:: https://img.shields.io/pypi/pyversions/execnet.svg
+    :target: https://pypi.org/project/execnet/
+
+.. image:: https://travis-ci.org/pytest-dev/execnet.svg?branch=master
+    :target: https://travis-ci.org/pytest-dev/execnet
+
+.. image:: https://ci.appveyor.com/api/projects/status/n9qy8df16my4gds9/branch/master?svg=true
+    :target: https://ci.appveyor.com/project/pytestbot/execnet
+
 .. _execnet: http://codespeak.net/execnet
 
 execnet_ provides carefully tested means to ad-hoc interact with Python
