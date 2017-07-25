@@ -6,7 +6,7 @@ Managing Gateway Groups and interactions with multiple channels.
 
 import sys
 import atexit
-
+from functools import partial
 from execnet import XSpec
 from execnet import gateway_io, gateway_bootstrap
 from execnet.gateway_base import reraise, trace, get_execmodel
@@ -204,8 +204,9 @@ class Group(object):
                 gw._io.kill()
 
             safe_terminate(self.execmodel, timeout, [
-                (lambda: join_wait(gw), lambda: kill(gw))
-                for gw in self._gateways_to_join])
+                (partial(join_wait, gw), partial(kill, gw))
+                for gw in self._gateways_to_join
+            ])
             self._gateways_to_join[:] = []
 
     def remote_exec(self, source, **kwargs):
