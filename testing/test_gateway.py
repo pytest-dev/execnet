@@ -4,6 +4,8 @@ mostly functional tests of gateways.
 import os
 import py
 import pytest
+import sys
+
 import execnet
 from execnet import gateway_base, gateway_io
 from test_serializer import _find_version
@@ -436,7 +438,8 @@ class TestStringCoerce:
 @pytest.mark.parametrize('spec, expected_args', [
     ('popen//python=python', ['python']),
     ('popen//python=sudo -u test python', ['sudo', '-u', 'test', 'python']),
-    ('popen//python=/hans\ alt/bin/python', ['/hans alt/bin/python']),
+    pytest.param('popen//python=/hans\ alt/bin/python', ['/hans alt/bin/python'],
+                 marks=pytest.mark.skipif(sys.platform.startswith('win'), reason='invalid spec on Windows')),
     ('popen//python="/u/test me/python" -e', ['/u/test me/python', '-e']),
 ])
 def test_popen_args(spec, expected_args):
