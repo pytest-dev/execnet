@@ -183,7 +183,12 @@ def _source_of_function(function):
         raise ValueError("can't evaluate lambda functions'")
     # XXX: we dont check before remote instanciation
     #      if arguments are used propperly
-    args, varargs, keywords, defaults = inspect.getargspec(function)
+    try:
+        sig = inspect.getfullargspec(function)
+    except AttributeError:
+        args = inspect.getargspec(function)[0]
+    else:
+        args = sig.args
     if args[0] != 'channel':
         raise ValueError('expected first function argument to be `channel`')
 

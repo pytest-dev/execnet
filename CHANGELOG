@@ -21,6 +21,9 @@
   which in turn causes import re to fail (as it makes use of the new
   enum features in 3.6).
 
+- fix #49 - use inspect.getfullargspec if possible to avoid deprecationwarnings
+
+
 1.4.1
 ------
 
