@@ -1,0 +1,20 @@
+build: false
+environment:
+  matrix:
+  - TOXENV: "py26"
+  - TOXENV: "py27"
+  - TOXENV: "py33"
+  - TOXENV: "py34"
+  - TOXENV: "pypy"
+  - TOXENV: "flakes"
+
+install:
+  - echo Installed Pythons
+  - dir c:\Python*
+
+  - if "%TOXENV%" == "pypy" call scripts\install-pypy.bat
+
+  - C:\Python35\python -m pip install tox
+
+test_script:
+  - C:\Python35\python -m tox
