@@ -203,6 +203,7 @@ class TestMakegateway:
         assert rinfo.cwd == rinfo2.cwd
         assert rinfo.version_info == rinfo2.version_info
 
+    @pytest.mark.xfail(reason="bad image name", run=False)
     def test_vagrant(self, makegateway, tmpdir, monkeypatch):
         vagrant = py.path.local.sysfind('vagrant')
         if vagrant is None:

@@ -1,5 +1,6 @@
 import pytest
 import execnet
+import apipkg
 import subprocess
 import py
 from test_gateway import TESTTIMEOUT
@@ -60,7 +61,7 @@ def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
 def test_close_initiating_remote_no_error(testdir, anypython):
     p = testdir.makepyfile("""
         import sys
-        sys.path.insert(0, %r)
+        sys.path.insert(0, sys.argv[1])
         import execnet
         gw = execnet.makegateway("popen")
         print ("remote_exec1")
@@ -69,9 +70,10 @@ def test_close_initiating_remote_no_error(testdir, anypython):
         ch2 = gw.remote_exec("channel.receive()")
         print ("termination")
         execnet.default_group.terminate()
-    """ % str(execnetdir))
+    """)
+    testdir.makepyfile(apipkg=apipkg)
     popen = subprocess.Popen(
-        [str(anypython), str(p)],
+        [str(anypython), str(p), str(execnetdir)],
         stdout=None, stderr=subprocess.PIPE,)
     out, err = popen.communicate()
     print (err)

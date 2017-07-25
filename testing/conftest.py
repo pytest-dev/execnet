@@ -63,11 +63,13 @@ def pytest_report_header(config):
     ]
 
 
-def pytest_funcarg__specssh(request):
+@pytest.fixture
+def specssh(request):
     return getspecssh(request.config)
 
 
-def pytest_funcarg__specsocket(request):
+@pytest.fixture
+def specsocket(request):
     return getsocketspec(request.config)
 
 

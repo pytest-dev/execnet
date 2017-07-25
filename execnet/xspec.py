@@ -23,7 +23,7 @@ class XSpec:
             if i == -1:
                 key, value = keyvalue, True
             else:
-                key, value = keyvalue[:i], keyvalue[i+1:]
+                key, value = keyvalue[:i], keyvalue[i + 1:]
             if key[0] == "_":
                 raise AttributeError("%r not a valid XSpec key" % key)
             if key in self.__dict__:
