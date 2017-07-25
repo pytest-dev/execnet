@@ -1,6 +1,6 @@
 def main():
     from setuptools import setup
-    with open("README.txt") as fp:
+    with open("README.rst") as fp:
         readme = fp.read()
     setup(
         name='execnet',
