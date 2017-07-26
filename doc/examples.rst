@@ -10,14 +10,14 @@ Note: all examples with `>>>` prompts are automatically tested.
 .. toctree::
    :maxdepth: 2
 
-   example/test_info.txt
-   example/test_group.txt
-   example/test_proxy.txt
-   example/test_multi.txt
-   example/hybridpython.txt
-   example/test_debug.txt
+   example/test_info
+   example/test_group
+   example/test_proxy
+   example/test_multi
+   example/hybridpython
+   example/test_debug
 
 .. toctree::
    :hidden:
 
-   example/test_ssh_fileserver.txt
+   example/test_ssh_fileserver
