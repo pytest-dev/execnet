@@ -5,8 +5,9 @@ environment:
   - TOXENV: "py27"
   - TOXENV: "py33"
   - TOXENV: "py34"
+  - TOXENV: "py35"
+  - TOXENV: "py36"
   - TOXENV: "pypy"
-  - TOXENV: "flakes"
 
 install:
   - echo Installed Pythons
@@ -14,7 +15,7 @@ install:
 
   - if "%TOXENV%" == "pypy" call scripts\install-pypy.bat
 
-  - C:\Python35\python -m pip install tox
+  - C:\Python36\python -m pip install tox
 
 test_script:
-  - C:\Python35\python -m tox
+  - C:\Python36\python -m tox
