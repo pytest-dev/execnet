@@ -15,6 +15,10 @@ except:
     from io import BytesIO
 
 
+skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
+                                  reason='failing on Windows on PyPy (#63)')
+
+
 class TestSerializeAPI:
     pytestmark = [
         pytest.mark.parametrize("val", [
@@ -369,6 +373,7 @@ class TestGlobalFinder(object):
         assert self.check(f) == []
 
 
+@skip_win_pypy
 def test_remote_exec_function_with_kwargs(anypython, makegateway):
     def func(channel, data):
         channel.send(data)
@@ -386,6 +391,7 @@ def test_remote_exc__no_kwargs(makegateway):
     pytest.raises(TypeError, gw.remote_exec, 'pass', kwarg=1)
 
 
+@skip_win_pypy
 def test_remote_exec_inspect_stack(makegateway):
     gw = makegateway()
     ch = gw.remote_exec("""

@@ -13,6 +13,10 @@ TESTTIMEOUT = 10.0  # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 
 
+skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
+                                  reason='failing on Windows on PyPy (#63)')
+
+
 def fails(*args, **kwargs):
     0/0
 
@@ -384,6 +388,7 @@ class TestTracing:
             py.test.fail("did not find %r in tracefile" % (slave_line,))
         gw.exit()
 
+    @skip_win_pypy
     def test_popen_stderr_tracing(self, capfd, monkeypatch, makegateway):
         monkeypatch.setenv('EXECNET_DEBUG', "2")
         gw = makegateway("popen")
