@@ -67,8 +67,19 @@ def killpid(pid):
 popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
 
 
+def shell_split_path(path):
+    """
+    Use shell lexer to split the given path into a list of components,
+    taking care to handle Windows' '\' correctly.
+    """
+    if sys.platform.startswith('win'):
+        # replace \\ by / otherwise shlex will strip them out
+        path = path.replace('\\', '/')
+    return shlex.split(path)
+
+
 def popen_args(spec):
-    args = shlex.split(spec.python) if spec.python else [sys.executable]
+    args = shell_split_path(spec.python) if spec.python else [sys.executable]
     args.append('-u')
     if spec is not None and spec.dont_write_bytecode:
         args.append("-B")

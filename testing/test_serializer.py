@@ -128,7 +128,7 @@ simple_tests = [
     # type: expected before/after repr
     ('int', '4'),
     ('float', '3.25'),
-    ('complex', '(1.78+3.14j)'),
+    ('complex', '(1.78+3.25j)'),
     ('list', '[1, 2, 3]'),
     ('tuple', '(1, 2, 3)'),
     ('dict', '{(1, 2, 3): 32}'),

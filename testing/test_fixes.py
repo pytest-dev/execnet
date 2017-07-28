@@ -1,3 +1,6 @@
+import pytest
+import sys
+
 from execnet import Group
 from execnet.gateway_bootstrap import fix_pid_for_jython_popen
 
@@ -11,6 +14,8 @@ def test_jython_bootstrap_not_on_remote():
         group.terminate(timeout=1.0)
 
 
+@pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
+                                     reason='failing on Windows on PyPy (#63)')
 def test_jython_bootstrap_fix():
     group = Group()
     gw = group.makegateway('popen')

@@ -22,7 +22,10 @@
   enum features in 3.6).
 
 - fix #49 - use inspect.getfullargspec if possible to avoid deprecationwarnings
+
 - fix #56 - use partials in safe_terminate to avoid a bad carried binding 
+
+- fix spec parsing on Windows due to path containing '\' characters.
 
 1.4.1
 ------

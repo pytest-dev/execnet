@@ -4,11 +4,17 @@ mostly functional tests of gateways.
 import os
 import py
 import pytest
+import sys
+
 import execnet
 from execnet import gateway_base, gateway_io
 from test_serializer import _find_version
 TESTTIMEOUT = 10.0  # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
+
+
+skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
+                                  reason='failing on Windows on PyPy (#63)')
 
 
 def fails(*args, **kwargs):
@@ -382,6 +388,7 @@ class TestTracing:
             py.test.fail("did not find %r in tracefile" % (slave_line,))
         gw.exit()
 
+    @skip_win_pypy
     def test_popen_stderr_tracing(self, capfd, monkeypatch, makegateway):
         monkeypatch.setenv('EXECNET_DEBUG', "2")
         gw = makegateway("popen")
@@ -436,7 +443,8 @@ class TestStringCoerce:
 @pytest.mark.parametrize('spec, expected_args', [
     ('popen//python=python', ['python']),
     ('popen//python=sudo -u test python', ['sudo', '-u', 'test', 'python']),
-    ('popen//python=/hans\ alt/bin/python', ['/hans alt/bin/python']),
+    pytest.param('popen//python=/hans\ alt/bin/python', ['/hans alt/bin/python'],
+                 marks=pytest.mark.skipif(sys.platform.startswith('win'), reason='invalid spec on Windows')),
     ('popen//python="/u/test me/python" -e', ['/u/test me/python', '-e']),
 ])
 def test_popen_args(spec, expected_args):

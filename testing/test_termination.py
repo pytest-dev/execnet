@@ -3,8 +3,12 @@ import execnet
 import apipkg
 import subprocess
 import py
+import sys
 from test_gateway import TESTTIMEOUT
 execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
+
+skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
+                                  reason='failing on Windows on PyPy (#63)')
 
 
 def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):
@@ -42,6 +46,7 @@ def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
     assert isinstance(err, EOFError)
 
 
+@skip_win_pypy
 def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     if not py.path.local.sysfind('ps'):
         py.test.skip("need 'ps' command to externally check process status")

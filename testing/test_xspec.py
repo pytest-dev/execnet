@@ -9,6 +9,10 @@ from execnet.gateway_io import ssh_args, popen_args, vagrant_ssh_args
 XSpec = execnet.XSpec
 
 
+skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
+                                  reason='failing on Windows on PyPy (#63)')
+
+
 class TestXSpec:
     def test_norm_attributes(self):
         spec = XSpec("socket=192.168.102.2:8888//python=c:/this/python2.5"
@@ -109,6 +113,7 @@ class TestMakegateway:
     def test_no_type(self, makegateway):
         pytest.raises(ValueError, lambda: makegateway('hello'))
 
+    @skip_win_pypy
     def test_popen_default(self, makegateway):
         gw = makegateway("")
         assert gw.spec.popen
@@ -144,6 +149,7 @@ class TestMakegateway:
         value = ch.receive()
         assert value == "123"
 
+    @skip_win_pypy
     def test_popen_explicit(self, makegateway):
         gw = makegateway("popen//python=%s" % sys.executable)
         assert gw.spec.python == sys.executable
@@ -180,11 +186,13 @@ class TestMakegateway:
         assert rinfo.cwd == os.getcwd()
         assert rinfo.version_info[:2] == (2, 6)
 
+    @skip_win_pypy
     def test_popen_chdir_absolute(self, testdir, makegateway):
         gw = makegateway("popen//chdir=%s" % testdir.tmpdir)
         rinfo = gw._rinfo()
         assert rinfo.cwd == str(testdir.tmpdir.realpath())
 
+    @skip_win_pypy
     def test_popen_chdir_newsub(self, testdir, makegateway):
         testdir.chdir()
         gw = makegateway("popen//chdir=hello")
