@@ -29,7 +29,7 @@ extensions = ['sphinx.ext.autodoc', 'sphinx.ext.doctest']
 templates_path = ['_templates']
 
 # The suffix of source filenames.
-source_suffix = '.txt'
+source_suffix = '.rst'
 
 # The encoding of source files.
 # source_encoding = 'utf-8'
@@ -77,7 +77,7 @@ exclude_trees = ['_build']
 # unit titles (such as .. function::).
 add_module_names = True
 
-linkcheck_timeout = 20.0
+linkcheck_timeout = 20
 
 # If true, sectionauthor and moduleauthor directives will be shown in the
 # output. They are ignored by default.

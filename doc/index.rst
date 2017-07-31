@@ -89,4 +89,3 @@ The package is licensed under the MIT license since version 1.2.
    support
    implnotes
    install
-   rel-1.0.0

@@ -191,4 +191,4 @@ itself into the remote socket endpoint::
 That's it, you can now use the gateway object just like
 a popen- or ssh-based one.
 
-.. include:: test_ssh_fileserver.txt
+.. include:: test_ssh_fileserver.rst
