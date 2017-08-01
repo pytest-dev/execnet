@@ -16,7 +16,7 @@ Info in a nutshell
 * debian: ``python-execnet``
 * gentoo: ``dev-python/execnet``
 
-**hg repository**: https://bitbucket.org/hpk42/execnet
+**git repository**: https://github.com/pytest-dev/execnet
 
 Installation
 ====================
@@ -31,7 +31,7 @@ Install a public `pypi release`_ via `easy_install`_ or pip_::
 
         or
 
-    hg clone https://hpk42@bitbucket.org/hpk42/execnet/
+    git clone https://github.com/pytest-dev/execnet.git
     python setup.py install # or 'develop' or add checkout path to PYTHONPATH
 
 Next checkout the basic api and examples:
@@ -45,8 +45,8 @@ Next checkout the basic api and examples:
 
 .. _`easy_install`: http://peak.telecommunity.com/DevCenter/EasyInstall
 .. _pip: http://pypi.python.org/pypi/pip
-.. _`bitbucket repository`: http://bitbucket.org/hpk42/execnet/
-.. _`execnet mercurial repository`: http://bitbucket.org/hpk42/execnet/
+.. _`github repository`: https://github.com/pytest-dev/execnet
+.. _`execnet git repository`: https://github.com/pytest-dev/execnet
 .. _`pypi release`: http://pypi.python.org/pypi/execnet
 .. _setuptools: http://pypi.python.org/pypi/setuptools
 .. _distribute: http://pypi.python.org/pypi/distribute
