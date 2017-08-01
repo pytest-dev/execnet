@@ -12,9 +12,11 @@ matrix:
   include:
     - env: TOXENV=docs
       python: '3.6'
+  allow_failures:
+    - python: 'pypy'
 
 install:
-  - pip install -U pip
+  - pip install -U pip setuptools setuptools_scm
   - pip install -U tox-travis
 
 script:
