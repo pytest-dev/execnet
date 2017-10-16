@@ -1,5 +1,5 @@
-1.5.0.dev
----------
+1.5.0
+-----
 
 - support shell escaping in python pathnames of popen.
 
