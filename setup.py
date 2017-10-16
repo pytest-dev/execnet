@@ -11,7 +11,6 @@ def main():
         license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
         author='holger krekel and others',
-        author_email='holger at merlinux.eu',
         classifiers=[
             'Development Status :: 5 - Production/Stable',
             'Intended Audience :: Developers',
