@@ -7,7 +7,7 @@ def main():
         description='execnet: rapid multi-Python deployment',
         long_description=readme,
         use_scm_version={'write_to': 'execnet/_version.py'},
-        url='http://codespeak.net/execnet',
+        url='http://execnet.readthedocs.io/en/latest/',
         license='MIT',
         platforms=['unix', 'linux', 'osx', 'cygwin', 'win32'],
         author='holger krekel and others',
