@@ -80,7 +80,7 @@ execnet was conceived and is `actively developed`_ by `Holger Krekel`_.
 The package is licensed under the MIT license since version 1.2.
 
 .. _`basic API`: basics.html
-.. _`actively developed`: http://bitbucket.org/hpk42/execnet/changesets
+.. _`actively developed`: https://github.com/pytest-dev/execnet
 .. _`Holger Krekel`: http://twitter.com/hpk42
 
 .. toctree::
