@@ -15,11 +15,11 @@ skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') an
 
 class TestXSpec:
     def test_norm_attributes(self):
-        spec = XSpec("socket=192.168.102.2:8888//python=c:/this/python2.5"
-                     "//chdir=d:\hello")
+        spec = XSpec(r"socket=192.168.102.2:8888//python=c:/this/python2.5"
+                     r"//chdir=d:\hello")
         assert spec.socket == "192.168.102.2:8888"
         assert spec.python == "c:/this/python2.5"
-        assert spec.chdir == "d:\hello"
+        assert spec.chdir == r"d:\hello"
         assert spec.nice is None
         assert not hasattr(spec, '_xyz')
 

@@ -3,6 +3,7 @@ example
 
 reading results from possibly blocking code running in sub processes.
 """
+from __future__ import print_function
 import execnet
 
 NUM_PROCESSES = 5
@@ -17,21 +18,21 @@ for i in range(NUM_PROCESSES):
         channel.send("waited %d secs" % secs)
     """)
     channels.append(channel)
-    print "*** instantiated subprocess", gw
+    print("*** instantiated subprocess", gw)
 
 mc = execnet.MultiChannel(channels)
 queue = mc.make_receive_queue()
 
-print "***", "verifying that timeout on receiving results from blocked subprocesses works"
+print("*** verifying that timeout on receiving results from blocked subprocesses works")
 try:
     queue.get(timeout=1.0)
 except Exception:
     pass
 
-print "*** sending subprocesses some data to have them unblock"
+print("*** sending subprocesses some data to have them unblock")
 mc.send_each(1)
 
-print "*** receiving results asynchronously"
+print("*** receiving results asynchronously")
 for i in range(NUM_PROCESSES):
     channel, result = queue.get(timeout=2.0)
-    print "result", channel.gateway, result
+    print("result", channel.gateway, result)

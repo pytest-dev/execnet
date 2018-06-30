@@ -6,6 +6,7 @@ small utility for hot-syncing a svn repository through ssh.
 uses execnet.
 
 """
+from __future__ import print_function
 import execnet
 import py
 import sys
@@ -14,8 +15,8 @@ import os
 
 def usage():
     arg0 = sys.argv[0]
-    print arg0, \
-        "[user@]remote-host:/repo/location localrepo [ssh-config-file]"
+    print(arg0,
+          "[user@]remote-host:/repo/location localrepo [ssh-config-file]")
 
 
 def main(args):
@@ -28,7 +29,7 @@ def main(args):
     else:
         configfile = None
     remote_host, path = remote.split(':', 1)
-    print "ssh-connecting to", remote_host
+    print("ssh-connecting to", remote_host)
     gw = getgateway(remote_host, configfile)
 
     local_rev = get_svn_youngest(localrepo)
@@ -76,13 +77,13 @@ def main(args):
     """)
 
     c.send((local_rev, path))
-    print "checking revisions from %d in %s" % (local_rev, remote)
+    print("checking revisions from %d in %s" % (local_rev, remote))
     while 1:
         revstart, revend = c.receive()
         dumpchannel = c.receive()
-        print "receiving revisions", revstart, "-", revend, "replaying..."
+        print("receiving revisions", revstart, "-", revend, "replaying...")
         svn_load(localrepo, dumpchannel)
-        print "current revision", revend
+        print("current revision", revend)
 
 
 def svn_load(repo, dumpchannel, maxcount=100):
