@@ -63,7 +63,7 @@ class RemoteInfo:
 
     def getmemswap(self):
         if self.islinux():
-            return self.exreceive("""
+            return self.exreceive(r"""
             import commands, re
             out = commands.getoutput("free")
             mem = re.search(r"Mem:\s+(\S*)", out).group(1)
