@@ -6,12 +6,14 @@ obtain system info from remote machine.
 (c) Holger Krekel, MIT license
 """
 
+import optparse
 import py
+import re
 import sys
 import execnet
 
 
-parser = py.std.optparse.OptionParser(usage=__doc__)
+parser = optparse.OptionParser(usage=__doc__)
 parser.add_option(
     "-f", "--sshconfig", action="store", dest="ssh_config", default=None,
     help="use given ssh config file,"
@@ -25,7 +27,7 @@ parser.add_option(
 def parsehosts(path):
     path = py.path.local(path)
     l = []
-    rex = py.std.re.compile(r'Host\s*(\S+)')
+    rex = re.compile(r'Host\s*(\S+)')
     for line in path.readlines():
         m = rex.match(line)
         if m is not None:

@@ -2,6 +2,7 @@
     tests for multi channels and gateway Groups
 """
 
+import gc
 import pytest
 from time import sleep
 import execnet
@@ -152,9 +153,9 @@ class TestGroup:
         assert len(gwlist) == 3
         idlist = [x.id for x in gwlist]
         assert idlist == list('325')
-        print (group)
+        print(group)
         group.terminate()
-        print (group)
+        print(group)
         assert not group
         assert repr(group) == "<Group []>"
 
@@ -222,14 +223,14 @@ def test_safe_terminate(execmodel):
     l = []
 
     def term():
-        py.std.time.sleep(3)
+        sleep(3)
 
     def kill():
         l.append(1)
     safe_terminate(execmodel, 1, [(term, kill)] * 10)
     assert len(l) == 10
     sleep(0.1)
-    py.std.gc.collect()
+    gc.collect()
     assert execmodel.active_count() == active
 
 
@@ -250,5 +251,5 @@ def test_safe_terminate2(execmodel):
     safe_terminate(execmodel, 3, [(term, kill)] * 10)
     assert len(l) == 0
     sleep(0.1)
-    py.std.gc.collect()
+    gc.collect()
     assert threading.active_count() == active

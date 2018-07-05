@@ -3,7 +3,7 @@ build/
 execnet.egg-info/
 execnet/_version.py
 dist/
-.cache/
+.pytest_cache/
 .eggs/
 *.pyc
 *$py.class
