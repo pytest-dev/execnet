@@ -42,6 +42,7 @@ def main(args):
     c = gw.remote_exec("""
         import py
         import os
+        import time
         remote_rev, repopath = channel.receive()
         while 1:
             rev = py.process.cmdexec('svnlook youngest "%s"' % repopath)
@@ -73,7 +74,7 @@ def main(args):
                 remote_rev = rev
             else:
                 # using svn-hook instead would be nice here
-                py.std.time.sleep(30)
+                time.sleep(30)
     """)
 
     c.send((local_rev, path))

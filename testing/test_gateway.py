@@ -4,6 +4,8 @@ mostly functional tests of gateways.
 import os
 import py
 import pytest
+import socket
+import subprocess
 import sys
 
 import execnet
@@ -24,10 +26,10 @@ def fails(*args, **kwargs):
 def test_deprecation(recwarn, monkeypatch):
     execnet.PopenGateway().exit()
     assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(py.std.socket, 'socket', fails)
+    monkeypatch.setattr(socket, 'socket', fails)
     py.test.raises(Exception, 'execnet.SocketGateway("localhost", 8811)')
     assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(py.std.subprocess, 'Popen', fails)
+    monkeypatch.setattr(subprocess, 'Popen', fails)
     py.test.raises(Exception, 'execnet.SshGateway("not-existing")')
     assert recwarn.pop(DeprecationWarning)
 
@@ -237,9 +239,9 @@ class TestPopenGateway:
 
     def test_rinfo_popen(self, gw):
         rinfo = gw._rinfo()
-        assert rinfo.executable == py.std.sys.executable
-        assert rinfo.cwd == py.std.os.getcwd()
-        assert rinfo.version_info == py.std.sys.version_info
+        assert rinfo.executable == sys.executable
+        assert rinfo.cwd == os.getcwd()
+        assert rinfo.version_info == sys.version_info
 
     def test_waitclose_on_remote_killed(self, makegateway):
         gw = makegateway('popen')
@@ -329,7 +331,7 @@ class TestThreads:
         gw = makegateway("popen")
         num = 5
         gw.remote_init_threads(num)
-        print ("remote_init_threads(%d)" % num)
+        print("remote_init_threads(%d)" % num)
         channels = []
         for x in range(num):
             ch = gw.remote_exec("""

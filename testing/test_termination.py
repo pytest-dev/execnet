@@ -1,6 +1,5 @@
 import pytest
 import execnet
-import apipkg
 import subprocess
 import py
 import sys
@@ -76,7 +75,6 @@ def test_close_initiating_remote_no_error(testdir, anypython):
         print ("termination")
         execnet.default_group.terminate()
     """)
-    testdir.makepyfile(apipkg=apipkg)
     popen = subprocess.Popen(
         [str(anypython), str(p), str(execnetdir)],
         stdout=None, stderr=subprocess.PIPE,)
