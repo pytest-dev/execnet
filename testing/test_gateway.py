@@ -263,7 +263,6 @@ class TestPopenGateway:
         """)
         py.test.raises(channel.RemoteError, channel.receive)
 
-    @py.test.mark.skipif('sys.version_info < (2,6) or sys.dont_write_bytecode')
     def test_dont_write_bytecode(self, makegateway):
         check_sys_dont_write_bytecode = """
             import sys
@@ -387,7 +386,7 @@ class TestTracing:
             if slave_line in line:
                 break
         else:
-            py.test.fail("did not find %r in tracefile" % (slave_line,))
+            py.test.fail("did not find {!r} in tracefile".format(slave_line))
         gw.exit()
 
     @skip_win_pypy

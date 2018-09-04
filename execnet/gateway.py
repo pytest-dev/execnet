@@ -35,7 +35,7 @@ class Gateway(gateway_base.BaseGateway):
         except AttributeError:
             r = "uninitialized"
             i = "no"
-        return "<%s id=%r %s, %s model, %s active channels>" % (
+        return "<{} id={!r} {}, {} model, {} active channels>".format(
             self.__class__.__name__,
             self.id,
             r,
@@ -160,10 +160,7 @@ def rinfo_source(channel):
 
 
 def _find_non_builtin_globals(source, codeobj):
-    try:
-        import ast
-    except ImportError:
-        return None
+    import ast
     try:
         import __builtin__
     except ImportError:

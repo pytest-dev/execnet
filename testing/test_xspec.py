@@ -158,34 +158,6 @@ class TestMakegateway:
         assert rinfo.cwd == os.getcwd()
         assert rinfo.version_info == sys.version_info
 
-    def test_popen_cpython25(self, makegateway):
-        for trypath in ('python2.5', r'C:\Python25\python.exe'):
-            cpython25 = py.path.local.sysfind(trypath)
-            if cpython25 is not None:
-                cpython25 = cpython25.realpath()
-                break
-        else:
-            pytest.skip("cpython2.5 not found")
-        gw = makegateway("popen//python=%s" % cpython25)
-        rinfo = gw._rinfo()
-        if sys.platform != "darwin":  # it's confusing there
-            assert rinfo.executable == cpython25
-        assert rinfo.cwd == os.getcwd()
-        assert rinfo.version_info[:2] == (2, 5)
-
-    def test_popen_cpython26(self, makegateway):
-        for trypath in ('python2.6', r'C:\Python26\python.exe'):
-            cpython26 = py.path.local.sysfind(trypath)
-            if cpython26 is not None:
-                break
-        else:
-            py.test.skip("cpython2.6 not found")
-        gw = makegateway("popen//python=%s" % cpython26)
-        rinfo = gw._rinfo()
-        # assert rinfo.executable == cpython26
-        assert rinfo.cwd == os.getcwd()
-        assert rinfo.version_info[:2] == (2, 6)
-
     @skip_win_pypy
     def test_popen_chdir_absolute(self, testdir, makegateway):
         gw = makegateway("popen//chdir=%s" % testdir.tmpdir)

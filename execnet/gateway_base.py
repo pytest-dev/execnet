@@ -113,7 +113,7 @@ def get_execmodel(backend):
         def exec_start(self, func, args=()):
             self._spawn_n(func, *args)
     else:
-        raise ValueError("unknown execmodel %r" % (backend,))
+        raise ValueError("unknown execmodel {!r}".format(backend))
 
     class ExecModel:
         def __init__(self, name):
@@ -162,16 +162,7 @@ def get_execmodel(backend):
             return self._lock.RLock()
 
         def Event(self):
-            event = self._event.Event()
-            if sys.version_info < (2, 7):
-                # patch wait function to return event state instead of None
-                real_wait = event.wait
-
-                def wait(timeout=None):
-                    real_wait(timeout=timeout)
-                    return event.isSet()
-                event.wait = wait
-            return event
+            return self._event.Event()
 
         def PopenPiped(self, args):
             PIPE = self.subprocess.PIPE
@@ -204,7 +195,7 @@ class Reply(object):
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
-            raise IOError("timeout waiting for %r" % (self.task, ))
+            raise IOError("timeout waiting for {!r}".format(self.task))
 
     def run(self):
         func, args, kwargs = self.task
@@ -334,7 +325,7 @@ if DEBUG == '2':
     def trace(*msg):
         try:
             line = " ".join(map(str, msg))
-            sys.stderr.write("[%s] %s\n" % (pid, line))
+            sys.stderr.write("[{}] {}\n".format(pid, line))
             sys.stderr.flush()
         except Exception:
             pass  # nothing we can do, likely interpreter-shutdown
@@ -354,7 +345,7 @@ elif DEBUG:
             try:
                 v = sys.exc_info()[1]
                 sys.stderr.write(
-                    "[%s] exception during tracing: %r\n" % (pid, v))
+                    "[{}] exception during tracing: {!r}\n".format(pid, v))
             except Exception:
                 pass  # nothing we can do, likely interpreter-shutdown
 else:
@@ -434,7 +425,7 @@ class Message:
 
     def __repr__(self):
         name = self._types[self.msgcode].__name__.upper()
-        return "<Message %s channel=%s lendata=%s>" % (
+        return "<Message {} channel={} lendata={}>".format(
             name, self.channelid, len(self.data))
 
 
@@ -502,7 +493,7 @@ def geterrortext(excinfo,
     except sysex:
         raise
     except:
-        errortext = '%s: %s' % (excinfo[0].__name__,
+        errortext = '{}: {}'.format(excinfo[0].__name__,
                                 excinfo[1])
     return errortext
 
@@ -517,7 +508,7 @@ class RemoteError(Exception):
         return self.formatted
 
     def __repr__(self):
-        return "%s: %s" % (self.__class__.__name__, self.formatted)
+        return "{}: {}".format(self.__class__.__name__, self.formatted)
 
     def warn(self):
         if self.formatted != INTERRUPT_TEXT:
@@ -567,7 +558,7 @@ class Channel(object):
         _callbacks = self.gateway._channelfactory._callbacks
         with self.gateway._receivelock:
             if self._items is None:
-                raise IOError("%r has callback already registered" % (self,))
+                raise IOError("{!r} has callback already registered".format(self))
             items = self._items
             self._items = None
             while 1:
@@ -651,7 +642,7 @@ class Channel(object):
             return ChannelFileWrite(channel=self, proxyclose=proxyclose)
         elif mode == "r":
             return ChannelFileRead(channel=self, proxyclose=proxyclose)
-        raise ValueError("mode %r not availabe" % (mode,))
+        raise ValueError("mode {!r} not availabe".format(mode))
 
     def close(self, error=None):
         """ close down this channel with an optional error message.
@@ -713,7 +704,7 @@ class Channel(object):
         raised if the write pipe was prematurely closed.
         """
         if self.isclosed():
-            raise IOError("cannot send to %r" % (self,))
+            raise IOError("cannot send to {!r}".format(self))
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
     def receive(self, timeout=None):
@@ -731,7 +722,7 @@ class Channel(object):
         try:
             x = itemqueue.get(timeout=timeout)
         except self.gateway.execmodel.queue.Empty:
-            raise self.TimeoutError("no item after %r seconds" % (timeout))
+            raise self.TimeoutError("no item after %r seconds" % timeout)
         if x is ENDMARKER:
             itemqueue.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()
@@ -776,7 +767,7 @@ class ChannelFactory(object):
         """ create a new Channel with 'id' (or create new id if None). """
         with self._writelock:
             if self.finished:
-                raise IOError("connexion already closed: %s" % (self.gateway,))
+                raise IOError("connexion already closed: {}".format(self.gateway))
             if id is None:
                 id = self.count
                 self.count += 2
@@ -1011,7 +1002,7 @@ class SlaveGateway(BaseGateway):
 
     def _local_schedulexec(self, channel, sourcetask):
         sourcetask = loads_internal(sourcetask)
-        self._execpool.spawn(self.executetask, ((channel, sourcetask)))
+        self._execpool.spawn(self.executetask, (channel, sourcetask))
 
     def _terminate_execution(self):
         # called from receiverthread
@@ -1084,7 +1075,7 @@ class SlaveGateway(BaseGateway):
             excinfo = self.exc_info()
             if not isinstance(excinfo[1], EOFError):
                 if not channel.gateway._channelfactory.finished:
-                    self._trace("got exception: %r" % (excinfo[1],))
+                    self._trace("got exception: {!r}".format(excinfo[1]))
                     errortext = self._geterrortext(excinfo)
                     channel.close(errortext)
                     return
@@ -1385,7 +1376,7 @@ class _Serializer(object):
             methodname = 'save_' + tp.__name__
             meth = getattr(self.__class__, methodname, None)
             if meth is None:
-                raise DumpError("can't serialize %s" % (tp,))
+                raise DumpError("can't serialize {}".format(tp))
             dispatch = self._dispatch[tp] = meth
         dispatch(self, obj)
 
@@ -1530,5 +1521,5 @@ def init_popen_io(execmodel):
 
 
 def serve(io, id):
-    trace("creating slavegateway on %r" % (io,))
+    trace("creating slavegateway on {!r}".format(io))
     SlaveGateway(io=io, id=id, _startcount=2).serve()

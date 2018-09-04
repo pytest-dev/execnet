@@ -56,7 +56,7 @@ class SocketServerService(win32serviceutil.ServiceFramework):
                                     0,  # category
                                     servicemanager.EVENTLOG_INFORMATION_TYPE,
                                     (self._svc_name_, ''))
-        print("Begin: %s" % (self._svc_display_name_))
+        print("Begin: %s" % self._svc_display_name_)
 
         hostport = ':8888'
         print('Starting py.execnet SocketServer on %s' % hostport)

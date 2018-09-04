@@ -1,7 +1,7 @@
 Info in a nutshell
 ====================
 
-**Pythons**: 2.4, 2.5, 2.6, 2.7, 3.0, 3.1.x, Jython-2.5.1, PyPy-1.2
+**Pythons**: 2.7, 3.4+, Jython-2.5.1, PyPy-1.2
 
 **Operating systems**: Linux, Windows, OSX, Unix
 

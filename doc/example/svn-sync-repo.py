@@ -23,7 +23,7 @@ def main(args):
     remote = args[0]
     localrepo = py.path.local(args[1])
     if not localrepo.check(dir=1):
-        raise SystemExit("localrepo %s does not exist" % (localrepo,))
+        raise SystemExit("localrepo {} does not exist".format(localrepo))
     if len(args) == 3:
         configfile = args[2]
     else:
@@ -93,7 +93,7 @@ def svn_load(repo, dumpchannel, maxcount=100):
     # growing buffers  (execnet does not control
     # RAM usage or receive queue sizes)
     dumpchannel.send(maxcount)
-    f = os.popen("svnadmin load -q %s" % (repo,), "w")
+    f = os.popen("svnadmin load -q {}".format(repo), "w")
     count = maxcount
     for x in dumpchannel:
         sys.stdout.write(".")

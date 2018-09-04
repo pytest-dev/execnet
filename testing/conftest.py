@@ -11,10 +11,6 @@ rsyncdirs = ['conftest.py', 'execnet', 'testing', 'doc']
 
 winpymap = {
     'python2.7': r'C:\Python27\python.exe',
-    'python2.6': r'C:\Python26\python.exe',
-    'python3.1': r'C:\Python31\python.exe',
-    'python3.2': r'C:\Python32\python.exe',
-    'python3.3': r'C:\Python33\python.exe',
     'python3.4': r'C:\Python34\python.exe',
 }
 
@@ -42,14 +38,14 @@ def pytest_addoption(parser):
     group = parser.getgroup("execnet", "execnet testing options")
     group.addoption(
         '--gx', action="append", dest="gspecs", default=None,
-        help=("add a global test environment, XSpec-syntax. "))
+        help="add a global test environment, XSpec-syntax. ")
     group.addoption(
         '--gwscope', action="store", dest="scope", default="session",
         type="choice", choices=["session", "function"],
-        help=("set gateway setup scope, default: session."))
+        help="set gateway setup scope, default: session.")
     group.addoption(
         '--pypy', action="store_true", dest="pypy",
-        help=("run some tests also against pypy"))
+        help="run some tests also against pypy")
     group.addoption(
         '--broken-isp', action="store_true", dest="broken_isp",
         help=("Skips tests that assume your ISP doesn't put up a landing "
@@ -59,7 +55,7 @@ def pytest_addoption(parser):
 def pytest_report_header(config):
     return [
         "gateway test setup scope: %s" % config.getvalue("scope"),
-        "execnet: %s -- %s" % (execnet.__file__, execnet.__version__),
+        "execnet: {} -- {}".format(execnet.__file__, execnet.__version__),
     ]
 
 
@@ -110,8 +106,7 @@ def pytest_generate_tests(metafunc):
     elif 'anypython' in metafunc.funcargnames:
         metafunc.parametrize(
             "anypython", indirect=True, argvalues=(
-                'sys.executable', 'python3.3', 'python3.2',
-                'python2.6', 'python2.7', 'pypy', 'jython',
+                'sys.executable', 'python2.7', 'pypy', 'jython',
             )
         )
 
@@ -147,12 +142,12 @@ def anypython(request):
                 if executable.check():
                     return executable
                 executable = None
-        py.test.skip("no %s found" % (name,))
+        py.test.skip("no {} found".format(name))
     if "execmodel" in request.fixturenames and name != 'sys.executable':
         backend = request.getfuncargvalue("execmodel").backend
         if backend != "thread":
             pytest.xfail(
-                "cannot run %r execmodel with bare %s" % (backend, name))
+                "cannot run {!r} execmodel with bare {}".format(backend, name))
     return executable
 
 
@@ -188,7 +183,7 @@ def gw(request, execmodel):
             sshhost = request.getfuncargvalue('specssh').ssh
             # we don't use execmodel.backend here
             # but you can set it when specifying the ssh spec
-            gw = group.makegateway("ssh=%s//id=ssh" % (sshhost,))
+            gw = group.makegateway("ssh={}//id=ssh".format(sshhost))
         elif request.param == 'proxy':
             group.makegateway('popen//id=proxy-transport')
             gw = group.makegateway('popen//via=proxy-transport//id=proxy'

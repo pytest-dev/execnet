@@ -3,7 +3,7 @@ from execnet import gateway_base
 
 def test_opcodes():
     data = vars(gateway_base.opcode)
-    computed = dict((k, v) for k, v in data.items() if '__' not in k)
+    computed = {k: v for k, v in data.items() if '__' not in k}
     assert computed == {
         'BUILDTUPLE': '@'.encode('ascii'),
         'BYTES': 'A'.encode('ascii'),

@@ -43,16 +43,15 @@ examples for valid gateway specifications
   ``default`` via SSH through Vagrant's ``vagrant ssh`` command. It supports
   the same additional parameters as regular SSH connections.
 
-* ``popen//python=python2.6//nice=20`` specification of
-  a python subprocess using the ``python2.6`` executable which must be
+* ``popen//python=python2.7//nice=20`` specification of
+  a python subprocess using the ``python2.7`` executable which must be
   discoverable through the system ``PATH``; running with the lowest
   CPU priority ("nice" level).  By default current dir will be the
   current dir of the instantiator.
 
 * ``popen//dont_write_bytecode`` uses the same executable as the current
   Python, and also passes the ``-B`` flag on startup, which tells Python not
-  write ``.pyc`` or ``.pyo`` files. Note that this only works under CPython
-  2.6 and newer.
+  write ``.pyc`` or ``.pyo`` files.
 
 * ``popen//env:NAME=value`` specifies a subprocess that uses the
   same interpreter as the one it is initiated from and additionally

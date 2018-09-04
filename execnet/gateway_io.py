@@ -45,23 +45,14 @@ def killpid(pid):
     if hasattr(os, 'kill'):
         os.kill(pid, 15)
     elif sys.platform == "win32" or getattr(os, '_name', None) == 'nt':
-        try:
-            import ctypes
-        except ImportError:
-            import subprocess
-            # T: treekill, F: Force
-            cmd = ("taskkill /T /F /PID %d" % (pid)).split()
-            ret = subprocess.call(cmd)
-            if ret != 0:
-                raise EnvironmentError("taskkill returned %r" % (ret,))
-        else:
-            PROCESS_TERMINATE = 1
-            handle = ctypes.windll.kernel32.OpenProcess(
-                PROCESS_TERMINATE, False, pid)
-            ctypes.windll.kernel32.TerminateProcess(handle, -1)
-            ctypes.windll.kernel32.CloseHandle(handle)
+        import ctypes
+        PROCESS_TERMINATE = 1
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_TERMINATE, False, pid)
+        ctypes.windll.kernel32.TerminateProcess(handle, -1)
+        ctypes.windll.kernel32.CloseHandle(handle)
     else:
-        raise EnvironmentError("no method to kill %s" % (pid,))
+        raise EnvironmentError("no method to kill {}".format(pid))
 
 
 popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
@@ -99,7 +90,7 @@ def ssh_args(spec):
         args.extend(['-F', str(spec.ssh_config)])
 
     args.extend(spec.ssh.split())
-    remotecmd = '%s -c "%s"' % (remotepython, popen_bootstrapline)
+    remotecmd = '{} -c "{}"'.format(remotepython, popen_bootstrapline)
     args.append(remotecmd)
     return args
 
@@ -115,7 +106,7 @@ def vagrant_ssh_args(spec):
     args = ['vagrant', 'ssh', spec.vagrant_ssh, '--', '-C']
     if spec.ssh_config is not None:
         args.extend(['-F', str(spec.ssh_config)])
-    remotecmd = '%s -c "%s"' % (remotepython, popen_bootstrapline)
+    remotecmd = '{} -c "{}"'.format(remotepython, popen_bootstrapline)
     args.extend([remotecmd])
     return args
 
@@ -189,7 +180,7 @@ class ProxyIO(object):
         return self._controll(RIO_REMOTEADDRESS)
 
     def __repr__(self):
-        return '<RemoteIO via %s>' % (self.iochan.gateway.id, )
+        return '<RemoteIO via {}>'.format(self.iochan.gateway.id)
 
 
 class PseudoSpec:
