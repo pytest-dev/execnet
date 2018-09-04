@@ -1,3 +1,10 @@
+1.6.0 (unreleased)
+------------------
+
+* ``execnet`` no longer supports Python 2.6 and 3.3 (#85). Users of those Python versions
+  using a recent enough ``pip`` should not be affected, as ``pip`` will only install
+  ``1.5.0`` for them.
+
 1.5.0
 -----
 
@@ -23,7 +30,7 @@
 
 - fix #49 - use inspect.getfullargspec if possible to avoid deprecationwarnings
 
-- fix #56 - use partials in safe_terminate to avoid a bad carried binding 
+- fix #56 - use partials in safe_terminate to avoid a bad carried binding
 
 - fix spec parsing on Windows due to path containing '\' characters.
 
