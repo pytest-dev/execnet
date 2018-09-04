@@ -55,7 +55,7 @@ def pytest_addoption(parser):
 def pytest_report_header(config):
     return [
         "gateway test setup scope: %s" % config.getvalue("scope"),
-        "execnet: %s -- %s" % (execnet.__file__, execnet.__version__),
+        "execnet: {} -- {}".format(execnet.__file__, execnet.__version__),
     ]
 
 
@@ -142,12 +142,12 @@ def anypython(request):
                 if executable.check():
                     return executable
                 executable = None
-        py.test.skip("no %s found" % (name,))
+        py.test.skip("no {} found".format(name))
     if "execmodel" in request.fixturenames and name != 'sys.executable':
         backend = request.getfuncargvalue("execmodel").backend
         if backend != "thread":
             pytest.xfail(
-                "cannot run %r execmodel with bare %s" % (backend, name))
+                "cannot run {!r} execmodel with bare {}".format(backend, name))
     return executable
 
 
@@ -183,7 +183,7 @@ def gw(request, execmodel):
             sshhost = request.getfuncargvalue('specssh').ssh
             # we don't use execmodel.backend here
             # but you can set it when specifying the ssh spec
-            gw = group.makegateway("ssh=%s//id=ssh" % (sshhost,))
+            gw = group.makegateway("ssh={}//id=ssh".format(sshhost))
         elif request.param == 'proxy':
             group.makegateway('popen//id=proxy-transport')
             gw = group.makegateway('popen//via=proxy-transport//id=proxy'

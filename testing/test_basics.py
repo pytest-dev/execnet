@@ -376,8 +376,8 @@ def test_remote_exec_function_with_kwargs(anypython, makegateway):
     def func(channel, data):
         channel.send(data)
     gw = makegateway('popen//python=%s' % anypython)
-    print ("local version_info %r" % (sys.version_info,))
-    print ("remote info: %s" % (gw._rinfo(),))
+    print ("local version_info {!r}".format(sys.version_info))
+    print ("remote info: {}".format(gw._rinfo()))
     ch = gw.remote_exec(func, data=1)
     result = ch.receive()
     assert result == 1

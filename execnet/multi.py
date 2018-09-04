@@ -131,7 +131,7 @@ class Group(object):
             io = gateway_socket.create_io(spec, self, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
         else:
-            raise ValueError("no gateway type found for %r" % (spec._spec,))
+            raise ValueError("no gateway type found for {!r}".format(spec._spec))
         gw.spec = spec
         self._register(gw)
         if spec.chdir or spec.nice or spec.env:
@@ -160,7 +160,7 @@ class Group(object):
                 id = "gw" + str(self._autoidcounter)
                 self._autoidcounter += 1
                 if id in self:
-                    raise ValueError("already have gateway with id %r" % (id,))
+                    raise ValueError("already have gateway with id {!r}".format(id))
                 spec.id = id
 
     def _register(self, gateway):
@@ -175,7 +175,7 @@ class Group(object):
         self._gateways_to_join.append(gateway)
 
     def _cleanup_atexit(self):
-        trace("=== atexit cleanup %r ===" % (self,))
+        trace("=== atexit cleanup {!r} ===".format(self))
         self.terminate(timeout=1.0)
 
     def terminate(self, timeout=None):

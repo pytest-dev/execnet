@@ -386,7 +386,7 @@ class TestTracing:
             if slave_line in line:
                 break
         else:
-            py.test.fail("did not find %r in tracefile" % (slave_line,))
+            py.test.fail("did not find {!r} in tracefile".format(slave_line))
         gw.exit()
 
     @skip_win_pypy

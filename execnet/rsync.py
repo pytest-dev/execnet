@@ -45,8 +45,8 @@ class RSync(object):
             # too early!  we must have got an error
             channel.waitclose()
             # or else we raise one
-            raise IOError('connection unexpectedly closed: %s ' % (
-                channel.gateway,))
+            raise IOError('connection unexpectedly closed: {} '.format(
+                channel.gateway))
 
     def _process_link(self, channel):
         for link in self._links:
@@ -100,7 +100,7 @@ class RSync(object):
 
     def _report_send_file(self, gateway, modified_rel_path):
         if self._verbose:
-            print("%s <= %s" % (gateway, modified_rel_path))
+            print("{} <= {}".format(gateway, modified_rel_path))
 
     def send(self, raises=True):
         """ Sends a sourcedir to all added targets. Flag indicates
@@ -207,4 +207,4 @@ class RSync(object):
         elif stat.S_ISLNK(st.st_mode):
             self._send_link_structure(path)
         else:
-            raise ValueError("cannot sync %r" % (path,))
+            raise ValueError("cannot sync {!r}".format(path))

@@ -109,7 +109,7 @@ def error(*args):
 
 def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
     if ssh_config:
-        spec = "ssh=-F %s %s" % (ssh_config, sshname)
+        spec = "ssh=-F {} {}".format(ssh_config, sshname)
     else:
         spec += "ssh=%s" % sshname
     debug("connecting to", repr(spec))
@@ -126,7 +126,7 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
             "sys.platform",
             "sys.version_info",
         ):
-            loginfo.write("%s %s: " % (prefix, attr,))
+            loginfo.write("{} {}: ".format(prefix, attr))
             loginfo.flush()
             value = ri.getmodattr(attr)
             loginfo.write(str(value))

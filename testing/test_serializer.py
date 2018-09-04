@@ -18,16 +18,16 @@ def _find_version(suffix=""):
     if executable is None:
         if sys.platform == "win32" and suffix == "3":
             for name in ('python31', 'python30'):
-                executable = py.path.local(r"c:\\%s\python.exe" % (name,))
+                executable = py.path.local(r"c:\\{}\python.exe".format(name))
                 if executable.check():
                     return executable
         for tail in MINOR_VERSIONS.get(suffix, ''):
-            path = py.path.local.sysfind('%s.%s' % (name, tail))
+            path = py.path.local.sysfind('{}.{}'.format(name, tail))
             if path:
                 return path
 
         else:
-            py.test.skip("can't find a %r executable" % (name,))
+            py.test.skip("can't find a {!r} executable".format(name))
     return executable
 
 TEMPDIR = _py2_wrapper = _py3_wrapper = None
@@ -101,7 +101,7 @@ sys.stdout.write(repr(obj))""" % (pyimportdir, option_args,))
         return [s.decode("ascii") for s in stdout.splitlines()]
 
     def __repr__(self):
-        return "<PythonWrapper for %s>" % (self.executable,)
+        return "<PythonWrapper for {}>".format(self.executable)
 
 
 @pytest.fixture
