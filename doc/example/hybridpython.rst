@@ -36,12 +36,12 @@ user-level instances, only builtin python types.
 Connect to Python2/Numpy from Python3
 ----------------------------------------
 
-Here we run a Python3 interpreter to connect to a Python2.6 interpreter
+Here we run a Python3 interpreter to connect to a Python2.7 interpreter
 that has numpy installed. We send items to be added to an array and
 receive back the remote "repr" of the array::
 
     import execnet
-    gw = execnet.makegateway("popen//python=python2.6")
+    gw = execnet.makegateway("popen//python=python2.7")
     channel = gw.remote_exec("""
         import numpy
         array = numpy.array([1,2,3])

@@ -213,7 +213,6 @@ class TestGroup:
         group.terminate(1.0)
 
 
-@pytest.mark.skipif("sys.version_info < (2,6)")
 def test_safe_terminate(execmodel):
     if execmodel.backend != "threading":
         pytest.xfail("execution model %r does not support task count" %
@@ -234,7 +233,6 @@ def test_safe_terminate(execmodel):
     assert execmodel.active_count() == active
 
 
-@pytest.mark.skipif("sys.version_info < (2,6)")
 def test_safe_terminate2(execmodel):
     if execmodel.backend != "threading":
         pytest.xfail("execution model %r does not support task count" %

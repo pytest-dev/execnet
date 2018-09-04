@@ -332,8 +332,6 @@ class TestSourceOfFunction(object):
 
 
 class TestGlobalFinder(object):
-    pytestmark = pytest.mark.skipif('sys.version_info < (2, 6)')
-
     def check(self, func):
         src = py.code.Source(func)
         code = py.code.Code(func)

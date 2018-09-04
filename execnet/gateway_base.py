@@ -162,16 +162,7 @@ def get_execmodel(backend):
             return self._lock.RLock()
 
         def Event(self):
-            event = self._event.Event()
-            if sys.version_info < (2, 7):
-                # patch wait function to return event state instead of None
-                real_wait = event.wait
-
-                def wait(timeout=None):
-                    real_wait(timeout=timeout)
-                    return event.isSet()
-                event.wait = wait
-            return event
+            return self._event.Event()
 
         def PopenPiped(self, args):
             PIPE = self.subprocess.PIPE

@@ -43,10 +43,10 @@ Notes:
   ``inspect.getsource(func)`` fails for interactively defined
   functions.
 
-* on Python2.6 and onwards you will get an explicit error
-  if you try to execute non-pure functions, i.e. functions
-  that access any global state (which will not be available
-  remotely as we have a share-nothing model between the nodes).
+* You will get an explicit error if you try to execute non-pure
+  functions, i.e. functions that access any global state (which
+  will not be available remotely as we have a share-nothing model
+  between the nodes).
 
 
 remote-exec a module (avoiding inlined source part II)
