@@ -160,10 +160,7 @@ def rinfo_source(channel):
 
 
 def _find_non_builtin_globals(source, codeobj):
-    try:
-        import ast
-    except ImportError:
-        return None
+    import ast
     try:
         import __builtin__
     except ImportError:

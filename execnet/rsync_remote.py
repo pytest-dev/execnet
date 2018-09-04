@@ -7,10 +7,7 @@ def serve_rsync(channel):
     import os
     import stat
     import shutil
-    try:
-        from hashlib import md5
-    except ImportError:
-        from md5 import md5
+    from hashlib import md5
     destdir, options = channel.receive()
     modifiedfiles = []
 

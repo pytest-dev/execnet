@@ -45,21 +45,12 @@ def killpid(pid):
     if hasattr(os, 'kill'):
         os.kill(pid, 15)
     elif sys.platform == "win32" or getattr(os, '_name', None) == 'nt':
-        try:
-            import ctypes
-        except ImportError:
-            import subprocess
-            # T: treekill, F: Force
-            cmd = ("taskkill /T /F /PID %d" % (pid)).split()
-            ret = subprocess.call(cmd)
-            if ret != 0:
-                raise EnvironmentError("taskkill returned {!r}".format(ret))
-        else:
-            PROCESS_TERMINATE = 1
-            handle = ctypes.windll.kernel32.OpenProcess(
-                PROCESS_TERMINATE, False, pid)
-            ctypes.windll.kernel32.TerminateProcess(handle, -1)
-            ctypes.windll.kernel32.CloseHandle(handle)
+        import ctypes
+        PROCESS_TERMINATE = 1
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_TERMINATE, False, pid)
+        ctypes.windll.kernel32.TerminateProcess(handle, -1)
+        ctypes.windll.kernel32.CloseHandle(handle)
     else:
         raise EnvironmentError("no method to kill {}".format(pid))
 
