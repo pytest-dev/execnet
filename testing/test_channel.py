@@ -130,7 +130,7 @@ class TestChannelBasicBehaviour:
         # assert c.id not in gw._channelfactory
         newchan = gw.remote_exec('''
                     assert %d not in channel.gateway._channelfactory._channels
-                  ''' % (channel.id))
+                  ''' % channel.id)
         newchan.waitclose(TESTTIMEOUT)
         assert channel.id not in gw._channelfactory._channels
 

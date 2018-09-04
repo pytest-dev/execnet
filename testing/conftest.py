@@ -38,14 +38,14 @@ def pytest_addoption(parser):
     group = parser.getgroup("execnet", "execnet testing options")
     group.addoption(
         '--gx', action="append", dest="gspecs", default=None,
-        help=("add a global test environment, XSpec-syntax. "))
+        help="add a global test environment, XSpec-syntax. ")
     group.addoption(
         '--gwscope', action="store", dest="scope", default="session",
         type="choice", choices=["session", "function"],
-        help=("set gateway setup scope, default: session."))
+        help="set gateway setup scope, default: session.")
     group.addoption(
         '--pypy', action="store_true", dest="pypy",
-        help=("run some tests also against pypy"))
+        help="run some tests also against pypy")
     group.addoption(
         '--broken-isp', action="store_true", dest="broken_isp",
         help=("Skips tests that assume your ISP doesn't put up a landing "

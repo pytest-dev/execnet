@@ -66,7 +66,7 @@ class Group(object):
 
     def __repr__(self):
         idgateways = [gw.id for gw in self]
-        return "<Group %r>" % (idgateways)
+        return "<Group %r>" % idgateways
 
     def __getitem__(self, key):
         if isinstance(key, int):

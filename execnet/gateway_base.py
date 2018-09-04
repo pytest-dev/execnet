@@ -722,7 +722,7 @@ class Channel(object):
         try:
             x = itemqueue.get(timeout=timeout)
         except self.gateway.execmodel.queue.Empty:
-            raise self.TimeoutError("no item after %r seconds" % (timeout))
+            raise self.TimeoutError("no item after %r seconds" % timeout)
         if x is ENDMARKER:
             itemqueue.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()
@@ -1002,7 +1002,7 @@ class SlaveGateway(BaseGateway):
 
     def _local_schedulexec(self, channel, sourcetask):
         sourcetask = loads_internal(sourcetask)
-        self._execpool.spawn(self.executetask, ((channel, sourcetask)))
+        self._execpool.spawn(self.executetask, (channel, sourcetask))
 
     def _terminate_execution(self):
         # called from receiverthread
