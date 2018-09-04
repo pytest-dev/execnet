@@ -8,6 +8,10 @@ environment:
   - TOXENV: "pypy"
   - TOXENV: "docs"
 
+matrix:
+  allow_failures:
+    - TOXENV: "pypy"
+
 install:
   - echo Installed Pythons
   - dir c:\Python*
