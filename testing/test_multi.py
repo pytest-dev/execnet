@@ -176,14 +176,17 @@ class TestGroup:
         group = Group()
         gw = group.makegateway("popen//id=hello")
         assert group["hello"] == gw
-        py.test.raises((TypeError, AttributeError), "del group['hello']")
-        py.test.raises((TypeError, AttributeError), "group['hello'] = 5")
+        with pytest.raises((TypeError, AttributeError)):
+            del group['hello']
+        with pytest.raises((TypeError, AttributeError)):
+            group['hello'] = 5
         assert 'hello' in group
         assert gw in group
         assert len(group) == 1
         gw.exit()
         assert 'hello' not in group
-        py.test.raises(KeyError, "group['hello']")
+        with pytest.raises(KeyError):
+            _ = group['hello']
 
     def test_default_group(self):
         oldlist = list(execnet.default_group)

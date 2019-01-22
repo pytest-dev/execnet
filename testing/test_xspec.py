@@ -23,7 +23,8 @@ class TestXSpec:
         assert spec.nice is None
         assert not hasattr(spec, '_xyz')
 
-        pytest.raises(AttributeError, "spec._hello")
+        with pytest.raises(AttributeError):
+            spec._hello()
 
         spec = XSpec("socket=192.168.102.2:8888//python=python2.5//nice=3")
         assert spec.socket == "192.168.102.2:8888"
