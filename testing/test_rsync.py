@@ -90,12 +90,14 @@ class TestRSync:
         rsync.add_target(gw1, dirs.dest1)
         rsync.send()
         assert dirs.dest1.join('hello').check()
-        py.test.raises(IOError, "rsync.send()")
+        with pytest.raises(IOError):
+            rsync.send()
         assert rsync.send(raises=False) is None
         rsync.add_target(gw1, dirs.dest2)
         rsync.send()
         assert dirs.dest2.join('hello').check()
-        py.test.raises(IOError, "rsync.send()")
+        with pytest.raises(IOError):
+            rsync.send()
         assert rsync.send(raises=False) is None
 
     def test_rsync_default_reporting(self, capsys, dirs, gw1):

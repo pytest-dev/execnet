@@ -37,7 +37,8 @@ class TestChannelBasicBehaviour:
 
     def test_channel_receive_timeout(self, gw):
         channel = gw.remote_exec('channel.send(channel.receive())')
-        pytest.raises(channel.TimeoutError, "channel.receive(timeout=0.2)")
+        with pytest.raises(channel.TimeoutError):
+            channel.receive(timeout=0.2)
         channel.send(1)
         channel.receive(timeout=TESTTIMEOUT)
 
@@ -263,9 +264,8 @@ class TestChannelBasicBehaviour:
         """)
         subchan = channel.receive()
         subchan.send(1)
-        excinfo = pytest.raises(
-            subchan.RemoteError,
-            "subchan.waitclose(TESTTIMEOUT)")
+        with pytest.raises(subchan.RemoteError) as excinfo:
+            subchan.waitclose(TESTTIMEOUT)
         assert "42" in excinfo.value.formatted
         channel.send(1)
         channel.waitclose()
@@ -289,7 +289,8 @@ class TestChannelFile:
         f = channel.makefile()
         assert not f.isatty()
         channel.waitclose(TESTTIMEOUT)
-        pytest.raises(IOError, f.write, 'hello')
+        with pytest.raises(IOError):
+            f.write('hello')
 
     def test_channel_file_proxyclose(self, gw):
         channel = gw.remote_exec("""

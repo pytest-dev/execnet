@@ -116,12 +116,12 @@ def py3(request):
 
 @pytest.fixture(params=['py2', 'py3'])
 def dump(request):
-    return request.getfuncargvalue(request.param).dump
+    return request.getfixturevalue(request.param).dump
 
 
 @pytest.fixture(params=['py2', 'py3'])
 def load(request):
-    return request.getfuncargvalue(request.param).load
+    return request.getfixturevalue(request.param).load
 
 
 simple_tests = [

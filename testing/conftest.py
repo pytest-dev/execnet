@@ -40,23 +40,12 @@ def pytest_addoption(parser):
         '--gx', action="append", dest="gspecs", default=None,
         help="add a global test environment, XSpec-syntax. ")
     group.addoption(
-        '--gwscope', action="store", dest="scope", default="session",
-        type="choice", choices=["session", "function"],
-        help="set gateway setup scope, default: session.")
-    group.addoption(
         '--pypy', action="store_true", dest="pypy",
         help="run some tests also against pypy")
     group.addoption(
         '--broken-isp', action="store_true", dest="broken_isp",
         help=("Skips tests that assume your ISP doesn't put up a landing "
               "page on invalid addresses"))
-
-
-def pytest_report_header(config):
-    return [
-        "gateway test setup scope: %s" % config.getvalue("scope"),
-        "execnet: {} -- {}".format(execnet.__file__, execnet.__version__),
-    ]
 
 
 @pytest.fixture
@@ -144,22 +133,22 @@ def anypython(request):
                 executable = None
         py.test.skip("no {} found".format(name))
     if "execmodel" in request.fixturenames and name != 'sys.executable':
-        backend = request.getfuncargvalue("execmodel").backend
+        backend = request.getfixturevalue("execmodel").backend
         if backend != "thread":
             pytest.xfail(
                 "cannot run {!r} execmodel with bare {}".format(backend, name))
     return executable
 
 
+@pytest.fixture(scope='session')
+def group():
+    g = execnet.Group()
+    yield g
+    g.terminate(timeout=1)
+
+
 @pytest.fixture
-def gw(request, execmodel):
-    scope = request.config.option.scope
-    group = request.cached_setup(
-        setup=execnet.Group,
-        teardown=lambda group: group.terminate(timeout=1),
-        extrakey="testgroup",
-        scope=scope,
-    )
+def gw(request, execmodel, group):
     try:
         return group[request.param]
     except KeyError:
@@ -180,7 +169,7 @@ def gw(request, execmodel):
             gw.proxygw = proxygw
             assert pname in group
         elif request.param == "ssh":
-            sshhost = request.getfuncargvalue('specssh').ssh
+            sshhost = request.getfixturevalue('specssh').ssh
             # we don't use execmodel.backend here
             # but you can set it when specifying the ssh spec
             gw = group.makegateway("ssh={}//id=ssh".format(sshhost))
@@ -188,6 +177,8 @@ def gw(request, execmodel):
             group.makegateway('popen//id=proxy-transport')
             gw = group.makegateway('popen//via=proxy-transport//id=proxy'
                                    '//execmodel=%s' % execmodel.backend)
+        else:
+            assert 0, "unknown execmodel: {}".format(request.param)
         return gw
 
 

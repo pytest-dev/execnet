@@ -385,8 +385,10 @@ def test_remote_exec_function_with_kwargs(anypython, makegateway):
 
 def test_remote_exc__no_kwargs(makegateway):
     gw = makegateway()
-    pytest.raises(TypeError, gw.remote_exec, gateway_base, kwarg=1)
-    pytest.raises(TypeError, gw.remote_exec, 'pass', kwarg=1)
+    with pytest.raises(TypeError):
+        gw.remote_exec(gateway_base, kwarg=1)
+    with pytest.raises(TypeError):
+        gw.remote_exec('pass', kwarg=1)
 
 
 @skip_win_pypy

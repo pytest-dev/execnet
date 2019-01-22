@@ -138,9 +138,8 @@ class TestBasicGateway:
 
     def test_remote_exec_no_explicit_close(self, gw):
         channel = gw.remote_exec('channel.close()')
-        excinfo = py.test.raises(
-            channel.RemoteError,
-            "channel.waitclose(TESTTIMEOUT)")
+        with pytest.raises(channel.RemoteError) as excinfo:
+            channel.waitclose(TESTTIMEOUT)
         assert "explicit" in excinfo.value.formatted
 
     def test_remote_exec_channel_anonymous(self, gw):
@@ -218,9 +217,8 @@ class TestPopenGateway:
         assert x.lower() == str(waschangedir).lower()
 
     def test_remoteerror_readable_traceback(self, gw):
-        e = py.test.raises(
-            gateway_base.RemoteError,
-            'gw.remote_exec("x y").waitclose()')
+        with pytest.raises(gateway_base.RemoteError) as e:
+            gw.remote_exec("x y").waitclose()
         assert "gateway_base" in e.value.formatted
 
     def test_many_popen(self, makegateway):
@@ -253,9 +251,12 @@ class TestPopenGateway:
         """)
         remotepid = channel.receive()
         py.process.kill(remotepid)
-        py.test.raises(EOFError, "channel.waitclose(TESTTIMEOUT)")
-        py.test.raises(IOError, channel.send, None)
-        py.test.raises(EOFError, channel.receive)
+        with pytest.raises(EOFError):
+            channel.waitclose(TESTTIMEOUT)
+        with pytest.raises(IOError):
+            channel.send(None)
+        with pytest.raises(EOFError):
+            channel.receive()
 
     def test_receive_on_remote_sysexit(self, gw):
         channel = gw.remote_exec("""
@@ -371,8 +372,8 @@ class TestThreads:
 class TestTracing:
     def test_popen_filetracing(self, testdir, monkeypatch, makegateway):
         tmpdir = testdir.tmpdir
-        monkeypatch.setenv("TMP", tmpdir)
-        monkeypatch.setenv("TEMP", tmpdir)  # windows
+        monkeypatch.setenv("TMP", str(tmpdir))
+        monkeypatch.setenv("TEMP", str(tmpdir))  # windows
         monkeypatch.setenv('EXECNET_DEBUG', "1")
         gw = makegateway("popen")
         #  hack out the debuffilename
