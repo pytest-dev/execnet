@@ -98,10 +98,8 @@ html_theme = 'sphinxdoc'
 
 # html_index = 'index.html'
 html_sidebars = {
-    'index': 'indexsidebar.html',
+    'index': ['indexsidebar.html'],
 }
-#                 'basics': 'indexsidebar.html',
-# }
 # html_additional_pages = {'index': 'index.html'}
 
 # Theme options are theme-specific and customize the look and feel of a theme
