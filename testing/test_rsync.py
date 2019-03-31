@@ -45,7 +45,8 @@ def dirs(request, tmpdir):
 class TestRSync:
     def test_notargets(self, dirs):
         rsync = RSync(dirs.source)
-        py.test.raises(IOError, "rsync.send()")
+        with pytest.raises(IOError):
+            rsync.send()
         assert rsync.send(raises=False) is None
 
     def test_dirsync(self, dirs, gw1, gw2):
