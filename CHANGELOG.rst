@@ -1,12 +1,14 @@
-1.6.0 (unreleased)
+1.6.0 (2019-03-31)
 ------------------
 
 * ``execnet`` no longer supports Python 2.6 and 3.3 (#85). Users of those Python versions
   using a recent enough ``pip`` should not be affected, as ``pip`` will only install
   ``1.5.0`` for them.
 
-1.5.0
------
+* Update test suite to support ``pytest>4``.
+
+1.5.0 (2017-10-16)
+------------------
 
 - support shell escaping in python pathnames of popen.
 
@@ -34,8 +36,8 @@
 
 - fix spec parsing on Windows due to path containing '\' characters.
 
-1.4.1
-------
+1.4.1 (2015-09-02)
+------------------
 
 - fix a regression of the Serializer created by the implied opcode ordering
   which resulted in a incompatible opcode mapping
