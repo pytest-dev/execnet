@@ -83,8 +83,8 @@ def getsocketspec(config=None):
 
 
 def pytest_generate_tests(metafunc):
-    if 'gw' in metafunc.funcargnames:
-        assert 'anypython' not in metafunc.funcargnames, "need combine?"
+    if 'gw' in metafunc.fixturenames:
+        assert 'anypython' not in metafunc.fixturenames, "need combine?"
         if hasattr(metafunc.function, 'gwtypes'):
             gwtypes = metafunc.function.gwtypes
         elif hasattr(metafunc.cls, 'gwtype'):
@@ -92,7 +92,7 @@ def pytest_generate_tests(metafunc):
         else:
             gwtypes = ['popen', 'socket', 'ssh', 'proxy']
         metafunc.parametrize("gw", gwtypes, indirect=True)
-    elif 'anypython' in metafunc.funcargnames:
+    elif 'anypython' in metafunc.fixturenames:
         metafunc.parametrize(
             "anypython", indirect=True, argvalues=(
                 'sys.executable', 'python2.7', 'pypy', 'jython',
