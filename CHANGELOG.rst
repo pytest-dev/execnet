@@ -1,3 +1,9 @@
+1.6.1 (2019-07-22)
+------------------
+
+* `#98 <https://github.com/pytest-dev/execnet/pull/98>`__: Internal change to avoid
+  using deprecated ``funcargs`` name in pytest 5+.
+
 1.6.0 (2019-03-31)
 ------------------
 
