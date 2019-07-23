@@ -295,7 +295,7 @@ def safe_terminate(execmodel, timeout, list_of_paired_functions):
         replylist.append(reply)
     for reply in replylist:
         reply.get()
-    workerpool.waitall()
+    workerpool.waitall(timeout=timeout)
 
 
 default_group = Group()
