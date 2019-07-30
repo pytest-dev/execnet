@@ -218,8 +218,6 @@ def test_stdouterrin_setnull(execmodel):
     cap = py.io.StdCaptureFD()
     gateway_base.init_popen_io(execmodel)
     os.write(1, "hello".encode('ascii'))
-    if os.name == "nt":
-        os.write(2, "world")
     os.read(0, 1)
     out, err = cap.reset()
     assert not out
