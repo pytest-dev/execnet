@@ -326,7 +326,7 @@ class TestSourceOfFunction(object):
         def working(channel):
             pass
 
-        send_source = gateway._source_of_function(working)
+        send_source = gateway._source_of_function(working).lstrip("\r\n")
         expected = 'def working(channel):\n    pass\n'
         assert send_source == expected
 

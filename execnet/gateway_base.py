@@ -13,6 +13,7 @@ NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
 """
 from __future__ import with_statement
 import sys
+import linecache
 import os
 import weakref
 import traceback
@@ -25,8 +26,9 @@ import struct
 ISPY3 = sys.version_info >= (3, 0)
 if ISPY3:
     from io import BytesIO
-    exec("def do_exec(co, loc): exec(co, loc)\n"
-         "def reraise(cls, val, tb): raise val\n")
+    exec("do_exec = exec")
+    def reraise(cls, val, tb):
+        raise val.with_traceback(tb)
     unicode = str
     _long_type = int
     from _thread import interrupt_main
@@ -1044,7 +1046,7 @@ class SlaveGateway(BaseGateway):
 
     def executetask(self, item):
         try:
-            channel, (source, call_name, kwargs) = item
+            channel, (source, file_name, call_name, kwargs) = item
             if not ISPY3 and kwargs:
                 # some python2 versions do not accept unicode keyword params
                 # note: Unserializer generally turns py2-str to py3-str objects
@@ -1054,12 +1056,15 @@ class SlaveGateway(BaseGateway):
                         name = name.encode('ascii')
                     newkwargs[name] = value
                 kwargs = newkwargs
+            if source is None:
+                assert file_name, file_name
+                source = "".join(linecache.updatecache(file_name))
             loc = {'channel': channel, '__name__': '__channelexec__'}
             self._trace("execution starts[%s]: %s" %
                         (channel.id, repr(source)[:50]))
             channel._executing = True
             try:
-                co = compile(source+'\n', '<remote exec>', 'exec')
+                co = compile(source+'\n', file_name or '<remote exec>', 'exec')
                 do_exec(co, loc)  # noqa
                 if call_name:
                     self._trace('calling %s(**%60r)' % (call_name, kwargs))

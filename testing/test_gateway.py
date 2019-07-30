@@ -110,6 +110,36 @@ class TestBasicGateway:
         name = channel.receive()
         assert name == 2
 
+    def test_remote_exec_module_with_traceback(self, gw, tmpdir):
+        remotetest = tmpdir.join("remotetest.py")
+        remotetest.write(
+            "\ndef run_me(channel=None):\n  raise ValueError('me')\n\n" +
+            "if __name__ == '__channelexec__':\n  run_me()\n")
+
+        try:
+            sys.path.insert(0, str(tmpdir))
+            module = __import__("remotetest")
+        finally:
+            sys.path.pop(0)
+
+        ch = gw.remote_exec(module)
+        try:
+            ch.receive()
+        except execnet.gateway_base.RemoteError as e:
+            assert 'remotetest.py", line 3, in run_me' in str(e)
+            assert "ValueError: me" in str(e)
+        finally:
+            ch.close()
+
+        ch = gw.remote_exec(module.run_me)
+        try:
+            ch.receive()
+        except execnet.gateway_base.RemoteError as e:
+            assert 'remotetest.py", line 3, in run_me' in str(e)
+            assert "ValueError: me" in str(e)
+        finally:
+            ch.close()
+
     def test_correct_setup_no_py(self, gw):
         channel = gw.remote_exec("""
             import sys

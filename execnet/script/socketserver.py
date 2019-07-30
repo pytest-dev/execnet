@@ -63,7 +63,7 @@ def exec_from_one_connection(serversock):
     }
     source = eval(source)
     if source:
-        co = compile(source+'\n', source, 'exec')
+        co = compile(source+'\n', '<socket server>', 'exec')
         print_(progname, 'compiled source, executing')
         try:
             exec_(co, g)  # noqa
