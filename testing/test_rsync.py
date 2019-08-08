@@ -232,7 +232,7 @@ class TestRSync:
         assert len(dest.listdir()) == 1
         assert len(source.listdir()) == 1
 
-    @py.test.mark.skip_if('sys.version_info >= (3)')
+    @py.test.mark.skipif('sys.version_info >= (3,)')
     def test_2_to_3_bridge_can_send_binary_files(self, tmpdir, makegateway):
         python = _find_version('3')
         gw = makegateway('popen//python=%s' % python)

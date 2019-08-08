@@ -2,6 +2,8 @@
 mostly functional tests of gateways.
 """
 import os
+from textwrap import dedent
+
 import py
 import pytest
 import socket
@@ -15,6 +17,7 @@ TESTTIMEOUT = 10.0  # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 
 
+flakytest = pytest.mark.xfail(reason='on some systems this test fails due to timing problems')
 skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
                                   reason='failing on Windows on PyPy (#63)')
 
@@ -76,6 +79,7 @@ class TestBasicGateway:
         # closure of temporary channels
         assert numchan2 == numchan
 
+    @flakytest
     def test_gateway_status_busy(self, gw):
         numchannels = gw.remote_status().numchannels
         ch1 = gw.remote_exec("channel.send(1); channel.receive()")
@@ -109,6 +113,38 @@ class TestBasicGateway:
         channel = gw.remote_exec(mod)
         name = channel.receive()
         assert name == 2
+
+    def test_remote_exec_module_with_traceback(self, gw, tmpdir, monkeypatch):
+        remotetest = tmpdir.join("remotetest.py")
+        remotetest.write(dedent("""
+            def run_me(channel=None):
+                raise ValueError('me')
+
+            if __name__ == '__channelexec__':
+                run_me()
+            """)
+        )
+
+        monkeypatch.syspath_prepend(tmpdir)
+        import remotetest
+
+        ch = gw.remote_exec(remotetest)
+        try:
+            ch.receive()
+        except execnet.gateway_base.RemoteError as e:
+            assert 'remotetest.py", line 3, in run_me' in str(e)
+            assert "ValueError: me" in str(e)
+        finally:
+            ch.close()
+
+        ch = gw.remote_exec(remotetest.run_me)
+        try:
+            ch.receive()
+        except execnet.gateway_base.RemoteError as e:
+            assert 'remotetest.py", line 3, in run_me' in str(e)
+            assert "ValueError: me" in str(e)
+        finally:
+            ch.close()
 
     def test_correct_setup_no_py(self, gw):
         channel = gw.remote_exec("""
@@ -347,6 +383,7 @@ class TestThreads:
         for ch in channels:
             ch.waitclose(TESTTIMEOUT)
 
+    @flakytest
     def test_status_with_threads(self, makegateway):
         gw = makegateway('popen')
         c1 = gw.remote_exec("channel.send(1) ; channel.receive()")
@@ -391,6 +428,7 @@ class TestTracing:
         gw.exit()
 
     @skip_win_pypy
+    @flakytest
     def test_popen_stderr_tracing(self, capfd, monkeypatch, makegateway):
         monkeypatch.setenv('EXECNET_DEBUG', "2")
         gw = makegateway("popen")
