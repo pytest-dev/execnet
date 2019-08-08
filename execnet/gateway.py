@@ -7,7 +7,6 @@ import sys
 import os
 import inspect
 import types
-import linecache
 import textwrap
 import execnet
 from execnet.gateway_base import Message
@@ -111,22 +110,27 @@ class Gateway(gateway_base.BaseGateway):
             executing code.
         """
         call_name = None
+        file_name = None
         if isinstance(source, types.ModuleType):
-            linecache.updatecache(inspect.getsourcefile(source))
-            source = inspect.getsource(source)
+            file_name = inspect.getsourcefile(source)
+            if not file_name:
+                source = inspect.getsource(source)
+            else:
+                source = None
         elif isinstance(source, types.FunctionType):
             call_name = source.__name__
+            file_name = inspect.getsourcefile(source)
             source = _source_of_function(source)
         else:
             source = textwrap.dedent(str(source))
 
-        if call_name is None and kwargs:
+        if not call_name and kwargs:
             raise TypeError("can't pass kwargs to non-function remote_exec")
 
         channel = self.newchannel()
         self._send(Message.CHANNEL_EXEC,
                    channel.id,
-                   gateway_base.dumps_internal((source, call_name, kwargs)))
+                   gateway_base.dumps_internal((source, file_name, call_name, kwargs)))
         return channel
 
     def remote_init_threads(self, num=None):
@@ -186,7 +190,7 @@ def _source_of_function(function):
         args = inspect.getargspec(function)[0]
     else:
         args = sig.args
-    if args[0] != 'channel':
+    if not args or args[0] != 'channel':
         raise ValueError('expected first function argument to be `channel`')
 
     if gateway_base.ISPY3:
@@ -213,4 +217,5 @@ def _source_of_function(function):
             used_globals,
         )
 
-    return source
+    leading_ws = "\n" * (codeobj.co_firstlineno - 1)
+    return leading_ws + source
