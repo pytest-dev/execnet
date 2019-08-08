@@ -39,11 +39,11 @@ jobs:
       script: skip
       deploy:
         provider: pypi
-        user: nicoddemus
+        user: __token__
         distributions: sdist bdist_wheel
         skip_upload_docs: true
         password:
-          secure: "l+Khw6WjS1tX+jQ2sGLneAXB7iRKctBx1SnU9jCnRHj1VEN3FhNSKkwaHOvUM56WaPS8Z6KZeDzd4qk0o8bSz+ee+ofpODX+ueherWh3I5pBXdgVC9mpFO5hznBxqSDE/9dvCfPnjed8FE3uMICLxB+0A45zZONaMp1SWSTorOJ7t6MJ9YJwefiCW2Jsw8qcNDJlF2jUzfpOOOMhN824v9R57/o8UnXle9RwqqClq/7OMNqDtFGdYbbLgxoS7RxiknyJ+kRG95bxF/lknPcRrOkpSL+xNcweiFA/cNlz/JQrh6j7HCvUfQYkHAT64CuderUcAHOLhwTDf56j6DSoArxrNKN8vg0wsMqw9wpHI/MmSrw0LMN8MpHXRF902K+DPgxn/yNyJTKR4E3ZZEpJDIYf3Z1K15I2Px/K11r42wP3ulo6yEX7PX6qgPgsRhQuiI8MLrdFnfAjSSWunUsIUGOzO5q/gzaFLT8XlIGI6exuUlyYJfu9Fhtd3PSuEUnxuvEbWLrhOTUfCtVdq9aNV0NiF1bVjPcA0UawD5XUzH7rfBXbkcSHK12C/HzOGUR5UlNeiHnOSVx7FBy7OqbS7/5aBYWtkrAB1cIuhNLJSjOCzGphKvjQtxBja1iJk0atSS4kEKra723rlOZZ6r75bdL9QhB/P5YEnWTIVMbkPZ0="
+          secure: "RE9SLQM4iivAg6DoSZWEfLovHby96QwgIzGBnGWAF8PucP7TlQcE7wvVRY3pY+n/CuEEnDN9KfIBfNVPK6UTbuobJhA3WTg9YkcnfM0K1RfQdNeHgILsG15iHWlMtvoFVkjPKgg/UuRyppL25+142GoqcIzImuN3yjUKkmsjMq0o1WPXJhLrebyq3MF2JRdyraEkYAG3gnHC6mJqUYyiGOH+5koO9F7OvznGAvp7q/HQJ2oxR87DknyWFHGhmiR0yi5hQ7u2SHUuW/6pzOv+qV7ZB54pSEWON3DkoLfbNocu5RHitojydbYdkXGfxuWHFRDU8c6v+f32cEAATbO2rGY1L+SFeJsWiOx4giFtgRNSvfz/7RVHlrrIBEPXZ8jEEUi+wmU5PgYAitPpdeL37BBSJWaiwdlSgE3jw6YwUmu5QUJ2uuY5rv9HZp9yiQbhiDXhD8U2jc5MK5RNQolhKqcC3JZSyfF+/HSJ1aQ6CboXfhNTkcqikEjAhgJ9ne/PDZKokT4VK5odwPFlZDu5E47X4dBmS+QsSAtxD3/lzaZL+qHA5HF9B6wwsZDQ0aJ11MeIT9WAtiBFNrkTz3wpNj7igb32gOmsZQqhlURBJr8YK0yEDGuzSd6ftqAaFvgE1LtSEhQ5SNTKXm6a0EpqbeRSQKhgpqIkYmS/AjGSYvo="
         on:
           tags: true
           repo: pytest-dev/execnet
