@@ -125,6 +125,7 @@ class TestMakegateway:
         assert rinfo.version_info == sys.version_info
 
     @pytest.mark.skipif("not hasattr(os, 'nice')")
+    @pytest.mark.xfail(reason='fails due to timing problems on busy single-core VMs')
     def test_popen_nice(self, makegateway):
         gw = makegateway("popen")
 
