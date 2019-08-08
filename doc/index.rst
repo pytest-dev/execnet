@@ -3,6 +3,12 @@
 .. image:: _static/pythonring.png
    :align: right
 
+
+.. warning::
+
+    execnet currently is in maintenance-only mode, mostly because it is still the backend
+    of the pytest-xdist plugin. Do not use in new projects.
+
 Python_ is a mature dynamic language whose interpreters can interact with
 all major computing platforms today.
 
