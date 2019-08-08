@@ -1,3 +1,8 @@
+.. warning::
+  
+  execnet is currently not maintained
+
+
 execnet: distributed Python deployment and communication
 ========================================================
 
