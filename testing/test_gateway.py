@@ -2,6 +2,8 @@
 mostly functional tests of gateways.
 """
 import os
+from textwrap import dedent
+
 import py
 import pytest
 import socket
@@ -110,19 +112,21 @@ class TestBasicGateway:
         name = channel.receive()
         assert name == 2
 
-    def test_remote_exec_module_with_traceback(self, gw, tmpdir):
+    def test_remote_exec_module_with_traceback(self, gw, tmpdir, monkeypatch):
         remotetest = tmpdir.join("remotetest.py")
-        remotetest.write(
-            "\ndef run_me(channel=None):\n  raise ValueError('me')\n\n" +
-            "if __name__ == '__channelexec__':\n  run_me()\n")
+        remotetest.write(dedent("""
+            def run_me(channel=None):
+                raise ValueError('me')
 
-        try:
-            sys.path.insert(0, str(tmpdir))
-            module = __import__("remotetest")
-        finally:
-            sys.path.pop(0)
+            if __name__ == '__channelexec__':
+                run_me()
+            """)
+        )
 
-        ch = gw.remote_exec(module)
+        monkeypatch.syspath_prepend(tmpdir)
+        import remotetest
+
+        ch = gw.remote_exec(remotetest)
         try:
             ch.receive()
         except execnet.gateway_base.RemoteError as e:
@@ -131,7 +135,7 @@ class TestBasicGateway:
         finally:
             ch.close()
 
-        ch = gw.remote_exec(module.run_me)
+        ch = gw.remote_exec(remotetest.run_me)
         try:
             ch.receive()
         except execnet.gateway_base.RemoteError as e:
