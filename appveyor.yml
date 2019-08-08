@@ -23,3 +23,5 @@ install:
 
 test_script:
   - C:\Python37\python -m tox
+
+skip_tags: true
