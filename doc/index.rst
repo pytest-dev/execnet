@@ -78,12 +78,13 @@ Known uses
 Project status
 --------------------------
 
-The current 1.0 series aims at :doc:`basic API <basics>` stabilization, improved tracing and robust termination.
+The project is currently in **maintenance-only mode**, with PRs fixing bugs being gracefully accepted.
 
-The 1.1 series will target setting up permanent networks and offering unix-shell-like capabilities to spawn processes and applications.
+Currently there are no plans to improve the project further, being maintained mostly because it is
+used as backend of the popular `pytest-xdist <https://github.com/pytest-dev/pytest-xdist>`__ plugin.
 
-execnet was conceived and is `actively developed`_ by `Holger Krekel`_.
-The package is licensed under the MIT license since version 1.2.
+``execnet`` was conceived originally by `Holger Krekel`_ and is licensed under the MIT license
+since version 1.2.
 
 .. _`basic API`: basics.html
 .. _`actively developed`: https://github.com/pytest-dev/execnet
