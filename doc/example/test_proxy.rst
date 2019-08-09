@@ -24,5 +24,3 @@ and uses it to controll new slaves and their environment
     <Gateway id='gw0' receive-live, thread model, 0 active channels>
     >>> group
     <Group ['master', 'gw0']>
-
-

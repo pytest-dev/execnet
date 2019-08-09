@@ -1,22 +1,26 @@
+# -*- coding: utf-8 -*-
 """
 example
 
 reading results from possibly blocking code running in sub processes.
 """
 from __future__ import print_function
+
 import execnet
 
 NUM_PROCESSES = 5
 
 channels = []
 for i in range(NUM_PROCESSES):
-    gw = execnet.makegateway() # or use SSH or socket gateways
-    channel = gw.remote_exec("""
+    gw = execnet.makegateway()  # or use SSH or socket gateways
+    channel = gw.remote_exec(
+        """
         import time
         secs = channel.receive()
         time.sleep(secs)
         channel.send("waited %d secs" % secs)
-    """)
+    """
+    )
     channels.append(channel)
     print("*** instantiated subprocess", gw)
 

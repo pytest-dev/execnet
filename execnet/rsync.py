@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 1:N rsync implemenation on top of execnet.
 
@@ -24,10 +25,11 @@ class RSync(object):
         symlinks will be just copied (regardless of existance of such
         a path on remote side).
     """
+
     def __init__(self, sourcedir, callback=None, verbose=True):
         self._sourcedir = str(sourcedir)
         self._verbose = verbose
-        assert callback is None or hasattr(callback, '__call__')
+        assert callback is None or hasattr(callback, "__call__")
         self._callback = callback
         self._channels = {}
         self._receivequeue = Queue()
@@ -41,8 +43,7 @@ class RSync(object):
             # too early!  we must have got an error
             channel.waitclose()
             # or else we raise one
-            raise IOError('connection unexpectedly closed: {} '.format(
-                channel.gateway))
+            raise IOError("connection unexpectedly closed: {} ".format(channel.gateway))
 
     def _process_link(self, channel):
         for link in self._links:
@@ -70,7 +71,7 @@ class RSync(object):
         modified_rel_path, checksum = data
         modifiedpath = os.path.join(self._sourcedir, *modified_rel_path)
         try:
-            f = open(modifiedpath, 'rb')
+            f = open(modifiedpath, "rb")
             data = f.read()
         except IOError:
             data = None
@@ -89,7 +90,7 @@ class RSync(object):
         if data is not None:
             f.close()
             if checksum is not None and checksum == md5(data).digest():
-                data = None     # not really modified
+                data = None  # not really modified
             else:
                 self._report_send_file(channel.gateway, modified_rel_path)
         channel.send(data)
@@ -105,11 +106,12 @@ class RSync(object):
         """
         if not self._channels:
             if raises:
-                raise IOError("no targets available, maybe you "
-                              "are trying call send() twice?")
+                raise IOError(
+                    "no targets available, maybe you " "are trying call send() twice?"
+                )
             return
         # normalize a trailing '/' away
-        self._sourcedir = os.path.dirname(os.path.join(self._sourcedir, 'x'))
+        self._sourcedir = os.path.dirname(os.path.join(self._sourcedir, "x"))
         # send directory structure and file timestamps/sizes
         self._send_directory_structure(self._sourcedir)
 
@@ -140,16 +142,16 @@ class RSync(object):
                 else:
                     assert "Unknown command %s" % command
 
-    def add_target(self, gateway, destdir,
-                   finishedcallback=None, **options):
+    def add_target(self, gateway, destdir, finishedcallback=None, **options):
         """ Adds a remote target specified via a gateway
             and a remote destination directory.
         """
         for name in options:
-            assert name in ('delete',)
+            assert name in ("delete",)
 
         def itemcallback(req):
             self._receivequeue.put((channel, req))
+
         channel = gateway.remote_exec(execnet.rsync_remote)
         channel.reconfigure(py2str_as_py3str=False, py3str_as_py2str=False)
         channel.setcallback(itemcallback, endmarker=None)
@@ -179,11 +181,9 @@ class RSync(object):
 
     def _send_link_structure(self, path):
         linkpoint = os.readlink(path)
-        basename = path[len(self._sourcedir) + 1:]
+        basename = path[len(self._sourcedir) + 1 :]
         if linkpoint.startswith(self._sourcedir):
-            self._send_link(
-                "linkbase", basename,
-                linkpoint[len(self._sourcedir) + 1:])
+            self._send_link("linkbase", basename, linkpoint[len(self._sourcedir) + 1 :])
         else:
             # relative or absolute link, just send it
             self._send_link("link", basename, linkpoint)

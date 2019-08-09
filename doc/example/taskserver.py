@@ -1,5 +1,4 @@
-
-
+# -*- coding: utf-8 -*-
 import execnet
 
 group = execnet.Group()
@@ -11,13 +10,15 @@ def process_item(channel):
     # task processor, sits on each CPU
     import time
     import random
+
     channel.send("ready")
     for x in channel:
         if x is None:  # we can shutdown
             break
         # sleep random time, send result
         time.sleep(random.randrange(3))
-        channel.send(x*10)
+        channel.send(x * 10)
+
 
 # execute taskprocessor everywhere
 mch = group.remote_exec(process_item)

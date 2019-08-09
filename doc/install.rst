@@ -50,6 +50,3 @@ Next checkout the basic api and examples:
 .. _`pypi release`: http://pypi.python.org/pypi/execnet
 .. _setuptools: http://pypi.python.org/pypi/setuptools
 .. _distribute: http://pypi.python.org/pypi/distribute
-
-
-

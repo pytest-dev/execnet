@@ -1,16 +1,17 @@
+# -*- coding: utf-8 -*-
 """
     tests for multi channels and gateway Groups
 """
-
 import gc
-import pytest
 from time import sleep
+
 import execnet
 import py
-from execnet.gateway_base import Channel
+import pytest
 from execnet import XSpec
-from execnet.multi import safe_terminate
+from execnet.gateway_base import Channel
 from execnet.multi import Group
+from execnet.multi import safe_terminate
 
 
 class TestMultiChannelAndGateway:
@@ -43,10 +44,12 @@ class TestMultiChannelAndGateway:
 
     def test_multichannel_send_each(self):
         gm = execnet.Group(["popen"] * 2)
-        mc = gm.remote_exec("""
+        mc = gm.remote_exec(
+            """
             import os
             channel.send(channel.receive() + 1)
-        """)
+        """
+        )
         mc.send_each(41)
         l = mc.receive_each()
         assert l == [42, 42]
@@ -66,10 +69,12 @@ class TestMultiChannelAndGateway:
 
     def test_multichannel_receive_queue_for_two_subprocesses(self):
         gm = execnet.Group(["popen"] * 2)
-        mc = gm.remote_exec("""
+        mc = gm.remote_exec(
+            """
             import os
             channel.send(os.getpid())
-        """)
+        """
+        )
         queue = mc.make_receive_queue()
         ch, item = queue.get(timeout=10)
         ch2, item2 = queue.get(timeout=10)
@@ -84,6 +89,7 @@ class TestMultiChannelAndGateway:
         class pseudochannel:
             def waitclose(self):
                 l.append(0)
+
         multichannel = execnet.MultiChannel([pseudochannel(), pseudochannel()])
         multichannel.waitclose()
         assert len(l) == 2
@@ -92,8 +98,9 @@ class TestMultiChannelAndGateway:
 class TestGroup:
     def test_basic_group(self, monkeypatch):
         import atexit
+
         atexitlist = []
-        monkeypatch.setattr(atexit, 'register', atexitlist.append)
+        monkeypatch.setattr(atexit, "register", atexitlist.append)
         group = Group()
         assert atexitlist == [group._cleanup_atexit]
         exitlist = []
@@ -117,6 +124,7 @@ class TestGroup:
 
             def join(self):
                 joinlist.append(self)
+
         gw = PseudoGW()
         group._register(gw)
         assert len(exitlist) == 0
@@ -152,7 +160,7 @@ class TestGroup:
         gwlist = list(group)
         assert len(gwlist) == 3
         idlist = [x.id for x in gwlist]
-        assert idlist == list('325')
+        assert idlist == list("325")
         print(group)
         group.terminate()
         print(group)
@@ -177,16 +185,16 @@ class TestGroup:
         gw = group.makegateway("popen//id=hello")
         assert group["hello"] == gw
         with pytest.raises((TypeError, AttributeError)):
-            del group['hello']
+            del group["hello"]
         with pytest.raises((TypeError, AttributeError)):
-            group['hello'] = 5
-        assert 'hello' in group
+            group["hello"] = 5
+        assert "hello" in group
         assert gw in group
         assert len(group) == 1
         gw.exit()
-        assert 'hello' not in group
+        assert "hello" not in group
         with pytest.raises(KeyError):
-            _ = group['hello']
+            _ = group["hello"]
 
     def test_default_group(self):
         oldlist = list(execnet.default_group)
@@ -201,26 +209,29 @@ class TestGroup:
 
     def test_remote_exec_args(self):
         group = Group()
-        group.makegateway('popen')
+        group.makegateway("popen")
 
         def fun(channel, arg):
             channel.send(arg)
+
         mch = group.remote_exec(fun, arg=1)
         result = mch.receive_each()
         assert result == [1]
 
     def test_terminate_with_proxying(self):
         group = Group()
-        group.makegateway('popen//id=master')
-        group.makegateway('popen//via=master//id=slave')
+        group.makegateway("popen//id=master")
+        group.makegateway("popen//via=master//id=slave")
         group.terminate(1.0)
 
 
 def test_safe_terminate(execmodel):
     if execmodel.backend != "threading":
-        pytest.xfail("execution model %r does not support task count" %
-                     execmodel.backend)
+        pytest.xfail(
+            "execution model %r does not support task count" % execmodel.backend
+        )
     import threading
+
     active = threading.active_count()
     l = []
 
@@ -229,6 +240,7 @@ def test_safe_terminate(execmodel):
 
     def kill():
         l.append(1)
+
     safe_terminate(execmodel, 1, [(term, kill)] * 10)
     assert len(l) == 10
     sleep(0.1)
@@ -238,9 +250,11 @@ def test_safe_terminate(execmodel):
 
 def test_safe_terminate2(execmodel):
     if execmodel.backend != "threading":
-        pytest.xfail("execution model %r does not support task count" %
-                     execmodel.backend)
+        pytest.xfail(
+            "execution model %r does not support task count" % execmodel.backend
+        )
     import threading
+
     active = threading.active_count()
     l = []
 
@@ -249,6 +263,7 @@ def test_safe_terminate2(execmodel):
 
     def kill():
         l.append(1)
+
     safe_terminate(execmodel, 3, [(term, kill)] * 10)
     assert len(l) == 0
     sleep(0.1)

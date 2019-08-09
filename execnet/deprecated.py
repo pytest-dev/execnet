@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 some deprecated calls
 
@@ -43,5 +44,6 @@ def SshGateway(sshaddress, remotepython=None, ssh_config=None):
 
 def APIWARN(version, msg, stacklevel=3):
     import warnings
+
     Warn = DeprecationWarning("(since version {}) {}".format(version, msg))
     warnings.warn(Warn, stacklevel=stacklevel)

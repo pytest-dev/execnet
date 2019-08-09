@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+# -*- coding: utf-8 -*-
 """
 
 small utility for hot-syncing a svn repository through ssh.
@@ -7,16 +7,17 @@ uses execnet.
 
 """
 from __future__ import print_function
+
+import os
+import sys
+
 import execnet
 import py
-import sys
-import os
 
 
 def usage():
     arg0 = sys.argv[0]
-    print(arg0,
-          "[user@]remote-host:/repo/location localrepo [ssh-config-file]")
+    print(arg0, "[user@]remote-host:/repo/location localrepo [ssh-config-file]")
 
 
 def main(args):
@@ -28,7 +29,7 @@ def main(args):
         configfile = args[2]
     else:
         configfile = None
-    remote_host, path = remote.split(':', 1)
+    remote_host, path = remote.split(":", 1)
     print("ssh-connecting to", remote_host)
     gw = getgateway(remote_host, configfile)
 
@@ -39,7 +40,8 @@ def main(args):
     # 2. server checks for newer revisions and sends dumps
     # 3. client receives dumps, updates local repo
     # 4. client goes back to step 1
-    c = gw.remote_exec("""
+    c = gw.remote_exec(
+        """
         import py
         import os
         import time
@@ -75,7 +77,8 @@ def main(args):
             else:
                 # using svn-hook instead would be nice here
                 time.sleep(30)
-    """)
+    """
+    )
 
     c.send((local_rev, path))
     print("checking revisions from %d in %s" % (local_rev, remote))
@@ -118,7 +121,8 @@ def getgateway(host, configfile=None):
         xspec += "//ssh_config=%s" % configfile
     return execnet.makegateway(xspec)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     if len(sys.argv) < 3:
         usage()
         raise SystemExit(1)

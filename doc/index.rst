@@ -32,9 +32,9 @@ Features
 
 * automatic bootstrapping: no manual remote installation.
 
-* safe and simple serialization of python builtin 
-  types for sending/receiving structured data messages. 
-  (New in 1.1) execnet offers a new :ref:`dumps/loads <dumps/loads>` 
+* safe and simple serialization of python builtin
+  types for sending/receiving structured data messages.
+  (New in 1.1) execnet offers a new :ref:`dumps/loads <dumps/loads>`
   API which allows cross-interpreter compatible serialization
   of Python builtin types.
 
@@ -53,7 +53,7 @@ Features
 Known uses
 -------------------
 
-* `py.test`_ uses it for its `distributed testing`_ mechanism.
+* `pytest`_ uses it for its `distributed testing`_ mechanism.
 
 * `quora`_ uses it for `connecting CPython and PyPy`_.
 
@@ -69,7 +69,7 @@ Known uses
 .. _`quora`: http://quora.com
 .. _`connecting CPython and PyPy`: http://www.quora.com/Quora-Infrastructure/Did-Quoras-switch-to-PyPy-result-in-increased-memory-consumption
 
-.. _`py.test`: http://pytest.org
+.. _`pytest`: https://docs.pytest.org
 .. _`distributed testing`: https://pypi.python.org/pypi/pytest-xdist
 .. _`Distributed NTLK with execnet`: http://streamhacker.com/2009/11/29/distributed-nltk-execnet/
 .. _`disco and execnet`: http://streamhacker.com/2009/12/14/execnet-disco-distributed-nltk/
@@ -78,12 +78,13 @@ Known uses
 Project status
 --------------------------
 
-The current 1.0 series aims at :doc:`basic API <basics>` stabilization, improved tracing and robust termination.
+The project is currently in **maintenance-only mode**, with PRs fixing bugs being gracefully accepted.
 
-The 1.1 series will target setting up permanent networks and offering unix-shell-like capabilities to spawn processes and applications.
+Currently there are no plans to improve the project further, being maintained mostly because it is
+used as backend of the popular `pytest-xdist <https://github.com/pytest-dev/pytest-xdist>`__ plugin.
 
-execnet was conceived and is `actively developed`_ by `Holger Krekel`_.
-The package is licensed under the MIT license since version 1.2.
+``execnet`` was conceived originally by `Holger Krekel`_ and is licensed under the MIT license
+since version 1.2.
 
 .. _`basic API`: basics.html
 .. _`actively developed`: https://github.com/pytest-dev/execnet

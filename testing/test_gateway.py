@@ -1,38 +1,44 @@
+# -*- coding: utf-8 -*-
 """
 mostly functional tests of gateways.
 """
 import os
-from textwrap import dedent
-
-import py
-import pytest
 import socket
 import subprocess
 import sys
+from textwrap import dedent
 
 import execnet
-from execnet import gateway_base, gateway_io
+import py
+import pytest
+from execnet import gateway_base
+from execnet import gateway_io
 from test_serializer import _find_version
+
 TESTTIMEOUT = 10.0  # seconds
 needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
 
 
-flakytest = pytest.mark.xfail(reason='on some systems this test fails due to timing problems')
-skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
-                                  reason='failing on Windows on PyPy (#63)')
+flakytest = pytest.mark.xfail(
+    reason="on some systems this test fails due to timing problems"
+)
+skip_win_pypy = pytest.mark.xfail(
+    condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
+    reason="failing on Windows on PyPy (#63)",
+)
 
 
 def fails(*args, **kwargs):
-    0/0
+    0 / 0
 
 
 def test_deprecation(recwarn, monkeypatch):
     execnet.PopenGateway().exit()
     assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(socket, 'socket', fails)
+    monkeypatch.setattr(socket, "socket", fails)
     py.test.raises(Exception, 'execnet.SocketGateway("localhost", 8811)')
     assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(subprocess, 'Popen', fails)
+    monkeypatch.setattr(subprocess, "Popen", fails)
     py.test.raises(Exception, 'execnet.SshGateway("not-existing")')
     assert recwarn.pop(DeprecationWarning)
 
@@ -57,7 +63,8 @@ class TestBasicGateway:
         assert status.numexecuting == 0
 
     def test_exc_info_is_clear_after_gateway_startup(self, gw):
-        ch = gw.remote_exec("""
+        ch = gw.remote_exec(
+            """
                 import traceback, sys
                 excinfo = sys.exc_info()
                 if excinfo != (None, None, None):
@@ -65,7 +72,8 @@ class TestBasicGateway:
                 else:
                     r = 0
                 channel.send(r)
-        """)
+        """
+        )
         res = ch.receive()
         if res != 0:
             pytest.fail("remote raised\n%s" % res)
@@ -116,13 +124,16 @@ class TestBasicGateway:
 
     def test_remote_exec_module_with_traceback(self, gw, tmpdir, monkeypatch):
         remotetest = tmpdir.join("remotetest.py")
-        remotetest.write(dedent("""
+        remotetest.write(
+            dedent(
+                """
             def run_me(channel=None):
                 raise ValueError('me')
 
             if __name__ == '__channelexec__':
                 run_me()
-            """)
+            """
+            )
         )
 
         monkeypatch.syspath_prepend(tmpdir)
@@ -147,54 +158,59 @@ class TestBasicGateway:
             ch.close()
 
     def test_correct_setup_no_py(self, gw):
-        channel = gw.remote_exec("""
+        channel = gw.remote_exec(
+            """
             import sys
             channel.send(list(sys.modules))
-        """)
+        """
+        )
         remotemodules = channel.receive()
-        assert 'py' not in remotemodules, (
-            "py should not be imported on remote side")
+        assert "py" not in remotemodules, "py should not be imported on remote side"
 
     def test_remote_exec_waitclose(self, gw):
-        channel = gw.remote_exec('pass')
+        channel = gw.remote_exec("pass")
         channel.waitclose(TESTTIMEOUT)
 
     def test_remote_exec_waitclose_2(self, gw):
-        channel = gw.remote_exec('def gccycle(): pass')
+        channel = gw.remote_exec("def gccycle(): pass")
         channel.waitclose(TESTTIMEOUT)
 
     def test_remote_exec_waitclose_noarg(self, gw):
-        channel = gw.remote_exec('pass')
+        channel = gw.remote_exec("pass")
         channel.waitclose()
 
     def test_remote_exec_error_after_close(self, gw):
-        channel = gw.remote_exec('pass')
+        channel = gw.remote_exec("pass")
         channel.waitclose(TESTTIMEOUT)
         py.test.raises(IOError, channel.send, 0)
 
     def test_remote_exec_no_explicit_close(self, gw):
-        channel = gw.remote_exec('channel.close()')
+        channel = gw.remote_exec("channel.close()")
         with pytest.raises(channel.RemoteError) as excinfo:
             channel.waitclose(TESTTIMEOUT)
         assert "explicit" in excinfo.value.formatted
 
     def test_remote_exec_channel_anonymous(self, gw):
-        channel = gw.remote_exec('''
+        channel = gw.remote_exec(
+            """
            obj = channel.receive()
            channel.send(obj)
-        ''')
+        """
+        )
         channel.send(42)
         result = channel.receive()
         assert result == 42
 
     @needs_osdup
     def test_confusion_from_os_write_stdout(self, gw):
-        channel = gw.remote_exec("""
+        channel = gw.remote_exec(
+            """
             import os
             os.write(1, 'confusion!'.encode('ascii'))
             channel.send(channel.receive() * 6)
             channel.send(channel.receive() * 6)
-        """)
+        """
+        )
         channel.send(3)
         res = channel.receive()
         assert res == 18
@@ -204,12 +220,14 @@ class TestBasicGateway:
 
     @needs_osdup
     def test_confusion_from_os_write_stderr(self, gw):
-        channel = gw.remote_exec("""
+        channel = gw.remote_exec(
+            """
             import os
             os.write(2, 'test'.encode('ascii'))
             channel.send(channel.receive() * 6)
             channel.send(channel.receive() * 6)
-        """)
+        """
+        )
         channel.send(3)
         res = channel.receive()
         assert res == 18
@@ -223,12 +241,14 @@ class TestBasicGateway:
         assert rinfo.cwd
         assert rinfo.version_info
         assert repr(rinfo)
-        old = gw.remote_exec("""
+        old = gw.remote_exec(
+            """
             import os.path
             cwd = os.getcwd()
             channel.send(os.path.basename(cwd))
             os.chdir('..')
-        """).receive()
+        """
+        ).receive()
         try:
             rinfo2 = gw._rinfo()
             assert rinfo2.cwd == rinfo.cwd
@@ -240,12 +260,12 @@ class TestBasicGateway:
 
 
 class TestPopenGateway:
-    gwtype = 'popen'
+    gwtype = "popen"
 
     def test_chdir_separation(self, tmpdir, makegateway):
         old = tmpdir.chdir()
         try:
-            gw = makegateway('popen')
+            gw = makegateway("popen")
         finally:
             waschangedir = old.chdir()
         c = gw.remote_exec("import os ; channel.send(os.getcwd())")
@@ -261,7 +281,7 @@ class TestPopenGateway:
         num = 4
         l = []
         for i in range(num):
-            l.append(makegateway('popen'))
+            l.append(makegateway("popen"))
         channels = []
         for gw in l:
             channel = gw.remote_exec("""channel.send(42)""")
@@ -278,13 +298,15 @@ class TestPopenGateway:
         assert rinfo.version_info == sys.version_info
 
     def test_waitclose_on_remote_killed(self, makegateway):
-        gw = makegateway('popen')
-        channel = gw.remote_exec("""
+        gw = makegateway("popen")
+        channel = gw.remote_exec(
+            """
             import os
             import time
             channel.send(os.getpid())
             time.sleep(100)
-        """)
+        """
+        )
         remotepid = channel.receive()
         py.process.kill(remotepid)
         with pytest.raises(EOFError):
@@ -295,9 +317,11 @@ class TestPopenGateway:
             channel.receive()
 
     def test_receive_on_remote_sysexit(self, gw):
-        channel = gw.remote_exec("""
+        channel = gw.remote_exec(
+            """
             raise SystemExit()
-        """)
+        """
+        )
         py.test.raises(channel.RemoteError, channel.receive)
 
     def test_dont_write_bytecode(self, makegateway):
@@ -306,11 +330,11 @@ class TestPopenGateway:
             channel.send(sys.dont_write_bytecode)
         """
 
-        gw = makegateway('popen')
+        gw = makegateway("popen")
         channel = gw.remote_exec(check_sys_dont_write_bytecode)
         ret = channel.receive()
         assert not ret
-        gw = makegateway('popen//dont_write_bytecode')
+        gw = makegateway("popen//dont_write_bytecode")
         channel = gw.remote_exec(check_sys_dont_write_bytecode)
         ret = channel.receive()
         assert ret
@@ -318,9 +342,7 @@ class TestPopenGateway:
 
 @py.test.mark.skipif("config.option.broken_isp")
 def test_socket_gw_host_not_found(gw, makegateway):
-    py.test.raises(
-        execnet.HostNotFound, lambda:
-            makegateway("socket=qwepoipqwe:9000"))
+    py.test.raises(execnet.HostNotFound, lambda: makegateway("socket=qwepoipqwe:9000"))
 
 
 class TestSshPopenGateway:
@@ -329,29 +351,27 @@ class TestSshPopenGateway:
     def test_sshconfig_config_parsing(self, monkeypatch, makegateway):
         l = []
         monkeypatch.setattr(
-            gateway_io, "Popen2IOMaster",
-            lambda *args, **kwargs: l.append(args[0]))
-        py.test.raises(
-            AttributeError, lambda:
-            makegateway("ssh=xyz//ssh_config=qwe"))
+            gateway_io, "Popen2IOMaster", lambda *args, **kwargs: l.append(args[0])
+        )
+        py.test.raises(AttributeError, lambda: makegateway("ssh=xyz//ssh_config=qwe"))
 
         assert len(l) == 1
         popen_args = l[0]
-        i = popen_args.index('-F')
-        assert popen_args[i+1] == "qwe"
+        i = popen_args.index("-F")
+        assert popen_args[i + 1] == "qwe"
 
     def test_sshaddress(self, gw, specssh):
         assert gw.remoteaddress == specssh.ssh
 
     def test_host_not_found(self, gw, makegateway):
         py.test.raises(
-            execnet.HostNotFound, lambda:
-            makegateway('ssh=nowhere.codespeak.net'))
+            execnet.HostNotFound, lambda: makegateway("ssh=nowhere.codespeak.net")
+        )
 
 
 class TestThreads:
     def test_threads(self, makegateway):
-        gw = makegateway('popen')
+        gw = makegateway("popen")
         gw.remote_init_threads(3)
         c1 = gw.remote_exec("channel.send(channel.receive())")
         c2 = gw.remote_exec("channel.send(channel.receive())")
@@ -370,11 +390,13 @@ class TestThreads:
         print("remote_init_threads(%d)" % num)
         channels = []
         for x in range(num):
-            ch = gw.remote_exec("""
+            ch = gw.remote_exec(
+                """
                 for x in range(10):
                     channel.send(''*1000)
                 channel.receive()
-            """)
+            """
+            )
             channels.append(ch)
         for ch in channels:
             for x in range(10):
@@ -385,7 +407,7 @@ class TestThreads:
 
     @flakytest
     def test_status_with_threads(self, makegateway):
-        gw = makegateway('popen')
+        gw = makegateway("popen")
         c1 = gw.remote_exec("channel.send(1) ; channel.receive()")
         c2 = gw.remote_exec("channel.send(2) ; channel.receive()")
         c1.receive()
@@ -411,7 +433,7 @@ class TestTracing:
         tmpdir = testdir.tmpdir
         monkeypatch.setenv("TMP", str(tmpdir))
         monkeypatch.setenv("TEMP", str(tmpdir))  # windows
-        monkeypatch.setenv('EXECNET_DEBUG', "1")
+        monkeypatch.setenv("EXECNET_DEBUG", "1")
         gw = makegateway("popen")
         #  hack out the debuffilename
         fn = gw.remote_exec(
@@ -430,7 +452,7 @@ class TestTracing:
     @skip_win_pypy
     @flakytest
     def test_popen_stderr_tracing(self, capfd, monkeypatch, makegateway):
-        monkeypatch.setenv('EXECNET_DEBUG', "2")
+        monkeypatch.setenv("EXECNET_DEBUG", "2")
         gw = makegateway("popen")
         pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
         out, err = capfd.readouterr()
@@ -439,56 +461,64 @@ class TestTracing:
         gw.exit()
 
     def test_no_tracing_by_default(self):
-        assert gateway_base.trace == gateway_base.notrace, \
-            "trace does not to default to empty tracing"
+        assert (
+            gateway_base.trace == gateway_base.notrace
+        ), "trace does not to default to empty tracing"
 
 
 class TestStringCoerce:
     @py.test.mark.skipif('sys.version>="3.0"')
     def test_2to3(self, makegateway):
-        python = _find_version('3')
-        gw = makegateway('popen//python=%s' % python)
-        ch = gw.remote_exec('channel.send(channel.receive())')
-        ch.send('a')
+        python = _find_version("3")
+        gw = makegateway("popen//python=%s" % python)
+        ch = gw.remote_exec("channel.send(channel.receive())")
+        ch.send("a")
         res = ch.receive()
         assert isinstance(res, unicode)
 
         gw.reconfigure(py3str_as_py2str=True)
 
-        ch = gw.remote_exec('channel.send(channel.receive())')
-        ch.send('a')
+        ch = gw.remote_exec("channel.send(channel.receive())")
+        ch.send("a")
         res = ch.receive()
         assert isinstance(res, str)
         gw.exit()
 
     @py.test.mark.skipif('sys.version<"3.0"')
     def test_3to2(self, makegateway):
-        python = _find_version('2')
-        gw = makegateway('popen//python=%s' % python)
+        python = _find_version("2")
+        gw = makegateway("popen//python=%s" % python)
 
-        ch = gw.remote_exec('channel.send(channel.receive())')
-        ch.send(bytes('a', 'ascii'))
+        ch = gw.remote_exec("channel.send(channel.receive())")
+        ch.send(bytes("a", "ascii"))
         res = ch.receive()
         assert isinstance(res, str)
 
         gw.reconfigure(py3str_as_py2str=True, py2str_as_py3str=False)
 
-        ch = gw.remote_exec('channel.send(channel.receive())')
-        ch.send('a')
+        ch = gw.remote_exec("channel.send(channel.receive())")
+        ch.send("a")
         res = ch.receive()
         assert isinstance(res, bytes)
         gw.exit()
 
 
-@pytest.mark.parametrize('spec, expected_args', [
-    ('popen//python=python', ['python']),
-    ('popen//python=sudo -u test python', ['sudo', '-u', 'test', 'python']),
-    pytest.param(r'popen//python=/hans\ alt/bin/python', ['/hans alt/bin/python'],
-                 marks=pytest.mark.skipif(sys.platform.startswith('win'), reason='invalid spec on Windows')),
-    ('popen//python="/u/test me/python" -e', ['/u/test me/python', '-e']),
-])
+@pytest.mark.parametrize(
+    "spec, expected_args",
+    [
+        ("popen//python=python", ["python"]),
+        ("popen//python=sudo -u test python", ["sudo", "-u", "test", "python"]),
+        pytest.param(
+            r"popen//python=/hans\ alt/bin/python",
+            ["/hans alt/bin/python"],
+            marks=pytest.mark.skipif(
+                sys.platform.startswith("win"), reason="invalid spec on Windows"
+            ),
+        ),
+        ('popen//python="/u/test me/python" -e', ["/u/test me/python", "-e"]),
+    ],
+)
 def test_popen_args(spec, expected_args):
-    expected_args = expected_args + [
-        '-u', '-c', gateway_io.popen_bootstrapline]
+    expected_args = expected_args + ["-u", "-c", gateway_io.popen_bootstrapline]
     args = gateway_io.popen_args(execnet.XSpec(spec))
     assert args == expected_args

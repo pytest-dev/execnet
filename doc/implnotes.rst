@@ -31,4 +31,3 @@ The receiver thread terminates if the remote side sends
 a gateway termination message or if the IO-connection drops.
 It puts an end symbol into the execqueue so
 that serve() can cleanly finish as well.
-

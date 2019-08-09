@@ -1,21 +1,28 @@
-import pytest
-import execnet
+# -*- coding: utf-8 -*-
 import subprocess
-import py
 import sys
+
+import execnet
+import py
+import pytest
 from test_gateway import TESTTIMEOUT
+
 execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
 
-skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
-                                  reason='failing on Windows on PyPy (#63)')
+skip_win_pypy = pytest.mark.xfail(
+    condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
+    reason="failing on Windows on PyPy (#63)",
+)
 
 
 def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):
-    gateway = makegateway('popen//python=%s' % anypython)
-    gateway.remote_exec("""
+    gateway = makegateway("popen//python=%s" % anypython)
+    gateway.remote_exec(
+        """
         import time
         time.sleep(10.0)
-    """)
+    """
+    )
 
     def doit():
         gateway.exit()
@@ -29,13 +36,15 @@ def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):
 def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
     if execmodel.backend != "thread":
         pytest.xfail("test and execnet not compatible to greenlets yet")
-    gw = makegateway('popen')
+    gw = makegateway("popen")
     q = execmodel.queue.Queue()
-    channel = gw.remote_exec(source='''
+    channel = gw.remote_exec(
+        source="""
         import os, time
         channel.send(os.getpid())
         time.sleep(100)
-    ''')
+    """
+    )
     pid = channel.receive()
     py.process.kill(pid)
     channel.setcallback(q.put, endmarker=999)
@@ -47,23 +56,23 @@ def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
 
 @skip_win_pypy
 def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
-    if not py.path.local.sysfind('ps'):
+    if not py.path.local.sysfind("ps"):
         py.test.skip("need 'ps' command to externally check process status")
-    monkeypatch.setenv('EXECNET_DEBUG', '2')
+    monkeypatch.setenv("EXECNET_DEBUG", "2")
     gw = makegateway("popen")
     pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
     gw.remote_exec("channel.receive()")
     gw._group.terminate()
     command = ["ps", "-p", str(pid)]
-    popen = subprocess.Popen(command, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT)
+    popen = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     out, err = popen.communicate()
-    out = py.builtin._totext(out, 'utf8')
+    out = py.builtin._totext(out, "utf8")
     assert str(pid) not in out, out
 
 
 def test_close_initiating_remote_no_error(testdir, anypython):
-    p = testdir.makepyfile("""
+    p = testdir.makepyfile(
+        """
         import sys
         sys.path.insert(0, sys.argv[1])
         import execnet
@@ -74,16 +83,15 @@ def test_close_initiating_remote_no_error(testdir, anypython):
         ch2 = gw.remote_exec("channel.receive()")
         print ("termination")
         execnet.default_group.terminate()
-    """)
+    """
+    )
     popen = subprocess.Popen(
-        [str(anypython), str(p), str(execnetdir)],
-        stdout=None, stderr=subprocess.PIPE,)
+        [str(anypython), str(p), str(execnetdir)], stdout=None, stderr=subprocess.PIPE
+    )
     out, err = popen.communicate()
-    print (err)
-    err = err.decode('utf8')
-    lines = [
-        x for x in err.splitlines()
-        if '*sys-package' not in x]
+    print(err)
+    err = err.decode("utf8")
+    lines = [x for x in err.splitlines() if "*sys-package" not in x]
     # print (lines)
     assert not lines
 
@@ -91,7 +99,8 @@ def test_close_initiating_remote_no_error(testdir, anypython):
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
     if pool.execmodel != "thread":
         pytest.xfail("only os threading model supported")
-    p = testdir.makepyfile("""
+    p = testdir.makepyfile(
+        """
         import sys
         sys.path.insert(0, %r)
         import execnet
@@ -111,14 +120,14 @@ def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
         sys.stdout = FlushNoOp()
 
         #  use process at-exit group.terminate call
-    """ % str(execnetdir))
+    """
+        % str(execnetdir)
+    )
     popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE)
     # sync with start-up
     popen.stdout.readline()
     reply = pool.spawn(popen.communicate)
     reply.get(timeout=50)
     out, err = capfd.readouterr()
-    lines = [
-        x for x in err.splitlines()
-        if '*sys-package' not in x]
+    lines = [x for x in err.splitlines() if "*sys-package" not in x]
     assert not lines or "Killed" in err

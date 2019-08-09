@@ -8,8 +8,8 @@ Dumping and loading values across interpreter versions
 
 .. versionadded:: 1.1
 
-Execnet offers a new safe and fast :ref:`dumps/loads API` which you 
-can use to dump builtin python data structures and load them 
+Execnet offers a new safe and fast :ref:`dumps/loads API` which you
+can use to dump builtin python data structures and load them
 later with the same or a different python interpreter (including
 between Python2 and Python3).  The standard library offers
 the pickle and marshal modules but they do not work safely
@@ -23,14 +23,14 @@ of bytecode/strings/unicode types. Here is an example::
     with open("data.py23", "wb") as f:
         f.write(execnet.dumps(["hello", "world"]))
 
-    # using Python3 
+    # using Python3
     import execnet
     with open("data.py23", "rb") as f:
         val = execnet.loads(f.read(), py2str_as_py3str=True)
     assert val == ["hello", "world"]
 
 See the :ref:`dumps/loads API` for more details on string
-conversion options.  Please note, that you can not dump 
+conversion options.  Please note, that you can not dump
 user-level instances, only builtin python types.
 
 Connect to Python2/Numpy from Python3
@@ -151,5 +151,3 @@ using Mono 2.0 and IronPython-1.1 this will print on the CPython side::
    will work better.  please feedback if you have information.
 
 .. _IronPython: http://ironpython.net
-
-

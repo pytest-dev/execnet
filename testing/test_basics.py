@@ -1,13 +1,20 @@
+# -*- coding: utf-8 -*-
 from __future__ import with_statement
-import py
-import pytest
-import sys
+
+import inspect
 import os
 import subprocess
-import inspect
+import sys
+
 import execnet
-from execnet import gateway_base, gateway, gateway_io
-from execnet.gateway_base import Message, ChannelFactory, Popen2IO
+import py
+import pytest
+from execnet import gateway
+from execnet import gateway_base
+from execnet import gateway_io
+from execnet.gateway_base import ChannelFactory
+from execnet.gateway_base import Message
+from execnet.gateway_base import Popen2IO
 
 try:
     from StringIO import StringIO as BytesIO
@@ -15,14 +22,14 @@ except:
     from io import BytesIO
 
 
-skip_win_pypy = pytest.mark.xfail(condition=hasattr(sys, 'pypy_version_info') and sys.platform.startswith('win'),
-                                  reason='failing on Windows on PyPy (#63)')
+skip_win_pypy = pytest.mark.xfail(
+    condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
+    reason="failing on Windows on PyPy (#63)",
+)
 
 
 class TestSerializeAPI:
-    pytestmark = [
-        pytest.mark.parametrize("val", [
-            "123", 42, [1, 2, 3], ["23", 25]])]
+    pytestmark = [pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])]
 
     def test_serializer_api(self, val):
         dumped = execnet.dumps(val)
@@ -49,25 +56,29 @@ class TestSerializeAPI:
 
 def test_serializer_api_version_error(monkeypatch):
     bchr = gateway_base.bchr
-    monkeypatch.setattr(gateway_base, 'DUMPFORMAT_VERSION', bchr(1))
+    monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(1))
     dumped = execnet.dumps(42)
-    monkeypatch.setattr(gateway_base, 'DUMPFORMAT_VERSION', bchr(2))
+    monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(2))
     pytest.raises(execnet.DataFormatError, lambda: execnet.loads(dumped))
 
 
 def test_errors_on_execnet():
-    assert hasattr(execnet, 'RemoteError')
-    assert hasattr(execnet, 'TimeoutError')
-    assert hasattr(execnet, 'DataFormatError')
+    assert hasattr(execnet, "RemoteError")
+    assert hasattr(execnet, "TimeoutError")
+    assert hasattr(execnet, "DataFormatError")
 
 
 def test_subprocess_interaction(anypython):
     line = gateway_io.popen_bootstrapline
-    compile(line, 'xyz', 'exec')
-    args = [str(anypython), '-c', line]
+    compile(line, "xyz", "exec")
+    args = [str(anypython), "-c", line]
     popen = subprocess.Popen(
-        args, bufsize=0, universal_newlines=True,
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        args,
+        bufsize=0,
+        universal_newlines=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
 
     def send(line):
         popen.stdin.write(line)
@@ -90,7 +101,7 @@ def test_subprocess_interaction(anypython):
         send("world\n")
         s = receive()
         assert s == "received: world\n"
-        send('\n')  # terminate loop
+        send("\n")  # terminate loop
     finally:
         popen.stdin.close()
         popen.stdout.close()
@@ -113,7 +124,10 @@ def read_write_loop():
 
 def test_io_message(anypython, tmpdir, execmodel):
     check = tmpdir.join("check.py")
-    check.write(py.code.Source(gateway_base, """
+    check.write(
+        py.code.Source(
+            gateway_base,
+            """
         try:
             from io import BytesIO
         except ImportError:
@@ -138,63 +152,85 @@ def test_io_message(anypython, tmpdir, execmodel):
                 assert msg1.data == msg2.data, (msg1.data, msg2.data)
                 assert msg1.msgcode == msg2.msgcode
         print ("all passed")
-    """.format(backend=execmodel.backend)))
+    """.format(
+                backend=execmodel.backend
+            ),
+        )
+    )
     # out = py.process.cmdexec("%s %s" %(executable,check))
     out = anypython.sysexec(check)
-    print (out)
+    print(out)
     assert "all passed" in out
 
 
 def test_popen_io(anypython, tmpdir, execmodel):
     check = tmpdir.join("check.py")
-    check.write(py.code.Source(gateway_base, """
+    check.write(
+        py.code.Source(
+            gateway_base,
+            """
         do_exec("io = init_popen_io(get_execmodel({backend!r}))", globals())
         io.write("hello".encode('ascii'))
         s = io.read(1)
         assert s == "x".encode('ascii')
-    """.format(backend=execmodel.backend)))
+    """.format(
+                backend=execmodel.backend
+            ),
+        )
+    )
     from subprocess import Popen, PIPE
+
     args = [str(anypython), str(check)]
     proc = Popen(args, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    proc.stdin.write("x".encode('ascii'))
+    proc.stdin.write("x".encode("ascii"))
     stdout, stderr = proc.communicate()
-    print (stderr)
+    print(stderr)
     proc.wait()
-    assert "hello".encode('ascii') in stdout
+    assert "hello".encode("ascii") in stdout
 
 
 def test_popen_io_readloop(monkeypatch, execmodel):
-    sio = BytesIO('test'.encode('ascii'))
+    sio = BytesIO("test".encode("ascii"))
     io = Popen2IO(sio, sio, execmodel)
     real_read = io._read
 
     def newread(numbytes):
         if numbytes > 1:
-            numbytes = numbytes-1
+            numbytes = numbytes - 1
         return real_read(numbytes)
+
     io._read = newread
     result = io.read(3)
-    assert result == 'tes'.encode('ascii')
+    assert result == "tes".encode("ascii")
 
 
 def test_rinfo_source(anypython, tmpdir):
     check = tmpdir.join("check.py")
-    check.write(py.code.Source("""
+    check.write(
+        py.code.Source(
+            """
         class Channel:
             def send(self, data):
                 assert eval(repr(data), {}) == data
         channel = Channel()
-        """, gateway.rinfo_source, """
+        """,
+            gateway.rinfo_source,
+            """
         print ('all passed')
-    """))
+    """,
+        )
+    )
     out = anypython.sysexec(check)
-    print (out)
+    print(out)
     assert "all passed" in out
 
 
 def test_geterrortext(anypython, tmpdir):
     check = tmpdir.join("check.py")
-    check.write(py.code.Source(gateway_base, """
+    check.write(
+        py.code.Source(
+            gateway_base,
+            """
         class Arg:
             pass
         errortext = geterrortext((Arg, "1", 4))
@@ -207,9 +243,11 @@ def test_geterrortext(anypython, tmpdir):
             s = geterrortext(excinfo)
             assert "17" in s
             print ("all passed")
-    """))
+    """,
+        )
+    )
     out = anypython.sysexec(check)
-    print (out)
+    print(out)
     assert "all passed" in out
 
 
@@ -217,7 +255,7 @@ def test_geterrortext(anypython, tmpdir):
 def test_stdouterrin_setnull(execmodel):
     cap = py.io.StdCaptureFD()
     gateway_base.init_popen_io(execmodel)
-    os.write(1, "hello".encode('ascii'))
+    os.write(1, "hello".encode("ascii"))
     os.read(0, 1)
     out, err = cap.reset()
     assert not out
@@ -254,7 +292,7 @@ class TestMessage:
     def test_wire_protocol(self):
         for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
-            data = '23'.encode('ascii')
+            data = "23".encode("ascii")
             Message(i, 42, data).to_io(one)
             two = py.io.BytesIO(one.getvalue())
             msg = Message.from_io(two)
@@ -270,6 +308,7 @@ class TestPureChannel:
     def fac(self, execmodel):
         class Gateway:
             pass
+
         Gateway.execmodel = execmodel
         return ChannelFactory(Gateway)
 
@@ -296,21 +335,21 @@ class TestPureChannel:
 
 
 class TestSourceOfFunction(object):
-
     def test_lambda_unsupported(self):
         pytest.raises(ValueError, gateway._source_of_function, lambda: 1)
 
     def test_wrong_prototype_fails(self):
         def prototype(wrong):
             pass
+
         pytest.raises(ValueError, gateway._source_of_function, prototype)
 
     def test_function_without_known_source_fails(self):
         # this one wont be able to find the source
         mess = {}
-        py.builtin.exec_('def fail(channel): pass', mess, mess)
-        print(inspect.getsourcefile(mess['fail']))
-        pytest.raises(ValueError, gateway._source_of_function, mess['fail'])
+        py.builtin.exec_("def fail(channel): pass", mess, mess)
+        print(inspect.getsourcefile(mess["fail"]))
+        pytest.raises(ValueError, gateway._source_of_function, mess["fail"])
 
     def test_function_with_closure_fails(self):
         mess = {}
@@ -325,7 +364,7 @@ class TestSourceOfFunction(object):
             pass
 
         send_source = gateway._source_of_function(working).lstrip("\r\n")
-        expected = 'def working(channel):\n    pass\n'
+        expected = "def working(channel):\n    pass\n"
         assert send_source == expected
 
 
@@ -348,7 +387,7 @@ class TestGlobalFinder(object):
             d = 4
             return d
 
-        assert self.check(f) == ['sys']
+        assert self.check(f) == ["sys"]
 
     def test_builtin(self):
         def f():
@@ -359,6 +398,7 @@ class TestGlobalFinder(object):
     def test_function_with_global_fails(self):
         def func(channel):
             sys
+
         pytest.raises(ValueError, gateway._source_of_function, func)
 
     def test_method_call(self):
@@ -366,6 +406,7 @@ class TestGlobalFinder(object):
         # for the simple code object based heusteric failing
         def f(channel):
             channel.send(dict(testing=2))
+
         assert self.check(f) == []
 
 
@@ -373,9 +414,10 @@ class TestGlobalFinder(object):
 def test_remote_exec_function_with_kwargs(anypython, makegateway):
     def func(channel, data):
         channel.send(data)
-    gw = makegateway('popen//python=%s' % anypython)
-    print ("local version_info {!r}".format(sys.version_info))
-    print ("remote info: {}".format(gw._rinfo()))
+
+    gw = makegateway("popen//python=%s" % anypython)
+    print("local version_info {!r}".format(sys.version_info))
+    print("remote info: {}".format(gw._rinfo()))
     ch = gw.remote_exec(func, data=1)
     result = ch.receive()
     assert result == 1
@@ -386,17 +428,19 @@ def test_remote_exc__no_kwargs(makegateway):
     with pytest.raises(TypeError):
         gw.remote_exec(gateway_base, kwarg=1)
     with pytest.raises(TypeError):
-        gw.remote_exec('pass', kwarg=1)
+        gw.remote_exec("pass", kwarg=1)
 
 
 @skip_win_pypy
 def test_remote_exec_inspect_stack(makegateway):
     gw = makegateway()
-    ch = gw.remote_exec("""
+    ch = gw.remote_exec(
+        """
         import inspect
         inspect.stack()
         import traceback
         channel.send('\\n'.join(traceback.format_stack()))
-    """)
+    """
+    )
     assert 'File "<remote exec>"' in ch.receive()
     ch.waitclose()

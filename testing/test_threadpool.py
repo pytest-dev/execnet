@@ -1,8 +1,11 @@
+# -*- coding: utf-8 -*-
 from __future__ import with_statement
-import pytest
-import py
-import sys
+
 import os
+import sys
+
+import py
+import pytest
 from execnet.gateway_base import WorkerPool
 
 
@@ -35,6 +38,7 @@ def test_some(pool, execmodel):
         q.put(i)
         while q.qsize():
             execmodel.sleep(0.01)
+
     for i in range(num):
         pool.spawn(f, i)
     for i in range(num):
@@ -65,7 +69,7 @@ def test_waitfinish_on_reply(pool):
     reply = pool.spawn(lambda: l.append(1))
     reply.waitfinish()
     assert l == [1]
-    reply = pool.spawn(lambda: 0/0)
+    reply = pool.spawn(lambda: 0 / 0)
     reply.waitfinish()  # no exception raised
     pytest.raises(ZeroDivisionError, reply.get)
 
@@ -80,11 +84,13 @@ def test_limited_size(execmodel):
     def first():
         q.put(1)
         q2.get()
+
     pool.spawn(first)
     assert q.get() == 1
 
     def second():
         q3.put(3)
+
     # we spawn a second pool to spawn the second function
     # which should block
     pool2 = WorkerPool(execmodel)
@@ -99,6 +105,7 @@ def test_limited_size(execmodel):
 def test_get(pool):
     def f():
         return 42
+
     reply = pool.spawn(f)
     result = reply.get()
     assert result == 42
@@ -108,6 +115,7 @@ def test_get_timeout(execmodel, pool):
     def f():
         execmodel.sleep(0.2)
         return 42
+
     reply = pool.spawn(f)
     with pytest.raises(IOError):
         reply.get(timeout=0.01)
@@ -116,6 +124,7 @@ def test_get_timeout(execmodel, pool):
 def test_get_excinfo(pool):
     def f():
         raise ValueError("42")
+
     reply = pool.spawn(f)
     with py.test.raises(ValueError):
         reply.get(1.0)
@@ -128,6 +137,7 @@ def test_waitall_timeout(pool, execmodel):
 
     def f():
         q.get()
+
     reply = pool.spawn(f)
     assert not pool.waitall(0.01)
     q.put(None)
@@ -142,6 +152,7 @@ def test_pool_clean_shutdown(pool):
 
     def f():
         q.get()
+
     pool.spawn(f)
     assert not pool.waitall(timeout=1.0)
     pool.trigger_shutdown()
@@ -151,12 +162,13 @@ def test_pool_clean_shutdown(pool):
     def wait_then_put():
         pool.execmodel.sleep(0.1)
         q.put(1)
+
     pool.execmodel.start(wait_then_put)
     assert pool.waitall()
     out, err = capture.reset()
     sys.stdout.write(out + "\n")
     sys.stderr.write(err + "\n")
-    assert err == ''
+    assert err == ""
 
 
 def test_primary_thread_integration(execmodel):
@@ -170,10 +182,12 @@ def test_primary_thread_integration(execmodel):
     def do_integrate():
         queue.put(execmodel.get_ident())
         pool.integrate_as_primary_thread()
+
     execmodel.start(do_integrate)
 
     def func():
         queue.put(execmodel.get_ident())
+
     pool.spawn(func)
     ident1 = queue.get()
     ident2 = queue.get()
@@ -190,6 +204,7 @@ def test_primary_thread_integration_shutdown(execmodel):
     def do_integrate():
         queue.put(execmodel.get_ident())
         pool.integrate_as_primary_thread()
+
     execmodel.start(do_integrate)
     queue.get()
 
@@ -198,6 +213,7 @@ def test_primary_thread_integration_shutdown(execmodel):
     def get_two():
         queue.put(execmodel.get_ident())
         queue2.get()
+
     reply = pool.spawn(get_two)
     # make sure get_two is running and blocked on queue2
     queue.get()
