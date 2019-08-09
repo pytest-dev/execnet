@@ -22,6 +22,9 @@ of the pytest-xdist plugin. Do not use in new projects.**
 .. image:: https://ci.appveyor.com/api/projects/status/n9qy8df16my4gds9/branch/master?svg=true
     :target: https://ci.appveyor.com/project/pytestbot/execnet
 
+.. image:: https://img.shields.io/badge/code%20style-black-000000.svg
+    :target: https://github.com/python/black
+
 .. _execnet: http://codespeak.net/execnet
 
 execnet_ provides carefully tested means to ad-hoc interact with Python
