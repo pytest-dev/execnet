@@ -53,7 +53,7 @@ Features
 Known uses
 -------------------
 
-* `py.test`_ uses it for its `distributed testing`_ mechanism.
+* `pytest`_ uses it for its `distributed testing`_ mechanism.
 
 * `quora`_ uses it for `connecting CPython and PyPy`_.
 
@@ -69,7 +69,7 @@ Known uses
 .. _`quora`: http://quora.com
 .. _`connecting CPython and PyPy`: http://www.quora.com/Quora-Infrastructure/Did-Quoras-switch-to-PyPy-result-in-increased-memory-consumption
 
-.. _`py.test`: http://pytest.org
+.. _`pytest`: https://docs.pytest.org
 .. _`distributed testing`: https://pypi.python.org/pypi/pytest-xdist
 .. _`Distributed NTLK with execnet`: http://streamhacker.com/2009/11/29/distributed-nltk-execnet/
 .. _`disco and execnet`: http://streamhacker.com/2009/12/14/execnet-disco-distributed-nltk/
