@@ -1,11 +1,14 @@
+# -*- coding: utf-8 -*-
 """
 code to initialize the remote side of a gateway once the io is created
 """
-import os
 import inspect
+import os
+
 import execnet
 from execnet import gateway_base
 from execnet.gateway import Gateway
+
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
 
@@ -29,7 +32,7 @@ def bootstrap_import(io, spec):
         "serve(init_popen_io(execmodel), id='%s-slave')" % spec.id,
     )
     s = io.read(1)
-    assert s == "1".encode('ascii'), repr(s)
+    assert s == "1".encode("ascii"), repr(s)
 
 
 def bootstrap_exec(io, spec):
@@ -38,12 +41,12 @@ def bootstrap_exec(io, spec):
             io,
             inspect.getsource(gateway_base),
             "execmodel = get_execmodel(%r)" % spec.execmodel,
-            'io = init_popen_io(execmodel)',
+            "io = init_popen_io(execmodel)",
             "io.write('1'.encode('ascii'))",
             "serve(io, id='%s-slave')" % spec.id,
         )
         s = io.read(1)
-        assert s == "1".encode('ascii')
+        assert s == "1".encode("ascii")
     except EOFError:
         ret = io.wait()
         if ret == 255:
@@ -57,7 +60,7 @@ def bootstrap_socket(io, id):
     sendexec(
         io,
         inspect.getsource(gateway_base),
-        'import socket',
+        "import socket",
         inspect.getsource(SocketIO),
         "try: execmodel",
         "except NameError:",
@@ -67,12 +70,12 @@ def bootstrap_socket(io, id):
         "serve(io, id='%s-slave')" % id,
     )
     s = io.read(1)
-    assert s == "1".encode('ascii')
+    assert s == "1".encode("ascii")
 
 
 def sendexec(io, *sources):
     source = "\n".join(sources)
-    io.write((repr(source) + "\n").encode('ascii'))
+    io.write((repr(source) + "\n").encode("ascii"))
 
 
 def fix_pid_for_jython_popen(gw):
@@ -85,7 +88,8 @@ def fix_pid_for_jython_popen(gw):
         #      and not having the popen pid
         if io.popen.pid is None:
             io.popen.pid = gw.remote_exec(
-                "import os; channel.send(os.getpid())").receive()
+                "import os; channel.send(os.getpid())"
+            ).receive()
 
 
 def bootstrap(io, spec):
@@ -99,7 +103,7 @@ def bootstrap(io, spec):
     elif spec.socket:
         bootstrap_socket(io, spec)
     else:
-        raise ValueError('unknown gateway type, cant bootstrap')
+        raise ValueError("unknown gateway type, cant bootstrap")
     gw = Gateway(io, spec)
     fix_pid_for_jython_popen(gw)
     return gw

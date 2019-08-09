@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 redirect output from remote to a local function
 showcasing features of the channel object:
@@ -8,22 +9,30 @@ showcasing features of the channel object:
 
 """
 from __future__ import print_function
+
 import execnet
+
 gw = execnet.makegateway()
 
-outchan = gw.remote_exec("""
+outchan = gw.remote_exec(
+    """
     import sys
     outchan = channel.gateway.newchannel()
     sys.stdout = outchan.makefile("w")
     channel.send(outchan)
-""").receive()
+"""
+).receive()
 
 # note: callbacks execute in receiver thread!
 def write(data):
     print("received:", repr(data))
+
+
 outchan.setcallback(write)
 
-gw.remote_exec("""
+gw.remote_exec(
+    """
     print('hello world')
     print('remote execution ends')
-""").waitclose()
+"""
+).waitclose()

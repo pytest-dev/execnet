@@ -1,10 +1,12 @@
-
+# -*- coding: utf-8 -*-
 import execnet
+
 
 def multiplier(channel, factor):
     while not channel.isclosed():
         param = channel.receive()
         channel.send(param * factor)
+
 
 gw = execnet.makegateway()
 channel = gw.remote_exec(multiplier, factor=10)

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 (c) 2008-2013, holger krekel
 """
@@ -11,9 +12,11 @@ class XSpec:
         * keys are not allowed to start with underscore
         * if no "=value" is given, assume a boolean True value
     """
+
     # XXX allow customization, for only allow specific key names
-    popen = ssh = socket = python = chdir = nice = \
-        dont_write_bytecode = execmodel = None
+    popen = (
+        ssh
+    ) = socket = python = chdir = nice = dont_write_bytecode = execmodel = None
 
     def __init__(self, string):
         self._spec = string
@@ -23,7 +26,7 @@ class XSpec:
             if i == -1:
                 key, value = keyvalue, True
             else:
-                key, value = keyvalue[:i], keyvalue[i + 1:]
+                key, value = keyvalue[:i], keyvalue[i + 1 :]
             if key[0] == "_":
                 raise AttributeError("%r not a valid XSpec key" % key)
             if key in self.__dict__:
@@ -48,10 +51,10 @@ class XSpec:
         return hash(self._spec)
 
     def __eq__(self, other):
-        return self._spec == getattr(other, '_spec', None)
+        return self._spec == getattr(other, "_spec", None)
 
     def __ne__(self, other):
-        return self._spec != getattr(other, '_spec', None)
+        return self._spec != getattr(other, "_spec", None)
 
     def _samefilesystem(self):
         return self.popen is not None and self.chdir is None

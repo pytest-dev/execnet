@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 (c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
@@ -8,6 +9,7 @@ def serve_rsync(channel):
     import stat
     import shutil
     from hashlib import md5
+
     destdir, options = channel.receive()
     modifiedfiles = []
 
@@ -37,10 +39,9 @@ def serve_rsync(channel):
             entrynames = {}
             for entryname in msg:
                 destpath = os.path.join(path, entryname)
-                receive_directory_structure(
-                    destpath, relcomponents + [entryname])
+                receive_directory_structure(destpath, relcomponents + [entryname])
                 entrynames[entryname] = True
-            if options.get('delete'):
+            if options.get("delete"):
                 for othername in os.listdir(path):
                     if othername not in entrynames:
                         otherpath = os.path.join(path, othername)
@@ -54,30 +55,31 @@ def serve_rsync(channel):
                     if msg_size != st.st_size:
                         pass
                     elif msg_mtime != st.st_mtime:
-                        f = open(path, 'rb')
+                        f = open(path, "rb")
                         checksum = md5(f.read()).digest()
                         f.close()
                     elif msg_mode and msg_mode != st.st_mode:
                         os.chmod(path, msg_mode)
                         return
                     else:
-                        return    # already fine
+                        return  # already fine
                 else:
                     remove(path)
             channel.send(("send", (relcomponents, checksum)))
             modifiedfiles.append((path, msg))
+
     receive_directory_structure(destdir, [])
 
-    STRICT_CHECK = False    # seems most useful this way for py.test
+    STRICT_CHECK = False  # seems most useful this way for py.test
     channel.send(("list_done", None))
 
     for path, (mode, time, size) in modifiedfiles:
         data = channel.receive()
-        channel.send(("ack", path[len(destdir) + 1:]))
+        channel.send(("ack", path[len(destdir) + 1 :]))
         if data is not None:
             if STRICT_CHECK and len(data) != size:
-                raise IOError('file modified during rsync: {!r}'.format(path))
-            f = open(path, 'wb')
+                raise IOError("file modified during rsync: {!r}".format(path))
+            f = open(path, "wb")
             f.write(data)
             f.close()
         try:
@@ -107,5 +109,6 @@ def serve_rsync(channel):
         msg = channel.receive()
     channel.send(("done", None))
 
-if __name__ == '__channelexec__':
+
+if __name__ == "__channelexec__":
     serve_rsync(channel)  # noqa

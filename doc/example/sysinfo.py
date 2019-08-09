@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 sysinfo.py [host1] [host2] [options]
 
@@ -5,29 +6,38 @@ obtain system info from remote machine.
 
 (c) Holger Krekel, MIT license
 """
-
 import optparse
-import py
 import re
 import sys
+
 import execnet
+import py
 
 
 parser = optparse.OptionParser(usage=__doc__)
 parser.add_option(
-    "-f", "--sshconfig", action="store", dest="ssh_config", default=None,
+    "-f",
+    "--sshconfig",
+    action="store",
+    dest="ssh_config",
+    default=None,
     help="use given ssh config file,"
-         " and add info all contained hosts for getting info")
+    " and add info all contained hosts for getting info",
+)
 parser.add_option(
-    "-i", "--ignore", action="store", dest="ignores", default=None,
-    help="ignore hosts "
-         "(useful if the list of hostnames come from a file list)")
+    "-i",
+    "--ignore",
+    action="store",
+    dest="ignores",
+    default=None,
+    help="ignore hosts " "(useful if the list of hostnames come from a file list)",
+)
 
 
 def parsehosts(path):
     path = py.path.local(path)
     l = []
-    rex = re.compile(r'Host\s*(\S+)')
+    rex = re.compile(r"Host\s*(\S+)")
     for line in path.readlines():
         m = rex.match(line)
         if m is not None:
@@ -49,33 +59,41 @@ class RemoteInfo:
 
     def getmodattr(self, modpath):
         module = modpath.split(".")[0]
-        return self.exreceive("""
+        return self.exreceive(
+            """
             import %s
             channel.send(%s)
-        """ % (module, modpath))
+        """
+            % (module, modpath)
+        )
 
     def islinux(self):
-        return self.getmodattr('sys.platform').find("linux") != -1
+        return self.getmodattr("sys.platform").find("linux") != -1
 
     def getfqdn(self):
-        return self.exreceive("""
+        return self.exreceive(
+            """
             import socket
             channel.send(socket.getfqdn())
-        """)
+        """
+        )
 
     def getmemswap(self):
         if self.islinux():
-            return self.exreceive(r"""
+            return self.exreceive(
+                r"""
             import commands, re
             out = commands.getoutput("free")
             mem = re.search(r"Mem:\s+(\S*)", out).group(1)
             swap = re.search(r"Swap:\s+(\S*)", out).group(1)
             channel.send((mem, swap))
-            """)
+            """
+            )
 
     def getcpuinfo(self):
         if self.islinux():
-            return self.exreceive("""
+            return self.exreceive(
+                """
                 # a hyperthreaded cpu core only counts as 1, although it
                 # is present as 2 in /proc/cpuinfo.  Counting it as 2 is
                 # misleading because it is *by far* not as efficient as
@@ -96,7 +114,8 @@ class RemoteInfo:
                 numcpus = len(cpus)
                 model = cpuinfo.get("model name")
                 channel.send((numcpus, model))
-            """)
+            """
+            )
 
 
 def debug(*args):
@@ -121,11 +140,8 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
         ri = RemoteInfo(gw)
         # print "%s info:" % sshname
         prefix = sshname.upper() + " "
-        print >>loginfo, prefix, "fqdn:", ri.getfqdn()
-        for attr in (
-            "sys.platform",
-            "sys.version_info",
-        ):
+        print >> loginfo, prefix, "fqdn:", ri.getfqdn()
+        for attr in ("sys.platform", "sys.version_info"):
             loginfo.write("{} {}: ".format(prefix, attr))
             loginfo.flush()
             value = ri.getmodattr(attr)
@@ -135,15 +151,16 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
         memswap = ri.getmemswap()
         if memswap:
             mem, swap = memswap
-            print >>loginfo, prefix, "Memory:", mem, "Swap:", swap
+            print >> loginfo, prefix, "Memory:", mem, "Swap:", swap
         cpuinfo = ri.getcpuinfo()
         if cpuinfo:
             numcpu, model = cpuinfo
-            print >>loginfo, prefix, "number of cpus:",  numcpu
-            print >>loginfo, prefix, "cpu model", model
+            print >> loginfo, prefix, "number of cpus:", numcpu
+            print >> loginfo, prefix, "cpu model", model
         return ri
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     options, args = parser.parse_args()
     hosts = list(args)
     ssh_config = options.ssh_config

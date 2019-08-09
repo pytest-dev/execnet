@@ -81,11 +81,10 @@ saturate multiple Hosts and CPUs with tasks to process
 
 If you have multiple CPUs or hosts you can create as many
 gateways and then have a process sit on each CPU and wait
-for a task to proceed.  One complication is that we 
-want to ensure clean termination of all processes 
+for a task to proceed.  One complication is that we
+want to ensure clean termination of all processes
 and loose no result.  Here is an example that just uses
 local subprocesses and does the task:
 
 .. include:: taskserver.py
     :literal:
-

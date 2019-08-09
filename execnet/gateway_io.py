@@ -1,11 +1,12 @@
+# -*- coding: utf-8 -*-
 """
 execnet io initialization code
 
 creates io instances used for gateway io
 """
 import os
-import sys
 import shlex
+import sys
 
 try:
     from execnet.gateway_base import Popen2IO, Message
@@ -32,7 +33,7 @@ class Popen2IOMaster(Popen2IO):
 
 def killpopen(popen):
     try:
-        if hasattr(popen, 'kill'):
+        if hasattr(popen, "kill"):
             popen.kill()
         else:
             killpid(popen.pid)
@@ -42,13 +43,13 @@ def killpopen(popen):
 
 
 def killpid(pid):
-    if hasattr(os, 'kill'):
+    if hasattr(os, "kill"):
         os.kill(pid, 15)
-    elif sys.platform == "win32" or getattr(os, '_name', None) == 'nt':
+    elif sys.platform == "win32" or getattr(os, "_name", None) == "nt":
         import ctypes
+
         PROCESS_TERMINATE = 1
-        handle = ctypes.windll.kernel32.OpenProcess(
-            PROCESS_TERMINATE, False, pid)
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
         ctypes.windll.kernel32.TerminateProcess(handle, -1)
         ctypes.windll.kernel32.CloseHandle(handle)
     else:
@@ -63,20 +64,20 @@ def shell_split_path(path):
     Use shell lexer to split the given path into a list of components,
     taking care to handle Windows' '\' correctly.
     """
-    if sys.platform.startswith('win'):
+    if sys.platform.startswith("win"):
         # replace \\ by / otherwise shlex will strip them out
-        path = path.replace('\\', '/')
+        path = path.replace("\\", "/")
     return shlex.split(path)
 
 
 def popen_args(spec):
     args = shell_split_path(spec.python) if spec.python else [sys.executable]
-    args.append('-u')
+    args.append("-u")
     if spec is not None and spec.dont_write_bytecode:
         args.append("-B")
     # Slight gymnastics in ordering these arguments because CPython (as of
     # 2.7.1) ignores -B if you provide `python -c "something" -B`
-    args.extend(['-c', popen_bootstrapline])
+    args.extend(["-c", popen_bootstrapline])
     return args
 
 
@@ -87,7 +88,7 @@ def ssh_args(spec):
     remotepython = spec.python or "python"
     args = ["ssh", "-C"]
     if spec.ssh_config is not None:
-        args.extend(['-F', str(spec.ssh_config)])
+        args.extend(["-F", str(spec.ssh_config)])
 
     args.extend(spec.ssh.split())
     remotecmd = '{} -c "{}"'.format(remotepython, popen_bootstrapline)
@@ -102,10 +103,10 @@ def vagrant_ssh_args(spec):
     # NOTE: This should be kept in sync with the ssh_args behaviour.
     # spec.vagrant is identical to spec.ssh in that they both carry
     # the remote host "address".
-    remotepython = spec.python or 'python'
-    args = ['vagrant', 'ssh', spec.vagrant_ssh, '--', '-C']
+    remotepython = spec.python or "python"
+    args = ["vagrant", "ssh", spec.vagrant_ssh, "--", "-C"]
     if spec.ssh_config is not None:
-        args.extend(['-F', str(spec.ssh_config)])
+        args.extend(["-F", str(spec.ssh_config)])
     remotecmd = '{} -c "{}"'.format(remotepython, popen_bootstrapline)
     args.extend([remotecmd])
     return args
@@ -125,6 +126,7 @@ def create_io(spec, execmodel):
         io = Popen2IOMaster(args, execmodel)
         io.remoteaddress = spec.vagrant_ssh
         return io
+
 
 #
 # Proxy Gateway handling code
@@ -147,13 +149,14 @@ class ProxyIO(object):
     with forwarder:serve_proxy_io() which itself
     instantiates and interacts with the sub.
     """
+
     def __init__(self, proxy_channel, execmodel):
         # after exchanging the control channel we use proxy_channel
         # for messaging IO
         self.controlchan = proxy_channel.gateway.newchannel()
         proxy_channel.send(self.controlchan)
         self.iochan = proxy_channel
-        self.iochan_file = self.iochan.makefile('r')
+        self.iochan_file = self.iochan.makefile("r")
         self.execmodel = execmodel
 
     def read(self, nbytes):
@@ -180,7 +183,7 @@ class ProxyIO(object):
         return self._controll(RIO_REMOTEADDRESS)
 
     def __repr__(self):
-        return '<RemoteIO via {}>'.format(self.iochan.gateway.id)
+        return "<RemoteIO via {}>".format(self.iochan.gateway.id)
 
 
 class PseudoSpec:
@@ -194,8 +197,8 @@ class PseudoSpec:
 def serve_proxy_io(proxy_channelX):
     execmodel = proxy_channelX.gateway.execmodel
     log = partial(
-        proxy_channelX.gateway._trace,
-        "serve_proxy_io:%s" % proxy_channelX.id)
+        proxy_channelX.gateway._trace, "serve_proxy_io:%s" % proxy_channelX.id
+    )
     spec = PseudoSpec(proxy_channelX.receive())
     # create sub IO object which we will proxy back to our proxy initiator
     sub_io = create_io(spec, execmodel)
@@ -207,6 +210,7 @@ def serve_proxy_io(proxy_channelX):
     def forward_to_sub(data):
         log("forward data to sub, size %s" % len(data))
         sub_io.write(data)
+
     proxy_channelX.setcallback(forward_to_sub)
 
     def controll(data):
@@ -218,16 +222,17 @@ def serve_proxy_io(proxy_channelX):
             control_chan.send(sub_io.remoteaddress)
         elif data == RIO_CLOSE_WRITE:
             control_chan.send(sub_io.close_write())
+
     control_chan.setcallback(controll)
 
     # write data to the master coming from the sub
     forward_to_master_file = proxy_channelX.makefile("w")
 
     # read bootstrap byte from sub, send it on to master
-    log('reading bootstrap byte from sub', spec.id)
+    log("reading bootstrap byte from sub", spec.id)
     initial = sub_io.read(1)
-    assert initial == '1'.encode('ascii'), initial
-    log('forwarding bootstrap byte from sub', spec.id)
+    assert initial == "1".encode("ascii"), initial
+    log("forwarding bootstrap byte from sub", spec.id)
     forward_to_master_file.write(initial)
 
     # enter message forwarding loop
@@ -235,10 +240,11 @@ def serve_proxy_io(proxy_channelX):
         try:
             message = Message.from_io(sub_io)
         except EOFError:
-            log('EOF from sub, terminating proxying loop', spec.id)
+            log("EOF from sub, terminating proxying loop", spec.id)
             break
         message.to_io(forward_to_master_file)
     # proxy_channelX will be closed from remote_exec's finalization code
+
 
 if __name__ == "__channelexec__":
     serve_proxy_io(channel)  # noqa

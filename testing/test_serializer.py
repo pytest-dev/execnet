@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
+import subprocess
 import sys
 import tempfile
-import subprocess
-import py
+
 import execnet
+import py
 import pytest
 
-MINOR_VERSIONS = {
-    '3': '543210',
-    '2': '76',
-}
+MINOR_VERSIONS = {"3": "543210", "2": "76"}
 
 
 def _find_version(suffix=""):
@@ -17,18 +15,19 @@ def _find_version(suffix=""):
     executable = py.path.local.sysfind(name)
     if executable is None:
         if sys.platform == "win32" and suffix == "3":
-            for name in ('python31', 'python30'):
+            for name in ("python31", "python30"):
                 executable = py.path.local(r"c:\\{}\python.exe".format(name))
                 if executable.check():
                     return executable
-        for tail in MINOR_VERSIONS.get(suffix, ''):
-            path = py.path.local.sysfind('{}.{}'.format(name, tail))
+        for tail in MINOR_VERSIONS.get(suffix, ""):
+            path = py.path.local.sysfind("{}.{}".format(name, tail))
             if path:
                 return path
 
         else:
             py.test.skip("can't find a {!r} executable".format(name))
     return executable
+
 
 TEMPDIR = _py2_wrapper = _py3_wrapper = None
 
@@ -46,39 +45,46 @@ def setup_module(mod):
 def teardown_module(mod):
     TEMPDIR.remove(True)
 
+
 # we use the execnet folder in order to avoid tiggering a missing apipkg
 pyimportdir = str(py.path.local(execnet.__file__).dirpath())
 
 
 class PythonWrapper(object):
-
     def __init__(self, executable):
         self.executable = executable
 
     def dump(self, obj_rep):
         script_file = TEMPDIR.join("dump.py")
-        script_file.write("""
+        script_file.write(
+            """
 import sys
 sys.path.insert(0, %r)
 import gateway_base as serializer
 if sys.version_info > (3, 0): # Need binary output
     sys.stdout = sys.stdout.detach()
 sys.stdout.write(serializer.dumps_internal(%s))
-""" % (pyimportdir, obj_rep,))
-        popen = subprocess.Popen([str(self.executable), str(script_file)],
-                                 stdin=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
-                                 stdout=subprocess.PIPE)
+"""
+            % (pyimportdir, obj_rep)
+        )
+        popen = subprocess.Popen(
+            [str(self.executable), str(script_file)],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
         stdout, stderr = popen.communicate()
         ret = popen.returncode
         if ret:
-            raise py.process.cmdexec.Error(ret, ret, str(self.executable),
-                                           stdout, stderr)
+            raise py.process.cmdexec.Error(
+                ret, ret, str(self.executable), stdout, stderr
+            )
         return stdout
 
     def load(self, data, option_args="__class__"):
         script_file = TEMPDIR.join("load.py")
-        script_file.write(r"""
+        script_file.write(
+            r"""
 import sys
 sys.path.insert(0, %r)
 import gateway_base as serializer
@@ -88,16 +94,21 @@ loader = serializer.Unserializer(sys.stdin)
 loader.%s
 obj = loader.load()
 sys.stdout.write(type(obj).__name__ + "\n")
-sys.stdout.write(repr(obj))""" % (pyimportdir, option_args,))
-        popen = subprocess.Popen([str(self.executable), str(script_file)],
-                                 stdin=subprocess.PIPE,
-                                 stderr=subprocess.PIPE,
-                                 stdout=subprocess.PIPE)
+sys.stdout.write(repr(obj))"""
+            % (pyimportdir, option_args)
+        )
+        popen = subprocess.Popen(
+            [str(self.executable), str(script_file)],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
         stdout, stderr = popen.communicate(data)
         ret = popen.returncode
         if ret:
-            raise py.process.cmdexec.Error(ret, ret, str(self.executable),
-                                           stdout, stderr)
+            raise py.process.cmdexec.Error(
+                ret, ret, str(self.executable), stdout, stderr
+            )
         return [s.decode("ascii") for s in stdout.splitlines()]
 
     def __repr__(self):
@@ -114,24 +125,24 @@ def py3(request):
     return _py3_wrapper
 
 
-@pytest.fixture(params=['py2', 'py3'])
+@pytest.fixture(params=["py2", "py3"])
 def dump(request):
     return request.getfixturevalue(request.param).dump
 
 
-@pytest.fixture(params=['py2', 'py3'])
+@pytest.fixture(params=["py2", "py3"])
 def load(request):
     return request.getfixturevalue(request.param).load
 
 
 simple_tests = [
     # type: expected before/after repr
-    ('int', '4'),
-    ('float', '3.25'),
-    ('complex', '(1.78+3.25j)'),
-    ('list', '[1, 2, 3]'),
-    ('tuple', '(1, 2, 3)'),
-    ('dict', '{(1, 2, 3): 32}'),
+    ("int", "4"),
+    ("float", "3.25"),
+    ("complex", "(1.78+3.25j)"),
+    ("list", "[1, 2, 3]"),
+    ("tuple", "(1, 2, 3)"),
+    ("dict", "{(1, 2, 3): 32}"),
 ]
 
 
@@ -149,13 +160,13 @@ def test_set(py2, py3, dump):
     assert tp == "set"
     # assert v == "set([1, 2, 3])" # ordering prevents this assertion
     assert v.startswith("set([") and v.endswith("])")
-    assert '1' in v and '2' in v and '3' in v
+    assert "1" in v and "2" in v and "3" in v
 
     tp, v = py3.load(p)
     assert tp == "set"
     # assert v == "{1, 2, 3}" # ordering prevents this assertion
     assert v.startswith("{") and v.endswith("}")
-    assert '1' in v and '2' in v and '3' in v
+    assert "1" in v and "2" in v and "3" in v
     p = dump("set()")
     tp, v = py2.load(p)
     assert tp == "set"
@@ -271,5 +282,5 @@ def test_none(dump, load):
 def test_tuple_nested_with_empty_in_between(py2):
     p = py2.dump("(1, (), 3)")
     tp, s = py2.load(p)
-    assert tp == 'tuple'
+    assert tp == "tuple"
     assert s == "(1, (), 3)"

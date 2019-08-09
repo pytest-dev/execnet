@@ -246,4 +246,3 @@ For more examples see :ref:`dumps/loads examples`.
 
 .. autofunction:: execnet.dumps(spec)
 .. autofunction:: execnet.loads(spec)
-

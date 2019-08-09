@@ -1,5 +1,7 @@
-from execnet.gateway_bootstrap import HostNotFound
+# -*- coding: utf-8 -*-
 import sys
+
+from execnet.gateway_bootstrap import HostNotFound
 
 try:
     bytes
@@ -56,7 +58,7 @@ def start_via(gateway, hostport=None):
         after instanciating a socketserver on the given gateway
     """
     if hostport is None:
-        host, port = ('localhost', 0)
+        host, port = ("localhost", 0)
     else:
         host, port = hostport
 
@@ -74,8 +76,7 @@ def start_via(gateway, hostport=None):
 
 
 def create_io(spec, group, execmodel):
-    assert not spec.python, (
-        "socket: specifying python executables not yet supported")
+    assert not spec.python, "socket: specifying python executables not yet supported"
     gateway_id = spec.installvia
     if gateway_id:
         host, port = start_via(group[gateway_id])
@@ -86,7 +87,7 @@ def create_io(spec, group, execmodel):
     socket = execmodel.socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     io = SocketIO(sock, execmodel)
-    io.remoteaddress = '%s:%d' % (host, port)
+    io.remoteaddress = "%s:%d" % (host, port)
     try:
         sock.connect((host, port))
     except execmodel.socket.gaierror:

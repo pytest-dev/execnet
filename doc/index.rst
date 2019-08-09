@@ -32,9 +32,9 @@ Features
 
 * automatic bootstrapping: no manual remote installation.
 
-* safe and simple serialization of python builtin 
-  types for sending/receiving structured data messages. 
-  (New in 1.1) execnet offers a new :ref:`dumps/loads <dumps/loads>` 
+* safe and simple serialization of python builtin
+  types for sending/receiving structured data messages.
+  (New in 1.1) execnet offers a new :ref:`dumps/loads <dumps/loads>`
   API which allows cross-interpreter compatible serialization
   of Python builtin types.
 

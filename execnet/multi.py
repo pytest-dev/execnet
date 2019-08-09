@@ -1,22 +1,27 @@
+# -*- coding: utf-8 -*-
 """
 Managing Gateway Groups and interactions with multiple channels.
 
 (c) 2008-2014, Holger Krekel and others
 """
-
-import sys
 import atexit
+import sys
 from functools import partial
-from execnet import XSpec
-from execnet import gateway_io, gateway_bootstrap
-from execnet.gateway_base import reraise, trace, get_execmodel
 from threading import Lock
+
+from execnet import gateway_bootstrap
+from execnet import gateway_io
+from execnet import XSpec
+from execnet.gateway_base import get_execmodel
+from execnet.gateway_base import reraise
+from execnet.gateway_base import trace
 
 NO_ENDMARKER_WANTED = object()
 
 
 class Group(object):
     """ Gateway Groups. """
+
     defaultspec = "popen"
 
     def __init__(self, xspecs=(), execmodel="thread"):
@@ -57,8 +62,9 @@ class Group(object):
 
         """
         if self._gateways:
-            raise ValueError("can not set execution models if "
-                             "gateways have been created already")
+            raise ValueError(
+                "can not set execution models if " "gateways have been created already"
+            )
         if remote_execmodel is None:
             remote_execmodel = execmodel
         self._execmodel = get_execmodel(execmodel)
@@ -128,6 +134,7 @@ class Group(object):
             gw = gateway_bootstrap.bootstrap(io, spec)
         elif spec.socket:
             from execnet import gateway_socket
+
             io = gateway_socket.create_io(spec, self, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
         else:
@@ -135,7 +142,8 @@ class Group(object):
         gw.spec = spec
         self._register(gw)
         if spec.chdir or spec.nice or spec.env:
-            channel = gw.remote_exec("""
+            channel = gw.remote_exec(
+                """
                 import os
                 path, nice, env = channel.receive()
                 if path:
@@ -147,7 +155,8 @@ class Group(object):
                 if env:
                     for name, value in env.items():
                         os.environ[name] = value
-            """)
+            """
+            )
             nice = spec.nice and int(spec.nice) or 0
             channel.send((spec.chdir, nice, spec.env))
             channel.waitclose()
@@ -164,7 +173,7 @@ class Group(object):
                 spec.id = id
 
     def _register(self, gateway):
-        assert not hasattr(gateway, '_group')
+        assert not hasattr(gateway, "_group")
         assert gateway.id
         assert id not in self
         self._gateways.append(gateway)
@@ -203,10 +212,14 @@ class Group(object):
                 trace("Gateways did not come down after timeout: %r" % gw)
                 gw._io.kill()
 
-            safe_terminate(self.execmodel, timeout, [
-                (partial(join_wait, gw), partial(kill, gw))
-                for gw in self._gateways_to_join
-            ])
+            safe_terminate(
+                self.execmodel,
+                timeout,
+                [
+                    (partial(join_wait, gw), partial(kill, gw))
+                    for gw in self._gateways_to_join
+                ],
+            )
             self._gateways_to_join[:] = []
 
     def remote_exec(self, source, **kwargs):
@@ -240,7 +253,7 @@ class MultiChannel:
             ch.send(item)
 
     def receive_each(self, withchannel=False):
-        assert not hasattr(self, '_queue')
+        assert not hasattr(self, "_queue")
         l = []
         for ch in self._channels:
             obj = ch.receive()
@@ -261,6 +274,7 @@ class MultiChannel:
 
                 def putreceived(obj, channel=ch):
                     self._queue.put((channel, obj))
+
                 if endmarker is NO_ENDMARKER_WANTED:
                     ch.setcallback(putreceived)
                 else:

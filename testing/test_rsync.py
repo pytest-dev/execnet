@@ -1,34 +1,36 @@
-import pytest
-import py
-from execnet import RSync
+# -*- coding: utf-8 -*-
 import execnet
+import py
+import pytest
+from execnet import RSync
 from test_serializer import _find_version
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def group(request):
     group = execnet.Group()
     request.addfinalizer(group.terminate)
     return group
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def gw1(request, group):
-    gw = group.makegateway('popen//id=gw1')
+    gw = group.makegateway("popen//id=gw1")
     request.addfinalizer(gw.exit)
     return gw
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def gw2(request, group):
-    gw = group.makegateway('popen//id=gw2')
+    gw = group.makegateway("popen//id=gw2")
     request.addfinalizer(gw.exit)
     return gw
 
 
 needssymlink = pytest.mark.skipif(
     not hasattr(py.path.local, "mksymlinkto"),
-    reason="py.path.local has no mksymlinkto() on this platform")
+    reason="py.path.local has no mksymlinkto() on this platform",
+)
 
 
 @pytest.fixture
@@ -39,6 +41,7 @@ def dirs(request, tmpdir):
         source = t.join("source")
         dest1 = t.join("dest1")
         dest2 = t.join("dest2")
+
     return dirs
 
 
@@ -54,35 +57,35 @@ class TestRSync:
         dest2 = dirs.dest2
         source = dirs.source
 
-        for s in ('content1', 'content2', 'content2-a-bit-longer'):
-            source.ensure('subdir', 'file1').write(s)
+        for s in ("content1", "content2", "content2-a-bit-longer"):
+            source.ensure("subdir", "file1").write(s)
             rsync = RSync(dirs.source)
             rsync.add_target(gw1, dest)
             rsync.add_target(gw2, dest2)
             rsync.send()
-            assert dest.join('subdir').check(dir=1)
-            assert dest.join('subdir', 'file1').check(file=1)
-            assert dest.join('subdir', 'file1').read() == s
-            assert dest2.join('subdir').check(dir=1)
-            assert dest2.join('subdir', 'file1').check(file=1)
-            assert dest2.join('subdir', 'file1').read() == s
+            assert dest.join("subdir").check(dir=1)
+            assert dest.join("subdir", "file1").check(file=1)
+            assert dest.join("subdir", "file1").read() == s
+            assert dest2.join("subdir").check(dir=1)
+            assert dest2.join("subdir", "file1").check(file=1)
+            assert dest2.join("subdir", "file1").read() == s
             for x in dest, dest2:
                 fn = x.join("subdir", "file1")
                 fn.setmtime(0)
 
-        source.join('subdir').remove('file1')
+        source.join("subdir").remove("file1")
         rsync = RSync(source)
         rsync.add_target(gw2, dest2)
         rsync.add_target(gw1, dest)
         rsync.send()
-        assert dest.join('subdir', 'file1').check(file=1)
-        assert dest2.join('subdir', 'file1').check(file=1)
+        assert dest.join("subdir", "file1").check(file=1)
+        assert dest2.join("subdir", "file1").check(file=1)
         rsync = RSync(source)
         rsync.add_target(gw1, dest, delete=True)
         rsync.add_target(gw2, dest2)
         rsync.send()
-        assert not dest.join('subdir', 'file1').check()
-        assert dest2.join('subdir', 'file1').check()
+        assert not dest.join("subdir", "file1").check()
+        assert dest2.join("subdir", "file1").check()
 
     def test_dirsync_twice(self, dirs, gw1, gw2):
         source = dirs.source
@@ -90,13 +93,13 @@ class TestRSync:
         rsync = RSync(source)
         rsync.add_target(gw1, dirs.dest1)
         rsync.send()
-        assert dirs.dest1.join('hello').check()
+        assert dirs.dest1.join("hello").check()
         with pytest.raises(IOError):
             rsync.send()
         assert rsync.send(raises=False) is None
         rsync.add_target(gw1, dirs.dest2)
         rsync.send()
-        assert dirs.dest2.join('hello').check()
+        assert dirs.dest2.join("hello").check()
         with pytest.raises(IOError):
             rsync.send()
         assert rsync.send(raises=False) is None
@@ -120,8 +123,7 @@ class TestRSync:
         assert not out
         assert not err
 
-    @py.test.mark.skipif(
-        "sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
+    @py.test.mark.skipif("sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
     def test_permissions(self, dirs, gw1, gw2):
         source = dirs.source
         dest = dirs.dest1
@@ -161,15 +163,15 @@ class TestRSync:
         dest = dirs.dest1
         sourcefile = dirs.source.ensure("subdir", "existant")
         source.join("rellink").mksymlinkto(sourcefile, absolute=0)
-        source.join('abslink').mksymlinkto(sourcefile)
+        source.join("abslink").mksymlinkto(sourcefile)
 
         rsync = RSync(source)
         rsync.add_target(gw1, dest)
         rsync.send()
 
         expected = dest.join(sourcefile.relto(dirs.source))
-        assert dest.join('rellink').readlink() == "subdir/existant"
-        assert dest.join('abslink').readlink() == expected
+        assert dest.join("rellink").readlink() == "subdir/existant"
+        assert dest.join("abslink").readlink() == expected
 
     @needssymlink
     def test_symlink2_rsync(self, dirs, gw1):
@@ -186,9 +188,9 @@ class TestRSync:
         expected = dest.join(sourcefile.relto(dirs.source))
         destsub = dest.join("subdir")
         assert destsub.check()
-        assert destsub.join('link1').readlink() == "link2"
-        assert destsub.join('link2').readlink() == expected
-        assert destsub.join('link3').readlink() == source.dirpath()
+        assert destsub.join("link1").readlink() == "link2"
+        assert destsub.join("link2").readlink() == expected
+        assert destsub.join("link3").readlink() == source.dirpath()
 
     def test_callback(self, dirs, gw1):
         dest = dirs.dest1
@@ -205,11 +207,7 @@ class TestRSync:
         rsync.add_target(gw1, dest)
         rsync.send()
 
-        assert total == {
-            ("list", 110): True,
-            ("ack", 100): True,
-            ("ack", 10): True,
-        }
+        assert total == {("list", 110): True, ("ack", 100): True, ("ack", 10): True}
 
     def test_file_disappearing(self, dirs, gw1):
         dest = dirs.dest1
@@ -232,15 +230,15 @@ class TestRSync:
         assert len(dest.listdir()) == 1
         assert len(source.listdir()) == 1
 
-    @py.test.mark.skipif('sys.version_info >= (3,)')
+    @py.test.mark.skipif("sys.version_info >= (3,)")
     def test_2_to_3_bridge_can_send_binary_files(self, tmpdir, makegateway):
-        python = _find_version('3')
-        gw = makegateway('popen//python=%s' % python)
-        source = tmpdir.ensure('source', dir=1)
-        for i, content in enumerate('foo bar baz \x10foo'):
+        python = _find_version("3")
+        gw = makegateway("popen//python=%s" % python)
+        source = tmpdir.ensure("source", dir=1)
+        for i, content in enumerate("foo bar baz \x10foo"):
             source.join(str(i)).write(content)
         rsync = RSync(source)
 
-        target = tmpdir.join('target')
+        target = tmpdir.join("target")
         rsync.add_target(gw, target)
         rsync.send()
