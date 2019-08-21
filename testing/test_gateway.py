@@ -36,10 +36,10 @@ def test_deprecation(recwarn, monkeypatch):
     execnet.PopenGateway().exit()
     assert recwarn.pop(DeprecationWarning)
     monkeypatch.setattr(socket, "socket", fails)
-    py.test.raises(Exception, 'execnet.SocketGateway("localhost", 8811)')
+    py.test.raises(Exception, execnet.SocketGateway, "localhost", 8811)
     assert recwarn.pop(DeprecationWarning)
     monkeypatch.setattr(subprocess, "Popen", fails)
-    py.test.raises(Exception, 'execnet.SshGateway("not-existing")')
+    py.test.raises(Exception, execnet.SshGateway, "not-existing")
     assert recwarn.pop(DeprecationWarning)
 
 
