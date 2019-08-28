@@ -4,6 +4,7 @@ gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2013, Holger Krekel and others
 """
 import inspect
+import linecache
 import os
 import sys
 import textwrap
@@ -111,10 +112,8 @@ class Gateway(gateway_base.BaseGateway):
         file_name = None
         if isinstance(source, types.ModuleType):
             file_name = inspect.getsourcefile(source)
-            if not file_name:
-                source = inspect.getsource(source)
-            else:
-                source = None
+            linecache.updatecache(file_name)
+            source = inspect.getsource(source)
         elif isinstance(source, types.FunctionType):
             call_name = source.__name__
             file_name = inspect.getsourcefile(source)
