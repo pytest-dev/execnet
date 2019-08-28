@@ -14,7 +14,6 @@ NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
 """
 from __future__ import with_statement
 
-import linecache
 import os
 import struct
 import sys
@@ -1077,9 +1076,6 @@ class SlaveGateway(BaseGateway):
                         name = name.encode("ascii")
                     newkwargs[name] = value
                 kwargs = newkwargs
-            if source is None:
-                assert file_name, file_name
-                source = "".join(linecache.updatecache(file_name))
             loc = {"channel": channel, "__name__": "__channelexec__"}
             self._trace("execution starts[%s]: %s" % (channel.id, repr(source)[:50]))
             channel._executing = True
