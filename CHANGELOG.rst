@@ -1,4 +1,10 @@
-1.7.0 (08-08-2019)
+1.7.1 (2019-08-28)
+------------------
+
+* `#108 <https://github.com/pytest-dev/execnet/issues/108>`__: Revert ``linecache`` optimization introduced in ``1.7.0`` which
+  broke remote execution.
+
+1.7.0 (2019-08-08)
 ------------------
 
 * `#102 <https://github.com/pytest-dev/execnet/pull/102>`__: Show paths in stack traces
