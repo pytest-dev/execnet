@@ -122,6 +122,37 @@ class TestBasicGateway:
         name = channel.receive()
         assert name == 2
 
+    def test_remote_exec_module_is_removed(self, gw, tmpdir, monkeypatch):
+        remotetest = tmpdir.join("remote.py")
+        remotetest.write(
+            dedent(
+                """
+            def remote():
+                return True
+
+            if __name__ == '__channelexec__':
+                for item in channel:  # noqa
+                    channel.send(eval(item))  # noqa
+
+            """
+            )
+        )
+
+        monkeypatch.syspath_prepend(tmpdir)
+        import remote
+
+        ch = gw.remote_exec(remote)
+        # simulate sending the code to a remote location that does not have
+        # access to the source
+        tmpdir.remove()
+        ch.send("remote()")
+        try:
+            result = ch.receive()
+        finally:
+            ch.close()
+
+        assert result is True
+
     def test_remote_exec_module_with_traceback(self, gw, tmpdir, monkeypatch):
         remotetest = tmpdir.join("remotetest.py")
         remotetest.write(
