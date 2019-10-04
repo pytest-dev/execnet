@@ -290,6 +290,7 @@ def test_exectask(execmodel):
 
 class TestMessage:
     def test_wire_protocol(self):
+        assert Message._types
         for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
             data = "23".encode("ascii")
