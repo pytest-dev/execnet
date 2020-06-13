@@ -221,7 +221,7 @@ By setting the environment variable ``EXECNET_DEBUG`` you can
 configure a tracing mechanism:
 
 :EXECNET_DEBUG=1:  write per-process trace-files to ``execnet-debug-PID``
-:EXECNET_DEBUG=2:  perform tracing to stderr (popen-gateway slaves will send this to their instantiator)
+:EXECNET_DEBUG=2:  perform tracing to stderr (popen-gateway workers will send this to their instantiator)
 
 
 .. _`dumps/loads`:

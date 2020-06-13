@@ -936,7 +936,7 @@ class ChannelFileRead(ChannelFile):
 class BaseGateway(object):
     exc_info = sys.exc_info
     _sysex = sysex
-    id = "<slave>"
+    id = "<worker>"
 
     def __init__(self, io, id, _startcount=2):
         self.execmodel = io.execmodel
@@ -1020,7 +1020,7 @@ class BaseGateway(object):
         self._receivepool.waitall()
 
 
-class SlaveGateway(BaseGateway):
+class WorkerGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
         sourcetask = loads_internal(sourcetask)
         self._execpool.spawn(self.executetask, (channel, sourcetask))
@@ -1061,7 +1061,7 @@ class SlaveGateway(BaseGateway):
             trace("joining receiver thread")
             self.join()
         except KeyboardInterrupt:
-            # in the slave we can't really do anything sensible
+            # in the worker we can't really do anything sensible
             trace("swallowing keyboardinterrupt, serve finished")
 
     def executetask(self, item):
@@ -1550,5 +1550,5 @@ def init_popen_io(execmodel):
 
 
 def serve(io, id):
-    trace("creating slavegateway on {!r}".format(io))
-    SlaveGateway(io=io, id=id, _startcount=2).serve()
+    trace("creating workergateway on {!r}".format(io))
+    WorkerGateway(io=io, id=id, _startcount=2).serve()

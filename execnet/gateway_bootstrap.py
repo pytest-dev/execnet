@@ -29,7 +29,7 @@ def bootstrap_import(io, spec):
         "sys.stdout.write('1')",
         "sys.stdout.flush()",
         "execmodel = get_execmodel(%r)" % spec.execmodel,
-        "serve(init_popen_io(execmodel), id='%s-slave')" % spec.id,
+        "serve(init_popen_io(execmodel), id='%s-worker')" % spec.id,
     )
     s = io.read(1)
     assert s == "1".encode("ascii"), repr(s)
@@ -43,7 +43,7 @@ def bootstrap_exec(io, spec):
             "execmodel = get_execmodel(%r)" % spec.execmodel,
             "io = init_popen_io(execmodel)",
             "io.write('1'.encode('ascii'))",
-            "serve(io, id='%s-slave')" % spec.id,
+            "serve(io, id='%s-worker')" % spec.id,
         )
         s = io.read(1)
         assert s == "1".encode("ascii")
@@ -67,7 +67,7 @@ def bootstrap_socket(io, id):
         "   execmodel = get_execmodel('thread')",
         "io = SocketIO(clientsock, execmodel)",
         "io.write('1'.encode('ascii'))",
-        "serve(io, id='%s-slave')" % id,
+        "serve(io, id='%s-worker')" % id,
     )
     s = io.read(1)
     assert s == "1".encode("ascii")

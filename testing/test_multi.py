@@ -221,7 +221,7 @@ class TestGroup:
     def test_terminate_with_proxying(self):
         group = Group()
         group.makegateway("popen//id=master")
-        group.makegateway("popen//via=master//id=slave")
+        group.makegateway("popen//via=master//id=worker")
         group.terminate(1.0)
 
 
