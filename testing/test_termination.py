@@ -15,7 +15,7 @@ skip_win_pypy = pytest.mark.xfail(
 )
 
 
-def test_exit_blocked_slave_execution_gateway(anypython, makegateway, pool):
+def test_exit_blocked_worker_execution_gateway(anypython, makegateway, pool):
     gateway = makegateway("popen//python=%s" % anypython)
     gateway.remote_exec(
         """

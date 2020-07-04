@@ -282,7 +282,7 @@ class PseudoChannel:
 def test_exectask(execmodel):
     io = py.io.BytesIO()
     io.execmodel = execmodel
-    gw = gateway_base.SlaveGateway(io, id="something")
+    gw = gateway_base.WorkerGateway(io, id="something")
     ch = PseudoChannel()
     gw.executetask((ch, ("raise ValueError()", None, {})))
     assert "ValueError" in str(ch._closed[0])

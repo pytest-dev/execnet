@@ -470,14 +470,14 @@ class TestTracing:
         fn = gw.remote_exec(
             "import execnet;channel.send(execnet.gateway_base.fn)"
         ).receive()
-        slavefile = py.path.local(fn)
-        assert slavefile.check()
-        slave_line = "creating slavegateway"
-        for line in slavefile.readlines():
-            if slave_line in line:
+        workerfile = py.path.local(fn)
+        assert workerfile.check()
+        worker_line = "creating workergateway"
+        for line in workerfile.readlines():
+            if worker_line in line:
                 break
         else:
-            py.test.fail("did not find {!r} in tracefile".format(slave_line))
+            py.test.fail("did not find {!r} in tracefile".format(worker_line))
         gw.exit()
 
     @skip_win_pypy
@@ -487,8 +487,8 @@ class TestTracing:
         gw = makegateway("popen")
         pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
         out, err = capfd.readouterr()
-        slave_line = "[%s] creating slavegateway" % pid
-        assert slave_line in err
+        worker_line = "[%s] creating workergateway" % pid
+        assert worker_line in err
         gw.exit()
 
     def test_no_tracing_by_default(self):

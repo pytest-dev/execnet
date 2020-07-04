@@ -343,7 +343,7 @@
   to let KeyboardInterrupts pass through.
 
 - EXECNET_DEBUG=2 will cause tracing to go to stderr,
-  which with popen slave gateways will relay back
+  which with popen worker gateways will relay back
   tracing to the instantiator process.
 
 
