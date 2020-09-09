@@ -94,6 +94,7 @@ def bind_and_listen(hostport, execmodel):
 
 
 def startserver(serversock, loop=False):
+    execute_path = os.getcwd()
     try:
         while 1:
             try:
@@ -108,6 +109,7 @@ def startserver(serversock, loop=False):
                 else:
                     excinfo = sys.exc_info()
                     print_("got exception", excinfo[1])
+            os.chdir(execute_path)
             if not loop:
                 break
     finally:
@@ -123,10 +125,10 @@ if __name__ == "__main__":
     else:
         hostport = ":8888"
     from execnet.gateway_base import get_execmodel
-
     execmodel = get_execmodel("thread")
     serversock = bind_and_listen(hostport, execmodel)
-    startserver(serversock, loop=False)
+    startserver(serversock, loop=True)
+
 elif __name__ == "__channelexec__":
     chan = globals()["channel"]
     execmodel = chan.gateway.execmodel
