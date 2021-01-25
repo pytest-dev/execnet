@@ -74,7 +74,6 @@ def test_waitfinish_on_reply(pool):
     pytest.raises(ZeroDivisionError, reply.get)
 
 
-@pytest.mark.xfail(reason="WorkerPool does not implement limited size")
 def test_limited_size(execmodel):
     pool = WorkerPool(execmodel, size=1)
     q = execmodel.queue.Queue()
