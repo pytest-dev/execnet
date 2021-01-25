@@ -75,7 +75,10 @@ class Gateway(gateway_base.BaseGateway):
         """ return some sys/env information from remote. """
         if update or not hasattr(self, "_cache_rinfo"):
             ch = self.remote_exec(rinfo_source)
-            self._cache_rinfo = RInfo(ch.receive())
+            try:
+                self._cache_rinfo = RInfo(ch.receive())
+            finally:
+                ch.waitclose()
         return self._cache_rinfo
 
     def hasreceiver(self):
