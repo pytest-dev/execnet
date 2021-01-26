@@ -17,13 +17,13 @@ import execnet.rsync_remote
 
 
 class RSync(object):
-    """ This class allows to send a directory structure (recursively)
-        to one or multiple remote filesystems.
+    """This class allows to send a directory structure (recursively)
+    to one or multiple remote filesystems.
 
-        There is limited support for symlinks, which means that symlinks
-        pointing to the sourcetree will be send "as is" while external
-        symlinks will be just copied (regardless of existance of such
-        a path on remote side).
+    There is limited support for symlinks, which means that symlinks
+    pointing to the sourcetree will be send "as is" while external
+    symlinks will be just copied (regardless of existance of such
+    a path on remote side).
     """
 
     def __init__(self, sourcedir, callback=None, verbose=True):
@@ -52,8 +52,7 @@ class RSync(object):
         channel.send(42)
 
     def _done(self, channel):
-        """ Call all callbacks
-        """
+        """Call all callbacks"""
         finishedcallback = self._channels.pop(channel)
         if finishedcallback:
             finishedcallback()
@@ -66,8 +65,7 @@ class RSync(object):
             self._callback("list", s, channel)
 
     def _send_item(self, channel, data):
-        """ Send one item
-        """
+        """Send one item"""
         modified_rel_path, checksum = data
         modifiedpath = os.path.join(self._sourcedir, *modified_rel_path)
         try:
@@ -100,7 +98,7 @@ class RSync(object):
             print("{} <= {}".format(gateway, modified_rel_path))
 
     def send(self, raises=True):
-        """ Sends a sourcedir to all added targets. Flag indicates
+        """Sends a sourcedir to all added targets. Flag indicates
         whether to raise an error or return in case of lack of
         targets
         """
@@ -143,8 +141,8 @@ class RSync(object):
                     assert "Unknown command %s" % command
 
     def add_target(self, gateway, destdir, finishedcallback=None, **options):
-        """ Adds a remote target specified via a gateway
-            and a remote destination directory.
+        """Adds a remote target specified via a gateway
+        and a remote destination directory.
         """
         for name in options:
             assert name in ("delete",)

@@ -8,8 +8,8 @@ import execnet
 
 
 def PopenGateway(python=None):
-    """ instantiate a gateway to a subprocess
-        started with the given 'python' executable.
+    """instantiate a gateway to a subprocess
+    started with the given 'python' executable.
     """
     APIWARN("1.0.0b4", "use makegateway('popen')")
     spec = execnet.XSpec("popen")
@@ -18,12 +18,12 @@ def PopenGateway(python=None):
 
 
 def SocketGateway(host, port):
-    """ This Gateway provides interaction with a remote process
-        by connecting to a specified socket.  On the remote
-        side you need to manually start a small script
-        (py/execnet/script/socketserver.py) that accepts
-        SocketGateway connections or use the experimental
-        new_remote() method on existing gateways.
+    """This Gateway provides interaction with a remote process
+    by connecting to a specified socket.  On the remote
+    side you need to manually start a small script
+    (py/execnet/script/socketserver.py) that accepts
+    SocketGateway connections or use the experimental
+    new_remote() method on existing gateways.
     """
     APIWARN("1.0.0b4", "use makegateway('socket=host:port')")
     spec = execnet.XSpec("socket={}:{}".format(host, port))
@@ -31,9 +31,9 @@ def SocketGateway(host, port):
 
 
 def SshGateway(sshaddress, remotepython=None, ssh_config=None):
-    """ instantiate a remote ssh process with the
-        given 'sshaddress' and remotepython version.
-        you may specify an ssh_config file.
+    """instantiate a remote ssh process with the
+    given 'sshaddress' and remotepython version.
+    you may specify an ssh_config file.
     """
     APIWARN("1.0.0b4", "use makegateway('ssh=host')")
     spec = execnet.XSpec("ssh=%s" % sshaddress)

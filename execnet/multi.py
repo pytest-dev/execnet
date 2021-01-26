@@ -25,7 +25,7 @@ class Group(object):
     defaultspec = "popen"
 
     def __init__(self, xspecs=(), execmodel="thread"):
-        """ initialize group and make gateways as specified.
+        """initialize group and make gateways as specified.
         execmodel can be 'thread' or 'eventlet'.
         """
         self._gateways = []
@@ -51,7 +51,7 @@ class Group(object):
         return self._remote_execmodel
 
     def set_execmodel(self, execmodel, remote_execmodel=None):
-        """ Set the execution model for local and remote site.
+        """Set the execution model for local and remote site.
 
         execmodel can be one of "thread" or "eventlet" (XXX gevent).
         It determines the execution model for any newly created gateway.
@@ -188,7 +188,7 @@ class Group(object):
         self.terminate(timeout=1.0)
 
     def terminate(self, timeout=None):
-        """ trigger exit of member gateways and wait for termination
+        """trigger exit of member gateways and wait for termination
         of member gateways and associated subprocesses.  After waiting
         timeout seconds try to to kill local sub processes of popen-
         and ssh-gateways.  Timeout defaults to None meaning
@@ -223,8 +223,8 @@ class Group(object):
             self._gateways_to_join[:] = []
 
     def remote_exec(self, source, **kwargs):
-        """ remote_exec source on all member gateways and return
-            MultiChannel connecting to all sub processes.
+        """remote_exec source on all member gateways and return
+        MultiChannel connecting to all sub processes.
         """
         channels = []
         for gw in self:

@@ -5,12 +5,12 @@
 
 
 class XSpec:
-    """ Execution Specification: key1=value1//key2=value2 ...
-        * keys need to be unique within the specification scope
-        * neither key nor value are allowed to contain "//"
-        * keys are not allowed to contain "="
-        * keys are not allowed to start with underscore
-        * if no "=value" is given, assume a boolean True value
+    """Execution Specification: key1=value1//key2=value2 ...
+    * keys need to be unique within the specification scope
+    * neither key nor value are allowed to contain "//"
+    * keys are not allowed to contain "="
+    * keys are not allowed to start with underscore
+    * if no "=value" is given, assume a boolean True value
     """
 
     # XXX allow customization, for only allow specific key names
