@@ -187,9 +187,9 @@ def get_execmodel(backend):
 
 
 class Reply(object):
-    """ reply instances provide access to the result
-        of a function execution that got dispatched
-        through WorkerPool.spawn()
+    """reply instances provide access to the result
+    of a function execution that got dispatched
+    through WorkerPool.spawn()
     """
 
     def __init__(self, task, threadmodel):
@@ -198,10 +198,10 @@ class Reply(object):
         self.running = True
 
     def get(self, timeout=None):
-        """ get the result object from an asynchronous function execution.
-            if the function execution raised an exception,
-            then calling get() will reraise that exception
-            including its traceback.
+        """get the result object from an asynchronous function execution.
+        if the function execution raised an exception,
+        then calling get() will reraise that exception
+        including its traceback.
         """
         self.waitfinish(timeout)
         try:
@@ -228,14 +228,14 @@ class Reply(object):
 
 
 class WorkerPool(object):
-    """ A WorkerPool allows to spawn function executions
-        to threads, returning a reply object on which you
-        can ask for the result (and get exceptions reraised).
+    """A WorkerPool allows to spawn function executions
+    to threads, returning a reply object on which you
+    can ask for the result (and get exceptions reraised).
 
-        This implementation allows the main thread to integrate
-        itself into performing function execution through
-        calling integrate_as_primary_thread() which will return
-        when the pool received a trigger_shutdown().
+    This implementation allows the main thread to integrate
+    itself into performing function execution through
+    calling integrate_as_primary_thread() which will return
+    when the pool received a trigger_shutdown().
     """
 
     def __init__(self, execmodel, hasprimary=False):
@@ -253,7 +253,7 @@ class WorkerPool(object):
             self._primary_thread_task_ready = None
 
     def integrate_as_primary_thread(self):
-        """ integrate the thread with which we are called as a primary
+        """integrate the thread with which we are called as a primary
         thread for executing functions triggered with spawn().
         """
         assert self.execmodel.backend == "thread", self.execmodel
@@ -303,8 +303,8 @@ class WorkerPool(object):
         return False
 
     def spawn(self, func, *args, **kwargs):
-        """ return Reply object for the asynchronous dispatch
-            of the given func(*args, **kwargs).
+        """return Reply object for the asynchronous dispatch
+        of the given func(*args, **kwargs).
         """
         reply = Reply((func, args, kwargs), self.execmodel)
         with self._running_lock:
@@ -572,14 +572,14 @@ class Channel(object):
         self.gateway._trace(self.id, *msg)
 
     def setcallback(self, callback, endmarker=NO_ENDMARKER_WANTED):
-        """ set a callback function for receiving items.
+        """set a callback function for receiving items.
 
-            All already queued items will immediately trigger the callback.
-            Afterwards the callback will execute in the receiver thread
-            for each received data item and calls to ``receive()`` will
-            raise an error.
-            If an endmarker is specified the callback will eventually
-            be called with the endmarker when the channel closes.
+        All already queued items will immediately trigger the callback.
+        Afterwards the callback will execute in the receiver thread
+        for each received data item and calls to ``receive()`` will
+        raise an error.
+        If an endmarker is specified the callback will eventually
+        be called with the endmarker when the channel closes.
         """
         _callbacks = self.gateway._channelfactory._callbacks
         with self.gateway._receivelock:
@@ -650,15 +650,15 @@ class Channel(object):
     # public API for channel objects
     #
     def isclosed(self):
-        """ return True if the channel is closed. A closed
-            channel may still hold items.
+        """return True if the channel is closed. A closed
+        channel may still hold items.
         """
         return self._closed
 
     def makefile(self, mode="w", proxyclose=False):
-        """ return a file-like object.
-            mode can be 'w' or 'r' for writeable/readable files.
-            if proxyclose is true file.close() will also close the channel.
+        """return a file-like object.
+        mode can be 'w' or 'r' for writeable/readable files.
+        if proxyclose is true file.close() will also close the channel.
         """
         if mode == "w":
             return ChannelFileWrite(channel=self, proxyclose=proxyclose)
@@ -667,10 +667,10 @@ class Channel(object):
         raise ValueError("mode {!r} not availabe".format(mode))
 
     def close(self, error=None):
-        """ close down this channel with an optional error message.
-            Note that closing of a channel tied to remote_exec happens
-            automatically at the end of execution and cannot
-            be done explicitely.
+        """close down this channel with an optional error message.
+        Note that closing of a channel tied to remote_exec happens
+        automatically at the end of execution and cannot
+        be done explicitely.
         """
         if self._executing:
             raise IOError("cannot explicitly close channel within remote_exec")
@@ -699,7 +699,7 @@ class Channel(object):
             self.gateway._channelfactory._no_longer_opened(self.id)
 
     def waitclose(self, timeout=None):
-        """ wait until this channel is closed (or the remote side
+        """wait until this channel is closed (or the remote side
         otherwise signalled that no more data was being sent).
         The channel may still hold receiveable items, but not receive
         any more after waitclose() has returned.  Exceptions from executing
@@ -1319,7 +1319,7 @@ _buildopcodes()
 
 
 def dumps(obj):
-    """ return a serialized bytestring of the given obj.
+    """return a serialized bytestring of the given obj.
 
     The obj and all contained objects must be of a builtin
     python type (so nested dicts, sets, etc. are all ok but
@@ -1334,7 +1334,7 @@ def dump(byteio, obj):
 
 
 def loads(bytestring, py2str_as_py3str=False, py3str_as_py2str=False):
-    """ return the object as deserialized from the given bytestring.
+    """return the object as deserialized from the given bytestring.
 
     py2str_as_py3str: if true then string (str) objects previously
                       dumped on Python2 will be loaded as Python3
@@ -1354,7 +1354,7 @@ def loads(bytestring, py2str_as_py3str=False, py3str_as_py2str=False):
 
 
 def load(io, py2str_as_py3str=False, py3str_as_py2str=False):
-    """ derserialize an object form the specified stream.
+    """derserialize an object form the specified stream.
 
     Behaviour and parameters are otherwise the same as with ``loads``
     """
