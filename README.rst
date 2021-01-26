@@ -47,9 +47,6 @@ Features
 
 * grouped creation and robust termination of processes
 
-* well tested between CPython 2.7, 3.4+, Jython 2.5.1 and PyPy 2.2
-  interpreters.
-
 * interoperable between Windows and Unix-ish systems.
 
 * integrates with different threading models, including standard

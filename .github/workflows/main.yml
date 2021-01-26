@@ -10,13 +10,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["2.7", "3.4", "3.5", "3.6", "3.7", "3.8", "3.9"]
+        python: ["2.7", "3.5", "3.6", "3.7", "3.8", "3.9", "pypy-3.7", "pypy-2.7"]
         os: [ubuntu-latest, windows-latest]
         include:
           - python: "2.7"
             tox_env: "py27"
-          - python: "3.4"
-            tox_env: "py34"
           - python: "3.5"
             tox_env: "py35"
           - python: "3.6"
@@ -27,6 +25,10 @@ jobs:
             tox_env: "py38"
           - python: "3.9"
             tox_env: "py39"
+          - python: "pypy-2.7"
+            tox_env: "py27"
+          - python: "pypy-3.7"
+            tox_env: "py37"
 
     steps:
     - uses: actions/checkout@v1
