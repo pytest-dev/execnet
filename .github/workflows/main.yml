@@ -26,9 +26,9 @@ jobs:
           - python: "3.9"
             tox_env: "py39"
           - python: "pypy-2.7"
-            tox_env: "py27"
+            tox_env: "pypy2"
           - python: "pypy-3.7"
-            tox_env: "py37"
+            tox_env: "pypy3"
 
     steps:
     - uses: actions/checkout@v1
