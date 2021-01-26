@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import subprocess
 import sys
 import tempfile
@@ -148,6 +149,14 @@ simple_tests = [
 
 @py.test.mark.parametrize(["tp_name", "repr"], simple_tests)
 def test_simple(tp_name, repr, dump, load):
+    if (
+        sys.platform.startswith("win")
+        and os.environ.get("GITHUB_ACTIONS", "") == "true"
+    ):
+        pytest.skip(
+            "GitHub Actions on Windows doesn't support Python 2 and 3 at the same time."
+        )
+
     p = dump(repr)
     tp, v = load(p)
     assert tp == tp_name
