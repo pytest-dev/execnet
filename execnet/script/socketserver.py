@@ -125,6 +125,7 @@ if __name__ == "__main__":
     else:
         hostport = ":8888"
     from execnet.gateway_base import get_execmodel
+
     execmodel = get_execmodel("thread")
     serversock = bind_and_listen(hostport, execmodel)
     startserver(serversock, loop=True)
