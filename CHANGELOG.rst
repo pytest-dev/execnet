@@ -1,4 +1,4 @@
-1.8.0 (UNRELEASED)
+1.8.0 (2020-01-27)
 ------------------
 
 * Dropped support for Python 3.4.
