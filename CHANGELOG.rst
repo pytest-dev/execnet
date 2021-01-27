@@ -2,6 +2,13 @@
 ------------------
 
 * Dropped support for Python 3.4.
+* `#118 <https://github.com/pytest-dev/execnet/pull/118>`__: Fixed internal leak that should make
+  ``execnet`` execute remote code in the main thread more often; previously it would sometimes
+  spawn a thread to execute a ``remote_exec`` call, even when the caller
+  didn't issue multiple ``remote_exec`` calls at the same time. Some frameworks require code
+  to execute in the main thread, so the previous behavior would break them on occasion (see
+  `pytest-dev/pytest-xdist#620 <https://github.com/pytest-dev/pytest-xdist/issues/620>`__
+  for an example).
 
 
 1.7.1 (2019-08-28)
