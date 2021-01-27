@@ -2,6 +2,7 @@
 ------------------
 
 * Dropped support for Python 3.4.
+
 * `#118 <https://github.com/pytest-dev/execnet/pull/118>`__: Fixed internal leak that should make
   ``execnet`` execute remote code in the main thread more often; previously it would sometimes
   spawn a thread to execute a ``remote_exec`` call, even when the caller
@@ -10,6 +11,9 @@
   `pytest-dev/pytest-xdist#620 <https://github.com/pytest-dev/pytest-xdist/issues/620>`__
   for an example).
 
+* `#115 <https://github.com/pytest-dev/execnet/pull/115>`__: Current working directory is now
+  restored when calling ``script/socketserver.py``. The script now also loops by default
+  when called from the command-line.
 
 1.7.1 (2019-08-28)
 ------------------
