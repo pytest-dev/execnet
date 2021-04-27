@@ -239,7 +239,7 @@ class WorkerPool(object):
     """
 
     def __init__(self, execmodel, hasprimary=False):
-        """ by default allow unlimited number of spawns. """
+        """by default allow unlimited number of spawns."""
         self.execmodel = execmodel
         self._running_lock = self.execmodel.Lock()
         self._running = set()
@@ -316,12 +316,12 @@ class WorkerPool(object):
         return reply
 
     def terminate(self, timeout=None):
-        """ trigger shutdown and wait for completion of all executions. """
+        """trigger shutdown and wait for completion of all executions."""
         self.trigger_shutdown()
         return self.waitall(timeout=timeout)
 
     def waitall(self, timeout=None):
-        """ wait until all active spawns have finished executing. """
+        """wait until all active spawns have finished executing."""
         with self._running_lock:
             if not self._running:
                 return True
@@ -393,7 +393,7 @@ class Popen2IO:
         self.execmodel = execmodel
 
     def read(self, numbytes):
-        """Read exactly 'numbytes' bytes from the pipe. """
+        """Read exactly 'numbytes' bytes from the pipe."""
         # a file in non-blocking mode may return less bytes, so we loop
         buf = bytes()
         while numbytes > len(buf):
@@ -404,7 +404,7 @@ class Popen2IO:
         return buf
 
     def write(self, data):
-        """write out all data bytes. """
+        """write out all data bytes."""
         assert isinstance(data, bytes)
         self._write(data)
         self.outfile.flush()
@@ -417,7 +417,7 @@ class Popen2IO:
 
 
 class Message:
-    """ encapsulates Messages and their wire protocol. """
+    """encapsulates Messages and their wire protocol."""
 
     _types = []
 
@@ -453,7 +453,7 @@ class Message:
 
 
 class GatewayReceivedTerminate(Exception):
-    """ Receiverthread got termination message. """
+    """Receiverthread got termination message."""
 
 
 def _setupmessages():
@@ -525,7 +525,7 @@ def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sys
 
 
 class RemoteError(Exception):
-    """ Exception containing a stringified error from the other side. """
+    """Exception containing a stringified error from the other side."""
 
     def __init__(self, formatted):
         self.formatted = formatted
@@ -544,7 +544,7 @@ class RemoteError(Exception):
 
 
 class TimeoutError(IOError):
-    """ Exception indicating that a timeout was reached. """
+    """Exception indicating that a timeout was reached."""
 
 
 NO_ENDMARKER_WANTED = object()
@@ -787,7 +787,7 @@ class ChannelFactory(object):
         self._list = list  # needed during interp-shutdown
 
     def new(self, id=None):
-        """ create a new Channel with 'id' (or create new id if None). """
+        """create a new Channel with 'id' (or create new id if None)."""
         with self._writelock:
             if self.finished:
                 raise IOError("connexion already closed: {}".format(self.gateway))
@@ -1011,11 +1011,11 @@ class BaseGateway(object):
     # _____________________________________________________________________
     #
     def newchannel(self):
-        """ return a new independent channel. """
+        """return a new independent channel."""
         return self._channelfactory.new()
 
     def join(self, timeout=None):
-        """ Wait for receiverthread to terminate. """
+        """Wait for receiverthread to terminate."""
         self._trace("waiting for receiver thread to finish")
         self._receivepool.waitall()
 
@@ -1296,7 +1296,7 @@ class Unserializer(object):
 
 
 class opcode:
-    """ container for name -> num mappings. """
+    """container for name -> num mappings."""
 
 
 def _buildopcodes():
@@ -1329,7 +1329,7 @@ def dumps(obj):
 
 
 def dump(byteio, obj):
-    """ write a serialized bytestring of the given obj to the given stream. """
+    """write a serialized bytestring of the given obj to the given stream."""
     _Serializer(write=byteio.write).save(obj, versioned=True)
 
 

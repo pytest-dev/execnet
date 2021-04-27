@@ -18,7 +18,7 @@ importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
 
 class Gateway(gateway_base.BaseGateway):
-    """ Gateway to a local or remote Python Intepreter. """
+    """Gateway to a local or remote Python Intepreter."""
 
     def __init__(self, io, spec):
         super(Gateway, self).__init__(io=io, id=spec.id, _startcount=1)
@@ -30,7 +30,7 @@ class Gateway(gateway_base.BaseGateway):
         return self._io.remoteaddress
 
     def __repr__(self):
-        """ return string representing gateway type and status. """
+        """return string representing gateway type and status."""
         try:
             r = self.hasreceiver() and "receive-live" or "not-receiving"
             i = len(self._channelfactory.channels())
@@ -72,7 +72,7 @@ class Gateway(gateway_base.BaseGateway):
         self._send(Message.RECONFIGURE, data=data)
 
     def _rinfo(self, update=False):
-        """ return some sys/env information from remote. """
+        """return some sys/env information from remote."""
         if update or not hasattr(self, "_cache_rinfo"):
             ch = self.remote_exec(rinfo_source)
             try:
@@ -82,11 +82,11 @@ class Gateway(gateway_base.BaseGateway):
         return self._cache_rinfo
 
     def hasreceiver(self):
-        """ return True if gateway is able to receive data. """
+        """return True if gateway is able to receive data."""
         return self._receivepool.active_count() > 0
 
     def remote_status(self):
-        """ return information object about remote execution status. """
+        """return information object about remote execution status."""
         channel = self.newchannel()
         self._send(Message.STATUS, channel.id)
         statusdict = channel.receive()
@@ -136,7 +136,7 @@ class Gateway(gateway_base.BaseGateway):
         return channel
 
     def remote_init_threads(self, num=None):
-        """ DEPRECATED.  Is currently a NO-OPERATION already."""
+        """DEPRECATED.  Is currently a NO-OPERATION already."""
         print("WARNING: remote_init_threads()" " is a no-operation in execnet-1.2")
 
 

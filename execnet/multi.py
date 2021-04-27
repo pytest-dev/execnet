@@ -20,7 +20,7 @@ NO_ENDMARKER_WANTED = object()
 
 
 class Group(object):
-    """ Gateway Groups. """
+    """Gateway Groups."""
 
     defaultspec = "popen"
 
@@ -163,7 +163,7 @@ class Group(object):
         return gw
 
     def allocate_id(self, spec):
-        """ (re-entrant) allocate id for the given xspec object. """
+        """(re-entrant) allocate id for the given xspec object."""
         if spec.id is None:
             with self._autoidlock:
                 id = "gw" + str(self._autoidcounter)
