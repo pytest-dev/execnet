@@ -295,7 +295,7 @@ class WorkerPool(object):
         # note that we should be called with _running_lock hold
         primary_thread_task_ready = self._primary_thread_task_ready
         if primary_thread_task_ready is not None:
-            if not primary_thread_task_ready.isSet():
+            if not primary_thread_task_ready.is_set():
                 self._primary_thread_task = reply
                 # wake up primary thread
                 primary_thread_task_ready.set()
@@ -591,7 +591,7 @@ class Channel(object):
                 try:
                     olditem = items.get(block=False)
                 except self.gateway.execmodel.queue.Empty:
-                    if not (self._closed or self._receiveclosed.isSet()):
+                    if not (self._closed or self._receiveclosed.is_set()):
                         _callbacks[self.id] = (callback, endmarker, self._strconfig)
                     break
                 else:
@@ -616,7 +616,7 @@ class Channel(object):
             # state transition "closed" --> "deleted"
             for error in self._remoteerrors:
                 error.warn()
-        elif self._receiveclosed.isSet():
+        elif self._receiveclosed.is_set():
             # state transition "sendonly" --> "deleted"
             # the remote channel is already in "deleted" state, nothing to do
             pass
@@ -682,7 +682,7 @@ class Channel(object):
             # but it's never damaging to send too many CHANNEL_CLOSE messages
             # however, if the other side triggered a close already, we
             # do not send back a closed message.
-            if not self._receiveclosed.isSet():
+            if not self._receiveclosed.is_set():
                 put = self.gateway._send
                 if error is not None:
                     put(Message.CHANNEL_CLOSE_ERROR, self.id, dumps_internal(error))
@@ -711,7 +711,7 @@ class Channel(object):
         """
         # wait for non-"opened" state
         self._receiveclosed.wait(timeout=timeout)
-        if not self._receiveclosed.isSet():
+        if not self._receiveclosed.is_set():
             raise self.TimeoutError("Timeout after %r seconds" % timeout)
         error = self._getremoteerror()
         if error:
