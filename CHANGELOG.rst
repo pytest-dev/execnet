@@ -1,3 +1,8 @@
+1.8.1 (2021-05-27)
+------------------
+
+* Update calls of `threading.Event.isSet()` to `threading.Event.is_set()`, which avoids a deprecation warning with Python 3.10.
+
 1.8.0 (2021-01-27)
 ------------------
 
