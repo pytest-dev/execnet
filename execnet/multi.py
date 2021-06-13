@@ -9,12 +9,12 @@ import sys
 from functools import partial
 from threading import Lock
 
-from execnet import gateway_bootstrap
-from execnet import gateway_io
-from execnet import XSpec
-from execnet.gateway_base import get_execmodel
-from execnet.gateway_base import reraise
-from execnet.gateway_base import trace
+from . import gateway_bootstrap
+from . import gateway_io
+from .gateway_base import get_execmodel
+from .gateway_base import reraise
+from .gateway_base import trace
+from .xspec import XSpec
 
 NO_ENDMARKER_WANTED = object()
 
@@ -133,7 +133,7 @@ class Group(object):
             io = gateway_io.create_io(spec, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
         elif spec.socket:
-            from execnet import gateway_socket
+            from . import gateway_socket
 
             io = gateway_socket.create_io(spec, self, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
