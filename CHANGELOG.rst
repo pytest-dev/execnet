@@ -1,5 +1,5 @@
-TBD (Unreleased)
-----------------
+1.9.0 (2021-06-13)
+------------------
 
 * Removed the ``apipkg`` dependency.
 
