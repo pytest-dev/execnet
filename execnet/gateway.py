@@ -11,8 +11,9 @@ import textwrap
 import types
 
 import execnet
-from execnet import gateway_base
-from execnet.gateway_base import Message
+
+from . import gateway_base
+from .gateway_base import Message
 
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 

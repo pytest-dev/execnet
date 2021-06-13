@@ -1,3 +1,8 @@
+TBD (Unreleased)
+----------------
+
+* Removed the ``apipkg`` dependency.
+
 1.8.1 (2021-05-27)
 ------------------
 
