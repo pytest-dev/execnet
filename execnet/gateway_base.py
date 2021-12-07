@@ -348,7 +348,6 @@ if DEBUG == "2":
         except Exception:
             pass  # nothing we can do, likely interpreter-shutdown
 
-
 elif DEBUG:
     import tempfile
     import os
@@ -368,7 +367,6 @@ elif DEBUG:
                 sys.stderr.write("[{}] exception during tracing: {!r}\n".format(pid, v))
             except Exception:
                 pass  # nothing we can do, likely interpreter-shutdown
-
 
 else:
     notrace = trace = lambda *msg: None
@@ -1125,7 +1123,6 @@ if ISPY3:
 
     def bchr(n):
         return bytes([n])
-
 
 else:
     bchr = chr
