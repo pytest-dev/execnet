@@ -7,29 +7,45 @@ pure python lib for connecting to local and remote Python Interpreters.
 
 (c) 2012, Holger Krekel and others
 """
-import apipkg
+from ._version import version as __version__
+from .deprecated import PopenGateway
+from .deprecated import SocketGateway
+from .deprecated import SshGateway
+from .gateway_base import DataFormatError
+from .gateway_base import dump
+from .gateway_base import dumps
+from .gateway_base import load
+from .gateway_base import loads
+from .gateway_base import RemoteError
+from .gateway_base import TimeoutError
+from .gateway_bootstrap import HostNotFound
+from .multi import default_group
+from .multi import Group
+from .multi import makegateway
+from .multi import MultiChannel
+from .multi import set_execmodel
+from .rsync import RSync
+from .xspec import XSpec
 
-apipkg.initpkg(
-    __name__,
-    {
-        "__version__": "._version:version",
-        "PopenGateway": ".deprecated:PopenGateway",
-        "SocketGateway": ".deprecated:SocketGateway",
-        "SshGateway": ".deprecated:SshGateway",
-        "makegateway": ".multi:makegateway",
-        "set_execmodel": ".multi:set_execmodel",
-        "HostNotFound": ".gateway_bootstrap:HostNotFound",
-        "RemoteError": ".gateway_base:RemoteError",
-        "TimeoutError": ".gateway_base:TimeoutError",
-        "XSpec": ".xspec:XSpec",
-        "Group": ".multi:Group",
-        "MultiChannel": ".multi:MultiChannel",
-        "RSync": ".rsync:RSync",
-        "default_group": ".multi:default_group",
-        "dumps": ".gateway_base:dumps",
-        "loads": ".gateway_base:loads",
-        "load": ".gateway_base:load",
-        "dump": ".gateway_base:dump",
-        "DataFormatError": ".gateway_base:DataFormatError",
-    },
-)
+
+__all__ = [
+    "__version__",
+    "PopenGateway",
+    "SocketGateway",
+    "SshGateway",
+    "makegateway",
+    "set_execmodel",
+    "HostNotFound",
+    "RemoteError",
+    "TimeoutError",
+    "XSpec",
+    "Group",
+    "MultiChannel",
+    "RSync",
+    "default_group",
+    "dumps",
+    "loads",
+    "load",
+    "dump",
+    "DataFormatError",
+]

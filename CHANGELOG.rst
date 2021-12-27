@@ -1,3 +1,30 @@
+1.9.0 (2021-06-13)
+------------------
+
+* Removed the ``apipkg`` dependency.
+
+1.8.1 (2021-05-27)
+------------------
+
+* Update calls of `threading.Event.isSet()` to `threading.Event.is_set()`, which avoids a deprecation warning with Python 3.10.
+
+1.8.0 (2021-01-27)
+------------------
+
+* Dropped support for Python 3.4.
+
+* `#118 <https://github.com/pytest-dev/execnet/pull/118>`__: Fixed internal leak that should make
+  ``execnet`` execute remote code in the main thread more often; previously it would sometimes
+  spawn a thread to execute a ``remote_exec`` call, even when the caller
+  didn't issue multiple ``remote_exec`` calls at the same time. Some frameworks require code
+  to execute in the main thread, so the previous behavior would break them on occasion (see
+  `pytest-dev/pytest-xdist#620 <https://github.com/pytest-dev/pytest-xdist/issues/620>`__
+  for an example).
+
+* `#115 <https://github.com/pytest-dev/execnet/pull/115>`__: Current working directory is now
+  restored when calling ``script/socketserver.py``. The script now also loops by default
+  when called from the command-line.
+
 1.7.1 (2019-08-28)
 ------------------
 

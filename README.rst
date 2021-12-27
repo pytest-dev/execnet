@@ -16,11 +16,8 @@ of the pytest-xdist plugin. Do not use in new projects.**
 .. image:: https://img.shields.io/pypi/pyversions/execnet.svg
     :target: https://pypi.org/project/execnet/
 
-.. image:: https://travis-ci.org/pytest-dev/execnet.svg?branch=master
-    :target: https://travis-ci.org/pytest-dev/execnet
-
-.. image:: https://ci.appveyor.com/api/projects/status/n9qy8df16my4gds9/branch/master?svg=true
-    :target: https://ci.appveyor.com/project/pytestbot/execnet
+.. image:: https://github.com/pytest-dev/execnet/workflows/build/badge.svg
+    :target: https://github.com/pytest-dev/execnet/actions?query=workflow%3Abuild
 
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg
     :target: https://github.com/python/black
@@ -46,9 +43,6 @@ Features
 * simple serialization of python builtin types (no pickling)
 
 * grouped creation and robust termination of processes
-
-* well tested between CPython 2.7, 3.4+, Jython 2.5.1 and PyPy 2.2
-  interpreters.
 
 * interoperable between Windows and Unix-ish systems.
 

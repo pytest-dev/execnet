@@ -142,7 +142,7 @@ RIO_CLOSE_WRITE = 4
 
 
 class ProxyIO(object):
-    """ A Proxy IO object allows to instantiate a Gateway
+    """A Proxy IO object allows to instantiate a Gateway
     through another "via" gateway.  A master:ProxyIO object
     provides an IO object effectively connected to the sub
     via the forwarder.  To achieve this, master:ProxyIO interacts

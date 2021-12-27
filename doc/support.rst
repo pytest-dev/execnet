@@ -7,7 +7,10 @@ are welcome to:
 * join `execnet-dev`_ for general discussions
 * join `execnet-commit`_ to be notified of changes
 * clone the `github repository`_ and submit patches
-* hang out on the irc.freenode.net #pylib channel
+* hang out on the #pytest channel `on irc.libera.chat
+<ircs://irc.libera.chat:6697/#pytest>`_ (using an IRC client, `via webchat
+<https://web.libera.chat/#pytest>`_, or `via Matrix
+<https://matrix.to/#/%23pytest:libera.chat>`_).
 * follow the `tetamap blog`_ or `Holger's twitter presence`_.
 * contact merlinux_ if you want to buy teaching or other support.
 

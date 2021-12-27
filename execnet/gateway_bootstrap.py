@@ -6,8 +6,9 @@ import inspect
 import os
 
 import execnet
-from execnet import gateway_base
-from execnet.gateway import Gateway
+
+from . import gateway_base
+from .gateway import Gateway
 
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 

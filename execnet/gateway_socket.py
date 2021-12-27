@@ -54,8 +54,8 @@ class SocketIO:
 
 
 def start_via(gateway, hostport=None):
-    """ return a host, port tuple,
-        after instanciating a socketserver on the given gateway
+    """return a host, port tuple,
+    after instanciating a socketserver on the given gateway
     """
     if hostport is None:
         host, port = ("localhost", 0)
