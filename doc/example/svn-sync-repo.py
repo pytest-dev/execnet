@@ -106,7 +106,7 @@ def svn_load(repo, dumpchannel, maxcount=100):
         if count <= 0:
             dumpchannel.send(maxcount)
             count = maxcount
-    print >>sys.stdout
+    print >> sys.stdout
     f.close()
 
 
