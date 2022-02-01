@@ -119,7 +119,7 @@ class RemoteInfo:
 
 
 def debug(*args):
-    print >>sys.stderr, " ".join(map(str, args))
+    print >> sys.stderr, " ".join(map(str, args))
 
 
 def error(*args):
