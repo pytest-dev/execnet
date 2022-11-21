@@ -26,7 +26,7 @@ def _find_version(suffix=""):
                 return path
 
         else:
-            py.test.skip("can't find a {!r} executable".format(name))
+            pytest.skip("can't find a {!r} executable".format(name))
     return executable
 
 
@@ -147,7 +147,7 @@ simple_tests = [
 ]
 
 
-@py.test.mark.parametrize(["tp_name", "repr"], simple_tests)
+@pytest.mark.parametrize(["tp_name", "repr"], simple_tests)
 def test_simple(tp_name, repr, dump, load):
     if (
         sys.platform.startswith("win")

@@ -126,7 +126,7 @@ def test_get_excinfo(pool):
         raise ValueError("42")
 
     reply = pool.spawn(f)
-    with py.test.raises(ValueError):
+    with pytest.raises(ValueError):
         reply.get(1.0)
     with pytest.raises(ValueError):
         reply.get(1.0)
@@ -145,7 +145,7 @@ def test_waitall_timeout(pool, execmodel):
     assert pool.waitall(timeout=0.1)
 
 
-@py.test.mark.skipif("not hasattr(os, 'dup')")
+@pytest.mark.skipif("not hasattr(os, 'dup')")
 def test_pool_clean_shutdown(pool):
     capture = py.io.StdCaptureFD()
     q = pool.execmodel.queue.Queue()

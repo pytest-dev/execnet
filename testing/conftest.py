@@ -24,7 +24,7 @@ def pytest_runtest_setup(item):
         getspecssh(item.config)  # will skip if no gx given
     yield
     if "pypy" in item.keywords and not item.config.option.pypy:
-        py.test.skip("pypy tests skipped, use --pypy to run them.")
+        pytest.skip("pypy tests skipped, use --pypy to run them.")
 
 
 @pytest.fixture
@@ -74,28 +74,26 @@ def specsocket(request):
     return getsocketspec(request.config)
 
 
-def getgspecs(config=None):
-    if config is None:
-        config = py.test.config
+def getgspecs(config):
     return map(execnet.XSpec, config.getvalueorskip("gspecs"))
 
 
-def getspecssh(config=None):
+def getspecssh(config):
     xspecs = getgspecs(config)
     for spec in xspecs:
         if spec.ssh:
             if not py.path.local.sysfind("ssh"):
-                py.test.skip("command not found: ssh")
+                pytest.skip("command not found: ssh")
             return spec
-    py.test.skip("need '--gx ssh=...'")
+    pytest.skip("need '--gx ssh=...'")
 
 
-def getsocketspec(config=None):
+def getsocketspec(config):
     xspecs = getgspecs(config)
     for spec in xspecs:
         if spec.socket:
             return spec
-    py.test.skip("need '--gx socket=...'")
+    pytest.skip("need '--gx socket=...'")
 
 
 def pytest_generate_tests(metafunc):
@@ -149,7 +147,7 @@ def anypython(request):
                 if executable.check():
                     return executable
                 executable = None
-        py.test.skip("no {} found".format(name))
+        pytest.skip("no {} found".format(name))
     if "execmodel" in request.fixturenames and name != "sys.executable":
         backend = request.getfixturevalue("execmodel").backend
         if backend != "thread":
