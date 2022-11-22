@@ -4,13 +4,12 @@ mostly functional tests of gateways.
 """
 import time
 
-import py
 import pytest
 from test_gateway import _find_version
 
+
 needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
-queue = py.builtin._tryimport("queue", "Queue")
 TESTTIMEOUT = 10.0  # seconds
 
 

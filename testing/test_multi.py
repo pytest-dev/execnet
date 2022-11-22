@@ -141,7 +141,7 @@ class TestGroup:
     def test_group_default_spec(self):
         group = Group()
         group.defaultspec = "not-existing-type"
-        py.test.raises(ValueError, group.makegateway)
+        pytest.raises(ValueError, group.makegateway)
 
     def test_group_PopenGateway(self):
         group = Group()
@@ -176,7 +176,7 @@ class TestGroup:
         assert gw.id == "hello"
         gw = group.makegateway(specs[0])
         assert gw.id == "gw0"
-        # py.test.raises(ValueError,
+        # pytest.raises(ValueError,
         #    group.allocate_id, XSpec("popen//id=hello"))
         group.terminate()
 

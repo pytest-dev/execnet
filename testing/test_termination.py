@@ -57,7 +57,7 @@ def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
 @skip_win_pypy
 def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     if not py.path.local.sysfind("ps"):
-        py.test.skip("need 'ps' command to externally check process status")
+        pytest.skip("need 'ps' command to externally check process status")
     monkeypatch.setenv("EXECNET_DEBUG", "2")
     gw = makegateway("popen")
     pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()

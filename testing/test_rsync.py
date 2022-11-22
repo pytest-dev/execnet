@@ -123,7 +123,7 @@ class TestRSync:
         assert not out
         assert not err
 
-    @py.test.mark.skipif("sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
+    @pytest.mark.skipif("sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
     def test_permissions(self, dirs, gw1, gw2):
         source = dirs.source
         dest = dirs.dest1
@@ -230,7 +230,7 @@ class TestRSync:
         assert len(dest.listdir()) == 1
         assert len(source.listdir()) == 1
 
-    @py.test.mark.skipif("sys.version_info >= (3,)")
+    @pytest.mark.skipif("sys.version_info >= (3,)")
     def test_2_to_3_bridge_can_send_binary_files(self, tmpdir, makegateway):
         python = _find_version("3")
         gw = makegateway("popen//python=%s" % python)

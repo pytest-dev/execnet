@@ -16,7 +16,7 @@ from execnet import gateway_io
 from test_serializer import _find_version
 
 TESTTIMEOUT = 10.0  # seconds
-needs_osdup = py.test.mark.skipif("not hasattr(os, 'dup')")
+needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
 
 
 flakytest = pytest.mark.xfail(
@@ -36,10 +36,10 @@ def test_deprecation(recwarn, monkeypatch):
     execnet.PopenGateway().exit()
     assert recwarn.pop(DeprecationWarning)
     monkeypatch.setattr(socket, "socket", fails)
-    py.test.raises(Exception, execnet.SocketGateway, "localhost", 8811)
+    pytest.raises(Exception, execnet.SocketGateway, "localhost", 8811)
     assert recwarn.pop(DeprecationWarning)
     monkeypatch.setattr(subprocess, "Popen", fails)
-    py.test.raises(Exception, execnet.SshGateway, "not-existing")
+    pytest.raises(Exception, execnet.SshGateway, "not-existing")
     assert recwarn.pop(DeprecationWarning)
 
 
@@ -213,7 +213,7 @@ class TestBasicGateway:
     def test_remote_exec_error_after_close(self, gw):
         channel = gw.remote_exec("pass")
         channel.waitclose(TESTTIMEOUT)
-        py.test.raises(IOError, channel.send, 0)
+        pytest.raises(IOError, channel.send, 0)
 
     def test_remote_exec_no_explicit_close(self, gw):
         channel = gw.remote_exec("channel.close()")
@@ -353,7 +353,7 @@ class TestPopenGateway:
             raise SystemExit()
         """
         )
-        py.test.raises(channel.RemoteError, channel.receive)
+        pytest.raises(channel.RemoteError, channel.receive)
 
     def test_dont_write_bytecode(self, makegateway):
         check_sys_dont_write_bytecode = """
@@ -371,9 +371,9 @@ class TestPopenGateway:
         assert ret
 
 
-@py.test.mark.skipif("config.option.broken_isp")
+@pytest.mark.skipif("config.option.broken_isp")
 def test_socket_gw_host_not_found(gw, makegateway):
-    py.test.raises(execnet.HostNotFound, lambda: makegateway("socket=qwepoipqwe:9000"))
+    pytest.raises(execnet.HostNotFound, lambda: makegateway("socket=qwepoipqwe:9000"))
 
 
 class TestSshPopenGateway:
@@ -384,7 +384,7 @@ class TestSshPopenGateway:
         monkeypatch.setattr(
             gateway_io, "Popen2IOMaster", lambda *args, **kwargs: l.append(args[0])
         )
-        py.test.raises(AttributeError, lambda: makegateway("ssh=xyz//ssh_config=qwe"))
+        pytest.raises(AttributeError, lambda: makegateway("ssh=xyz//ssh_config=qwe"))
 
         assert len(l) == 1
         popen_args = l[0]
@@ -395,7 +395,7 @@ class TestSshPopenGateway:
         assert gw.remoteaddress == specssh.ssh
 
     def test_host_not_found(self, gw, makegateway):
-        py.test.raises(
+        pytest.raises(
             execnet.HostNotFound, lambda: makegateway("ssh=nowhere.codespeak.net")
         )
 
@@ -477,7 +477,7 @@ class TestTracing:
             if worker_line in line:
                 break
         else:
-            py.test.fail("did not find {!r} in tracefile".format(worker_line))
+            pytest.fail("did not find {!r} in tracefile".format(worker_line))
         gw.exit()
 
     @skip_win_pypy
@@ -498,7 +498,7 @@ class TestTracing:
 
 
 class TestStringCoerce:
-    @py.test.mark.skipif('sys.version>="3.0"')
+    @pytest.mark.skipif('sys.version>="3.0"')
     def test_2to3(self, makegateway):
         python = _find_version("3")
         gw = makegateway("popen//python=%s" % python)
@@ -515,7 +515,7 @@ class TestStringCoerce:
         assert isinstance(res, str)
         gw.exit()
 
-    @py.test.mark.skipif('sys.version<"3.0"')
+    @pytest.mark.skipif('sys.version<"3.0"')
     def test_3to2(self, makegateway):
         python = _find_version("2")
         gw = makegateway("popen//python=%s" % python)
