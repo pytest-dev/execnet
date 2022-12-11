@@ -157,6 +157,23 @@ class TestRSync:
         mode = destdir.stat().mode
         assert mode & 511 == 504
 
+    @py.test.mark.skipif("sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
+    def test_read_only_directories(self, dirs, gw1):
+        source = dirs.source
+        dest = dirs.dest1
+        source.ensure("sub", "subsub", dir=True)
+        source.join("sub").chmod(0o500)
+        source.join("sub", "subsub").chmod(0o500)
+
+        # The destination directories should be created with the write
+        # permission forced, to avoid raising an EACCES error.
+        rsync = RSync(source)
+        rsync.add_target(gw1, dest)
+        rsync.send()
+
+        assert dest.join("sub").stat().mode & 0o700
+        assert dest.join("sub").join("subsub").stat().mode & 0o700
+
     @needssymlink
     def test_symlink_rsync(self, dirs, gw1):
         source = dirs.source

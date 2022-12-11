@@ -35,7 +35,11 @@ def serve_rsync(channel):
                 os.makedirs(path)
             mode = msg.pop(0)
             if mode:
-                os.chmod(path, mode)
+                # Ensure directories are writable, otherwise a
+                # permission denied error (EACCES) would be raised
+                # when attempting to receive read-only directory
+                # structures.
+                os.chmod(path, mode | 0o700)
             entrynames = {}
             for entryname in msg:
                 destpath = os.path.join(path, entryname)
@@ -59,7 +63,7 @@ def serve_rsync(channel):
                         checksum = md5(f.read()).digest()
                         f.close()
                     elif msg_mode and msg_mode != st.st_mode:
-                        os.chmod(path, msg_mode)
+                        os.chmod(path, msg_mode | 0o700)
                         return
                     else:
                         return  # already fine
