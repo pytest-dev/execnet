@@ -10,83 +10,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [
-            "windows-py27",
-            "windows-py35",
-            "windows-py36",
-            "windows-py37",
-            "windows-py38",
-            "windows-py39",
-
-            "linux-py27",
-            "linux-py35",
-            "linux-py36",
-            "linux-py37",
-            "linux-py38",
-            "linux-py39",
-
-            "linux-pypy2",
-            "linux-pypy3",
-        ]
-        include:
-          - name: "windows-py27"
-            python: "2.7"
-            tox_env: "py27"
-            os: "windows-latest"
-          - name: "windows-py35"
-            python: "3.5"
-            tox_env: "py35"
-            os: "windows-latest"
-          - name: "windows-py36"
-            python: "3.6"
-            tox_env: "py36"
-            os: "windows-latest"
-          - name: "windows-py37"
-            python: "3.7"
-            tox_env: "py37"
-            os: "windows-latest"
-          - name: "windows-py38"
-            python: "3.8"
-            tox_env: "py38"
-            os: "windows-latest"
-          - name: "windows-py39"
-            python: "3.9"
-            tox_env: "py39"
-            os: "windows-latest"
-
-          - name: "linux-py27"
-            python: "2.7"
-            tox_env: "py27"
-            os: "ubuntu-latest"
-          - name: "linux-py35"
-            python: "3.5"
-            tox_env: "py35"
-            os: "ubuntu-latest"
-          - name: "linux-py36"
-            python: "3.6"
-            tox_env: "py36"
-            os: "ubuntu-latest"
-          - name: "linux-py37"
-            python: "3.7"
-            tox_env: "py37"
-            os: "ubuntu-latest"
-          - name: "linux-py38"
-            python: "3.8"
-            tox_env: "py38"
-            os: "ubuntu-latest"
-          - name: "linux-py39"
-            python: "3.9"
-            tox_env: "py39"
-            os: "ubuntu-latest"
-
-          - name: "linux-pypy2"
-            python: "pypy-2.7"
-            tox_env: "pypy2"
-            os: "ubuntu-latest"
-          - name: "linux-pypy3"
-            python: "pypy-3.7"
-            tox_env: "pypy3"
-            os: "ubuntu-latest"
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.7","3.8","3.10","3.11", "pypy-3.7"]
 
     steps:
     - uses: actions/checkout@v1
@@ -97,10 +22,10 @@ jobs:
     - name: Install tox setuptools_scm
       run: |
         python -m pip install --upgrade pip
-        pip install tox setuptools_scm
+        pip install tox setuptools_scm hatch
     - name: Test
       run: |
-        tox -e ${{ matrix.tox_env }}
+        tox -e py
 
   deploy:
 
