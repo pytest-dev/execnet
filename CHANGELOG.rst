@@ -1,3 +1,9 @@
+2.0.0 (unreleased)
+------------------
+
+* removed support for Python < 3.7
+* migrate packaging to hatch
+
 1.9.0 (2021-06-13)
 ------------------
 
