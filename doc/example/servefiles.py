@@ -9,4 +9,4 @@ def servefiles(channel):
 
 
 if __name__ == "__channelexec__":
-    servefiles(channel)
+    servefiles(channel)  # type: ignore[name-defined]

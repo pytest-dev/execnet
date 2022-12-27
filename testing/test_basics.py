@@ -2,6 +2,7 @@ import inspect
 import os
 import subprocess
 import sys
+from io import BytesIO
 
 import execnet
 import py
@@ -12,11 +13,6 @@ from execnet import gateway_io
 from execnet.gateway_base import ChannelFactory
 from execnet.gateway_base import Message
 from execnet.gateway_base import Popen2IO
-
-try:
-    from StringIO import StringIO as BytesIO
-except:
-    from io import BytesIO
 
 
 skip_win_pypy = pytest.mark.xfail(
@@ -165,14 +161,12 @@ def test_popen_io(anypython, tmpdir, execmodel):
     check.write(
         py.code.Source(
             gateway_base,
-            """
-        do_exec("io = init_popen_io(get_execmodel({backend!r}))", globals())
+            f"""
+        io = init_popen_io(get_execmodel({execmodel.backend!r}))
         io.write("hello".encode('ascii'))
         s = io.read(1)
         assert s == "x".encode('ascii')
-    """.format(
-                backend=execmodel.backend
-            ),
+    """,
         )
     )
     from subprocess import Popen, PIPE
@@ -304,10 +298,14 @@ class TestPureChannel:
     @pytest.fixture
     def fac(self, execmodel):
         class Gateway:
-            pass
+            def _trace(self, *args):
+                pass
+
+            def _send_(self, *k):
+                pass
 
         Gateway.execmodel = execmodel
-        return ChannelFactory(Gateway)
+        return ChannelFactory(Gateway())
 
     def test_factory_create(self, fac):
         chan1 = fac.new()

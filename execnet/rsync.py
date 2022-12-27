@@ -6,11 +6,7 @@
 import os
 import stat
 from hashlib import md5
-
-try:
-    from queue import Queue
-except ImportError:
-    from Queue import Queue
+from queue import Queue
 
 import execnet.rsync_remote
 

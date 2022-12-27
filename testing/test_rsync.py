@@ -245,16 +245,3 @@ class TestRSync:
         assert rsync.x == 1
         assert len(dest.listdir()) == 1
         assert len(source.listdir()) == 1
-
-    @pytest.mark.skipif("sys.version_info >= (3,)")
-    def test_2_to_3_bridge_can_send_binary_files(self, tmpdir, makegateway):
-        python = _find_version("3")
-        gw = makegateway("popen//python=%s" % python)
-        source = tmpdir.ensure("source", dir=1)
-        for i, content in enumerate("foo bar baz \x10foo"):
-            source.join(str(i)).write(content)
-        rsync = RSync(source)
-
-        target = tmpdir.join("target")
-        rsync.add_target(gw, target)
-        rsync.send()

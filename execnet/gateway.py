@@ -199,12 +199,8 @@ def _source_of_function(function):
     if not args or args[0] != "channel":
         raise ValueError("expected first function argument to be `channel`")
 
-    if gateway_base.ISPY3:
-        closure = function.__closure__
-        codeobj = function.__code__
-    else:
-        closure = function.func_closure
-        codeobj = function.func_code
+    closure = function.__closure__
+    codeobj = function.__code__
 
     if closure is not None:
         raise ValueError("functions with closures can't be passed")

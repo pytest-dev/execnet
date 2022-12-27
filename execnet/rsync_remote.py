@@ -114,4 +114,4 @@ def serve_rsync(channel):
 
 
 if __name__ == "__channelexec__":
-    serve_rsync(channel)  # noqa
+    serve_rsync(channel)  # type: ignore[name-defined]

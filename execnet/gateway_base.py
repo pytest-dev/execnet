@@ -11,52 +11,26 @@ NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
     - Ronny Pfannschmidt
     - many others
 """
+from __future__ import annotations
+
 import os
 import struct
 import sys
 import traceback
 import weakref
-
-# NOTE that we want to avoid try/except style importing
-# to avoid setting sys.exc_info() during import
-#
-
-ISPY3 = sys.version_info >= (3, 0)
-if ISPY3:
-    from io import BytesIO
-
-    exec("do_exec = exec")
-
-    def reraise(cls, val, tb):
-        raise val.with_traceback(tb)
-
-    unicode = str
-    _long_type = int
-    from _thread import interrupt_main
-
-    SUBPROCESS32 = False
-else:
-    from StringIO import StringIO as BytesIO
-
-    exec(
-        "def do_exec(co, loc): exec co in loc\n"
-        "def reraise(cls, val, tb): raise cls, val, tb\n"
-    )
-    bytes = str
-    _long_type = long
-    try:
-        from thread import interrupt_main
-    except ImportError:
-        interrupt_main = None
-    try:
-        import subprocess32  # NOQA
-
-        SUBPROCESS32 = True
-    except ImportError:
-        SUBPROCESS32 = False
-        sys.exc_clear()
+from io import BytesIO
+from typing import Callable
 
 
+def reraise(cls, val, tb):
+    raise val.with_traceback(tb)
+
+
+unicode = str
+_long_type = int
+from _thread import interrupt_main
+
+SUBPROCESS32 = False
 # f = open("/tmp/execnet-%s" % os.getpid(), "w")
 # def log_extra(*msg):
 #     f.write(" ".join([str(x) for x in msg]) + "\n")
@@ -77,9 +51,9 @@ def get_execmodel(backend):
                 "_thread::start_new_thread",
             ],
             "threading": ["threading"],
-            "queue": ["queue" if ISPY3 else "Queue"],
+            "queue": ["queue"],
             "sleep": ["time::sleep"],
-            "subprocess": ["subprocess32" if SUBPROCESS32 else "subprocess"],
+            "subprocess": ["subprocess"],
             "socket": ["socket"],
             "_fdopen": ["os::fdopen"],
             "_lock": ["threading"],
@@ -414,7 +388,7 @@ class Popen2IO:
 class Message:
     """encapsulates Messages and their wire protocol."""
 
-    _types = []
+    _types: list[Callable[[Message, BaseGateway], None]] = []
 
     def __init__(self, msgcode, channelid=0, data=""):
         self.msgcode = msgcode
@@ -554,6 +528,7 @@ class Channel:
 
     def __init__(self, gateway, id):
         assert isinstance(id, int)
+        assert not isinstance(gateway, type)
         self.gateway = gateway
         # XXX: defaults copied from Unserializer
         self._strconfig = getattr(gateway, "_strconfig", (True, False))
@@ -1062,21 +1037,12 @@ class WorkerGateway(BaseGateway):
     def executetask(self, item):
         try:
             channel, (source, file_name, call_name, kwargs) = item
-            if not ISPY3 and kwargs:
-                # some python2 versions do not accept unicode keyword params
-                # note: Unserializer generally turns py2-str to py3-str objects
-                newkwargs = {}
-                for name, value in kwargs.items():
-                    if isinstance(name, unicode):
-                        name = name.encode("ascii")
-                    newkwargs[name] = value
-                kwargs = newkwargs
             loc = {"channel": channel, "__name__": "__channelexec__"}
             self._trace(f"execution starts[{channel.id}]: {repr(source)[:50]}")
             channel._executing = True
             try:
                 co = compile(source + "\n", file_name or "<remote exec>", "exec")
-                do_exec(co, loc)  # noqa
+                exec(co, loc)
                 if call_name:
                     self._trace("calling %s(**%60r)" % (call_name, kwargs))
                     function = loc[call_name]
@@ -1116,15 +1082,11 @@ class LoadError(DataFormatError):
     """Error while unserializing an object."""
 
 
-if ISPY3:
+def bchr(n):
+    return bytes([n])
 
-    def bchr(n):
-        return bytes([n])
 
-else:
-    bchr = chr
-
-DUMPFORMAT_VERSION = bchr(1)
+DUMPFORMAT_VERSION = bchr(2)
 
 FOUR_BYTE_INT_MAX = 2147483647
 
@@ -1139,7 +1101,9 @@ class _Stop(Exception):
 
 
 class Unserializer:
-    num2func = {}  # is filled after this class definition
+    num2func: dict[
+        int, Callable[[Unserializer], None]
+    ] = {}  # is filled after this class definition
     py2str_as_py3str = True  # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
@@ -1193,18 +1157,8 @@ class Unserializer:
         s = self._read_byte_string()
         self.stack.append(int(s))
 
-    if ISPY3:
-        load_long = load_int
-        load_longlong = load_longint
-    else:
-
-        def load_long(self):
-            i = self._read_int4()
-            self.stack.append(long(i))
-
-        def load_longlong(self):
-            l = self._read_byte_string()
-            self.stack.append(long(l))
+    load_long = load_int
+    load_longlong = load_longint
 
     def load_float(self):
         binary = self.stream.read(FLOAT_FORMAT_SIZE)
@@ -1224,7 +1178,7 @@ class Unserializer:
 
     def load_py3string(self):
         as_bytes = self._read_byte_string()
-        if not ISPY3 and self.py3str_as_py2str:
+        if self.py3str_as_py2str:
             # XXX Should we try to decode into latin-1?
             self.stack.append(as_bytes)
         else:
@@ -1232,7 +1186,7 @@ class Unserializer:
 
     def load_py2string(self):
         as_bytes = self._read_byte_string()
-        if ISPY3 and self.py2str_as_py3str:
+        if self.py2str_as_py3str:
             s = as_bytes.decode("latin-1")
         else:
             s = as_bytes
@@ -1366,7 +1320,7 @@ def dumps_internal(obj):
 
 
 class _Serializer:
-    _dispatch = {}
+    _dispatch = {object: Callable[["_Serializer", object], None]}
 
     def __init__(self, write=None):
         if write is None:
@@ -1413,21 +1367,9 @@ class _Serializer:
         self._write(opcode.BYTES)
         self._write_byte_sequence(bytes_)
 
-    if ISPY3:
-
-        def save_str(self, s):
-            self._write(opcode.PY3STRING)
-            self._write_unicode_string(s)
-
-    else:
-
-        def save_str(self, s):
-            self._write(opcode.PY2STRING)
-            self._write_byte_sequence(s)
-
-        def save_unicode(self, s):
-            self._write(opcode.UNICODE)
-            self._write_unicode_string(s)
+    def save_str(self, s):
+        self._write(opcode.PY3STRING)
+        self._write_unicode_string(s)
 
     def _write_unicode_string(self, s):
         try:

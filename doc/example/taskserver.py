@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import execnet
 
 group = execnet.Group()
@@ -24,7 +26,7 @@ mch = group.remote_exec(process_item)
 
 # get a queue that gives us results
 q = mch.make_receive_queue(endmarker=-1)
-tasks = range(10)  # a list of tasks, here just integers
+tasks: list[int] | None = list(range(10))  # a list of tasks, here just integers
 terminated = 0
 while 1:
     channel, item = q.get()
@@ -37,11 +39,11 @@ while 1:
         continue
     if item != "ready":
         print(f"other side {channel.gateway.id} returned {item!r}")
-    if not tasks:
+    if not tasks and tasks is not None:
         print("no tasks remain, sending termination request to all")
         mch.send_each(None)
-        tasks = -1
-    if tasks and tasks != -1:
+        tasks = None
+    if tasks:
         task = tasks.pop()
         channel.send(task)
         print(f"sent task {task!r} to {channel.gateway.id}")

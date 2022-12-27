@@ -10,7 +10,7 @@ import sys
 try:
     from execnet.gateway_base import Popen2IO, Message
 except ImportError:
-    from __main__ import Popen2IO, Message
+    from __main__ import Popen2IO, Message  # type: ignore[no-redef]
 
 from functools import partial
 
@@ -246,4 +246,4 @@ def serve_proxy_io(proxy_channelX):
 
 
 if __name__ == "__channelexec__":
-    serve_proxy_io(channel)  # noqa
+    serve_proxy_io(channel)  # type: ignore[name-defined]

@@ -11,11 +11,6 @@ collect_ignore = ["build", "doc/_build"]
 
 rsyncdirs = ["conftest.py", "execnet", "testing", "doc"]
 
-winpymap = {
-    "python2.7": r"C:\Python27\python.exe",
-    "python3.4": r"C:\Python34\python.exe",
-}
-
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_setup(item):
@@ -109,7 +104,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize(
             "anypython",
             indirect=True,
-            argvalues=("sys.executable", "python2.7", "pypy", "jython"),
+            argvalues=("sys.executable", "pypy3"),
         )
 
 
@@ -139,13 +134,6 @@ def anypython(request):
     name = request.param
     executable = getexecutable(name)
     if executable is None:
-        if sys.platform == "win32":
-            executable = winpymap.get(name, None)
-            if executable:
-                executable = py.path.local(executable)
-                if executable.check():
-                    return executable
-                executable = None
         pytest.skip(f"no {name} found")
     if "execmodel" in request.fixturenames and name != "sys.executable":
         backend = request.getfixturevalue("execmodel").backend
