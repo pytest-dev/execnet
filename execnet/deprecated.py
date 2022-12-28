@@ -25,7 +25,7 @@ def SocketGateway(host, port):
     new_remote() method on existing gateways.
     """
     APIWARN("1.0.0b4", "use makegateway('socket=host:port')")
-    spec = execnet.XSpec("socket={}:{}".format(host, port))
+    spec = execnet.XSpec(f"socket={host}:{port}")
     return execnet.default_group.makegateway(spec)
 
 
@@ -44,5 +44,5 @@ def SshGateway(sshaddress, remotepython=None, ssh_config=None):
 def APIWARN(version, msg, stacklevel=3):
     import warnings
 
-    Warn = DeprecationWarning("(since version {}) {}".format(version, msg))
+    Warn = DeprecationWarning(f"(since version {version}) {msg}")
     warnings.warn(Warn, stacklevel=stacklevel)

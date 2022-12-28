@@ -36,7 +36,7 @@ while 1:
             break
         continue
     if item != "ready":
-        print("other side {} returned {!r}".format(channel.gateway.id, item))
+        print(f"other side {channel.gateway.id} returned {item!r}")
     if not tasks:
         print("no tasks remain, sending termination request to all")
         mch.send_each(None)
@@ -44,6 +44,6 @@ while 1:
     if tasks and tasks != -1:
         task = tasks.pop()
         channel.send(task)
-        print("sent task {!r} to {}".format(task, channel.gateway.id))
+        print(f"sent task {task!r} to {channel.gateway.id}")
 
 group.terminate()

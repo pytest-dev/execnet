@@ -16,16 +16,16 @@ def _find_version(suffix=""):
     if executable is None:
         if sys.platform == "win32" and suffix == "3":
             for name in ("python31", "python30"):
-                executable = py.path.local(r"c:\\{}\python.exe".format(name))
+                executable = py.path.local(rf"c:\\{name}\python.exe")
                 if executable.check():
                     return executable
         for tail in MINOR_VERSIONS.get(suffix, ""):
-            path = py.path.local.sysfind("{}.{}".format(name, tail))
+            path = py.path.local.sysfind(f"{name}.{tail}")
             if path:
                 return path
 
         else:
-            pytest.skip("can't find a {!r} executable".format(name))
+            pytest.skip(f"can't find a {name!r} executable")
     return executable
 
 
@@ -34,12 +34,8 @@ TEMPDIR = _py2_wrapper = _py3_wrapper = None
 
 def setup_module(mod):
     mod.TEMPDIR = py.path.local(tempfile.mkdtemp())
-    if sys.version_info > (3, 0):
-        mod._py3_wrapper = PythonWrapper(py.path.local(sys.executable))
-        mod._py2_wrapper = PythonWrapper(_find_version("2"))
-    else:
-        mod._py3_wrapper = PythonWrapper(_find_version("3"))
-        mod._py2_wrapper = PythonWrapper(py.path.local(sys.executable))
+    mod._py3_wrapper = PythonWrapper(py.path.local(sys.executable))
+    mod._py2_wrapper = PythonWrapper(_find_version("2"))
 
 
 def teardown_module(mod):
@@ -50,7 +46,7 @@ def teardown_module(mod):
 pyimportdir = str(py.path.local(execnet.__file__).dirpath())
 
 
-class PythonWrapper(object):
+class PythonWrapper:
     def __init__(self, executable):
         self.executable = executable
 
@@ -112,7 +108,7 @@ sys.stdout.write(repr(obj))"""
         return [s.decode("ascii") for s in stdout.splitlines()]
 
     def __repr__(self):
-        return "<PythonWrapper for {}>".format(self.executable)
+        return f"<PythonWrapper for {self.executable}>"
 
 
 @pytest.fixture
@@ -136,7 +132,7 @@ def load(request):
 
 
 simple_tests = [
-    # type: expected before/after repr
+    # expected before/after repr
     ("int", "4"),
     ("float", "3.25"),
     ("complex", "(1.78+3.25j)"),

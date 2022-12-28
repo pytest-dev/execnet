@@ -5,8 +5,6 @@ small utility for hot-syncing a svn repository through ssh.
 uses execnet.
 
 """
-from __future__ import print_function
-
 import os
 import sys
 
@@ -23,7 +21,7 @@ def main(args):
     remote = args[0]
     localrepo = py.path.local(args[1])
     if not localrepo.check(dir=1):
-        raise SystemExit("localrepo {} does not exist".format(localrepo))
+        raise SystemExit(f"localrepo {localrepo} does not exist")
     if len(args) == 3:
         configfile = args[2]
     else:
@@ -95,7 +93,7 @@ def svn_load(repo, dumpchannel, maxcount=100):
     # growing buffers  (execnet does not control
     # RAM usage or receive queue sizes)
     dumpchannel.send(maxcount)
-    f = os.popen("svnadmin load -q {}".format(repo), "w")
+    f = os.popen(f"svnadmin load -q {repo}", "w")
     count = maxcount
     for x in dumpchannel:
         sys.stdout.write(".")

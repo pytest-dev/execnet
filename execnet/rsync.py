@@ -15,7 +15,7 @@ except ImportError:
 import execnet.rsync_remote
 
 
-class RSync(object):
+class RSync:
     """This class allows to send a directory structure (recursively)
     to one or multiple remote filesystems.
 
@@ -42,7 +42,7 @@ class RSync(object):
             # too early!  we must have got an error
             channel.waitclose()
             # or else we raise one
-            raise IOError("connection unexpectedly closed: {} ".format(channel.gateway))
+            raise OSError(f"connection unexpectedly closed: {channel.gateway} ")
 
     def _process_link(self, channel):
         for link in self._links:
@@ -70,7 +70,7 @@ class RSync(object):
         try:
             f = open(modifiedpath, "rb")
             data = f.read()
-        except IOError:
+        except OSError:
             data = None
 
         # provide info to progress callback function
@@ -94,7 +94,7 @@ class RSync(object):
 
     def _report_send_file(self, gateway, modified_rel_path):
         if self._verbose:
-            print("{} <= {}".format(gateway, modified_rel_path))
+            print(f"{gateway} <= {modified_rel_path}")
 
     def send(self, raises=True):
         """Sends a sourcedir to all added targets. Flag indicates
@@ -103,7 +103,7 @@ class RSync(object):
         """
         if not self._channels:
             if raises:
-                raise IOError(
+                raise OSError(
                     "no targets available, maybe you " "are trying call send() twice?"
                 )
             return
@@ -200,4 +200,4 @@ class RSync(object):
         elif stat.S_ISLNK(st.st_mode):
             self._send_link_structure(path)
         else:
-            raise ValueError("cannot sync {!r}".format(path))
+            raise ValueError(f"cannot sync {path!r}")

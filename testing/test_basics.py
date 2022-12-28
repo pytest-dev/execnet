@@ -1,5 +1,3 @@
-from __future__ import with_statement
-
 import inspect
 import os
 import subprocess
@@ -117,7 +115,7 @@ def read_write_loop():
                 break
             sys.stdout.write("received: %s" % line)
             sys.stdout.flush()
-        except (IOError, EOFError):
+        except (OSError, EOFError):
             break
 
 
@@ -181,15 +179,15 @@ def test_popen_io(anypython, tmpdir, execmodel):
 
     args = [str(anypython), str(check)]
     proc = Popen(args, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    proc.stdin.write("x".encode("ascii"))
+    proc.stdin.write(b"x")
     stdout, stderr = proc.communicate()
     print(stderr)
     proc.wait()
-    assert "hello".encode("ascii") in stdout
+    assert b"hello" in stdout
 
 
 def test_popen_io_readloop(monkeypatch, execmodel):
-    sio = BytesIO("test".encode("ascii"))
+    sio = BytesIO(b"test")
     io = Popen2IO(sio, sio, execmodel)
     real_read = io._read
 
@@ -200,7 +198,7 @@ def test_popen_io_readloop(monkeypatch, execmodel):
 
     io._read = newread
     result = io.read(3)
-    assert result == "tes".encode("ascii")
+    assert result == b"tes"
 
 
 def test_rinfo_source(anypython, tmpdir):
@@ -254,7 +252,7 @@ def test_geterrortext(anypython, tmpdir):
 def test_stdouterrin_setnull(execmodel):
     cap = py.io.StdCaptureFD()
     gateway_base.init_popen_io(execmodel)
-    os.write(1, "hello".encode("ascii"))
+    os.write(1, b"hello")
     os.read(0, 1)
     out, err = cap.reset()
     assert not out
@@ -291,7 +289,7 @@ class TestMessage:
     def test_wire_protocol(self):
         for i, handler in enumerate(Message._types):
             one = py.io.BytesIO()
-            data = "23".encode("ascii")
+            data = b"23"
             Message(i, 42, data).to_io(one)
             two = py.io.BytesIO(one.getvalue())
             msg = Message.from_io(two)
@@ -333,7 +331,7 @@ class TestPureChannel:
             channel.makefile("rw")
 
 
-class TestSourceOfFunction(object):
+class TestSourceOfFunction:
     def test_lambda_unsupported(self):
         pytest.raises(ValueError, gateway._source_of_function, lambda: 1)
 
@@ -367,7 +365,7 @@ class TestSourceOfFunction(object):
         assert send_source == expected
 
 
-class TestGlobalFinder(object):
+class TestGlobalFinder:
     def check(self, func):
         src = py.code.Source(func)
         code = py.code.Code(func)
@@ -415,8 +413,8 @@ def test_remote_exec_function_with_kwargs(anypython, makegateway):
         channel.send(data)
 
     gw = makegateway("popen//python=%s" % anypython)
-    print("local version_info {!r}".format(sys.version_info))
-    print("remote info: {}".format(gw._rinfo()))
+    print(f"local version_info {sys.version_info!r}")
+    print(f"remote info: {gw._rinfo()}")
     ch = gw.remote_exec(func, data=1)
     result = ch.receive()
     assert result == 1

@@ -18,7 +18,7 @@ from .xspec import XSpec
 NO_ENDMARKER_WANTED = object()
 
 
-class Group(object):
+class Group:
     """Gateway Groups."""
 
     defaultspec = "popen"
@@ -137,7 +137,7 @@ class Group(object):
             io = gateway_socket.create_io(spec, self, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
         else:
-            raise ValueError("no gateway type found for {!r}".format(spec._spec))
+            raise ValueError(f"no gateway type found for {spec._spec!r}")
         gw.spec = spec
         self._register(gw)
         if spec.chdir or spec.nice or spec.env:
@@ -168,7 +168,7 @@ class Group(object):
                 id = "gw" + str(self._autoidcounter)
                 self._autoidcounter += 1
                 if id in self:
-                    raise ValueError("already have gateway with id {!r}".format(id))
+                    raise ValueError(f"already have gateway with id {id!r}")
                 spec.id = id
 
     def _register(self, gateway):
@@ -183,7 +183,7 @@ class Group(object):
         self._gateways_to_join.append(gateway)
 
     def _cleanup_atexit(self):
-        trace("=== atexit cleanup {!r} ===".format(self))
+        trace(f"=== atexit cleanup {self!r} ===")
         self.terminate(timeout=1.0)
 
     def terminate(self, timeout=None):
@@ -299,7 +299,7 @@ def safe_terminate(execmodel, timeout, list_of_paired_functions):
         termreply = workerpool.spawn(termfunc)
         try:
             termreply.get(timeout=timeout)
-        except IOError:
+        except OSError:
             killfunc()
 
     replylist = []

@@ -32,7 +32,7 @@ def bootstrap_import(io, spec):
         "serve(init_popen_io(execmodel), id='%s-worker')" % spec.id,
     )
     s = io.read(1)
-    assert s == "1".encode("ascii"), repr(s)
+    assert s == b"1", repr(s)
 
 
 def bootstrap_exec(io, spec):
@@ -46,7 +46,7 @@ def bootstrap_exec(io, spec):
             "serve(io, id='%s-worker')" % spec.id,
         )
         s = io.read(1)
-        assert s == "1".encode("ascii")
+        assert s == b"1"
     except EOFError:
         ret = io.wait()
         if ret == 255:
@@ -70,7 +70,7 @@ def bootstrap_socket(io, id):
         "serve(io, id='%s-worker')" % id,
     )
     s = io.read(1)
-    assert s == "1".encode("ascii")
+    assert s == b"1"
 
 
 def sendexec(io, *sources):

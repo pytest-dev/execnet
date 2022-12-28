@@ -7,8 +7,6 @@ showcasing features of the channel object:
 - setting a callback for receiving channel data
 
 """
-from __future__ import print_function
-
 import execnet
 
 gw = execnet.makegateway()

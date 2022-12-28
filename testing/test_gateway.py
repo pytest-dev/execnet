@@ -476,7 +476,7 @@ class TestTracing:
             if worker_line in line:
                 break
         else:
-            pytest.fail("did not find {!r} in tracefile".format(worker_line))
+            pytest.fail(f"did not find {worker_line!r} in tracefile")
         gw.exit()
 
     @skip_win_pypy

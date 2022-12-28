@@ -2,7 +2,9 @@
 ------------------
 
 * removed support for Python < 3.7
+  * apply pyupgrade --py37-plus
 * migrate packaging to hatch
+
 
 1.9.0 (2021-06-13)
 ------------------

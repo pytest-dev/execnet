@@ -16,7 +16,7 @@ def clientside():
     print("client side starting")
     host, port = sys.argv[1].split(":")
     port = int(port)
-    myself = open(os.path.abspath(sys.argv[0]), "rU").read()
+    myself = open(os.path.abspath(sys.argv[0])).read()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((host, port))
     sock.sendall(repr(myself) + "\n")

@@ -81,7 +81,7 @@ def serve_rsync(channel):
         channel.send(("ack", path[len(destdir) + 1 :]))
         if data is not None:
             if STRICT_CHECK and len(data) != size:
-                raise IOError("file modified during rsync: {!r}".format(path))
+                raise OSError(f"file modified during rsync: {path!r}")
             f = open(path, "wb")
             f.write(data)
             f.close()

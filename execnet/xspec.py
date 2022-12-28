@@ -29,7 +29,7 @@ class XSpec:
             if key[0] == "_":
                 raise AttributeError("%r not a valid XSpec key" % key)
             if key in self.__dict__:
-                raise ValueError("duplicate key: {!r} in {!r}".format(key, string))
+                raise ValueError(f"duplicate key: {key!r} in {string!r}")
             if key.startswith("env:"):
                 self.env[key[4:]] = value
             else:
@@ -41,7 +41,7 @@ class XSpec:
         return None
 
     def __repr__(self):
-        return "<XSpec {!r}>".format(self._spec)
+        return f"<XSpec {self._spec!r}>"
 
     def __str__(self):
         return self._spec

@@ -21,7 +21,7 @@ class Gateway(gateway_base.BaseGateway):
     """Gateway to a local or remote Python Intepreter."""
 
     def __init__(self, io, spec):
-        super(Gateway, self).__init__(io=io, id=spec.id, _startcount=1)
+        super().__init__(io=io, id=spec.id, _startcount=1)
         self.spec = spec
         self._initreceive()
 
@@ -56,7 +56,7 @@ class Gateway(gateway_base.BaseGateway):
             self._send(Message.GATEWAY_TERMINATE)
             self._trace("--> io.close_write")
             self._io.close_write()
-        except (ValueError, EOFError, IOError):
+        except (ValueError, EOFError, OSError):
             v = sys.exc_info()[1]
             self._trace("io-error: could not send termination sequence")
             self._trace(" exception: %r" % v)
@@ -211,7 +211,7 @@ def _source_of_function(function):
 
     try:
         source = inspect.getsource(function)
-    except IOError:
+    except OSError:
         raise ValueError("can't find source file for %s" % function)
 
     source = textwrap.dedent(source)  # just for inner functions

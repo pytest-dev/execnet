@@ -146,11 +146,11 @@ def anypython(request):
                 if executable.check():
                     return executable
                 executable = None
-        pytest.skip("no {} found".format(name))
+        pytest.skip(f"no {name} found")
     if "execmodel" in request.fixturenames and name != "sys.executable":
         backend = request.getfixturevalue("execmodel").backend
         if backend != "thread":
-            pytest.xfail("cannot run {!r} execmodel with bare {}".format(backend, name))
+            pytest.xfail(f"cannot run {backend!r} execmodel with bare {name}")
     return executable
 
 
@@ -186,7 +186,7 @@ def gw(request, execmodel, group):
             sshhost = request.getfixturevalue("specssh").ssh
             # we don't use execmodel.backend here
             # but you can set it when specifying the ssh spec
-            gw = group.makegateway("ssh={}//id=ssh".format(sshhost))
+            gw = group.makegateway(f"ssh={sshhost}//id=ssh")
         elif request.param == "proxy":
             group.makegateway("popen//id=proxy-transport")
             gw = group.makegateway(
@@ -194,7 +194,7 @@ def gw(request, execmodel, group):
                 "//execmodel=%s" % execmodel.backend
             )
         else:
-            assert 0, "unknown execmodel: {}".format(request.param)
+            assert 0, f"unknown execmodel: {request.param}"
         return gw
 
 
