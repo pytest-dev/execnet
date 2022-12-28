@@ -1,5 +1,4 @@
 #! /usr/bin/env python
-# -*- coding: utf-8 -*-
 """
     start socket based minimal readline exec server
 
@@ -40,16 +39,10 @@ def print_(*args):
     print(" ".join(str(arg) for arg in args))
 
 
-if sys.version_info > (3, 0):
-    exec(
-        """def exec_(source, locs):
+exec(
+    """def exec_(source, locs):
     exec(source, locs)"""
-    )
-else:
-    exec(
-        """def exec_(source, locs):
-    exec source in locs"""
-    )
+)
 
 
 def exec_from_one_connection(serversock):

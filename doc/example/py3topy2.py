@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import execnet
 
 gw = execnet.makegateway("popen//python=python2")

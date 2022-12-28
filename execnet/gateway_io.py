@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 execnet io initialization code
 
@@ -11,7 +10,7 @@ import sys
 try:
     from execnet.gateway_base import Popen2IO, Message
 except ImportError:
-    from __main__ import Popen2IO, Message
+    from __main__ import Popen2IO, Message  # type: ignore[no-redef]
 
 from functools import partial
 
@@ -37,7 +36,7 @@ def killpopen(popen):
             popen.kill()
         else:
             killpid(popen.pid)
-    except EnvironmentError:
+    except OSError:
         sys.stderr.write("ERROR killing: %s\n" % (sys.exc_info()[1]))
         sys.stderr.flush()
 
@@ -53,7 +52,7 @@ def killpid(pid):
         ctypes.windll.kernel32.TerminateProcess(handle, -1)
         ctypes.windll.kernel32.CloseHandle(handle)
     else:
-        raise EnvironmentError("no method to kill {}".format(pid))
+        raise OSError(f"no method to kill {pid}")
 
 
 popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
@@ -91,7 +90,7 @@ def ssh_args(spec):
         args.extend(["-F", str(spec.ssh_config)])
 
     args.extend(spec.ssh.split())
-    remotecmd = '{} -c "{}"'.format(remotepython, popen_bootstrapline)
+    remotecmd = f'{remotepython} -c "{popen_bootstrapline}"'
     args.append(remotecmd)
     return args
 
@@ -107,7 +106,7 @@ def vagrant_ssh_args(spec):
     args = ["vagrant", "ssh", spec.vagrant_ssh, "--", "-C"]
     if spec.ssh_config is not None:
         args.extend(["-F", str(spec.ssh_config)])
-    remotecmd = '{} -c "{}"'.format(remotepython, popen_bootstrapline)
+    remotecmd = f'{remotepython} -c "{popen_bootstrapline}"'
     args.extend([remotecmd])
     return args
 
@@ -141,7 +140,7 @@ RIO_REMOTEADDRESS = 3
 RIO_CLOSE_WRITE = 4
 
 
-class ProxyIO(object):
+class ProxyIO:
     """A Proxy IO object allows to instantiate a Gateway
     through another "via" gateway.  A master:ProxyIO object
     provides an IO object effectively connected to the sub
@@ -183,7 +182,7 @@ class ProxyIO(object):
         return self._controll(RIO_REMOTEADDRESS)
 
     def __repr__(self):
-        return "<RemoteIO via {}>".format(self.iochan.gateway.id)
+        return f"<RemoteIO via {self.iochan.gateway.id}>"
 
 
 class PseudoSpec:
@@ -231,7 +230,7 @@ def serve_proxy_io(proxy_channelX):
     # read bootstrap byte from sub, send it on to master
     log("reading bootstrap byte from sub", spec.id)
     initial = sub_io.read(1)
-    assert initial == "1".encode("ascii"), initial
+    assert initial == b"1", initial
     log("forwarding bootstrap byte from sub", spec.id)
     forward_to_master_file.write(initial)
 
@@ -247,4 +246,4 @@ def serve_proxy_io(proxy_channelX):
 
 
 if __name__ == "__channelexec__":
-    serve_proxy_io(channel)  # noqa
+    serve_proxy_io(channel)  # type: ignore[name-defined]

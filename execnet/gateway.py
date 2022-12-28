@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2013, Holger Krekel and others
@@ -22,7 +21,7 @@ class Gateway(gateway_base.BaseGateway):
     """Gateway to a local or remote Python Intepreter."""
 
     def __init__(self, io, spec):
-        super(Gateway, self).__init__(io=io, id=spec.id, _startcount=1)
+        super().__init__(io=io, id=spec.id, _startcount=1)
         self.spec = spec
         self._initreceive()
 
@@ -57,7 +56,7 @@ class Gateway(gateway_base.BaseGateway):
             self._send(Message.GATEWAY_TERMINATE)
             self._trace("--> io.close_write")
             self._io.close_write()
-        except (ValueError, EOFError, IOError):
+        except (ValueError, EOFError, OSError):
             v = sys.exc_info()[1]
             self._trace("io-error: could not send termination sequence")
             self._trace(" exception: %r" % v)
@@ -200,19 +199,15 @@ def _source_of_function(function):
     if not args or args[0] != "channel":
         raise ValueError("expected first function argument to be `channel`")
 
-    if gateway_base.ISPY3:
-        closure = function.__closure__
-        codeobj = function.__code__
-    else:
-        closure = function.func_closure
-        codeobj = function.func_code
+    closure = function.__closure__
+    codeobj = function.__code__
 
     if closure is not None:
         raise ValueError("functions with closures can't be passed")
 
     try:
         source = inspect.getsource(function)
-    except IOError:
+    except OSError:
         raise ValueError("can't find source file for %s" % function)
 
     source = textwrap.dedent(source)  # just for inner functions

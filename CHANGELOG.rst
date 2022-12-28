@@ -2,7 +2,11 @@
 ------------------
 
 * removed support for Python < 3.7
+  * apply pyupgrade --py37-plus
+  * minimal mypy fixes and python2 support code drop
 * migrate packaging to hatch
+
+
 
 1.9.0 (2021-06-13)
 ------------------

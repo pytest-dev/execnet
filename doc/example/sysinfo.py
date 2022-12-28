@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 sysinfo.py [host1] [host2] [options]
 
@@ -128,13 +127,13 @@ def error(*args):
 
 def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
     if ssh_config:
-        spec = "ssh=-F {} {}".format(ssh_config, sshname)
+        spec = f"ssh=-F {ssh_config} {sshname}"
     else:
         spec += "ssh=%s" % sshname
     debug("connecting to", repr(spec))
     try:
         gw = execnet.makegateway(spec)
-    except IOError:
+    except OSError:
         error("could not get sshgatway", sshname)
     else:
         ri = RemoteInfo(gw)
@@ -142,7 +141,7 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
         prefix = sshname.upper() + " "
         print >> loginfo, prefix, "fqdn:", ri.getfqdn()
         for attr in ("sys.platform", "sys.version_info"):
-            loginfo.write("{} {}: ".format(prefix, attr))
+            loginfo.write(f"{prefix} {attr}: ")
             loginfo.flush()
             value = ri.getmodattr(attr)
             loginfo.write(str(value))

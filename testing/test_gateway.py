@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 mostly functional tests of gateways.
 """
@@ -477,7 +476,7 @@ class TestTracing:
             if worker_line in line:
                 break
         else:
-            pytest.fail("did not find {!r} in tracefile".format(worker_line))
+            pytest.fail(f"did not find {worker_line!r} in tracefile")
         gw.exit()
 
     @skip_win_pypy
@@ -495,43 +494,6 @@ class TestTracing:
         assert (
             gateway_base.trace == gateway_base.notrace
         ), "trace does not to default to empty tracing"
-
-
-class TestStringCoerce:
-    @pytest.mark.skipif('sys.version>="3.0"')
-    def test_2to3(self, makegateway):
-        python = _find_version("3")
-        gw = makegateway("popen//python=%s" % python)
-        ch = gw.remote_exec("channel.send(channel.receive())")
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, unicode)
-
-        gw.reconfigure(py3str_as_py2str=True)
-
-        ch = gw.remote_exec("channel.send(channel.receive())")
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, str)
-        gw.exit()
-
-    @pytest.mark.skipif('sys.version<"3.0"')
-    def test_3to2(self, makegateway):
-        python = _find_version("2")
-        gw = makegateway("popen//python=%s" % python)
-
-        ch = gw.remote_exec("channel.send(channel.receive())")
-        ch.send(bytes("a", "ascii"))
-        res = ch.receive()
-        assert isinstance(res, str)
-
-        gw.reconfigure(py3str_as_py2str=True, py2str_as_py3str=False)
-
-        ch = gw.remote_exec("channel.send(channel.receive())")
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, bytes)
-        gw.exit()
 
 
 @pytest.mark.parametrize(

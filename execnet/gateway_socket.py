@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 
 from execnet.gateway_bootstrap import HostNotFound
@@ -18,12 +17,12 @@ class SocketIO:
             # IPTOS_LOWDELAY
             sock.setsockopt(socket.SOL_IP, socket.IP_TOS, 0x10)
             sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, 1)
-        except (AttributeError, socket.error):
+        except (AttributeError, OSError):
             sys.stderr.write("WARNING: cannot set socketoption")
 
     def read(self, numbytes):
         "Read exactly 'bytes' bytes from the socket."
-        buf = bytes()
+        buf = b""
         while len(buf) < numbytes:
             t = self.sock.recv(numbytes - len(buf))
             if not t:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #
 # execnet documentation build configuration file, created by
 # sphinx-quickstart on Wed Sep 30 21:16:59 2009.

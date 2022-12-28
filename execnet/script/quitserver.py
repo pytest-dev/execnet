@@ -1,16 +1,17 @@
-# -*- coding: utf-8 -*-
 """
 
   send a "quit" signal to a remote server
 
 """
+from __future__ import annotations
+
 import socket
 import sys
 
-hostport = sys.argv[1]
-host, port = hostport.split(":")
+
+host, port = sys.argv[1].split(":")
 hostport = (host, int(port))
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect(hostport)
-sock.sendall('"raise KeyboardInterrupt"\n')
+sock.sendall(b'"raise KeyboardInterrupt"\n')

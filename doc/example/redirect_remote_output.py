@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 redirect output from remote to a local function
 showcasing features of the channel object:
@@ -8,8 +7,6 @@ showcasing features of the channel object:
 - setting a callback for receiving channel data
 
 """
-from __future__ import print_function
-
 import execnet
 
 gw = execnet.makegateway()

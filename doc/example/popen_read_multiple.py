@@ -1,11 +1,8 @@
-# -*- coding: utf-8 -*-
 """
 example
 
 reading results from possibly blocking code running in sub processes.
 """
-from __future__ import print_function
-
 import execnet
 
 NUM_PROCESSES = 5

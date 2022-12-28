@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 mostly functional tests of gateways.
 """
@@ -378,63 +377,3 @@ class TestChannelFile:
         channel = gw.newchannel()
         with pytest.raises(ValueError):
             channel.makefile("rw")
-
-
-class TestStringCoerce:
-    @pytest.mark.skipif('sys.version>="3.0"')
-    def test_2to3(self, makegateway):
-        python = _find_version("3")
-        gw = makegateway("popen//python=%s" % python)
-        ch = gw.remote_exec("channel.send(channel.receive());" * 2)
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, unicode)
-
-        ch.reconfigure(py3str_as_py2str=True)
-
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, str)
-
-        gw.reconfigure(py3str_as_py2str=True)
-        ch = gw.remote_exec("channel.send(channel.receive());" * 2)
-
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, str)
-        ch.reconfigure(py3str_as_py2str=False, py2str_as_py3str=False)
-
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, str)
-        gw.exit()
-
-    @pytest.mark.skipif('sys.version<"3.0"')
-    def test_3to2(self, makegateway):
-        python = _find_version("2")
-        gw = makegateway("popen//python=%s" % python)
-
-        ch = gw.remote_exec("channel.send(channel.receive());" * 2)
-        ch.send(bytes("a", "ascii"))
-        res = ch.receive()
-        assert isinstance(res, str)
-
-        ch.reconfigure(py3str_as_py2str=True, py2str_as_py3str=False)
-
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, bytes)
-
-        gw.reconfigure(py3str_as_py2str=True, py2str_as_py3str=False)
-        ch = gw.remote_exec("channel.send(channel.receive());" * 2)
-
-        ch.send("a")
-        res = ch.receive()
-        assert isinstance(res, bytes)
-
-        ch.reconfigure(py3str_as_py2str=False, py2str_as_py3str=True)
-        ch.send(bytes("a", "ascii"))
-        res = ch.receive()
-        assert isinstance(res, str)
-
-        gw.exit()

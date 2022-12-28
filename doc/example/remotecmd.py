@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import os
 
 # contents of: remotecmd.py
@@ -11,5 +10,5 @@ def listdir(path):
 
 
 if __name__ == "__channelexec__":
-    for item in channel:
-        channel.send(eval(item))
+    for item in channel:  # type: ignore[name-defined]
+        channel.send(eval(item))  # type: ignore[name-defined]

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 base execnet gateway code send to the other side for bootstrapping.
 
@@ -12,54 +11,26 @@ NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
     - Ronny Pfannschmidt
     - many others
 """
-from __future__ import with_statement
+from __future__ import annotations
 
 import os
 import struct
 import sys
 import traceback
 import weakref
-
-# NOTE that we want to avoid try/except style importing
-# to avoid setting sys.exc_info() during import
-#
-
-ISPY3 = sys.version_info >= (3, 0)
-if ISPY3:
-    from io import BytesIO
-
-    exec("do_exec = exec")
-
-    def reraise(cls, val, tb):
-        raise val.with_traceback(tb)
-
-    unicode = str
-    _long_type = int
-    from _thread import interrupt_main
-
-    SUBPROCESS32 = False
-else:
-    from StringIO import StringIO as BytesIO
-
-    exec(
-        "def do_exec(co, loc): exec co in loc\n"
-        "def reraise(cls, val, tb): raise cls, val, tb\n"
-    )
-    bytes = str
-    _long_type = long
-    try:
-        from thread import interrupt_main
-    except ImportError:
-        interrupt_main = None
-    try:
-        import subprocess32  # NOQA
-
-        SUBPROCESS32 = True
-    except ImportError:
-        SUBPROCESS32 = False
-        sys.exc_clear()
+from io import BytesIO
+from typing import Callable
 
 
+def reraise(cls, val, tb):
+    raise val.with_traceback(tb)
+
+
+unicode = str
+_long_type = int
+from _thread import interrupt_main
+
+SUBPROCESS32 = False
 # f = open("/tmp/execnet-%s" % os.getpid(), "w")
 # def log_extra(*msg):
 #     f.write(" ".join([str(x) for x in msg]) + "\n")
@@ -80,9 +51,9 @@ def get_execmodel(backend):
                 "_thread::start_new_thread",
             ],
             "threading": ["threading"],
-            "queue": ["queue" if ISPY3 else "Queue"],
+            "queue": ["queue"],
             "sleep": ["time::sleep"],
-            "subprocess": ["subprocess32" if SUBPROCESS32 else "subprocess"],
+            "subprocess": ["subprocess"],
             "socket": ["socket"],
             "_fdopen": ["os::fdopen"],
             "_lock": ["threading"],
@@ -128,7 +99,7 @@ def get_execmodel(backend):
             self._spawn_n(func, *args)
 
     else:
-        raise ValueError("unknown execmodel {!r}".format(backend))
+        raise ValueError(f"unknown execmodel {backend!r}")
 
     class ExecModel:
         def __init__(self, name):
@@ -186,7 +157,7 @@ def get_execmodel(backend):
     return ExecModel(backend)
 
 
-class Reply(object):
+class Reply:
     """reply instances provide access to the result
     of a function execution that got dispatched
     through WorkerPool.spawn()
@@ -211,7 +182,7 @@ class Reply(object):
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
-            raise IOError("timeout waiting for {!r}".format(self.task))
+            raise OSError(f"timeout waiting for {self.task!r}")
 
     def run(self):
         func, args, kwargs = self.task
@@ -227,7 +198,7 @@ class Reply(object):
             self.running = False
 
 
-class WorkerPool(object):
+class WorkerPool:
     """A WorkerPool allows to spawn function executions
     to threads, returning a reply object on which you
     can ask for the result (and get exceptions reraised).
@@ -343,7 +314,7 @@ if DEBUG == "2":
     def trace(*msg):
         try:
             line = " ".join(map(str, msg))
-            sys.stderr.write("[{}] {}\n".format(pid, line))
+            sys.stderr.write(f"[{pid}] {line}\n")
             sys.stderr.flush()
         except Exception:
             pass  # nothing we can do, likely interpreter-shutdown
@@ -364,7 +335,7 @@ elif DEBUG:
         except Exception:
             try:
                 v = sys.exc_info()[1]
-                sys.stderr.write("[{}] exception during tracing: {!r}\n".format(pid, v))
+                sys.stderr.write(f"[{pid}] exception during tracing: {v!r}\n")
             except Exception:
                 pass  # nothing we can do, likely interpreter-shutdown
 
@@ -384,7 +355,7 @@ class Popen2IO:
             try:
                 msvcrt.setmode(infile.fileno(), os.O_BINARY)
                 msvcrt.setmode(outfile.fileno(), os.O_BINARY)
-            except (AttributeError, IOError):
+            except (AttributeError, OSError):
                 pass
         self._read = getattr(infile, "buffer", infile).read
         self._write = getattr(outfile, "buffer", outfile).write
@@ -393,7 +364,7 @@ class Popen2IO:
     def read(self, numbytes):
         """Read exactly 'numbytes' bytes from the pipe."""
         # a file in non-blocking mode may return less bytes, so we loop
-        buf = bytes()
+        buf = b""
         while numbytes > len(buf):
             data = self._read(numbytes - len(buf))
             if not data:
@@ -417,7 +388,7 @@ class Popen2IO:
 class Message:
     """encapsulates Messages and their wire protocol."""
 
-    _types = []
+    _types: list[Callable[[Message, BaseGateway], None]] = []
 
     def __init__(self, msgcode, channelid=0, data=""):
         self.msgcode = msgcode
@@ -518,7 +489,7 @@ def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sys
     except sysex:
         raise
     except:
-        errortext = "{}: {}".format(excinfo[0].__name__, excinfo[1])
+        errortext = f"{excinfo[0].__name__}: {excinfo[1]}"
     return errortext
 
 
@@ -533,12 +504,12 @@ class RemoteError(Exception):
         return self.formatted
 
     def __repr__(self):
-        return "{}: {}".format(self.__class__.__name__, self.formatted)
+        return f"{self.__class__.__name__}: {self.formatted}"
 
     def warn(self):
         if self.formatted != INTERRUPT_TEXT:
             # XXX do this better
-            sys.stderr.write("[%s] Warning: unhandled %r\n" % (os.getpid(), self))
+            sys.stderr.write(f"[{os.getpid()}] Warning: unhandled {self!r}\n")
 
 
 class TimeoutError(IOError):
@@ -548,7 +519,7 @@ class TimeoutError(IOError):
 NO_ENDMARKER_WANTED = object()
 
 
-class Channel(object):
+class Channel:
     "Communication channel between two Python Interpreter execution points."
     RemoteError = RemoteError
     TimeoutError = TimeoutError
@@ -557,6 +528,7 @@ class Channel(object):
 
     def __init__(self, gateway, id):
         assert isinstance(id, int)
+        assert not isinstance(gateway, type)
         self.gateway = gateway
         # XXX: defaults copied from Unserializer
         self._strconfig = getattr(gateway, "_strconfig", (True, False))
@@ -582,7 +554,7 @@ class Channel(object):
         _callbacks = self.gateway._channelfactory._callbacks
         with self.gateway._receivelock:
             if self._items is None:
-                raise IOError("{!r} has callback already registered".format(self))
+                raise OSError(f"{self!r} has callback already registered")
             items = self._items
             self._items = None
             while 1:
@@ -631,7 +603,7 @@ class Channel(object):
                     msgcode = Message.CHANNEL_CLOSE
                 try:
                     self.gateway._send(msgcode, self.id)
-                except (IOError, ValueError):  # ignore problems with sending
+                except (OSError, ValueError):  # ignore problems with sending
                     pass
 
     def _getremoteerror(self):
@@ -662,7 +634,7 @@ class Channel(object):
             return ChannelFileWrite(channel=self, proxyclose=proxyclose)
         elif mode == "r":
             return ChannelFileRead(channel=self, proxyclose=proxyclose)
-        raise ValueError("mode {!r} not availabe".format(mode))
+        raise ValueError(f"mode {mode!r} not availabe")
 
     def close(self, error=None):
         """close down this channel with an optional error message.
@@ -671,7 +643,7 @@ class Channel(object):
         be done explicitely.
         """
         if self._executing:
-            raise IOError("cannot explicitly close channel within remote_exec")
+            raise OSError("cannot explicitly close channel within remote_exec")
         if self._closed:
             self.gateway._trace(self, "ignoring redundant call to close()")
         if not self._closed:
@@ -723,7 +695,7 @@ class Channel(object):
         raised if the write pipe was prematurely closed.
         """
         if self.isclosed():
-            raise IOError("cannot send to {!r}".format(self))
+            raise OSError(f"cannot send to {self!r}")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
     def receive(self, timeout=None):
@@ -737,7 +709,7 @@ class Channel(object):
         """
         itemqueue = self._items
         if itemqueue is None:
-            raise IOError("cannot receive(), channel has receiver callback")
+            raise OSError("cannot receive(), channel has receiver callback")
         try:
             x = itemqueue.get(timeout=timeout)
         except self.gateway.execmodel.queue.Empty:
@@ -774,7 +746,7 @@ ENDMARKER = object()
 INTERRUPT_TEXT = "keyboard-interrupted"
 
 
-class ChannelFactory(object):
+class ChannelFactory:
     def __init__(self, gateway, startcount=1):
         self._channels = weakref.WeakValueDictionary()
         self._callbacks = {}
@@ -788,7 +760,7 @@ class ChannelFactory(object):
         """create a new Channel with 'id' (or create new id if None)."""
         with self._writelock:
             if self.finished:
-                raise IOError("connexion already closed: {}".format(self.gateway))
+                raise OSError(f"connexion already closed: {self.gateway}")
             if id is None:
                 id = self.count
                 self.count += 2
@@ -870,7 +842,7 @@ class ChannelFactory(object):
             self._no_longer_opened(id)
 
 
-class ChannelFile(object):
+class ChannelFile:
     def __init__(self, channel, proxyclose=True):
         self.channel = channel
         self._proxyclose = proxyclose
@@ -897,7 +869,7 @@ class ChannelFileWrite(ChannelFile):
 
 class ChannelFileRead(ChannelFile):
     def __init__(self, channel, proxyclose=True):
-        super(ChannelFileRead, self).__init__(channel, proxyclose)
+        super().__init__(channel, proxyclose)
         self._buffer = None
 
     def read(self, n):
@@ -931,7 +903,7 @@ class ChannelFileRead(ChannelFile):
         return line
 
 
-class BaseGateway(object):
+class BaseGateway:
     exc_info = sys.exc_info
     _sysex = sysex
     id = "<worker>"
@@ -989,16 +961,16 @@ class BaseGateway(object):
     def _terminate_execution(self):
         pass
 
-    def _send(self, msgcode, channelid=0, data=bytes()):
+    def _send(self, msgcode, channelid=0, data=b""):
         message = Message(msgcode, channelid, data)
         try:
             message.to_io(self._io)
             self._trace("sent", message)
-        except (IOError, ValueError):
+        except (OSError, ValueError):
             e = sys.exc_info()[1]
             self._trace("failed to send", message, e)
             # ValueError might be because the IO is already closed
-            raise IOError("cannot send (already closed?)")
+            raise OSError("cannot send (already closed?)")
 
     def _local_schedulexec(self, channel, sourcetask):
         channel.close("execution disallowed")
@@ -1065,21 +1037,12 @@ class WorkerGateway(BaseGateway):
     def executetask(self, item):
         try:
             channel, (source, file_name, call_name, kwargs) = item
-            if not ISPY3 and kwargs:
-                # some python2 versions do not accept unicode keyword params
-                # note: Unserializer generally turns py2-str to py3-str objects
-                newkwargs = {}
-                for name, value in kwargs.items():
-                    if isinstance(name, unicode):
-                        name = name.encode("ascii")
-                    newkwargs[name] = value
-                kwargs = newkwargs
             loc = {"channel": channel, "__name__": "__channelexec__"}
-            self._trace("execution starts[%s]: %s" % (channel.id, repr(source)[:50]))
+            self._trace(f"execution starts[{channel.id}]: {repr(source)[:50]}")
             channel._executing = True
             try:
                 co = compile(source + "\n", file_name or "<remote exec>", "exec")
-                do_exec(co, loc)  # noqa
+                exec(co, loc)
                 if call_name:
                     self._trace("calling %s(**%60r)" % (call_name, kwargs))
                     function = loc[call_name]
@@ -1094,7 +1057,7 @@ class WorkerGateway(BaseGateway):
             excinfo = self.exc_info()
             if not isinstance(excinfo[1], EOFError):
                 if not channel.gateway._channelfactory.finished:
-                    self._trace("got exception: {!r}".format(excinfo[1]))
+                    self._trace(f"got exception: {excinfo[1]!r}")
                     errortext = self._geterrortext(excinfo)
                     channel.close(errortext)
                     return
@@ -1119,15 +1082,11 @@ class LoadError(DataFormatError):
     """Error while unserializing an object."""
 
 
-if ISPY3:
+def bchr(n):
+    return bytes([n])
 
-    def bchr(n):
-        return bytes([n])
 
-else:
-    bchr = chr
-
-DUMPFORMAT_VERSION = bchr(1)
+DUMPFORMAT_VERSION = bchr(2)
 
 FOUR_BYTE_INT_MAX = 2147483647
 
@@ -1141,8 +1100,10 @@ class _Stop(Exception):
     pass
 
 
-class Unserializer(object):
-    num2func = {}  # is filled after this class definition
+class Unserializer:
+    num2func: dict[
+        int, Callable[[Unserializer], None]
+    ] = {}  # is filled after this class definition
     py2str_as_py3str = True  # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
@@ -1196,18 +1157,8 @@ class Unserializer(object):
         s = self._read_byte_string()
         self.stack.append(int(s))
 
-    if ISPY3:
-        load_long = load_int
-        load_longlong = load_longint
-    else:
-
-        def load_long(self):
-            i = self._read_int4()
-            self.stack.append(long(i))
-
-        def load_longlong(self):
-            l = self._read_byte_string()
-            self.stack.append(long(l))
+    load_long = load_int
+    load_longlong = load_longint
 
     def load_float(self):
         binary = self.stream.read(FLOAT_FORMAT_SIZE)
@@ -1227,7 +1178,7 @@ class Unserializer(object):
 
     def load_py3string(self):
         as_bytes = self._read_byte_string()
-        if not ISPY3 and self.py3str_as_py2str:
+        if self.py3str_as_py2str:
             # XXX Should we try to decode into latin-1?
             self.stack.append(as_bytes)
         else:
@@ -1235,7 +1186,7 @@ class Unserializer(object):
 
     def load_py2string(self):
         as_bytes = self._read_byte_string()
-        if ISPY3 and self.py2str_as_py3str:
+        if self.py2str_as_py3str:
             s = as_bytes.decode("latin-1")
         else:
             s = as_bytes
@@ -1368,8 +1319,8 @@ def dumps_internal(obj):
     return _Serializer().save(obj)
 
 
-class _Serializer(object):
-    _dispatch = {}
+class _Serializer:
+    _dispatch = {object: Callable[["_Serializer", object], None]}
 
     def __init__(self, write=None):
         if write is None:
@@ -1399,7 +1350,7 @@ class _Serializer(object):
             methodname = "save_" + tp.__name__
             meth = getattr(self.__class__, methodname, None)
             if meth is None:
-                raise DumpError("can't serialize {}".format(tp))
+                raise DumpError(f"can't serialize {tp}")
             dispatch = self._dispatch[tp] = meth
         dispatch(self, obj)
 
@@ -1416,21 +1367,9 @@ class _Serializer(object):
         self._write(opcode.BYTES)
         self._write_byte_sequence(bytes_)
 
-    if ISPY3:
-
-        def save_str(self, s):
-            self._write(opcode.PY3STRING)
-            self._write_unicode_string(s)
-
-    else:
-
-        def save_str(self, s):
-            self._write(opcode.PY2STRING)
-            self._write_byte_sequence(s)
-
-        def save_unicode(self, s):
-            self._write(opcode.UNICODE)
-            self._write_unicode_string(s)
+    def save_str(self, s):
+        self._write(opcode.PY3STRING)
+        self._write_unicode_string(s)
 
     def _write_unicode_string(self, s):
         try:
@@ -1547,5 +1486,5 @@ def init_popen_io(execmodel):
 
 
 def serve(io, id):
-    trace("creating workergateway on {!r}".format(io))
+    trace(f"creating workergateway on {io!r}")
     WorkerGateway(io=io, id=id, _startcount=2).serve()

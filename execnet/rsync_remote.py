@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 (c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
@@ -82,7 +81,7 @@ def serve_rsync(channel):
         channel.send(("ack", path[len(destdir) + 1 :]))
         if data is not None:
             if STRICT_CHECK and len(data) != size:
-                raise IOError("file modified during rsync: {!r}".format(path))
+                raise OSError(f"file modified during rsync: {path!r}")
             f = open(path, "wb")
             f.write(data)
             f.close()
@@ -115,4 +114,4 @@ def serve_rsync(channel):
 
 
 if __name__ == "__channelexec__":
-    serve_rsync(channel)  # noqa
+    serve_rsync(channel)  # type: ignore[name-defined]

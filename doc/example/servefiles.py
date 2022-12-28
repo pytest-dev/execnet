@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # content of servefiles.py
 
 
@@ -10,4 +9,4 @@ def servefiles(channel):
 
 
 if __name__ == "__channelexec__":
-    servefiles(channel)
+    servefiles(channel)  # type: ignore[name-defined]
