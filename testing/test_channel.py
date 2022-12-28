@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 mostly functional tests of gateways.
 """

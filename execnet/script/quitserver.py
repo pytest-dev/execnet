@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 
   send a "quit" signal to a remote server

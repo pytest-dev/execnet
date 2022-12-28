@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 base execnet gateway code send to the other side for bootstrapping.
 

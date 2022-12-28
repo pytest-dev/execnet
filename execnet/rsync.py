@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 1:N rsync implemenation on top of execnet.
 

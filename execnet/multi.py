@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Managing Gateway Groups and interactions with multiple channels.
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 (c) 2008-2013, holger krekel
 """

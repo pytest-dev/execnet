@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 redirect output from remote to a local function
 showcasing features of the channel object:

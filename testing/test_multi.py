@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
     tests for multi channels and gateway Groups
 """

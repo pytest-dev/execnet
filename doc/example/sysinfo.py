@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 sysinfo.py [host1] [host2] [options]
 

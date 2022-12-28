@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # content of a module remote1.py
 
 if __name__ == "__channelexec__":

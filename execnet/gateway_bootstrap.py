@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 code to initialize the remote side of a gateway once the io is created
 """

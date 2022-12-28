@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2013, Holger Krekel and others

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import sys
 
 from execnet.gateway_bootstrap import HostNotFound

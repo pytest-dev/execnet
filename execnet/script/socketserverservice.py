@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 A windows service wrapper for the py.execnet socketserver.
 

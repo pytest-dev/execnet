@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from execnet import gateway_base
 
 

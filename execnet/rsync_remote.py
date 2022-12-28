@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 (c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
