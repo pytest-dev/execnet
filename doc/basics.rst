@@ -130,7 +130,7 @@ and manage the final termination procedure:
 
 .. automethod:: Group.terminate(timeout=None)
 
-This method is implicitely called for each gateway group at
+This method is implicitly called for each gateway group at
 process-exit, using a small timeout.  This is fine
 for interactive sessions or random scripts which
 you rather like to error out than hang.  If you start many

@@ -177,7 +177,7 @@ class TestRSync:
     def test_symlink_rsync(self, dirs, gw1):
         source = dirs.source
         dest = dirs.dest1
-        sourcefile = dirs.source.ensure("subdir", "existant")
+        sourcefile = dirs.source.ensure("subdir", "existent")
         source.join("rellink").mksymlinkto(sourcefile, absolute=0)
         source.join("abslink").mksymlinkto(sourcefile)
 
@@ -186,7 +186,7 @@ class TestRSync:
         rsync.send()
 
         expected = dest.join(sourcefile.relto(dirs.source))
-        assert dest.join("rellink").readlink() == "subdir/existant"
+        assert dest.join("rellink").readlink() == "subdir/existent"
         assert dest.join("abslink").readlink() == expected
 
     @needssymlink
@@ -211,7 +211,7 @@ class TestRSync:
     def test_callback(self, dirs, gw1):
         dest = dirs.dest1
         source = dirs.source
-        source.ensure("existant").write("a" * 100)
+        source.ensure("existent").write("a" * 100)
         source.ensure("existant2").write("a" * 10)
         total = {}
 

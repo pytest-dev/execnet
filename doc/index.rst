@@ -15,7 +15,7 @@ all major computing platforms today.
 **execnet** provides a `share-nothing model`_ with `channel-send/receive`_
 communication for distributing execution across many Python interpreters
 across version, platform and network barriers.  It has
-a minimal and fast API targetting the following uses:
+a minimal and fast API targeting the following uses:
 
 * distribute tasks to (many) local or remote CPUs
 * write and deploy hybrid multi-process applications

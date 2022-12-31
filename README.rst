@@ -23,7 +23,7 @@ Important
 
 execnet_ provides carefully tested means to ad-hoc interact with Python
 interpreters across version, platform and network barriers.  It provides
-a minimal and fast API targetting the following uses:
+a minimal and fast API targeting the following uses:
 
 * distribute tasks to local or remote processes
 * write and deploy hybrid multi-process applications

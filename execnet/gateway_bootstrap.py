@@ -103,7 +103,7 @@ def bootstrap(io, spec):
     elif spec.socket:
         bootstrap_socket(io, spec)
     else:
-        raise ValueError("unknown gateway type, cant bootstrap")
+        raise ValueError("unknown gateway type, can't bootstrap")
     gw = Gateway(io, spec)
     fix_pid_for_jython_popen(gw)
     return gw

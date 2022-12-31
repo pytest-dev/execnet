@@ -44,7 +44,7 @@ The client constructs a Channel() object which triggers
 these two connections, presenting a nice send/receive
 abstractions.
 
-The code executing in the http-execserver controled
+The code executing in the http-execserver controlled
 subprocess is a PopenGateway.  It does not know that it
 is connected via the http client/server machinery.
 
@@ -76,7 +76,7 @@ tags: 1.1 feature newdist
 A building block for establishing a permanent hierarchy
 of processes is a Gateway that operates on a Channel object.
 This way a gateway can be instantiated through another
-intermediating gateway which bi-directionallry forwads
+intermediating gateway which bi-directionallry forwards
 Messages through a existing channel.
 
 A code example could look like this:
@@ -89,7 +89,7 @@ A code example could look like this:
     # on the remote place such that the same ssh connection is re-used
     # for multiple ssh=codespeak.net connections, makes for small latency.
 
-some first simple implemenation might look like this::
+some first simple implementation might look like this::
 
     gw = group.makegateway("socketservice//port=8888")
     # we can rely that the subprocess gw can import execnet

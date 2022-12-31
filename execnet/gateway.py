@@ -18,7 +18,7 @@ importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
 
 class Gateway(gateway_base.BaseGateway):
-    """Gateway to a local or remote Python Intepreter."""
+    """Gateway to a local or remote Python Interpreter."""
 
     def __init__(self, io, spec):
         super().__init__(io=io, id=spec.id, _startcount=1)
@@ -188,8 +188,8 @@ def _find_non_builtin_globals(source, codeobj):
 def _source_of_function(function):
     if function.__name__ == "<lambda>":
         raise ValueError("can't evaluate lambda functions'")
-    # XXX: we dont check before remote instanciation
-    #      if arguments are used propperly
+    # XXX: we dont check before remote instantiation
+    #      if arguments are used properly
     try:
         sig = inspect.getfullargspec(function)
     except AttributeError:

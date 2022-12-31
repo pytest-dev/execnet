@@ -1,5 +1,5 @@
 """
-1:N rsync implemenation on top of execnet.
+1:N rsync implementation on top of execnet.
 
 (c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
@@ -17,7 +17,7 @@ class RSync:
 
     There is limited support for symlinks, which means that symlinks
     pointing to the sourcetree will be send "as is" while external
-    symlinks will be just copied (regardless of existance of such
+    symlinks will be just copied (regardless of existence of such
     a path on remote side).
     """
 

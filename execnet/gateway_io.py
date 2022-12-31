@@ -212,7 +212,7 @@ def serve_proxy_io(proxy_channelX):
 
     proxy_channelX.setcallback(forward_to_sub)
 
-    def controll(data):
+    def control(data):
         if data == RIO_WAIT:
             control_chan.send(sub_io.wait())
         elif data == RIO_KILL:
@@ -222,7 +222,7 @@ def serve_proxy_io(proxy_channelX):
         elif data == RIO_CLOSE_WRITE:
             control_chan.send(sub_io.close_write())
 
-    control_chan.setcallback(controll)
+    control_chan.setcallback(control)
 
     # write data to the master coming from the sub
     forward_to_master_file = proxy_channelX.makefile("w")

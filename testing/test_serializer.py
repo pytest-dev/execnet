@@ -41,7 +41,7 @@ def teardown_module(mod):
     TEMPDIR.remove(True)
 
 
-# we use the execnet folder in order to avoid tiggering a missing apipkg
+# we use the execnet folder in order to avoid triggering a missing apipkg
 pyimportdir = str(py.path.local(execnet.__file__).dirpath())
 
 
