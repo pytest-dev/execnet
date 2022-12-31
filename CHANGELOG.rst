@@ -103,7 +103,7 @@
   with previous versions and future versions
   additionally stored serialized objects containing complex objects will
   have a incompatible opcode when read with execnet < 1.4.0
-  and wont be loadable with execnet 1.4.0 either
+  and won't be loadable with execnet 1.4.0 either
 
   its strongly suggested to avoid using the Serializer of execnet 1.4.0
   this affects devpi and the external pytest-cache plugin
@@ -157,7 +157,7 @@
 
 - gateway.remote_exec() will now execute in multiple
   threads on the other side by default.  The previous
-  neccessity of running "gateway.remote_init_threads()"
+  necessity of running "gateway.remote_init_threads()"
   to allow for such concurrency is gone.  The latter
   method is now a no-op and will be removed in future
   versions of execnet.
@@ -228,7 +228,7 @@
 - fix issue #2 - properly reconfigure the channels string coercion for rsync,
   so it can send from python2 to python3
 
-- fix issue #9 - propperly terminate the worker threadpools in safe_terminate
+- fix issue #9 - properly terminate the worker threadpools in safe_terminate
 - fix issue #8 - no longer kill remote pids locally on jython ssh gateways
 
 - refactor socketserver, so it can be directly remote_exec'd for starting a socket gateway on a remote
@@ -257,7 +257,7 @@
 1.0.8
 --------------------------------
 
-- new ``gateway.remote_exec(func, **kwargs)`` style fo executing
+- new ``gateway.remote_exec(func, **kwargs)`` style for executing
   a pure function with parameters.  The function on the remote
   side also needs to accept a ``channel`` which allows it to
   communicate back and forth.  Thanks to Ronny Pfannschmidt
@@ -336,7 +336,7 @@
 
 - automatically close a channel when a remote callback raises
   an exception, makes communication more robust because until
-  now failing callbacks rendered the receiverthread unuseable
+  now failing callbacks rendered the receiverthread unusable
   leaving the remote side in-accessible.
 
 - internally split socket gateways, speeds up popen-gateways

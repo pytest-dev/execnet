@@ -340,7 +340,7 @@ class TestSourceOfFunction:
         pytest.raises(ValueError, gateway._source_of_function, prototype)
 
     def test_function_without_known_source_fails(self):
-        # this one wont be able to find the source
+        # this one won't be able to find the source
         mess = {}
         py.builtin.exec_("def fail(channel): pass", mess, mess)
         print(inspect.getsourcefile(mess["fail"]))

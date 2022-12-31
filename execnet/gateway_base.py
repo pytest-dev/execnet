@@ -403,7 +403,7 @@ class Message:
                 raise EOFError("empty read")
         except EOFError:
             e = sys.exc_info()[1]
-            raise EOFError("couldnt load message header, " + e.args[0])
+            raise EOFError("couldn't load message header, " + e.args[0])
         msgtype, channel, payload = struct.unpack("!bii", header)
         return Message(msgtype, channel, io.read(payload))
 
@@ -634,13 +634,13 @@ class Channel:
             return ChannelFileWrite(channel=self, proxyclose=proxyclose)
         elif mode == "r":
             return ChannelFileRead(channel=self, proxyclose=proxyclose)
-        raise ValueError(f"mode {mode!r} not availabe")
+        raise ValueError(f"mode {mode!r} not available")
 
     def close(self, error=None):
         """close down this channel with an optional error message.
         Note that closing of a channel tied to remote_exec happens
         automatically at the end of execution and cannot
-        be done explicitely.
+        be done explicitly.
         """
         if self._executing:
             raise OSError("cannot explicitly close channel within remote_exec")
@@ -760,7 +760,7 @@ class ChannelFactory:
         """create a new Channel with 'id' (or create new id if None)."""
         with self._writelock:
             if self.finished:
-                raise OSError(f"connexion already closed: {self.gateway}")
+                raise OSError(f"connection already closed: {self.gateway}")
             if id is None:
                 id = self.count
                 self.count += 2
@@ -1130,7 +1130,7 @@ class Unserializer:
                     loader = self.num2func[opcode]
                 except KeyError:
                     raise LoadError(
-                        "unkown opcode %r - " "wire protocol corruption?" % (opcode,)
+                        "unknown opcode %r - " "wire protocol corruption?" % (opcode,)
                     )
                 loader(self)
         except _Stop:
@@ -1331,7 +1331,7 @@ class _Serializer:
     def save(self, obj, versioned=False):
         # calling here is not re-entrant but multiple instances
         # may write to the same stream because of the common platform
-        # atomic-write guaruantee (concurrent writes each happen atomicly)
+        # atomic-write guarantee (concurrent writes each happen atomically)
         if versioned:
             self._write(DUMPFORMAT_VERSION)
         self._save(obj)
