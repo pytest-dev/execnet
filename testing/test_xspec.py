@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 import execnet
-import py
 import pytest
 from execnet.gateway_io import popen_args
 from execnet.gateway_io import ssh_args

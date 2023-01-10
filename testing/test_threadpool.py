@@ -1,7 +1,6 @@
 import os
 import sys
 
-import py
 import pytest
 from execnet.gateway_base import WorkerPool
 
@@ -143,8 +142,7 @@ def test_waitall_timeout(pool, execmodel):
 
 
 @pytest.mark.skipif("not hasattr(os, 'dup')")
-def test_pool_clean_shutdown(pool):
-    capture = py.io.StdCaptureFD()
+def test_pool_clean_shutdown(pool, capfd):
     q = pool.execmodel.queue.Queue()
 
     def f():
@@ -162,7 +160,7 @@ def test_pool_clean_shutdown(pool):
 
     pool.execmodel.start(wait_then_put)
     assert pool.waitall()
-    out, err = capture.reset()
+    out, err = capfd.readouterr()
     sys.stdout.write(out + "\n")
     sys.stderr.write(err + "\n")
     assert err == ""

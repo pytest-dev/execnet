@@ -10,7 +10,6 @@ import re
 import sys
 
 import execnet
-import py
 
 
 parser = optparse.OptionParser(usage=__doc__)
@@ -34,14 +33,15 @@ parser.add_option(
 
 
 def parsehosts(path):
-    path = py.path.local(path)
+    host_regex = re.compile(r"Host\s*(\S+)")
     l = []
-    rex = re.compile(r"Host\s*(\S+)")
-    for line in path.readlines():
-        m = rex.match(line)
-        if m is not None:
-            (sshname,) = m.groups()
-            l.append(sshname)
+
+    with open(path) as fp:
+        for line in fp:
+            m = rex.match(line)
+            if m is not None:
+                (sshname,) = m.groups()
+                l.append(sshname)
     return l
 
 

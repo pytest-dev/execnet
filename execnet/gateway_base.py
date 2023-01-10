@@ -20,6 +20,7 @@ import traceback
 import weakref
 from io import BytesIO
 from typing import Callable
+from typing import IO
 
 
 def reraise(cls, val, tb):
@@ -961,7 +962,7 @@ class BaseGateway:
     def _terminate_execution(self):
         pass
 
-    def _send(self, msgcode, channelid=0, data=b""):
+    def _send(self, msgcode, channelid: int = 0, data: bytes = b""):
         message = Message(msgcode, channelid, data)
         try:
             message.to_io(self._io)

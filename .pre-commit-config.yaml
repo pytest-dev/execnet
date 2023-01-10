@@ -1,4 +1,4 @@
-exclude: doc/en/example/py2py3/test_py2.py
+
 repos:
 -   repo: https://github.com/codespell-project/codespell
     rev: v2.2.2
@@ -28,7 +28,7 @@ repos:
     rev: v3.9.0
     hooks:
     -   id: reorder-python-imports
-        args: ['--application-directories=execnet', --py37-plus]
+        args: ['--application-directories=execnet', --py37-plus, "--remove-import=import py"]
 -   repo: https://github.com/PyCQA/doc8
     rev: 'v1.1.1'
     hooks:

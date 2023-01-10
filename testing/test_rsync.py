@@ -1,5 +1,4 @@
 import execnet
-import py
 import pytest
 from execnet import RSync
 from test_serializer import _find_version
@@ -24,12 +23,6 @@ def gw2(request, group):
     gw = group.makegateway("popen//id=gw2")
     request.addfinalizer(gw.exit)
     return gw
-
-
-needssymlink = pytest.mark.skipif(
-    not hasattr(py.path.local, "mksymlinkto"),
-    reason="py.path.local has no mksymlinkto() on this platform",
-)
 
 
 @pytest.fixture
@@ -156,7 +149,7 @@ class TestRSync:
         mode = destdir.stat().mode
         assert mode & 511 == 504
 
-    @py.test.mark.skipif("sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
+    @pytest.mark.skipif("sys.platform == 'win32' or getattr(os, '_name', '') == 'nt'")
     def test_read_only_directories(self, dirs, gw1):
         source = dirs.source
         dest = dirs.dest1
@@ -173,7 +166,6 @@ class TestRSync:
         assert dest.join("sub").stat().mode & 0o700
         assert dest.join("sub").join("subsub").stat().mode & 0o700
 
-    @needssymlink
     def test_symlink_rsync(self, dirs, gw1):
         source = dirs.source
         dest = dirs.dest1
@@ -189,7 +181,6 @@ class TestRSync:
         assert dest.join("rellink").readlink() == "subdir/existent"
         assert dest.join("abslink").readlink() == expected
 
-    @needssymlink
     def test_symlink2_rsync(self, dirs, gw1):
         source = dirs.source
         dest = dirs.dest1

@@ -3,6 +3,8 @@ Managing Gateway Groups and interactions with multiple channels.
 
 (c) 2008-2014, Holger Krekel and others
 """
+from __future__ import annotations
+
 import atexit
 import sys
 from functools import partial
@@ -280,16 +282,16 @@ class MultiChannel:
                     ch.setcallback(putreceived, endmarker=endmarker)
             return self._queue
 
-    def waitclose(self):
-        first = None
+    def waitclose(self) -> None:
+        first: Exception | None = None
         for ch in self._channels:
             try:
                 ch.waitclose()
-            except ch.RemoteError:
+            except ch.RemoteError as e:
                 if first is None:
-                    first = sys.exc_info()
-        if first:
-            reraise(*first)
+                    first = e
+        if first is not None:
+            raise first
 
 
 def safe_terminate(execmodel, timeout, list_of_paired_functions):

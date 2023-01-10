@@ -8,7 +8,6 @@ import sys
 from textwrap import dedent
 
 import execnet
-import py
 import pytest
 from execnet import gateway_base
 from execnet import gateway_io
@@ -323,7 +322,7 @@ class TestPopenGateway:
         """
         )
         remotepid = channel.receive()
-        py.process.kill(remotepid)
+        os.kill(remotepid, 15)
         with pytest.raises(EOFError):
             channel.waitclose(TESTTIMEOUT)
         with pytest.raises(IOError):
@@ -454,10 +453,12 @@ class TestTracing:
         fn = gw.remote_exec(
             "import execnet;channel.send(execnet.gateway_base.fn)"
         ).receive()
-        workerfile = py.path.local(fn)
-        assert workerfile.check()
+        from pathlib import Path
+
+        workerfile = Path(fn)
+        assert workerfile.is_file()
         worker_line = "creating workergateway"
-        for line in workerfile.readlines():
+        for line in workerfile.read_text().splitlines():
             if worker_line in line:
                 break
         else:

@@ -1,10 +1,10 @@
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 
 import execnet
-import py
 import pytest
 
 MINOR_VERSIONS = {"3": "543210", "2": "76"}
@@ -12,107 +12,78 @@ MINOR_VERSIONS = {"3": "543210", "2": "76"}
 
 def _find_version(suffix=""):
     name = "python" + suffix
-    executable = py.path.local.sysfind(name)
-    if executable is None:
-        if sys.platform == "win32" and suffix == "3":
-            for name in ("python31", "python30"):
-                executable = py.path.local(rf"c:\\{name}\python.exe")
-                if executable.check():
-                    return executable
-        for tail in MINOR_VERSIONS.get(suffix, ""):
-            path = py.path.local.sysfind(f"{name}.{tail}")
-            if path:
-                return path
+    path = shutil.which(name)
+    if path is not None:
+        return path
 
-        else:
-            pytest.skip(f"can't find a {name!r} executable")
+    for tail in MINOR_VERSIONS.get(suffix, ""):
+        path = shutil.which(f"{name}.{tail}")
+        if path:
+            return path
+    else:
+        pytest.skip(f"can't find a {name!r} executable")
     return executable
 
 
-TEMPDIR = _py2_wrapper = _py3_wrapper = None
+from pathlib import Path
 
-
-def setup_module(mod):
-    mod.TEMPDIR = py.path.local(tempfile.mkdtemp())
-    mod._py3_wrapper = PythonWrapper(py.path.local(sys.executable))
-
-
-def teardown_module(mod):
-    TEMPDIR.remove(True)
-
-
-# we use the execnet folder in order to avoid triggering a missing apipkg
-pyimportdir = str(py.path.local(execnet.__file__).dirpath())
+# we use the execnet folder in order to avoid tiggering a missing apipkg
+pyimportdir = os.fspath(Path(execnet.__file__).parent)
 
 
 class PythonWrapper:
-    def __init__(self, executable):
+    def __init__(self, executable, tmp_path):
         self.executable = executable
+        self.tmp_path = tmp_path
 
-    def dump(self, obj_rep):
-        script_file = TEMPDIR.join("dump.py")
-        script_file.write(
-            """
+    def dump(self, obj_rep: str) -> bytes:
+        script_file = self.tmp_path.joinpath("dump.py")
+        script_file.write_text(
+            f"""
 import sys
-sys.path.insert(0, %r)
+sys.path.insert(0, {pyimportdir!r})
 import gateway_base as serializer
-if sys.version_info > (3, 0): # Need binary output
-    sys.stdout = sys.stdout.detach()
-sys.stdout.write(serializer.dumps_internal(%s))
+sys.stdout = sys.stdout.detach()
+sys.stdout.write(serializer.dumps_internal({obj_rep}))
 """
-            % (pyimportdir, obj_rep)
         )
-        popen = subprocess.Popen(
-            [str(self.executable), str(script_file)],
-            stdin=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
+        res = subprocess.run(
+            [self.executable, script_file], capture_output=True, check=True
         )
-        stdout, stderr = popen.communicate()
-        ret = popen.returncode
-        if ret:
-            raise py.process.cmdexec.Error(
-                ret, ret, str(self.executable), stdout, stderr
-            )
-        return stdout
+        return res.stdout
 
-    def load(self, data, option_args="__class__"):
-        script_file = TEMPDIR.join("load.py")
-        script_file.write(
-            r"""
+    def load(self, data: bytes):
+        script_file = self.tmp_path.joinpath("load.py")
+        script_file.write_text(
+            rf"""
 import sys
-sys.path.insert(0, %r)
+sys.path.insert(0, {pyimportdir!r})
 import gateway_base as serializer
-if sys.version_info > (3, 0):
-    sys.stdin = sys.stdin.detach()
-loader = serializer.Unserializer(sys.stdin)
-loader.%s
+from io import BytesIO
+data = {data!r}
+io = BytesIO(data)
+loader = serializer.Unserializer(io)
 obj = loader.load()
 sys.stdout.write(type(obj).__name__ + "\n")
-sys.stdout.write(repr(obj))"""
-            % (pyimportdir, option_args)
+sys.stdout.write(repr(obj))
+"""
         )
-        popen = subprocess.Popen(
-            [str(self.executable), str(script_file)],
-            stdin=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
+        res = subprocess.run(
+            [self.executable, script_file],
+            capture_output=True,
         )
-        stdout, stderr = popen.communicate(data)
-        ret = popen.returncode
-        if ret:
-            raise py.process.cmdexec.Error(
-                ret, ret, str(self.executable), stdout, stderr
-            )
-        return [s.decode("ascii") for s in stdout.splitlines()]
+        if res.returncode:
+            raise ValueError(res.stderr)
+
+        return res.stdout.decode("ascii").splitlines()
 
     def __repr__(self):
         return f"<PythonWrapper for {self.executable}>"
 
 
 @pytest.fixture
-def py3(request):
-    return _py3_wrapper
+def py3(request, tmp_path):
+    return PythonWrapper(sys.executable, tmp_path)
 
 
 @pytest.fixture
