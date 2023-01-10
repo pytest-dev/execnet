@@ -27,7 +27,7 @@ def _find_version(suffix=""):
 
 from pathlib import Path
 
-# we use the execnet folder in order to avoid tiggering a missing apipkg
+# we use the execnet folder in order to avoid triggering a missing apipkg
 pyimportdir = os.fspath(Path(execnet.__file__).parent)
 
 
@@ -48,7 +48,7 @@ sys.stdout.write(serializer.dumps_internal({obj_rep}))
 """
         )
         res = subprocess.run(
-            [self.executable, script_file], capture_output=True, check=True
+            [self.executable, os.fspath(script_file)], capture_output=True, check=True
         )
         return res.stdout
 
@@ -69,7 +69,7 @@ sys.stdout.write(repr(obj))
 """
         )
         res = subprocess.run(
-            [self.executable, script_file],
+            [self.executable, os.fspath(script_file)],
             capture_output=True,
         )
         if res.returncode:

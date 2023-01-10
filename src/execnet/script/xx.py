@@ -1,7 +1,7 @@
 import sys
 
-import register
-import rlcompleter2
+import register  # type: ignore[import]
+import rlcompleter2  # type: ignore[import]
 
 rlcompleter2.setup()
 

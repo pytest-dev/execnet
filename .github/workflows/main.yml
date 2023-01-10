@@ -1,6 +1,15 @@
 name: build
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+    - main
+    - master
+    - '*deploy*'
+    tags:
+    - v*
+  pull_request:
+
 
 jobs:
   tests:
@@ -10,8 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        python: ["3.7","3.8","3.10","3.11", "pypy-3.7"]
+        os: [windows-latest, ubuntu-latest, osx-latest]
+        python: ["3.7","3.8","3.10","3.11", "pypy-3.7", "pypy-3.8"]
 
     steps:
     - uses: actions/checkout@v3
@@ -21,10 +30,12 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python }}
-    - name: Install tox
-      run: pip install tox
+    - name: Install hatch
+      run: pip install hatch
+    - id: pyname_fix
+      run: python -c "import sys;print('pyversion=' + sys.argv[1].replace('pypy-', 'pypy'))" ${{ matrix.python }} >> $GITHUB_OUTPUT
     - name: Test
-      run: tox -e py
+      run: hatch run +py=${{ steps.pyname_fix.outputs.pyversion }} test:test --color=yes
 
   deploy:
 

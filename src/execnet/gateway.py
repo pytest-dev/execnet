@@ -170,10 +170,7 @@ def rinfo_source(channel):
 def _find_non_builtin_globals(source, codeobj):
     import ast
 
-    try:
-        import __builtin__
-    except ImportError:
-        import builtins as __builtin__
+    import builtins as __builtin__
 
     vars = dict.fromkeys(codeobj.co_varnames)
     return [

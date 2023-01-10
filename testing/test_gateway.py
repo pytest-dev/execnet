@@ -122,7 +122,7 @@ class TestBasicGateway:
         )
 
         monkeypatch.syspath_prepend(tmpdir)
-        import remote
+        import remote  # type: ignore[import]
 
         ch = gw.remote_exec(remote)
         # simulate sending the code to a remote location that does not have
@@ -151,7 +151,7 @@ class TestBasicGateway:
         )
 
         monkeypatch.syspath_prepend(tmpdir)
-        import remotetest
+        import remotetest  # type: ignore[import]
 
         ch = gw.remote_exec(remotetest)
         try:

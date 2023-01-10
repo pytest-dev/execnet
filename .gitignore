@@ -1,7 +1,6 @@
 doc/_build
 build/
-execnet.egg-info/
-execnet/_version.py
+src/execnet/_version.py
 dist/
 .pytest_cache/
 .eggs/
