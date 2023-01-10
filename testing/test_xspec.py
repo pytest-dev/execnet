@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import os
+import shutil
 import subprocess
 import sys
 
@@ -21,10 +24,10 @@ skip_win_pypy = pytest.mark.xfail(
 class TestXSpec:
     def test_norm_attributes(self):
         spec = XSpec(
-            r"socket=192.168.102.2:8888//python=c:/this/python2.5" r"//chdir=d:\hello"
+            r"socket=192.168.102.2:8888//python=c:/this/python3.8//chdir=d:\hello"
         )
         assert spec.socket == "192.168.102.2:8888"
-        assert spec.python == "c:/this/python2.5"
+        assert spec.python == "c:/this/python3.8"
         assert spec.chdir == r"d:\hello"
         assert spec.nice is None
         assert not hasattr(spec, "_xyz")
@@ -195,19 +198,28 @@ class TestMakegateway:
         assert rinfo.cwd == rinfo2.cwd
         assert rinfo.version_info == rinfo2.version_info
 
-    @pytest.mark.xfail(reason="bad image name", run=False)
-    def test_vagrant(self, makegateway, tmpdir, monkeypatch):
-        vagrant = py.path.local.sysfind("vagrant")
-        if vagrant is None:
+    def test_vagrant(self, makegateway):
+        vagrant_bin = shutil.which("vagrant")
+        if vagrant_bin is None:
             pytest.skip("Vagrant binary not in PATH")
-        monkeypatch.chdir(tmpdir)
-        subprocess.check_call("vagrant init hashicorp/precise32", shell=True)
-        subprocess.check_call("vagrant up --provider virtualbox", shell=True)
-        gw = makegateway("vagrant_ssh=default")
+        res = subprocess.run(
+            [vagrant_bin, "status", "default", "--machine-readable"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+        ).stdout
+        print(res)
+        if ",default,state,shutoff\n" in res:
+            pytest.xfail("vm shutoff, run `vagrant up` first")
+        if ",default,state,not_created\n" in res:
+            pytest.xfail("vm not created, run `vagrant up` first")
+        if ",default,state,running\n" not in res:
+            pytest.fail("unknown vm state")
+
+        gw = makegateway("vagrant_ssh=default//python=python3")
         rinfo = gw._rinfo()
         rinfo.cwd == "/home/vagrant"
         rinfo.executable == "/usr/bin/python"
-        subprocess.check_call("vagrant halt", shell=True)
 
     def test_socket(self, specsocket, makegateway):
         gw = makegateway("socket=%s//id=sock1" % specsocket.socket)

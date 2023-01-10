@@ -16,3 +16,8 @@ bin/
 include/
 .Python
 .env/
+.cache/
+.vagrant/
+.vagrant.d/
+.config/
+.local/
