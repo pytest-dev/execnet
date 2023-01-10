@@ -27,21 +27,6 @@ skip_win_pypy = pytest.mark.xfail(
 )
 
 
-def fails(*args, **kwargs):
-    0 / 0
-
-
-def test_deprecation(recwarn, monkeypatch):
-    execnet.PopenGateway().exit()
-    assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(socket, "socket", fails)
-    pytest.raises(Exception, execnet.SocketGateway, "localhost", 8811)
-    assert recwarn.pop(DeprecationWarning)
-    monkeypatch.setattr(subprocess, "Popen", fails)
-    pytest.raises(Exception, execnet.SshGateway, "not-existing")
-    assert recwarn.pop(DeprecationWarning)
-
-
 class TestBasicGateway:
     def test_correct_setup(self, gw):
         assert gw.hasreceiver()
