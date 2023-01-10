@@ -30,6 +30,8 @@ class XSpec:
     vagrant_ssh: str | None = None
     via: str | None = None
 
+    env: dict[str, str]
+
     def __init__(self, string: str) -> None:
         self._spec = string
         self.env = {}

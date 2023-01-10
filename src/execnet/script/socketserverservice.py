@@ -9,11 +9,11 @@ To use, run:
 import sys
 import threading
 
-import servicemanager
-import win32event
-import win32evtlogutil
-import win32service
-import win32serviceutil
+import servicemanager  # type: ignore[import]
+import win32event  # type: ignore[import]
+import win32evtlogutil  # type: ignore[import]
+import win32service  # type: ignore[import]
+import win32serviceutil  # type: ignore[import]
 
 from execnet.gateway_base import get_execmodel
 
