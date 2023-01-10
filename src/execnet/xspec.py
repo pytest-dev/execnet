@@ -1,6 +1,7 @@
 """
 (c) 2008-2013, holger krekel
 """
+from __future__ import annotations
 
 
 class XSpec:
@@ -13,9 +14,20 @@ class XSpec:
     """
 
     # XXX allow customization, for only allow specific key names
-    popen = (
-        ssh
-    ) = socket = python = chdir = nice = dont_write_bytecode = execmodel = None
+
+    _spec: str
+
+    id: str | None = None
+    popen: str | bool | None = None
+    ssh: str | None = None
+    socket: str | bool | None = None
+    python: str | bool | None = None
+    chdir: str | bool | None = None
+    nice: str | bool | None = None
+    dont_write_bytecode: str | bool | None = None
+    execmodel: str | bool | None = None
+
+    env: dict[str, str]
 
     def __init__(self, string):
         self._spec = string
@@ -35,7 +47,7 @@ class XSpec:
             else:
                 setattr(self, key, value)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> str | bool | None:
         if name[0] == "_":
             raise AttributeError(name)
         return None
