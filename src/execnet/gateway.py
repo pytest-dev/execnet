@@ -172,14 +172,15 @@ def _find_non_builtin_globals(source, codeobj):
 
     import builtins as __builtin__
 
-    vars = dict.fromkeys(codeobj.co_varnames)
-    return [
-        node.id
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Name)
-        and node.id not in vars
-        and node.id not in __builtin__.__dict__
-    ]
+    vars = set(codeobj.co_varnames)
+    vars.update(__builtin__.__dict__)
+
+    res = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Name) and node.id not in vars:
+            vars.add(node.id)
+            res.append(node.id)
+    return res
 
 
 def _source_of_function(function):
