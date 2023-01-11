@@ -12,6 +12,7 @@ from threading import Lock
 
 from . import gateway_bootstrap
 from . import gateway_io
+from .gateway_base import Channel
 from .gateway_base import get_execmodel
 from .gateway_base import reraise
 from .gateway_base import trace
@@ -234,7 +235,7 @@ class Group:
 
 
 class MultiChannel:
-    def __init__(self, channels):
+    def __init__(self, channels: list[Channel]):
         self._channels = channels
 
     def __len__(self):
@@ -243,8 +244,8 @@ class MultiChannel:
     def __iter__(self):
         return iter(self._channels)
 
-    def __getitem__(self, key):
-        return self._channels[key]
+    def __getitem__(self, index):
+        return self._channels[index]
 
     def __contains__(self, chan):
         return chan in self._channels

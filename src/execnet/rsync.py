@@ -3,12 +3,18 @@
 
 (c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
+from __future__ import annotations
+
 import os
 import stat
 from hashlib import md5
 from queue import Queue
+from typing import Callable
+from typing import Type
 
 import execnet.rsync_remote
+from execnet.gateway_base import Channel
+from execnet.multi import MultiChannel
 
 
 class RSync:
@@ -21,42 +27,45 @@ class RSync:
     a path on remote side).
     """
 
-    def __init__(self, sourcedir, callback=None, verbose=True):
+    def __init__(self, sourcedir: str | os.PathLike[str], callback=None, verbose=True):
         self._sourcedir = str(sourcedir)
         self._verbose = verbose
         assert callback is None or hasattr(callback, "__call__")
         self._callback = callback
-        self._channels = {}
-        self._receivequeue = Queue()
-        self._links = []
+        self._channels: dict[Channel, Callable[[], None] | None] = {}
+        self._links: list[tuple[str, str, str]] = []
 
     def filter(self, path):
         return True
 
-    def _end_of_channel(self, channel):
+    def _end_of_channel(self, channel, data):
         if channel in self._channels:
             # too early!  we must have got an error
             channel.waitclose()
             # or else we raise one
             raise OSError(f"connection unexpectedly closed: {channel.gateway} ")
 
-    def _process_link(self, channel):
+    def _process_link(self, channel, data):
         for link in self._links:
             channel.send(link)
         # completion marker, this host is done
         channel.send(42)
 
-    def _done(self, channel):
+    def _done(self, channel, data):
         """Call all callbacks"""
         finishedcallback = self._channels.pop(channel)
         if finishedcallback:
             finishedcallback()
         channel.waitclose()
 
-    def _list_done(self, channel):
+    def _ack(self, channel, data):
+        if self._callback:
+            self._callback("ack", self._paths[data], channel)
+
+    def _list_done(self, channel, data):
         # sum up all to send
         if self._callback:
-            s = sum([self._paths[i] for i in self._to_send[channel]])
+            s = sum(self._paths[i] for i in self._to_send[channel])
             self._callback("list", s, channel)
 
     def _send_item(self, channel, data):
@@ -64,8 +73,8 @@ class RSync:
         modified_rel_path, checksum = data
         modifiedpath = os.path.join(self._sourcedir, *modified_rel_path)
         try:
-            f = open(modifiedpath, "rb")
-            data = f.read()
+            with open(modifiedpath, "rb") as fp:
+                data = fp.read()
         except OSError:
             data = None
 
@@ -81,7 +90,6 @@ class RSync:
         # print "sending", modified_rel_path, data and len(data) or 0, checksum
 
         if data is not None:
-            f.close()
             if checksum is not None and checksum == md5(data).digest():
                 data = None  # not really modified
             else:
@@ -92,7 +100,7 @@ class RSync:
         if self._verbose:
             print(f"{gateway} <= {modified_rel_path}")
 
-    def send(self, raises=True):
+    def send(self, raises: bool = True) -> None:
         """Sends a sourcedir to all added targets. Flag indicates
         whether to raise an error or return in case of lack of
         targets
@@ -110,45 +118,34 @@ class RSync:
 
         # paths and to_send are only used for doing
         # progress-related callbacks
-        self._paths = {}
-        self._to_send = {}
+        self._paths: dict[str, int] = {}
+        self._to_send: dict[Channel, list[str]] = {}
+
+        mch = MultiChannel(list(self._channels))
+        rq = mch.make_receive_queue(endmarker=(None, None))
 
         # send modified file to clients
-        while self._channels:
-            channel, req = self._receivequeue.get()
-            if req is None:
-                self._end_of_channel(channel)
-            else:
-                command, data = req
-                if command == "links":
-                    self._process_link(channel)
-                elif command == "done":
-                    self._done(channel)
-                elif command == "ack":
-                    if self._callback:
-                        self._callback("ack", self._paths[data], channel)
-                elif command == "list_done":
-                    self._list_done(channel)
-                elif command == "send":
-                    self._send_item(channel, data)
-                    del data
-                else:
-                    assert "Unknown command %s" % command
+        commands: dict[str | None, Callable] = {
+            None: self._end_of_channel,
+            "links": self._process_link,
+            "done": self._done,
+            "ack": self._ack,
+            "send": self._send_item,
+            "list_done": self._list_done,
+        }
 
-    def add_target(self, gateway, destdir, finishedcallback=None, **options):
+        while self._channels:
+            channel, (command, data) = rq.get()
+            assert command in commands, "Unknown command %s" % command
+            commands[command](channel, data)
+
+    def add_target(self, gateway, destdir, finishedcallback=None, delete: bool = False):
         """Adds a remote target specified via a gateway
         and a remote destination directory.
         """
-        for name in options:
-            assert name in ("delete",)
-
-        def itemcallback(req):
-            self._receivequeue.put((channel, req))
-
-        channel = gateway.remote_exec(execnet.rsync_remote)
-        channel.reconfigure(py2str_as_py3str=False, py3str_as_py2str=False)
-        channel.setcallback(itemcallback, endmarker=None)
-        channel.send((str(destdir), options))
+        channel = gateway.remote_exec(
+            execnet.rsync_remote.serve_rsync, destdir=str(destdir), delete=delete
+        )
         self._channels[channel] = finishedcallback
 
     def _broadcast(self, msg):
