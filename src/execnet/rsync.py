@@ -124,7 +124,6 @@ class RSync:
         mch = MultiChannel(list(self._channels))
         rq = mch.make_receive_queue(endmarker=(None, None))
 
-        # send modified file to clients
         commands: dict[str | None, Callable] = {
             None: self._end_of_channel,
             "links": self._process_link,
