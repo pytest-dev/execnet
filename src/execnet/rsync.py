@@ -113,7 +113,15 @@ class RSync:
         self._paths = {}
         self._to_send = {}
 
-        # send modified file to clients
+        commands: dict[str | None, Callable] = {
+            None: self._end_of_channel,
+            "links": self._process_link,
+            "done": self._done,
+            "ack": self._ack,
+            "send": self._send_item,
+            "list_done": self._list_done,
+        }
+
         while self._channels:
             channel, req = self._receivequeue.get()
             if req is None:
