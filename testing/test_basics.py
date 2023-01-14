@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import os
 import subprocess
 import sys
@@ -86,7 +87,7 @@ def test_subprocess_interaction(anypython):
 
     try:
         source = f"{inspect.getsource(read_write_loop)}\n\nread_write_loop()"
-        repr_source = repr(str(source)) + "\n"
+        repr_source = json.dumps(source) + "\n"
         sendline = repr_source
         send(sendline)
         s = receive()

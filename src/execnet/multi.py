@@ -14,7 +14,6 @@ from . import gateway_bootstrap
 from . import gateway_io
 from .gateway_base import Channel
 from .gateway_base import get_execmodel
-from .gateway_base import reraise
 from .gateway_base import trace
 from .xspec import XSpec
 

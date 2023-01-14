@@ -18,20 +18,10 @@ import struct
 import sys
 import traceback
 import weakref
+from _thread import interrupt_main
 from io import BytesIO
 from typing import Callable
-from typing import IO
 
-
-def reraise(cls, val, tb):
-    raise val.with_traceback(tb)
-
-
-unicode = str
-_long_type = int
-from _thread import interrupt_main
-
-SUBPROCESS32 = False
 # f = open("/tmp/execnet-%s" % os.getpid(), "w")
 # def log_extra(*msg):
 #     f.write(" ".join([str(x) for x in msg]) + "\n")
@@ -46,9 +36,8 @@ def get_execmodel(backend):
         return backend
     if backend == "thread":
         importdef = {
-            "get_ident": ["thread::get_ident", "_thread::get_ident"],
+            "get_ident": ["_thread::get_ident"],
             "_start_new_thread": [
-                "thread::start_new_thread",
                 "_thread::start_new_thread",
             ],
             "threading": ["threading"],
