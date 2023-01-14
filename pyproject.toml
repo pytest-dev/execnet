@@ -69,3 +69,4 @@ include = [
 
 [tool.mypy]
 python_version = "3.8"
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
