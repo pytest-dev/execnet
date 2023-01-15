@@ -65,7 +65,7 @@ source = "vcs"
 features = ["testing"]
 
 [[tool.hatch.envs.test.matrix]]
-python = ["3.7", "3.8", "3.9", "3.10", "3.11", "pypy3.7","pypy3.8"]
+python = ["3.8", "3.9", "3.10", "3.11", "pypy3.8"]
 
 [tool.hatch.envs.test.scripts]
 test = "pytest {args:testing}"
