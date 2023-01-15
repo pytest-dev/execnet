@@ -80,7 +80,7 @@ html = "sphinx-build -W -b html doc doc/_build"
 
 [tool.hatch.envs.pre-commit]
 detached = true
-dependences = ["pre-commit>1.11.0"]
+dependences = ["pre-commit>=2.20.0"]
 
 [tool.hatch.envs.pre-commit.scripts]
 all = "pre-commit run --all-files --show-diff-on-failure"
