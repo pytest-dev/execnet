@@ -12,6 +12,7 @@ import pytest
 from execnet import XSpec
 from execnet.gateway import Gateway
 from execnet.gateway_io import popen_args
+from execnet.gateway_io import popen_bootstrapline
 from execnet.gateway_io import ssh_args
 from execnet.gateway_io import vagrant_ssh_args
 
@@ -78,13 +79,7 @@ class TestXSpec:
 
     def test_popen_with_sudo_python(self) -> None:
         spec = XSpec("popen//python=sudo python3")
-        assert popen_args(spec) == [
-            "sudo",
-            "python3",
-            "-u",
-            "-c",
-            "import sys;exec(eval(sys.stdin.readline()))",
-        ]
+        assert popen_args(spec) == ["sudo", "python3", "-u", "-c", popen_bootstrapline]
 
     def test_env(self) -> None:
         xspec = XSpec("popen//env:NAME=value1")
