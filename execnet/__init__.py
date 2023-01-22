@@ -7,9 +7,6 @@ pure python lib for connecting to local and remote Python Interpreters.
 (c) 2012, Holger Krekel and others
 """
 from ._version import version as __version__
-from .deprecated import PopenGateway
-from .deprecated import SocketGateway
-from .deprecated import SshGateway
 from .gateway_base import DataFormatError
 from .gateway_base import dump
 from .gateway_base import dumps
@@ -29,9 +26,6 @@ from .xspec import XSpec
 
 __all__ = [
     "__version__",
-    "PopenGateway",
-    "SocketGateway",
-    "SshGateway",
     "makegateway",
     "set_execmodel",
     "HostNotFound",

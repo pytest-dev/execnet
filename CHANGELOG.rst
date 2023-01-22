@@ -5,6 +5,7 @@
   * apply pyupgrade --py37-plus
   * minimal mypy fixes and python2 support code drop
 * migrate packaging to hatch
+* drop deprecated apis of old makegateway names
 
 
 
