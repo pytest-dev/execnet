@@ -20,6 +20,7 @@ outchan = gw.remote_exec(
 """
 ).receive()
 
+
 # note: callbacks execute in receiver thread!
 def write(data):
     print("received:", repr(data))

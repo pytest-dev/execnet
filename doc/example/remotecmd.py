@@ -1,5 +1,6 @@
 import os
 
+
 # contents of: remotecmd.py
 def simple(arg):
     return arg + 1
