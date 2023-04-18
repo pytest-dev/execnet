@@ -173,7 +173,7 @@ class Group:
     def _register(self, gateway):
         assert not hasattr(gateway, "_group")
         assert gateway.id
-        assert id not in self
+        assert gateway.id not in self
         self._gateways.append(gateway)
         gateway._group = self
 
