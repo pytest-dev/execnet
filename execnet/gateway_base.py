@@ -18,17 +18,10 @@ import struct
 import sys
 import traceback
 import weakref
+from _thread import interrupt_main
 from io import BytesIO
 from typing import Callable
 
-
-def reraise(cls, val, tb):
-    raise val.with_traceback(tb)
-
-
-unicode = str
-_long_type = int
-from _thread import interrupt_main
 
 SUBPROCESS32 = False
 # f = open("/tmp/execnet-%s" % os.getpid(), "w")
@@ -45,11 +38,8 @@ def get_execmodel(backend):
         return backend
     if backend == "thread":
         importdef = {
-            "get_ident": ["thread::get_ident", "_thread::get_ident"],
-            "_start_new_thread": [
-                "thread::start_new_thread",
-                "_thread::start_new_thread",
-            ],
+            "get_ident": ["_thread::get_ident"],
+            "_start_new_thread": ["_thread::start_new_thread"],
             "threading": ["threading"],
             "queue": ["queue"],
             "sleep": ["time::sleep"],
@@ -178,7 +168,7 @@ class Reply:
         try:
             return self._result
         except AttributeError:
-            reraise(*(self._excinfo[:3]))  # noqa
+            raise self._excinfo[1].with_traceback(self._excinfo[2])
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
@@ -1385,7 +1375,7 @@ class _Serializer:
             streamlist = self._streamlist
         except AttributeError:
             return None
-        return type(streamlist[0])().join(streamlist)
+        return b"".join(streamlist)
 
     def _save(self, obj):
         tp = type(obj)

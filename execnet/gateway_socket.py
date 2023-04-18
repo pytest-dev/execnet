@@ -2,11 +2,6 @@ import sys
 
 from execnet.gateway_bootstrap import HostNotFound
 
-try:
-    bytes
-except NameError:
-    bytes = str
-
 
 class SocketIO:
     def __init__(self, sock, execmodel):

@@ -11,7 +11,6 @@ from threading import Lock
 from . import gateway_bootstrap
 from . import gateway_io
 from .gateway_base import get_execmodel
-from .gateway_base import reraise
 from .gateway_base import trace
 from .xspec import XSpec
 
@@ -289,7 +288,7 @@ class MultiChannel:
                 if first is None:
                     first = sys.exc_info()
         if first:
-            reraise(*first)
+            raise first[1].with_traceback(first[2])
 
 
 def safe_terminate(execmodel, timeout, list_of_paired_functions):
