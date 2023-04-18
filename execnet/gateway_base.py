@@ -381,7 +381,7 @@ class Message:
     # message code -> name, handler
     _types: dict[int, tuple[str, Callable[[Message, BaseGateway], None]]] = {}
 
-    def __init__(self, msgcode, channelid=0, data=""):
+    def __init__(self, msgcode, channelid=0, data=b""):
         self.msgcode = msgcode
         self.channelid = channelid
         self.data = data
