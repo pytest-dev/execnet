@@ -7,6 +7,6 @@ rlcompleter2.setup()
 
 try:
     hostport = sys.argv[1]
-except:
+except BaseException:
     hostport = ":8888"
 gw = register.ServerGateway(hostport)

@@ -32,7 +32,7 @@ def clientside():
                 line = sock.recv(4096)
                 sys.stdout.write(line)
                 sys.stdout.flush()
-    except:
+    except BaseException:
         import traceback
 
         print(traceback.print_exc())
@@ -66,7 +66,7 @@ class promptagent(Thread):
                     try:
                         try:
                             exec(compile(line + "\n", "<remote pyin>", "single"))
-                        except:
+                        except BaseException:
                             print_exc()
                     finally:
                         sys.stdout = oldout

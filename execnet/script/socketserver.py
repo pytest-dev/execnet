@@ -94,7 +94,7 @@ def startserver(serversock, loop=False):
                 exec_from_one_connection(serversock)
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except:
+            except BaseException:
                 if debug:
                     import traceback
 

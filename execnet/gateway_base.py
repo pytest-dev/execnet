@@ -179,7 +179,7 @@ class Reply:
         try:
             try:
                 self._result = func(*args, **kwargs)
-            except:
+            except BaseException:
                 # sys may be already None when shutting down the interpreter
                 if sys is not None:
                     self._excinfo = sys.exc_info()
@@ -485,7 +485,7 @@ def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sys
         errortext = "".join(l)
     except sysex:
         raise
-    except:
+    except BaseException:
         errortext = f"{excinfo[0].__name__}: {excinfo[1]}"
     return errortext
 
@@ -1050,7 +1050,7 @@ class WorkerGateway(BaseGateway):
         except KeyboardInterrupt:
             channel.close(INTERRUPT_TEXT)
             raise
-        except:
+        except BaseException:
             excinfo = self.exc_info()
             if not isinstance(excinfo[1], EOFError):
                 if not channel.gateway._channelfactory.finished:
