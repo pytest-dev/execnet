@@ -1355,7 +1355,7 @@ def dumps_internal(obj):
 
 
 class _Serializer:
-    _dispatch = {object: Callable[["_Serializer", object], None]}
+    _dispatch: dict[type, Callable[[_Serializer, object], None]] = {}
 
     def __init__(self, write=None):
         if write is None:
