@@ -1107,10 +1107,34 @@ class _Stop(Exception):
     pass
 
 
+class opcode:
+    """container for name -> num mappings."""
+
+    BUILDTUPLE = b"@"
+    BYTES = b"A"
+    CHANNEL = b"B"
+    FALSE = b"C"
+    FLOAT = b"D"
+    FROZENSET = b"E"
+    INT = b"F"
+    LONG = b"G"
+    LONGINT = b"H"
+    LONGLONG = b"I"
+    NEWDICT = b"J"
+    NEWLIST = b"K"
+    NONE = b"L"
+    PY2STRING = b"M"
+    PY3STRING = b"N"
+    SET = b"O"
+    SETITEM = b"P"
+    STOP = b"Q"
+    TRUE = b"R"
+    UNICODE = b"S"
+    COMPLEX = b"T"
+
+
 class Unserializer:
-    num2func: dict[
-        int, Callable[[Unserializer], None]
-    ] = {}  # is filled after this class definition
+    num2func: dict[bytes, Callable[[Unserializer], None]] = {}
     py2str_as_py3str = True  # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
@@ -1150,30 +1174,46 @@ class Unserializer:
     def load_none(self):
         self.stack.append(None)
 
+    num2func[opcode.NONE] = load_none
+
     def load_true(self):
         self.stack.append(True)
 
+    num2func[opcode.TRUE] = load_true
+
     def load_false(self):
         self.stack.append(False)
+
+    num2func[opcode.FALSE] = load_false
 
     def load_int(self):
         i = self._read_int4()
         self.stack.append(i)
 
+    num2func[opcode.INT] = load_int
+
     def load_longint(self):
         s = self._read_byte_string()
         self.stack.append(int(s))
 
+    num2func[opcode.LONGINT] = load_longint
+
     load_long = load_int
+    num2func[opcode.LONG] = load_long
     load_longlong = load_longint
+    num2func[opcode.LONGLONG] = load_longlong
 
     def load_float(self):
         binary = self.stream.read(FLOAT_FORMAT_SIZE)
         self.stack.append(struct.unpack(FLOAT_FORMAT, binary)[0])
 
+    num2func[opcode.FLOAT] = load_float
+
     def load_complex(self):
         binary = self.stream.read(COMPLEX_FORMAT_SIZE)
         self.stack.append(complex(*struct.unpack(COMPLEX_FORMAT, binary)))
+
+    num2func[opcode.COMPLEX] = load_complex
 
     def _read_int4(self):
         return struct.unpack("!i", self.stream.read(4))[0]
@@ -1191,6 +1231,8 @@ class Unserializer:
         else:
             self.stack.append(as_bytes.decode("utf-8"))
 
+    num2func[opcode.PY3STRING] = load_py3string
+
     def load_py2string(self):
         as_bytes = self._read_byte_string()
         if self.py2str_as_py3str:
@@ -1199,16 +1241,24 @@ class Unserializer:
             s = as_bytes
         self.stack.append(s)
 
+    num2func[opcode.PY2STRING] = load_py2string
+
     def load_bytes(self):
         s = self._read_byte_string()
         self.stack.append(s)
 
+    num2func[opcode.BYTES] = load_bytes
+
     def load_unicode(self):
         self.stack.append(self._read_byte_string().decode("utf-8"))
+
+    num2func[opcode.UNICODE] = load_unicode
 
     def load_newlist(self):
         length = self._read_int4()
         self.stack.append([None] * length)
+
+    num2func[opcode.NEWLIST] = load_newlist
 
     def load_setitem(self):
         if len(self.stack) < 3:
@@ -1217,8 +1267,12 @@ class Unserializer:
         key = self.stack.pop()
         self.stack[-1][key] = value
 
+    num2func[opcode.SETITEM] = load_setitem
+
     def load_newdict(self):
         self.stack.append({})
+
+    num2func[opcode.NEWDICT] = load_newdict
 
     def _load_collection(self, type_):
         length = self._read_int4()
@@ -1232,45 +1286,29 @@ class Unserializer:
     def load_buildtuple(self):
         self._load_collection(tuple)
 
+    num2func[opcode.BUILDTUPLE] = load_buildtuple
+
     def load_set(self):
         self._load_collection(set)
+
+    num2func[opcode.SET] = load_set
 
     def load_frozenset(self):
         self._load_collection(frozenset)
 
+    num2func[opcode.FROZENSET] = load_frozenset
+
     def load_stop(self):
         raise _Stop
+
+    num2func[opcode.STOP] = load_stop
 
     def load_channel(self):
         id = self._read_int4()
         newchannel = self.channelfactory.new(id)
         self.stack.append(newchannel)
 
-
-# automatically build opcodes and byte-encoding
-
-
-class opcode:
-    """container for name -> num mappings."""
-
-
-def _buildopcodes():
-    l = []
-    later_added = {"COMPLEX": 1}
-    for name, func in Unserializer.__dict__.items():
-        if name.startswith("load_"):
-            opname = name[5:].upper()
-            l.append((opname, func))
-    l.sort(key=lambda x: (later_added.get(x[0], 0), x[0]))
-
-    for i, (opname, func) in enumerate(l):
-        assert i < 26, "xxx"
-        i = bchr(64 + i)
-        Unserializer.num2func[i] = func
-        setattr(opcode, opname, i)
-
-
-_buildopcodes()
+    num2func[opcode.CHANNEL] = load_channel
 
 
 def dumps(obj):
