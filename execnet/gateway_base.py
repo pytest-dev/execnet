@@ -388,7 +388,8 @@ class Popen2IO:
 class Message:
     """encapsulates Messages and their wire protocol."""
 
-    _types: list[Callable[[Message, BaseGateway], None]] = []
+    # message code -> name, handler
+    _types: dict[int, tuple[str, Callable[[Message, BaseGateway], None]]] = {}
 
     def __init__(self, msgcode, channelid=0, data=""):
         self.msgcode = msgcode
@@ -412,21 +413,16 @@ class Message:
         io.write(header + self.data)
 
     def received(self, gateway):
-        self._types[self.msgcode](self, gateway)
+        handler = self._types[self.msgcode][1]
+        handler(self, gateway)
 
     def __repr__(self):
-        name = self._types[self.msgcode].__name__.upper()
+        name = self._types[self.msgcode][0]
         return "<Message {} channel={} lendata={}>".format(
             name, self.channelid, len(self.data)
         )
 
-
-class GatewayReceivedTerminate(Exception):
-    """Receiverthread got termination message."""
-
-
-def _setupmessages():
-    def status(message, gateway):
+    def _status(message, gateway):
         # we use the channelid to send back information
         # but don't instantiate a channel object
         d = {
@@ -437,49 +433,60 @@ def _setupmessages():
         gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
         gateway._send(Message.CHANNEL_CLOSE, message.channelid)
 
-    def channel_exec(message, gateway):
-        channel = gateway._channelfactory.new(message.channelid)
-        gateway._local_schedulexec(channel=channel, sourcetask=message.data)
+    STATUS = 0
+    _types[STATUS] = ("STATUS", _status)
 
-    def channel_data(message, gateway):
-        gateway._channelfactory._local_receive(message.channelid, message.data)
-
-    def channel_close(message, gateway):
-        gateway._channelfactory._local_close(message.channelid)
-
-    def channel_close_error(message, gateway):
-        remote_error = RemoteError(loads_internal(message.data))
-        gateway._channelfactory._local_close(message.channelid, remote_error)
-
-    def channel_last_message(message, gateway):
-        gateway._channelfactory._local_close(message.channelid, sendonly=True)
-
-    def gateway_terminate(message, gateway):
-        raise GatewayReceivedTerminate(gateway)
-
-    def reconfigure(message, gateway):
+    def _reconfigure(message, gateway):
         if message.channelid == 0:
             target = gateway
         else:
             target = gateway._channelfactory.new(message.channelid)
         target._strconfig = loads_internal(message.data, gateway)
 
-    types = [
-        status,
-        reconfigure,
-        gateway_terminate,
-        channel_exec,
-        channel_data,
-        channel_close,
-        channel_close_error,
-        channel_last_message,
-    ]
-    for i, handler in enumerate(types):
-        Message._types.append(handler)
-        setattr(Message, handler.__name__.upper(), i)
+    RECONFIGURE = 1
+    _types[RECONFIGURE] = ("RECONFIGURE", _reconfigure)
+
+    def _gateway_terminate(message, gateway):
+        raise GatewayReceivedTerminate(gateway)
+
+    GATEWAY_TERMINATE = 2
+    _types[GATEWAY_TERMINATE] = ("GATEWAY_TERMINATE", _gateway_terminate)
+
+    def _channel_exec(message, gateway):
+        channel = gateway._channelfactory.new(message.channelid)
+        gateway._local_schedulexec(channel=channel, sourcetask=message.data)
+
+    CHANNEL_EXEC = 3
+    _types[CHANNEL_EXEC] = ("CHANNEL_EXEC", _channel_exec)
+
+    def _channel_data(message, gateway):
+        gateway._channelfactory._local_receive(message.channelid, message.data)
+
+    CHANNEL_DATA = 4
+    _types[CHANNEL_DATA] = ("CHANNEL_DATA", _channel_data)
+
+    def _channel_close(message, gateway):
+        gateway._channelfactory._local_close(message.channelid)
+
+    CHANNEL_CLOSE = 5
+    _types[CHANNEL_CLOSE] = ("CHANNEL_CLOSE", _channel_close)
+
+    def _channel_close_error(message, gateway):
+        remote_error = RemoteError(loads_internal(message.data))
+        gateway._channelfactory._local_close(message.channelid, remote_error)
+
+    CHANNEL_CLOSE_ERROR = 6
+    _types[CHANNEL_CLOSE_ERROR] = ("CHANNEL_CLOSE_ERROR", _channel_close_error)
+
+    def _channel_last_message(message, gateway):
+        gateway._channelfactory._local_close(message.channelid, sendonly=True)
+
+    CHANNEL_LAST_MESSAGE = 7
+    _types[CHANNEL_LAST_MESSAGE] = ("CHANNEL_LAST_MESSAGE", _channel_last_message)
 
 
-_setupmessages()
+class GatewayReceivedTerminate(Exception):
+    """Receiverthread got termination message."""
 
 
 def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sysex):
