@@ -43,7 +43,7 @@ def clientside():
 class promptagent(Thread):
     def __init__(self, clientsock):
         print("server side starting")
-        Thread.__init__(self)
+        super.__init__()
         self.clientsock = clientsock
 
     def run(self):
