@@ -38,16 +38,16 @@ def get_execmodel(backend):
         return backend
     if backend == "thread":
         importdef = {
-            "get_ident": ["_thread::get_ident"],
-            "_start_new_thread": ["_thread::start_new_thread"],
-            "threading": ["threading"],
-            "queue": ["queue"],
-            "sleep": ["time::sleep"],
-            "subprocess": ["subprocess"],
-            "socket": ["socket"],
-            "_fdopen": ["os::fdopen"],
-            "_lock": ["threading"],
-            "_event": ["threading"],
+            "get_ident": "_thread::get_ident",
+            "_start_new_thread": "_thread::start_new_thread",
+            "threading": "threading",
+            "queue": "queue",
+            "sleep": "time::sleep",
+            "subprocess": "subprocess",
+            "socket": "socket",
+            "_fdopen": "os::fdopen",
+            "_lock": "threading",
+            "_event": "threading",
         }
 
         def exec_start(self, func, args=()):
@@ -55,16 +55,16 @@ def get_execmodel(backend):
 
     elif backend == "eventlet":
         importdef = {
-            "get_ident": ["eventlet.green.thread::get_ident"],
-            "_spawn_n": ["eventlet::spawn_n"],
-            "threading": ["eventlet.green.threading"],
-            "queue": ["eventlet.queue"],
-            "sleep": ["eventlet::sleep"],
-            "subprocess": ["eventlet.green.subprocess"],
-            "socket": ["eventlet.green.socket"],
-            "_fdopen": ["eventlet.green.os::fdopen"],
-            "_lock": ["eventlet.green.threading"],
-            "_event": ["eventlet.green.threading"],
+            "get_ident": "eventlet.green.thread::get_ident",
+            "_spawn_n": "eventlet::spawn_n",
+            "threading": "eventlet.green.threading",
+            "queue": "eventlet.queue",
+            "sleep": "eventlet::sleep",
+            "subprocess": "eventlet.green.subprocess",
+            "socket": "eventlet.green.socket",
+            "_fdopen": "eventlet.green.os::fdopen",
+            "_lock": "eventlet.green.threading",
+            "_event": "eventlet.green.threading",
         }
 
         def exec_start(self, func, args=()):
@@ -72,17 +72,17 @@ def get_execmodel(backend):
 
     elif backend == "gevent":
         importdef = {
-            "get_ident": ["gevent.thread::get_ident"],
-            "_spawn_n": ["gevent::spawn"],
-            "threading": ["threading"],
-            "queue": ["gevent.queue"],
-            "sleep": ["gevent::sleep"],
-            "subprocess": ["gevent.subprocess"],
-            "socket": ["gevent.socket"],
+            "get_ident": "gevent.thread::get_ident",
+            "_spawn_n": "gevent::spawn",
+            "threading": "threading",
+            "queue": "gevent.queue",
+            "sleep": "gevent::sleep",
+            "subprocess": "gevent.subprocess",
+            "socket": "gevent.socket",
             # XXX
-            "_fdopen": ["gevent.fileobject::FileObjectThread"],
-            "_lock": ["gevent.lock"],
-            "_event": ["gevent.event"],
+            "_fdopen": "gevent.fileobject::FileObjectThread",
+            "_lock": "gevent.lock",
+            "_event": "gevent.event",
         }
 
         def exec_start(self, func, args=()):
@@ -101,21 +101,19 @@ def get_execmodel(backend):
             return "<ExecModel %r>" % self.backend
 
         def __getattr__(self, name):
-            locs = self._importdef.get(name)
-            if locs is None:
+            loc = self._importdef.get(name)
+            if loc is None:
                 raise AttributeError(name)
-            for loc in locs:
-                parts = loc.split("::")
-                loc = parts.pop(0)
-                try:
-                    mod = __import__(loc, None, None, "__doc__")
-                except ImportError:
-                    pass
-                else:
-                    if parts:
-                        mod = getattr(mod, parts[0])
-                    setattr(self, name, mod)
-                    return mod
+            parts = loc.split("::")
+            try:
+                mod = __import__(parts[0], None, None, "__doc__")
+            except ImportError:
+                pass
+            else:
+                if len(parts) > 1:
+                    mod = getattr(mod, parts[1])
+                setattr(self, name, mod)
+                return mod
             raise AttributeError(name)
 
         start = exec_start
