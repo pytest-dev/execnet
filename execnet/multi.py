@@ -12,6 +12,7 @@ from . import gateway_bootstrap
 from . import gateway_io
 from .gateway_base import get_execmodel
 from .gateway_base import trace
+from .gateway_base import WorkerPool
 from .xspec import XSpec
 
 NO_ENDMARKER_WANTED = object()
@@ -292,7 +293,7 @@ class MultiChannel:
 
 
 def safe_terminate(execmodel, timeout, list_of_paired_functions):
-    workerpool = execmodel.WorkerPool()
+    workerpool = WorkerPool(execmodel)
 
     def termkill(termfunc, killfunc):
         termreply = workerpool.spawn(termfunc)

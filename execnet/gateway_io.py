@@ -17,7 +17,8 @@ from functools import partial
 
 class Popen2IOMaster(Popen2IO):
     def __init__(self, args, execmodel):
-        self.popen = p = execmodel.PopenPiped(args)
+        PIPE = execmodel.subprocess.PIPE
+        self.popen = p = execmodel.subprocess.Popen(args, stdout=PIPE, stdin=PIPE)
         super().__init__(p.stdin, p.stdout, execmodel=execmodel)
 
     def wait(self):

@@ -117,9 +117,6 @@ def get_execmodel(backend):
         def fdopen(self, fd, mode, bufsize=1):
             return self._fdopen(fd, mode, bufsize)
 
-        def WorkerPool(self, hasprimary=False):
-            return WorkerPool(self, hasprimary=hasprimary)
-
         def Semaphore(self, size=None):
             if size is None:
                 return EmptySemaphore()
@@ -133,10 +130,6 @@ def get_execmodel(backend):
 
         def Event(self):
             return self._event.Event()
-
-        def PopenPiped(self, args):
-            PIPE = self.subprocess.PIPE
-            return self.subprocess.Popen(args, stdout=PIPE, stdin=PIPE)
 
     return ExecModel(backend)
 
@@ -909,7 +902,7 @@ class BaseGateway:
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
-        self._receivepool = self.execmodel.WorkerPool()
+        self._receivepool = WorkerPool(self.execmodel)
 
     def _trace(self, *msg):
         self.__trace(self.id, *msg)
@@ -1011,7 +1004,7 @@ class WorkerGateway(BaseGateway):
             self._trace("[serve] " + msg)
 
         hasprimary = self.execmodel.backend == "thread"
-        self._execpool = self.execmodel.WorkerPool(hasprimary=hasprimary)
+        self._execpool = WorkerPool(self.execmodel, hasprimary=hasprimary)
         trace("spawning receiver thread")
         self._initreceive()
         try:
