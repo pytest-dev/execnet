@@ -92,7 +92,6 @@ def get_execmodel(backend):
         def __init__(self, name):
             self._importdef = importdef
             self.backend = name
-            self._count = 0
 
         def __repr__(self):
             return "<ExecModel %r>" % self.backend
