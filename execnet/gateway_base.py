@@ -40,7 +40,6 @@ def get_execmodel(backend):
         importdef = {
             "get_ident": "_thread::get_ident",
             "_start_new_thread": "_thread::start_new_thread",
-            "threading": "threading",
             "queue": "queue",
             "sleep": "time::sleep",
             "subprocess": "subprocess",
@@ -57,7 +56,6 @@ def get_execmodel(backend):
         importdef = {
             "get_ident": "eventlet.green.thread::get_ident",
             "_spawn_n": "eventlet::spawn_n",
-            "threading": "eventlet.green.threading",
             "queue": "eventlet.queue",
             "sleep": "eventlet::sleep",
             "subprocess": "eventlet.green.subprocess",
@@ -74,7 +72,6 @@ def get_execmodel(backend):
         importdef = {
             "get_ident": "gevent.thread::get_ident",
             "_spawn_n": "gevent::spawn",
-            "threading": "threading",
             "queue": "gevent.queue",
             "sleep": "gevent::sleep",
             "subprocess": "gevent.subprocess",
