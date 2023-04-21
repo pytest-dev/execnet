@@ -6,11 +6,11 @@ import pytest
 from execnet.gateway_base import WorkerPool
 
 
-def test_execmodel(execmodel, tmpdir):
+def test_execmodel(execmodel, tmp_path):
     assert execmodel.backend
-    p = tmpdir.join("somefile")
-    p.write("content")
-    fd = os.open(str(p), os.O_RDONLY)
+    p = tmp_path / "somefile"
+    p.write_text("content")
+    fd = os.open(p, os.O_RDONLY)
     f = execmodel.fdopen(fd, "r")
     assert f.read() == "content"
     f.close()
@@ -142,9 +142,8 @@ def test_waitall_timeout(pool, execmodel):
     assert pool.waitall(timeout=0.1)
 
 
-@pytest.mark.skipif("not hasattr(os, 'dup')")
-def test_pool_clean_shutdown(pool):
-    capture = py.io.StdCaptureFD()
+@pytest.mark.skipif(not hasattr(os, "dup"), reason="no os.dup")
+def test_pool_clean_shutdown(pool, capfd):
     q = pool.execmodel.queue.Queue()
 
     def f():
@@ -162,9 +161,7 @@ def test_pool_clean_shutdown(pool):
 
     pool.execmodel.start(wait_then_put)
     assert pool.waitall()
-    out, err = capture.reset()
-    sys.stdout.write(out + "\n")
-    sys.stderr.write(err + "\n")
+    out, err = capfd.readouterr()
     assert err == ""
 
 

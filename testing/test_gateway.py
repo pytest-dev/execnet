@@ -2,11 +2,13 @@
 mostly functional tests of gateways.
 """
 import os
+import pathlib
+import shutil
+import signal
 import sys
 from textwrap import dedent
 
 import execnet
-import py
 import pytest
 from execnet import gateway_base
 from execnet import gateway_io
@@ -90,22 +92,22 @@ class TestBasicGateway:
         # race condition
         assert status.numchannels <= numchannels
 
-    def test_remote_exec_module(self, tmpdir, gw):
-        p = tmpdir.join("remotetest.py")
-        p.write("channel.send(1)")
+    def test_remote_exec_module(self, tmp_path, gw):
+        p = tmp_path / "remotetest.py"
+        p.write_text("channel.send(1)")
         mod = type(os)("remotetest")
         mod.__file__ = str(p)
         channel = gw.remote_exec(mod)
         name = channel.receive()
         assert name == 1
-        p.write("channel.send(2)")
+        p.write_text("channel.send(2)")
         channel = gw.remote_exec(mod)
         name = channel.receive()
         assert name == 2
 
-    def test_remote_exec_module_is_removed(self, gw, tmpdir, monkeypatch):
-        remotetest = tmpdir.join("remote.py")
-        remotetest.write(
+    def test_remote_exec_module_is_removed(self, gw, tmp_path, monkeypatch):
+        remotetest = tmp_path / "remote.py"
+        remotetest.write_text(
             dedent(
                 """
             def remote():
@@ -119,13 +121,13 @@ class TestBasicGateway:
             )
         )
 
-        monkeypatch.syspath_prepend(tmpdir)
+        monkeypatch.syspath_prepend(tmp_path)
         import remote
 
         ch = gw.remote_exec(remote)
         # simulate sending the code to a remote location that does not have
         # access to the source
-        tmpdir.remove()
+        shutil.rmtree(tmp_path)
         ch.send("remote()")
         try:
             result = ch.receive()
@@ -134,9 +136,9 @@ class TestBasicGateway:
 
         assert result is True
 
-    def test_remote_exec_module_with_traceback(self, gw, tmpdir, monkeypatch):
-        remotetest = tmpdir.join("remotetest.py")
-        remotetest.write(
+    def test_remote_exec_module_with_traceback(self, gw, tmp_path, monkeypatch):
+        remotetestpy = tmp_path / "remotetest.py"
+        remotetestpy.write_text(
             dedent(
                 """
             def run_me(channel=None):
@@ -148,7 +150,7 @@ class TestBasicGateway:
             )
         )
 
-        monkeypatch.syspath_prepend(tmpdir)
+        monkeypatch.syspath_prepend(tmp_path)
         import remotetest
 
         ch = gw.remote_exec(remotetest)
@@ -274,15 +276,13 @@ class TestBasicGateway:
 class TestPopenGateway:
     gwtype = "popen"
 
-    def test_chdir_separation(self, tmpdir, makegateway):
-        old = tmpdir.chdir()
-        try:
+    def test_chdir_separation(self, tmp_path, makegateway):
+        with pytest.MonkeyPatch.context() as mp:
+            mp.chdir(tmp_path)
             gw = makegateway("popen")
-        finally:
-            waschangedir = old.chdir()
         c = gw.remote_exec("import os ; channel.send(os.getcwd())")
         x = c.receive()
-        assert x.lower() == str(waschangedir).lower()
+        assert x.lower() == str(tmp_path).lower()
 
     def test_remoteerror_readable_traceback(self, gw):
         with pytest.raises(gateway_base.RemoteError) as e:
@@ -320,7 +320,7 @@ class TestPopenGateway:
         """
         )
         remotepid = channel.receive()
-        py.process.kill(remotepid)
+        os.kill(remotepid, signal.SIGTERM)
         with pytest.raises(EOFError):
             channel.waitclose(TESTTIMEOUT)
         with pytest.raises(IOError):
@@ -441,24 +441,24 @@ class TestThreads:
 
 
 class TestTracing:
-    def test_popen_filetracing(self, testdir, monkeypatch, makegateway):
-        tmpdir = testdir.tmpdir
-        monkeypatch.setenv("TMP", str(tmpdir))
-        monkeypatch.setenv("TEMP", str(tmpdir))  # windows
+    def test_popen_filetracing(self, tmp_path, monkeypatch, makegateway):
+        monkeypatch.setenv("TMP", str(tmp_path))
+        monkeypatch.setenv("TEMP", str(tmp_path))  # windows
         monkeypatch.setenv("EXECNET_DEBUG", "1")
         gw = makegateway("popen")
         #  hack out the debuffilename
         fn = gw.remote_exec(
             "import execnet;channel.send(execnet.gateway_base.fn)"
         ).receive()
-        workerfile = py.path.local(fn)
-        assert workerfile.check()
+        workerfile = pathlib.Path(fn)
+        assert workerfile.exists()
         worker_line = "creating workergateway"
-        for line in workerfile.readlines():
-            if worker_line in line:
-                break
-        else:
-            pytest.fail(f"did not find {worker_line!r} in tracefile")
+        with workerfile.open() as f:
+            for line in f:
+                if worker_line in line:
+                    break
+            else:
+                pytest.fail(f"did not find {worker_line!r} in tracefile")
         gw.exit()
 
     @skip_win_pypy

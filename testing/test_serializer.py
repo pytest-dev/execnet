@@ -1,9 +1,10 @@
+import pathlib
+import shutil
 import subprocess
 import sys
 import tempfile
 
 import execnet
-import py
 import pytest
 
 MINOR_VERSIONS = {"3": "543210", "2": "76"}
@@ -14,16 +15,16 @@ _py3_wrapper = None
 
 
 def setup_module(mod):
-    mod.TEMPDIR = py.path.local(tempfile.mkdtemp())
-    mod._py3_wrapper = PythonWrapper(py.path.local(sys.executable))
+    mod.TEMPDIR = pathlib.Path(tempfile.mkdtemp())
+    mod._py3_wrapper = PythonWrapper(pathlib.Path(sys.executable))
 
 
 def teardown_module(mod):
-    TEMPDIR.remove(True)
+    shutil.rmtree(TEMPDIR)
 
 
 # we use the execnet folder in order to avoid triggering a missing apipkg
-pyimportdir = str(py.path.local(execnet.__file__).dirpath())
+pyimportdir = str(pathlib.Path(execnet.__file__).parent)
 
 
 class PythonWrapper:
@@ -31,8 +32,8 @@ class PythonWrapper:
         self.executable = executable
 
     def dump(self, obj_rep):
-        script_file = TEMPDIR.join("dump.py")
-        script_file.write(
+        script_file = TEMPDIR.joinpath("dump.py")
+        script_file.write_text(
             """
 import sys
 sys.path.insert(0, %r)
@@ -52,14 +53,14 @@ sys.stdout.write(serializer.dumps_internal(%s))
         stdout, stderr = popen.communicate()
         ret = popen.returncode
         if ret:
-            raise py.process.cmdexec.Error(
-                ret, ret, str(self.executable), stdout, stderr
+            raise Exception(
+                "ExecutionFailed: %d  %s\n%s" % (ret, self.executable, stderr)
             )
         return stdout
 
     def load(self, data, option_args="__class__"):
-        script_file = TEMPDIR.join("load.py")
-        script_file.write(
+        script_file = TEMPDIR.joinpath("load.py")
+        script_file.write_text(
             r"""
 import sys
 sys.path.insert(0, %r)
@@ -81,8 +82,8 @@ sys.stdout.write(repr(obj))"""
         stdout, stderr = popen.communicate(data)
         ret = popen.returncode
         if ret:
-            raise py.process.cmdexec.Error(
-                ret, ret, str(self.executable), stdout, stderr
+            raise Exception(
+                "ExecutionFailed: %d  %s\n%s" % (ret, self.executable, stderr)
             )
         return [s.decode("ascii") for s in stdout.splitlines()]
 

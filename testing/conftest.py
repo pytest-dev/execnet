@@ -1,8 +1,9 @@
+import pathlib
+import shutil
 import subprocess
 import sys
 
 import execnet
-import py
 import pytest
 from execnet.gateway_base import get_execmodel
 from execnet.gateway_base import WorkerPool
@@ -76,7 +77,7 @@ def getspecssh(config):
     xspecs = getgspecs(config)
     for spec in xspecs:
         if spec.ssh:
-            if not py.path.local.sysfind("ssh"):
+            if not shutil.which("ssh"):
                 pytest.skip("command not found: ssh")
             return spec
     pytest.skip("need '--gx ssh=...'")
@@ -113,8 +114,9 @@ def getexecutable(name, cache={}):
         return cache[name]
     except KeyError:
         if name == "sys.executable":
-            return py.path.local(sys.executable)
-        executable = py.path.local.sysfind(name)
+            return pathlib.Path(sys.executable)
+        path = shutil.which(name)
+        executable = pathlib.Path(path) if path is not None else None
         if executable:
             if name == "jython":
                 popen = subprocess.Popen(

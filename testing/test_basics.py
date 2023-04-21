@@ -2,10 +2,10 @@ import inspect
 import os
 import subprocess
 import sys
+import textwrap
 from io import BytesIO
 
 import execnet
-import py
 import pytest
 from execnet import gateway
 from execnet import gateway_base
@@ -29,20 +29,20 @@ class TestSerializeAPI:
         val2 = execnet.loads(dumped)
         assert val == val2
 
-    def test_mmap(self, tmpdir, val):
+    def test_mmap(self, tmp_path, val):
         mmap = pytest.importorskip("mmap").mmap
-        p = tmpdir.join("data")
+        p = tmp_path / "data"
         with p.open("wb") as f:
             f.write(execnet.dumps(val))
-        f = p.open("r+b")
-        m = mmap(f.fileno(), 0)
-        val2 = execnet.load(m)
+        with p.open("r+b") as f:
+            m = mmap(f.fileno(), 0)
+            val2 = execnet.load(m)
         assert val == val2
 
     def test_bytesio(self, val):
-        f = py.io.BytesIO()
+        f = BytesIO()
         execnet.dump(f, val)
-        read = py.io.BytesIO(f.getvalue())
+        read = BytesIO(f.getvalue())
         val2 = execnet.load(read)
         assert val == val2
 
@@ -81,10 +81,8 @@ def test_subprocess_interaction(anypython):
         return popen.stdout.readline()
 
     try:
-        source = py.code.Source(read_write_loop, "read_write_loop()")
-        repr_source = repr(str(source)) + "\n"
-        sendline = repr_source
-        send(sendline)
+        source = inspect.getsource(read_write_loop) + "read_write_loop()"
+        send(repr(source) + "\n")
         s = receive()
         assert s == "ok\n"
         send("hello\n")
@@ -114,11 +112,11 @@ def read_write_loop():
             break
 
 
-def test_io_message(anypython, tmpdir, execmodel):
-    check = tmpdir.join("check.py")
-    check.write(
-        py.code.Source(
-            gateway_base,
+def test_io_message(anypython, tmp_path, execmodel):
+    check = tmp_path / "check.py"
+    check.write_text(
+        inspect.getsource(gateway_base)
+        + textwrap.dedent(
             """
         from io import BytesIO
         import tempfile
@@ -146,24 +144,25 @@ def test_io_message(anypython, tmpdir, execmodel):
             ),
         )
     )
-    # out = py.process.cmdexec("%s %s" %(executable,check))
-    out = anypython.sysexec(check)
+    out = subprocess.run(
+        [str(anypython), str(check)], text=True, capture_output=True, check=True
+    ).stdout
     print(out)
     assert "all passed" in out
 
 
-def test_popen_io(anypython, tmpdir, execmodel):
-    check = tmpdir.join("check.py")
-    check.write(
-        py.code.Source(
-            gateway_base,
+def test_popen_io(anypython, tmp_path, execmodel):
+    check = tmp_path / "check.py"
+    check.write_text(
+        inspect.getsource(gateway_base)
+        + textwrap.dedent(
             f"""
         io = init_popen_io(get_execmodel({execmodel.backend!r}))
         io.write("hello".encode('ascii'))
         s = io.read(1)
         assert s == "x".encode('ascii')
-    """,
-        )
+    """
+        ),
     )
     from subprocess import Popen, PIPE
 
@@ -191,32 +190,36 @@ def test_popen_io_readloop(monkeypatch, execmodel):
     assert result == b"tes"
 
 
-def test_rinfo_source(anypython, tmpdir):
-    check = tmpdir.join("check.py")
-    check.write(
-        py.code.Source(
+def test_rinfo_source(anypython, tmp_path):
+    check = tmp_path / "check.py"
+    check.write_text(
+        textwrap.dedent(
             """
         class Channel:
             def send(self, data):
                 assert eval(repr(data), {}) == data
         channel = Channel()
-        """,
-            gateway.rinfo_source,
+        """
+        )
+        + inspect.getsource(gateway.rinfo_source)
+        + textwrap.dedent(
             """
         print ('all passed')
-    """,
+        """
         )
     )
-    out = anypython.sysexec(check)
+    out = subprocess.run(
+        [str(anypython), str(check)], text=True, capture_output=True, check=True
+    ).stdout
     print(out)
     assert "all passed" in out
 
 
-def test_geterrortext(anypython, tmpdir):
-    check = tmpdir.join("check.py")
-    check.write(
-        py.code.Source(
-            gateway_base,
+def test_geterrortext(anypython, tmp_path):
+    check = tmp_path / "check.py"
+    check.write_text(
+        inspect.getsource(gateway_base)
+        + textwrap.dedent(
             """
         class Arg:
             pass
@@ -230,21 +233,22 @@ def test_geterrortext(anypython, tmpdir):
             s = geterrortext(excinfo)
             assert "17" in s
             print ("all passed")
-    """,
+    """
         )
     )
-    out = anypython.sysexec(check)
+    out = subprocess.run(
+        [str(anypython), str(check)], text=True, capture_output=True, check=True
+    ).stdout
     print(out)
     assert "all passed" in out
 
 
-@pytest.mark.skipif("not hasattr(os, 'dup')")
-def test_stdouterrin_setnull(execmodel):
-    cap = py.io.StdCaptureFD()
+@pytest.mark.skipif(not hasattr(os, "dup"), reason="no os.dup")
+def test_stdouterrin_setnull(execmodel, capfd):
     gateway_base.init_popen_io(execmodel)
     os.write(1, b"hello")
     os.read(0, 1)
-    out, err = cap.reset()
+    out, err = capfd.readouterr()
     assert not out
     assert not err
 
@@ -267,7 +271,7 @@ class PseudoChannel:
 
 
 def test_exectask(execmodel):
-    io = py.io.BytesIO()
+    io = BytesIO()
     io.execmodel = execmodel
     gw = gateway_base.WorkerGateway(io, id="something")
     ch = PseudoChannel()
@@ -278,10 +282,10 @@ def test_exectask(execmodel):
 class TestMessage:
     def test_wire_protocol(self):
         for i, handler in enumerate(Message._types):
-            one = py.io.BytesIO()
+            one = BytesIO()
             data = b"23"
             Message(i, 42, data).to_io(one)
-            two = py.io.BytesIO(one.getvalue())
+            two = BytesIO(one.getvalue())
             msg = Message.from_io(two)
             assert msg.msgcode == i
             assert isinstance(msg, Message)
@@ -338,7 +342,7 @@ class TestSourceOfFunction:
     def test_function_without_known_source_fails(self):
         # this one won't be able to find the source
         mess = {}
-        py.builtin.exec_("def fail(channel): pass", mess, mess)
+        exec("def fail(channel): pass", mess, mess)
         print(inspect.getsourcefile(mess["fail"]))
         pytest.raises(ValueError, gateway._source_of_function, mess["fail"])
 
@@ -361,9 +365,9 @@ class TestSourceOfFunction:
 
 class TestGlobalFinder:
     def check(self, func):
-        src = py.code.Source(func)
-        code = py.code.Code(func)
-        return gateway._find_non_builtin_globals(str(src), code.raw)
+        src = textwrap.dedent(inspect.getsource(func))
+        code = func.__code__
+        return gateway._find_non_builtin_globals(src, code)
 
     def test_local(self):
         def f(a, b, c):
