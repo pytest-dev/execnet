@@ -2,8 +2,6 @@
 mostly functional tests of gateways.
 """
 import os
-import socket
-import subprocess
 import sys
 from textwrap import dedent
 
@@ -12,7 +10,6 @@ import py
 import pytest
 from execnet import gateway_base
 from execnet import gateway_io
-from test_serializer import _find_version
 
 TESTTIMEOUT = 10.0  # seconds
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")

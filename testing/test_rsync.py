@@ -2,7 +2,6 @@ import execnet
 import py
 import pytest
 from execnet import RSync
-from test_serializer import _find_version
 
 
 @pytest.fixture(scope="module")

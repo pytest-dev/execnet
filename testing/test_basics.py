@@ -75,8 +75,7 @@ def test_subprocess_interaction(anypython):
 
     def send(line):
         popen.stdin.write(line)
-        if sys.version_info > (3, 0) or sys.platform.startswith("java"):
-            popen.stdin.flush()
+        popen.stdin.flush()
 
     def receive():
         return popen.stdout.readline()
@@ -121,10 +120,7 @@ def test_io_message(anypython, tmpdir, execmodel):
         py.code.Source(
             gateway_base,
             """
-        try:
-            from io import BytesIO
-        except ImportError:
-            from StringIO import StringIO as BytesIO
+        from io import BytesIO
         import tempfile
         temp_out = BytesIO()
         temp_in = BytesIO()

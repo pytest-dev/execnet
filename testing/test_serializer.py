@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 import tempfile
@@ -10,26 +9,8 @@ import pytest
 MINOR_VERSIONS = {"3": "543210", "2": "76"}
 
 
-def _find_version(suffix=""):
-    name = "python" + suffix
-    executable = py.path.local.sysfind(name)
-    if executable is None:
-        if sys.platform == "win32" and suffix == "3":
-            for name in ("python31", "python30"):
-                executable = py.path.local(rf"c:\\{name}\python.exe")
-                if executable.check():
-                    return executable
-        for tail in MINOR_VERSIONS.get(suffix, ""):
-            path = py.path.local.sysfind(f"{name}.{tail}")
-            if path:
-                return path
-
-        else:
-            pytest.skip(f"can't find a {name!r} executable")
-    return executable
-
-
-TEMPDIR = _py2_wrapper = _py3_wrapper = None
+TEMPDIR = None
+_py3_wrapper = None
 
 
 def setup_module(mod):
@@ -56,8 +37,8 @@ class PythonWrapper:
 import sys
 sys.path.insert(0, %r)
 import gateway_base as serializer
-if sys.version_info > (3, 0): # Need binary output
-    sys.stdout = sys.stdout.detach()
+# Need binary output
+sys.stdout = sys.stdout.detach()
 sys.stdout.write(serializer.dumps_internal(%s))
 """
             % (pyimportdir, obj_rep)
@@ -83,8 +64,7 @@ sys.stdout.write(serializer.dumps_internal(%s))
 import sys
 sys.path.insert(0, %r)
 import gateway_base as serializer
-if sys.version_info > (3, 0):
-    sys.stdin = sys.stdin.detach()
+sys.stdin = sys.stdin.detach()
 loader = serializer.Unserializer(sys.stdin)
 loader.%s
 obj = loader.load()
