@@ -13,6 +13,7 @@ NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
 """
 from __future__ import annotations
 
+import abc
 import os
 import struct
 import sys
@@ -23,106 +24,242 @@ from io import BytesIO
 from typing import Callable
 
 
-SUBPROCESS32 = False
-# f = open("/tmp/execnet-%s" % os.getpid(), "w")
-# def log_extra(*msg):
-#     f.write(" ".join([str(x) for x in msg]) + "\n")
+class ExecModel(metaclass=abc.ABCMeta):
+    @property
+    @abc.abstractmethod
+    def backend(self):
+        raise NotImplementedError()
+
+    def __repr__(self):
+        return "<ExecModel %r>" % self.backend
+
+    @property
+    @abc.abstractmethod
+    def queue(self):
+        raise NotImplementedError()
+
+    @property
+    @abc.abstractmethod
+    def subprocess(self):
+        raise NotImplementedError()
+
+    @property
+    @abc.abstractmethod
+    def socket(self):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def start(self, func, args=()):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def get_ident(self):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def sleep(self, delay):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def fdopen(self, fd, mode, bufsize=1):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def Lock(self):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def RLock(self):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def Event(self):
+        raise NotImplementedError()
+
+
+class ThreadExecModel(ExecModel):
+    backend = "thread"
+
+    @property
+    def queue(self):
+        import queue
+
+        return queue
+
+    @property
+    def subprocess(self):
+        import subprocess
+
+        return subprocess
+
+    @property
+    def socket(self):
+        import socket
+
+        return socket
+
+    def get_ident(self):
+        import _thread
+
+        return _thread.get_ident()
+
+    def sleep(self, delay):
+        import time
+
+        time.sleep(delay)
+
+    def start(self, func, args=()):
+        import _thread
+
+        return _thread.start_new_thread(func, args)
+
+    def fdopen(self, fd, mode, bufsize=1):
+        import os
+
+        return os.fdopen(fd, mode, bufsize)
+
+    def Lock(self):
+        import threading
+
+        return threading.RLock()
+
+    def RLock(self):
+        import threading
+
+        return threading.RLock()
+
+    def Event(self):
+        import threading
+
+        return threading.Event()
+
+
+class EventletExecModel(ExecModel):
+    backend = "eventlet"
+
+    @property
+    def queue(self):
+        import eventlet
+
+        return eventlet.queue
+
+    @property
+    def subprocess(self):
+        import eventlet.green.subprocess
+
+        return eventlet.green.subprocess
+
+    @property
+    def socket(self):
+        import eventlet.green.socket
+
+        return eventlet.green.socket
+
+    def get_ident(self):
+        import eventlet.green.thread
+
+        return eventlet.green.thread.get_ident()
+
+    def sleep(self, delay):
+        import eventlet
+
+        eventlet.sleep(delay)
+
+    def start(self, func, args=()):
+        import eventlet
+
+        return eventlet.spawn_n(func, *args)
+
+    def fdopen(self, fd, mode, bufsize=1):
+        import eventlet.green.os
+
+        return eventlet.green.os.fdopen(fd, mode, bufsize)
+
+    def Lock(self):
+        import eventlet.green.threading
+
+        return eventlet.green.threading.RLock()
+
+    def RLock(self):
+        import eventlet.green.threading
+
+        return eventlet.green.threading.RLock()
+
+    def Event(self):
+        import eventlet.green.threading
+
+        return eventlet.green.threading.Event()
+
+
+class GeventExecModel(ExecModel):
+    backend = "gevent"
+
+    @property
+    def queue(self):
+        import gevent.queue
+
+        return gevent.queue
+
+    @property
+    def subprocess(self):
+        import gevent.subprocess
+
+        return gevent.subprocess
+
+    @property
+    def socket(self):
+        import gevent
+
+        return gevent.socket
+
+    def get_ident(self):
+        import gevent.thread
+
+        return gevent.thread.get_ident()
+
+    def sleep(self, delay):
+        import gevent
+
+        gevent.sleep(delay)
+
+    def start(self, func, args=()):
+        import gevent
+
+        return gevent.spawn(func, *args)
+
+    def fdopen(self, fd, mode, bufsize=1):
+        # XXX
+        import gevent.fileobject
+
+        return gevent.fileobject.FileObjectThread(fd, mode, bufsize)
+
+    def Lock(self):
+        import gevent.lock
+
+        return gevent.lock.RLock()
+
+    def RLock(self):
+        import gevent.lock
+
+        return gevent.lock.RLock()
+
+    def Event(self):
+        import gevent.event
+
+        return gevent.event.Event()
 
 
 def get_execmodel(backend):
     if hasattr(backend, "backend"):
         return backend
     if backend == "thread":
-        importdef = {
-            "get_ident": "_thread::get_ident",
-            "_start_new_thread": "_thread::start_new_thread",
-            "queue": "queue",
-            "sleep": "time::sleep",
-            "subprocess": "subprocess",
-            "socket": "socket",
-            "_fdopen": "os::fdopen",
-            "_lock": "threading",
-            "_event": "threading",
-        }
-
-        def exec_start(self, func, args=()):
-            self._start_new_thread(func, args)
-
+        return ThreadExecModel()
     elif backend == "eventlet":
-        importdef = {
-            "get_ident": "eventlet.green.thread::get_ident",
-            "_spawn_n": "eventlet::spawn_n",
-            "queue": "eventlet.queue",
-            "sleep": "eventlet::sleep",
-            "subprocess": "eventlet.green.subprocess",
-            "socket": "eventlet.green.socket",
-            "_fdopen": "eventlet.green.os::fdopen",
-            "_lock": "eventlet.green.threading",
-            "_event": "eventlet.green.threading",
-        }
-
-        def exec_start(self, func, args=()):
-            self._spawn_n(func, *args)
-
+        return EventletExecModel()
     elif backend == "gevent":
-        importdef = {
-            "get_ident": "gevent.thread::get_ident",
-            "_spawn_n": "gevent::spawn",
-            "queue": "gevent.queue",
-            "sleep": "gevent::sleep",
-            "subprocess": "gevent.subprocess",
-            "socket": "gevent.socket",
-            # XXX
-            "_fdopen": "gevent.fileobject::FileObjectThread",
-            "_lock": "gevent.lock",
-            "_event": "gevent.event",
-        }
-
-        def exec_start(self, func, args=()):
-            self._spawn_n(func, *args)
-
+        return GeventExecModel()
     else:
         raise ValueError(f"unknown execmodel {backend!r}")
-
-    class ExecModel:
-        def __init__(self, name):
-            self._importdef = importdef
-            self.backend = name
-
-        def __repr__(self):
-            return "<ExecModel %r>" % self.backend
-
-        def __getattr__(self, name):
-            loc = self._importdef.get(name)
-            if loc is None:
-                raise AttributeError(name)
-            parts = loc.split("::")
-            try:
-                mod = __import__(parts[0], None, None, "__doc__")
-            except ImportError:
-                pass
-            else:
-                if len(parts) > 1:
-                    mod = getattr(mod, parts[1])
-                setattr(self, name, mod)
-                return mod
-            raise AttributeError(name)
-
-        start = exec_start
-
-        def fdopen(self, fd, mode, bufsize=1):
-            return self._fdopen(fd, mode, bufsize)
-
-        def Lock(self):
-            return self._lock.RLock()
-
-        def RLock(self):
-            return self._lock.RLock()
-
-        def Event(self):
-            return self._event.Event()
-
-    return ExecModel(backend)
 
 
 class Reply:
