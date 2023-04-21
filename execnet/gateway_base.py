@@ -29,10 +29,6 @@ SUBPROCESS32 = False
 #     f.write(" ".join([str(x) for x in msg]) + "\n")
 
 
-class EmptySemaphore:
-    acquire = release = lambda self: None
-
-
 def get_execmodel(backend):
     if hasattr(backend, "backend"):
         return backend
@@ -116,11 +112,6 @@ def get_execmodel(backend):
 
         def fdopen(self, fd, mode, bufsize=1):
             return self._fdopen(fd, mode, bufsize)
-
-        def Semaphore(self, size=None):
-            if size is None:
-                return EmptySemaphore()
-            return self._lock.Semaphore(size)
 
         def Lock(self):
             return self._lock.RLock()
