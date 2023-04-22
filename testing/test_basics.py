@@ -297,7 +297,7 @@ class TestPureChannel:
             def _trace(self, *args):
                 pass
 
-            def _send_(self, *k):
+            def _send(self, *k):
                 pass
 
         Gateway.execmodel = execmodel
