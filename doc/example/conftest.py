@@ -1,14 +1,19 @@
+import os
 import sys
+from pathlib import Path
 
-import py
 
+def _add_path(path: Path):
+    strpath = os.fspath(path)
+    if strpath not in sys.path:
+        sys.path.insert(0, strpath)
+
+
+mydir = Path(__file__).parent
 # make execnet and example code importable
-cand = py.path.local(__file__).dirpath().dirpath().dirpath()
-if cand.join("execnet", "__init__.py").check():
-    if str(cand) not in sys.path:
-        sys.path.insert(0, str(cand))
-cand = py.path.local(__file__).dirpath()
-if str(cand) not in sys.path:
-    sys.path.insert(0, str(cand))
 
+cand = mydir.parent.parent
+if cand.joinpath("execnet", "__init__.py").is_file():
+    _add_path(cand)
+_add_path(mydir)
 pytest_plugins = ["doctest"]

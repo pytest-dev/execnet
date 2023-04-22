@@ -3,6 +3,8 @@ Managing Gateway Groups and interactions with multiple channels.
 
 (c) 2008-2014, Holger Krekel and others
 """
+from __future__ import annotations
+
 import atexit
 import sys
 from functools import partial
@@ -10,8 +12,8 @@ from threading import Lock
 
 from . import gateway_bootstrap
 from . import gateway_io
+from .gateway_base import Channel
 from .gateway_base import get_execmodel
-from .gateway_base import reraise
 from .gateway_base import trace
 from .xspec import XSpec
 
@@ -232,7 +234,7 @@ class Group:
 
 
 class MultiChannel:
-    def __init__(self, channels):
+    def __init__(self, channels: list[Channel]):
         self._channels = channels
 
     def __len__(self):
@@ -241,8 +243,8 @@ class MultiChannel:
     def __iter__(self):
         return iter(self._channels)
 
-    def __getitem__(self, key):
-        return self._channels[key]
+    def __getitem__(self, index):
+        return self._channels[index]
 
     def __contains__(self, chan):
         return chan in self._channels
@@ -280,16 +282,16 @@ class MultiChannel:
                     ch.setcallback(putreceived, endmarker=endmarker)
             return self._queue
 
-    def waitclose(self):
-        first = None
+    def waitclose(self) -> None:
+        first: Exception | None = None
         for ch in self._channels:
             try:
                 ch.waitclose()
-            except ch.RemoteError:
+            except ch.RemoteError as e:
                 if first is None:
-                    first = sys.exc_info()
-        if first:
-            reraise(*first)
+                    first = e
+        if first is not None:
+            raise first
 
 
 def safe_terminate(execmodel, timeout, list_of_paired_functions):

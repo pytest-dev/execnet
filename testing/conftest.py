@@ -1,8 +1,10 @@
 import subprocess
 import sys
+from functools import lru_cache
+from typing import Callable
+from typing import Iterator
 
-import execnet
-import py
+import execnet.gateway
 import pytest
 from execnet.gateway_base import get_execmodel
 from execnet.gateway_base import WorkerPool
@@ -22,10 +24,15 @@ def pytest_runtest_setup(item):
 
 
 @pytest.fixture
-def makegateway(request):
+def group_function() -> Iterator[execnet.Group]:
     group = execnet.Group()
-    request.addfinalizer(lambda: group.terminate(0.5))
-    return group.makegateway
+    yield group
+    group.terminate(0.5)
+
+
+@pytest.fixture
+def makegateway(group_function) -> Callable[[str], execnet.gateway.Gateway]:
+    return group_function.makegateway
 
 
 pytest_plugins = ["pytester", "doctest"]
@@ -76,7 +83,7 @@ def getspecssh(config):
     xspecs = getgspecs(config)
     for spec in xspecs:
         if spec.ssh:
-            if not py.path.local.sysfind("ssh"):
+            if not shutil.which("ssh"):
                 pytest.skip("command not found: ssh")
             return spec
     pytest.skip("need '--gx ssh=...'")
@@ -100,36 +107,18 @@ def pytest_generate_tests(metafunc):
         else:
             gwtypes = ["popen", "socket", "ssh", "proxy"]
         metafunc.parametrize("gw", gwtypes, indirect=True)
-    elif "anypython" in metafunc.fixturenames:
-        metafunc.parametrize(
-            "anypython",
-            indirect=True,
-            argvalues=("sys.executable", "pypy3"),
-        )
 
 
-def getexecutable(name, cache={}):
-    try:
-        return cache[name]
-    except KeyError:
-        if name == "sys.executable":
-            return py.path.local(sys.executable)
-        executable = py.path.local.sysfind(name)
-        if executable:
-            if name == "jython":
-                popen = subprocess.Popen(
-                    [str(executable), "--version"],
-                    universal_newlines=True,
-                    stderr=subprocess.PIPE,
-                )
-                out, err = popen.communicate()
-                if not err or "2.5" not in err:
-                    executable = None
-        cache[name] = executable
-        return executable
+@lru_cache
+def getexecutable(name):
+    if name == "sys.executable":
+        return sys.executable
+    import shutil
+
+    return shutil.which(name)
 
 
-@pytest.fixture
+@pytest.fixture(params=("sys.executable", "pypy3"))
 def anypython(request):
     name = request.param
     executable = getexecutable(name)

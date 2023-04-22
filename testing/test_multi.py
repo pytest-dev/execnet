@@ -5,7 +5,6 @@ import gc
 from time import sleep
 
 import execnet
-import py
 import pytest
 from execnet import XSpec
 from execnet.gateway_base import Channel

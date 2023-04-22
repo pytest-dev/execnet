@@ -3,13 +3,12 @@
 """
 
 
-def serve_rsync(channel):
+def serve_rsync(channel, destdir: str, delete: bool = False):
     import os
     import stat
     import shutil
     from hashlib import md5
 
-    destdir, options = channel.receive()
     modifiedfiles = []
 
     def remove(path):
@@ -44,7 +43,7 @@ def serve_rsync(channel):
                 destpath = os.path.join(path, entryname)
                 receive_directory_structure(destpath, relcomponents + [entryname])
                 entrynames[entryname] = True
-            if options.get("delete"):
+            if delete:
                 for othername in os.listdir(path):
                     if othername not in entrynames:
                         otherpath = os.path.join(path, othername)
@@ -111,7 +110,3 @@ def serve_rsync(channel):
         os.symlink(src, path)
         msg = channel.receive()
     channel.send(("done", None))
-
-
-if __name__ == "__channelexec__":
-    serve_rsync(channel)  # type: ignore[name-defined]

@@ -1,7 +1,7 @@
 """
 base execnet gateway code send to the other side for bootstrapping.
 
-NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
+NOTE: aims to be compatible to Python 3.8+
 
 :copyright: 2004-2015
 :authors:
@@ -18,19 +18,10 @@ import struct
 import sys
 import traceback
 import weakref
+from _thread import interrupt_main
 from io import BytesIO
 from typing import Callable
 
-
-def reraise(cls, val, tb):
-    raise val.with_traceback(tb)
-
-
-unicode = str
-_long_type = int
-from _thread import interrupt_main
-
-SUBPROCESS32 = False
 # f = open("/tmp/execnet-%s" % os.getpid(), "w")
 # def log_extra(*msg):
 #     f.write(" ".join([str(x) for x in msg]) + "\n")
@@ -45,9 +36,8 @@ def get_execmodel(backend):
         return backend
     if backend == "thread":
         importdef = {
-            "get_ident": ["thread::get_ident", "_thread::get_ident"],
+            "get_ident": ["_thread::get_ident"],
             "_start_new_thread": [
-                "thread::start_new_thread",
                 "_thread::start_new_thread",
             ],
             "threading": ["threading"],
@@ -163,6 +153,8 @@ class Reply:
     through WorkerPool.spawn()
     """
 
+    _exception: BaseException | None = None
+
     def __init__(self, task, threadmodel):
         self.task = task
         self._result_ready = threadmodel.Event()
@@ -175,10 +167,10 @@ class Reply:
         including its traceback.
         """
         self.waitfinish(timeout)
-        try:
+        if self._exception is None:
             return self._result
-        except AttributeError:
-            reraise(*(self._excinfo[:3]))  # noqa
+        else:
+            raise self._exception.with_traceback(self._exception.__traceback__)
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
@@ -189,10 +181,9 @@ class Reply:
         try:
             try:
                 self._result = func(*args, **kwargs)
-            except:
+            except BaseException as e:
                 # sys may be already None when shutting down the interpreter
-                if sys is not None:
-                    self._excinfo = sys.exc_info()
+                self._exception = e
         finally:
             self._result_ready.set()
             self.running = False
@@ -358,7 +349,9 @@ class Popen2IO:
             except (AttributeError, OSError):
                 pass
         self._read = getattr(infile, "buffer", infile).read
-        self._write = getattr(outfile, "buffer", outfile).write
+        _outfile = getattr(outfile, "buffer", outfile)
+        self._write = _outfile.write
+        self._flush = _outfile.flush
         self.execmodel = execmodel
 
     def read(self, numbytes):
@@ -376,7 +369,7 @@ class Popen2IO:
         """write out all data bytes."""
         assert isinstance(data, bytes)
         self._write(data)
-        self.outfile.flush()
+        self._flush()
 
     def close_read(self):
         self.infile.close()
@@ -961,7 +954,7 @@ class BaseGateway:
     def _terminate_execution(self):
         pass
 
-    def _send(self, msgcode, channelid=0, data=b""):
+    def _send(self, msgcode, channelid: int = 0, data: bytes = b""):
         message = Message(msgcode, channelid, data)
         try:
             message.to_io(self._io)

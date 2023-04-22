@@ -2,6 +2,7 @@
 code to initialize the remote side of a gateway once the io is created
 """
 import inspect
+import json
 import os
 
 import execnet
@@ -23,13 +24,13 @@ def bootstrap_import(io, spec):
     sendexec(
         io,
         "import sys",
-        "if %r not in sys.path:" % importdir,
-        "    sys.path.insert(0, %r)" % importdir,
+        f"if {importdir!r} not in sys.path:",
+        f"    sys.path.insert(0, {importdir!r})",
         "from execnet.gateway_base import serve, init_popen_io, get_execmodel",
         "sys.stdout.write('1')",
         "sys.stdout.flush()",
-        "execmodel = get_execmodel(%r)" % spec.execmodel,
-        "serve(init_popen_io(execmodel), id='%s-worker')" % spec.id,
+        f"execmodel = get_execmodel({spec.execmodel!r})",
+        f"serve(init_popen_io(execmodel), id='{spec.id}-worker')",
     )
     s = io.read(1)
     assert s == b"1", repr(s)
@@ -75,7 +76,8 @@ def bootstrap_socket(io, id):
 
 def sendexec(io, *sources):
     source = "\n".join(sources)
-    io.write((repr(source) + "\n").encode("ascii"))
+    encoded = (json.dumps(source) + "\n").encode("ascii")
+    io.write(encoded)
 
 
 def fix_pid_for_jython_popen(gw):
