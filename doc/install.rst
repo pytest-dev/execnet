@@ -1,16 +1,16 @@
 Info in a nutshell
 ====================
 
-**Pythons**: 2.7, 3.4+, PyPy 2 & 3
+**Pythons**: 3.7+, PyPy 3
 
 **Operating systems**: Linux, Windows, OSX, Unix
 
 **Distribution names**:
 
 * PyPI name: ``execnet``
-* redhat fedora: ``python-execnet``
-* debian: ``python-execnet``
-* gentoo: ``dev-python/execnet``
+* Redhat Fedora: ``python-execnet``
+* Debian: ``python-execnet``
+* Gentoo: ``dev-python/execnet``
 
 **git repository**: https://github.com/pytest-dev/execnet
 
@@ -34,5 +34,4 @@ Next checkout the basic api and examples:
 .. _`github repository`: https://github.com/pytest-dev/execnet
 .. _`execnet git repository`: https://github.com/pytest-dev/execnet
 .. _`pypi release`: http://pypi.python.org/pypi/execnet
-.. _setuptools: http://pypi.python.org/pypi/setuptools
 .. _distribute: http://pypi.python.org/pypi/distribute
