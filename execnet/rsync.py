@@ -173,10 +173,26 @@ class RSync:
             self._send_directory_structure(p)
 
     def _send_link_structure(self, path):
-        linkpoint = os.readlink(path)
+        sourcedir = self._sourcedir
         basename = path[len(self._sourcedir) + 1 :]
-        if linkpoint.startswith(self._sourcedir):
-            self._send_link("linkbase", basename, linkpoint[len(self._sourcedir) + 1 :])
+        linkpoint = os.readlink(path)
+        # On Windows, readlink returns an extended path (//?/) for
+        # absolute links, but relpath doesn't like mixing extended
+        # and non-extended paths. So fix it up ourselves.
+        if (
+            os.path.__name__ == "ntpath"
+            and linkpoint.startswith("\\\\?\\")
+            and not self._sourcedir.startswith("\\\\?\\")
+        ):
+            sourcedir = "\\\\?\\" + self._sourcedir
+        try:
+            relpath = os.path.relpath(linkpoint, sourcedir)
+        except ValueError:
+            relpath = None
+        if relpath not in (None, os.curdir, os.pardir) and not relpath.startswith(
+            os.pardir + os.sep
+        ):
+            self._send_link("linkbase", basename, relpath)
         else:
             # relative or absolute link, just send it
             self._send_link("link", basename, linkpoint)
