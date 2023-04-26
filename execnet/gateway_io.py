@@ -32,27 +32,10 @@ class Popen2IOMaster(Popen2IO):
 
 def killpopen(popen):
     try:
-        if hasattr(popen, "kill"):
-            popen.kill()
-        else:
-            killpid(popen.pid)
-    except OSError:
-        sys.stderr.write("ERROR killing: %s\n" % (sys.exc_info()[1]))
+        popen.kill()
+    except OSError as e:
+        sys.stderr.write("ERROR killing: %s\n" % e)
         sys.stderr.flush()
-
-
-def killpid(pid):
-    if hasattr(os, "kill"):
-        os.kill(pid, 15)
-    elif sys.platform == "win32" or getattr(os, "_name", None) == "nt":
-        import ctypes
-
-        PROCESS_TERMINATE = 1
-        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
-        ctypes.windll.kernel32.TerminateProcess(handle, -1)
-        ctypes.windll.kernel32.CloseHandle(handle)
-    else:
-        raise OSError(f"no method to kill {pid}")
 
 
 popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
@@ -72,10 +55,8 @@ def shell_split_path(path):
 def popen_args(spec):
     args = shell_split_path(spec.python) if spec.python else [sys.executable]
     args.append("-u")
-    if spec is not None and spec.dont_write_bytecode:
+    if spec.dont_write_bytecode:
         args.append("-B")
-    # Slight gymnastics in ordering these arguments because CPython (as of
-    # 2.7.1) ignores -B if you provide `python -c "something" -B`
     args.extend(["-c", popen_bootstrapline])
     return args
 
