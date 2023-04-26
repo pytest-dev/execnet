@@ -55,3 +55,7 @@ version-file = "execnet/_version.py"
 include = [
     "/execnet",
 ]
+
+
+[tool.mypy]
+python_version = "3.7"
