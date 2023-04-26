@@ -1,7 +1,6 @@
 import os
 import sys
 
-import py
 import pytest
 from execnet.gateway_base import WorkerPool
 

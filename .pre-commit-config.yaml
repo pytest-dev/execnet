@@ -1,4 +1,3 @@
-exclude: doc/en/example/py2py3/test_py2.py
 repos:
 -   repo: https://github.com/codespell-project/codespell
     rev: v2.2.4
