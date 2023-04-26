@@ -4,7 +4,6 @@ mostly functional tests of gateways.
 import time
 
 import pytest
-from test_gateway import _find_version
 
 
 needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
@@ -211,17 +210,14 @@ class TestChannelBasicBehaviour:
         l = []
         channel = gw.remote_exec(
             source="""
-            try:
-                import thread
-            except ImportError:
-                import _thread as thread
+            import _thread
             import time
             def producer(subchannel):
                 for i in range(5):
                     time.sleep(0.15)
                     subchannel.send(i*100)
             channel2 = channel.receive()
-            thread.start_new_thread(producer, (channel2,))
+            _thread.start_new_thread(producer, (channel2,))
             del channel2
             """
         )

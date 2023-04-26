@@ -6,7 +6,6 @@ import subprocess
 import sys
 
 import execnet
-import py
 import pytest
 from execnet.gateway_io import popen_args
 from execnet.gateway_io import ssh_args
@@ -174,17 +173,17 @@ class TestMakegateway:
         assert rinfo.version_info == sys.version_info
 
     @skip_win_pypy
-    def test_popen_chdir_absolute(self, testdir, makegateway):
-        gw = makegateway("popen//chdir=%s" % testdir.tmpdir)
+    def test_popen_chdir_absolute(self, tmp_path, makegateway):
+        gw = makegateway("popen//chdir=%s" % tmp_path)
         rinfo = gw._rinfo()
-        assert rinfo.cwd == str(testdir.tmpdir.realpath())
+        assert rinfo.cwd == str(tmp_path.resolve())
 
     @skip_win_pypy
-    def test_popen_chdir_newsub(self, testdir, makegateway):
-        testdir.chdir()
+    def test_popen_chdir_newsub(self, monkeypatch, tmp_path, makegateway):
+        monkeypatch.chdir(tmp_path)
         gw = makegateway("popen//chdir=hello")
         rinfo = gw._rinfo()
-        expected = str(testdir.tmpdir.join("hello").realpath()).lower()
+        expected = str(tmp_path.joinpath("hello").resolve()).lower()
         assert rinfo.cwd.lower() == expected
 
     def test_ssh(self, specssh, makegateway):

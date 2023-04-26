@@ -1,13 +1,13 @@
+import pathlib
 import sys
 
-import py
 
-# make execnet and example code importable
-cand = py.path.local(__file__).dirpath().dirpath().dirpath()
-if cand.join("execnet", "__init__.py").check():
+# Make execnet and example code importable.
+cand = pathlib.Path(__file__).parent.parent.parent
+if cand.joinpath("execnet", "__init__.py").exists():
     if str(cand) not in sys.path:
         sys.path.insert(0, str(cand))
-cand = py.path.local(__file__).dirpath()
+cand = pathlib.Path(__file__).parent
 if str(cand) not in sys.path:
     sys.path.insert(0, str(cand))
 

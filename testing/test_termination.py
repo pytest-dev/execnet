@@ -1,12 +1,15 @@
+import os
+import pathlib
+import shutil
+import signal
 import subprocess
 import sys
 
 import execnet
-import py
 import pytest
 from test_gateway import TESTTIMEOUT
 
-execnetdir = py.path.local(execnet.__file__).dirpath().dirpath()
+execnetdir = pathlib.Path(execnet.__file__).parent.parent
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
@@ -45,7 +48,7 @@ def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
     """
     )
     pid = channel.receive()
-    py.process.kill(pid)
+    os.kill(pid, signal.SIGTERM)
     channel.setcallback(q.put, endmarker=999)
     val = q.get(TESTTIMEOUT)
     assert val == 999
@@ -55,7 +58,7 @@ def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
 
 @skip_win_pypy
 def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
-    if not py.path.local.sysfind("ps"):
+    if not shutil.which("ps"):
         pytest.skip("need 'ps' command to externally check process status")
     monkeypatch.setenv("EXECNET_DEBUG", "2")
     gw = makegateway("popen")
@@ -63,9 +66,10 @@ def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     gw.remote_exec("channel.receive()")
     gw._group.terminate()
     command = ["ps", "-p", str(pid)]
-    popen = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    popen = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
     out, err = popen.communicate()
-    out = py.builtin._totext(out, "utf8")
     assert str(pid) not in out, out
 
 
