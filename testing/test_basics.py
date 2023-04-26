@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import inspect
 import os
 import subprocess
 import sys
 import textwrap
+from dataclasses import dataclass
 from io import BytesIO
+from pathlib import Path
+from typing import Any
 
 import execnet
 import pytest
@@ -21,9 +26,8 @@ skip_win_pypy = pytest.mark.xfail(
 )
 
 
+@pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])
 class TestSerializeAPI:
-    pytestmark = [pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])]
-
     def test_serializer_api(self, val):
         dumped = execnet.dumps(val)
         val2 = execnet.loads(dumped)
@@ -31,9 +35,9 @@ class TestSerializeAPI:
 
     def test_mmap(self, tmp_path, val):
         mmap = pytest.importorskip("mmap").mmap
-        p = tmp_path / "data"
-        with p.open("wb") as f:
-            f.write(execnet.dumps(val))
+        p = tmp_path / "data.bin"
+
+        p.write_bytes(execnet.dumps(val))
         with p.open("r+b") as f:
             m = mmap(f.fileno(), 0)
             val2 = execnet.load(m)
@@ -112,67 +116,83 @@ def read_write_loop():
             break
 
 
-def test_io_message(anypython, tmp_path, execmodel):
-    check = tmp_path / "check.py"
-    check.write_text(
-        inspect.getsource(gateway_base)
-        + textwrap.dedent(
-            """
-        from io import BytesIO
-        import tempfile
-        temp_out = BytesIO()
-        temp_in = BytesIO()
-        io = Popen2IO(temp_out, temp_in, get_execmodel({backend!r}))
-        for i, handler in enumerate(Message._types):
-            print ("checking %s %s" %(i, handler))
-            for data in "hello", "hello".encode('ascii'):
-                msg1 = Message(i, i, dumps(data))
-                msg1.to_io(io)
-                x = io.outfile.getvalue()
-                io.outfile.truncate(0)
-                io.outfile.seek(0)
-                io.infile.seek(0)
-                io.infile.write(x)
-                io.infile.seek(0)
-                msg2 = Message.from_io(io)
-                assert msg1.channelid == msg2.channelid, (msg1, msg2)
-                assert msg1.data == msg2.data, (msg1.data, msg2.data)
-                assert msg1.msgcode == msg2.msgcode
-        print ("all passed")
-    """.format(
-                backend=execmodel.backend
-            ),
+IO_MESSAGE_EXTRA_SOURCE = """
+import sys
+backend = sys.argv[1]
+try:
+    from io import BytesIO
+except ImportError:
+    from StringIO import StringIO as BytesIO
+import tempfile
+temp_out = BytesIO()
+temp_in = BytesIO()
+io = Popen2IO(temp_out, temp_in, get_execmodel(backend))
+for i, handler in enumerate(Message._types):
+    print ("checking", i, handler)
+    for data in "hello", "hello".encode('ascii'):
+        msg1 = Message(i, i, dumps(data))
+        msg1.to_io(io)
+        x = io.outfile.getvalue()
+        io.outfile.truncate(0)
+        io.outfile.seek(0)
+        io.infile.seek(0)
+        io.infile.write(x)
+        io.infile.seek(0)
+        msg2 = Message.from_io(io)
+        assert msg1.channelid == msg2.channelid, (msg1, msg2)
+        assert msg1.data == msg2.data, (msg1.data, msg2.data)
+        assert msg1.msgcode == msg2.msgcode
+print ("all passed")
+"""
+
+
+@dataclass
+class Checker:
+    python: str
+    path: Path
+    idx: int = 0
+
+    def run_check(
+        self, script: str, *extra_args: str, **process_args: Any
+    ) -> subprocess.CompletedProcess[str]:
+        self.idx += 1
+        check_path = self.path / f"check{self.idx}.py"
+        check_path.write_text(script)
+        return subprocess.run(
+            [self.python, os.fspath(check_path), *extra_args],
+            capture_output=True,
+            text=True,
+            check=True,
+            **process_args,
         )
+
+
+@pytest.fixture
+def checker(anypython: str, tmp_path: Path) -> Checker:
+    return Checker(python=anypython, path=tmp_path)
+
+
+def test_io_message(checker, execmodel):
+    out = checker.run_check(
+        inspect.getsource(gateway_base) + IO_MESSAGE_EXTRA_SOURCE, execmodel.backend
     )
-    out = subprocess.run(
-        [str(anypython), str(check)], text=True, capture_output=True, check=True
-    ).stdout
-    print(out)
-    assert "all passed" in out
+    print(out.stdout)
+    assert "all passed" in out.stdout
 
 
-def test_popen_io(anypython, tmp_path, execmodel):
-    check = tmp_path / "check.py"
-    check.write_text(
+def test_popen_io(checker, execmodel):
+    out = checker.run_check(
         inspect.getsource(gateway_base)
-        + textwrap.dedent(
-            f"""
-        io = init_popen_io(get_execmodel({execmodel.backend!r}))
-        io.write("hello".encode('ascii'))
-        s = io.read(1)
-        assert s == "x".encode('ascii')
-    """
-        ),
+        + f"""
+io = init_popen_io(get_execmodel({execmodel.backend!r}))
+io.write(b"hello")
+s = io.read(1)
+assert s == b"x"
+""",
+        input="x",
     )
-    from subprocess import Popen, PIPE
-
-    args = [str(anypython), str(check)]
-    proc = Popen(args, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    proc.stdin.write(b"x")
-    stdout, stderr = proc.communicate()
-    print(stderr)
-    proc.wait()
-    assert b"hello" in stdout
+    print(out.stderr)
+    assert "hello" in out.stdout
 
 
 def test_popen_io_readloop(monkeypatch, execmodel):
@@ -190,60 +210,45 @@ def test_popen_io_readloop(monkeypatch, execmodel):
     assert result == b"tes"
 
 
-def test_rinfo_source(anypython, tmp_path):
-    check = tmp_path / "check.py"
-    check.write_text(
-        textwrap.dedent(
-            """
-        class Channel:
-            def send(self, data):
-                assert eval(repr(data), {}) == data
-        channel = Channel()
-        """
-        )
-        + inspect.getsource(gateway.rinfo_source)
-        + textwrap.dedent(
-            """
-        print ('all passed')
-        """
-        )
+def test_rinfo_source(checker):
+    out = checker.run_check(
+        f"""
+class Channel:
+    def send(self, data):
+        assert eval(repr(data), {{}}) == data
+channel = Channel()
+{inspect.getsource(gateway.rinfo_source)}
+print ('all passed')
+"""
     )
-    out = subprocess.run(
-        [str(anypython), str(check)], text=True, capture_output=True, check=True
-    ).stdout
-    print(out)
-    assert "all passed" in out
+
+    print(out.stdout)
+    assert "all passed" in out.stdout
 
 
-def test_geterrortext(anypython, tmp_path):
-    check = tmp_path / "check.py"
-    check.write_text(
+def test_geterrortext(checker):
+    out = checker.run_check(
         inspect.getsource(gateway_base)
-        + textwrap.dedent(
-            """
-        class Arg:
-            pass
-        errortext = geterrortext((Arg, "1", 4))
-        assert "Arg" in errortext
-        import sys
-        try:
-            raise ValueError("17")
-        except ValueError:
-            excinfo = sys.exc_info()
-            s = geterrortext(excinfo)
-            assert "17" in s
-            print ("all passed")
+        + """
+class Arg:
+    pass
+errortext = geterrortext((Arg, "1", 4))
+assert "Arg" in errortext
+import sys
+try:
+    raise ValueError("17")
+except ValueError:
+    excinfo = sys.exc_info()
+    s = geterrortext(excinfo)
+    assert "17" in s
+    print ("all passed")
     """
-        )
     )
-    out = subprocess.run(
-        [str(anypython), str(check)], text=True, capture_output=True, check=True
-    ).stdout
-    print(out)
-    assert "all passed" in out
+    print(out.stdout)
+    assert "all passed" in out.stdout
 
 
-@pytest.mark.skipif(not hasattr(os, "dup"), reason="no os.dup")
+@pytest.mark.skipif("not hasattr(os, 'dup')")
 def test_stdouterrin_setnull(execmodel, capfd):
     gateway_base.init_popen_io(execmodel)
     os.write(1, b"hello")
@@ -297,15 +302,15 @@ class TestMessage:
 class TestPureChannel:
     @pytest.fixture
     def fac(self, execmodel):
-        class Gateway:
+        class FakeGateway:
             def _trace(self, *args):
                 pass
 
             def _send(self, *k):
                 pass
 
-        Gateway.execmodel = execmodel
-        return ChannelFactory(Gateway())
+        FakeGateway.execmodel = execmodel
+        return ChannelFactory(FakeGateway())
 
     def test_factory_create(self, fac):
         chan1 = fac.new()

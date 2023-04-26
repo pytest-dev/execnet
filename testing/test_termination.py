@@ -66,11 +66,8 @@ def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     gw.remote_exec("channel.receive()")
     gw._group.terminate()
     command = ["ps", "-p", str(pid)]
-    popen = subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
-    )
-    out, err = popen.communicate()
-    assert str(pid) not in out, out
+    output = subprocess.run(command, capture_output=True, text=True)
+    assert str(pid) not in output.stdout, output
 
 
 def test_close_initiating_remote_no_error(testdir, anypython):

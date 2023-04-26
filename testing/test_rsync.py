@@ -2,6 +2,7 @@ import os
 import pathlib
 import platform
 import sys
+import types
 
 import execnet
 import pytest
@@ -36,19 +37,22 @@ needssymlink = pytest.mark.skipif(
 )
 
 
+class _dirs(types.SimpleNamespace):
+    source: pathlib.Path
+    dest1: pathlib.Path
+    dest2: pathlib.Path
+
+
 @pytest.fixture
-def dirs(request, tmp_path):
-    t = tmp_path
-
-    class dirs:
-        source = t / "source"
-        dest1 = t / "dest1"
-        dest2 = t / "dest2"
-
+def dirs(request, tmp_path) -> _dirs:
+    dirs = _dirs(
+        source=tmp_path / "source",
+        dest1=tmp_path / "dest1",
+        dest2=tmp_path / "dest2",
+    )
     dirs.source.mkdir()
     dirs.dest1.mkdir()
     dirs.dest2.mkdir()
-
     return dirs
 
 

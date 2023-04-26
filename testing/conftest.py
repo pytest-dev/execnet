@@ -1,7 +1,8 @@
-import pathlib
 import shutil
-import subprocess
 import sys
+from functools import lru_cache
+from typing import Callable
+from typing import Iterator
 
 import execnet
 import pytest
@@ -23,10 +24,15 @@ def pytest_runtest_setup(item):
 
 
 @pytest.fixture
-def makegateway(request):
+def group_function() -> Iterator[execnet.Group]:
     group = execnet.Group()
-    request.addfinalizer(lambda: group.terminate(0.5))
-    return group.makegateway
+    yield group
+    group.terminate(0.5)
+
+
+@pytest.fixture
+def makegateway(group_function) -> Callable[[str], execnet.gateway.Gateway]:
+    return group_function.makegateway
 
 
 pytest_plugins = ["pytester", "doctest"]
@@ -101,37 +107,16 @@ def pytest_generate_tests(metafunc):
         else:
             gwtypes = ["popen", "socket", "ssh", "proxy"]
         metafunc.parametrize("gw", gwtypes, indirect=True)
-    elif "anypython" in metafunc.fixturenames:
-        metafunc.parametrize(
-            "anypython",
-            indirect=True,
-            argvalues=("sys.executable", "pypy3"),
-        )
 
 
-def getexecutable(name, cache={}):
-    try:
-        return cache[name]
-    except KeyError:
-        if name == "sys.executable":
-            return pathlib.Path(sys.executable)
-        path = shutil.which(name)
-        executable = pathlib.Path(path) if path is not None else None
-        if executable:
-            if name == "jython":
-                popen = subprocess.Popen(
-                    [str(executable), "--version"],
-                    universal_newlines=True,
-                    stderr=subprocess.PIPE,
-                )
-                out, err = popen.communicate()
-                if not err or "2.5" not in err:
-                    executable = None
-        cache[name] = executable
-        return executable
+@lru_cache()
+def getexecutable(name):
+    if name == "sys.executable":
+        return sys.executable
+    return shutil.which(name)
 
 
-@pytest.fixture
+@pytest.fixture(params=("sys.executable", "pypy3"))
 def anypython(request):
     name = request.param
     executable = getexecutable(name)

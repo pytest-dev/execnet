@@ -1,99 +1,69 @@
-import pathlib
-import shutil
+import os
 import subprocess
 import sys
-import tempfile
+from pathlib import Path
 
 import execnet
 import pytest
 
-MINOR_VERSIONS = {"3": "543210", "2": "76"}
 
-
-TEMPDIR = None
-_py3_wrapper = None
-
-
-def setup_module(mod):
-    mod.TEMPDIR = pathlib.Path(tempfile.mkdtemp())
-    mod._py3_wrapper = PythonWrapper(pathlib.Path(sys.executable))
-
-
-def teardown_module(mod):
-    shutil.rmtree(TEMPDIR)
-
-
-# we use the execnet folder in order to avoid triggering a missing apipkg
-pyimportdir = str(pathlib.Path(execnet.__file__).parent)
+# We use the execnet folder in order to avoid triggering a missing apipkg.
+pyimportdir = os.fspath(Path(execnet.__file__).parent)
 
 
 class PythonWrapper:
-    def __init__(self, executable):
+    def __init__(self, executable, tmp_path):
         self.executable = executable
+        self.tmp_path = tmp_path
 
-    def dump(self, obj_rep):
-        script_file = TEMPDIR.joinpath("dump.py")
+    def dump(self, obj_rep: str) -> bytes:
+        script_file = self.tmp_path.joinpath("dump.py")
         script_file.write_text(
-            """
+            f"""
 import sys
-sys.path.insert(0, %r)
+sys.path.insert(0, {pyimportdir!r})
 import gateway_base as serializer
-# Need binary output
 sys.stdout = sys.stdout.detach()
-sys.stdout.write(serializer.dumps_internal(%s))
+sys.stdout.write(serializer.dumps_internal({obj_rep}))
 """
-            % (pyimportdir, obj_rep)
         )
-        popen = subprocess.Popen(
-            [str(self.executable), str(script_file)],
-            stdin=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
+        res = subprocess.run(
+            [str(self.executable), str(script_file)], capture_output=True, check=True
         )
-        stdout, stderr = popen.communicate()
-        ret = popen.returncode
-        if ret:
-            raise Exception(
-                "ExecutionFailed: %d  %s\n%s" % (ret, self.executable, stderr)
-            )
-        return stdout
+        return res.stdout
 
-    def load(self, data, option_args="__class__"):
-        script_file = TEMPDIR.joinpath("load.py")
+    def load(self, data: bytes):
+        script_file = self.tmp_path.joinpath("load.py")
         script_file.write_text(
-            r"""
+            rf"""
 import sys
-sys.path.insert(0, %r)
+sys.path.insert(0, {pyimportdir!r})
 import gateway_base as serializer
-sys.stdin = sys.stdin.detach()
-loader = serializer.Unserializer(sys.stdin)
-loader.%s
+from io import BytesIO
+data = {data!r}
+io = BytesIO(data)
+loader = serializer.Unserializer(io)
 obj = loader.load()
 sys.stdout.write(type(obj).__name__ + "\n")
-sys.stdout.write(repr(obj))"""
-            % (pyimportdir, option_args)
+sys.stdout.write(repr(obj))
+"""
         )
-        popen = subprocess.Popen(
+        res = subprocess.run(
             [str(self.executable), str(script_file)],
-            stdin=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdout=subprocess.PIPE,
+            capture_output=True,
         )
-        stdout, stderr = popen.communicate(data)
-        ret = popen.returncode
-        if ret:
-            raise Exception(
-                "ExecutionFailed: %d  %s\n%s" % (ret, self.executable, stderr)
-            )
-        return [s.decode("ascii") for s in stdout.splitlines()]
+        if res.returncode:
+            raise ValueError(res.stderr)
+
+        return res.stdout.decode("ascii").splitlines()
 
     def __repr__(self):
         return f"<PythonWrapper for {self.executable}>"
 
 
 @pytest.fixture
-def py3(request):
-    return _py3_wrapper
+def py3(request, tmp_path):
+    return PythonWrapper(sys.executable, tmp_path)
 
 
 @pytest.fixture
