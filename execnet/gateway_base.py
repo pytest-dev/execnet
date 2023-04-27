@@ -35,8 +35,29 @@ SUBPROCESS32 = False
 # def log_extra(*msg):
 #     f.write(" ".join([str(x) for x in msg]) + "\n")
 
+if sys.version_info >= (3, 7):
+    from contextlib import nullcontext
+else:
+    class nullcontext(object):
+        """Context manager that does no additional processing.
+        Used as a stand-in for a normal context manager, when a particular
+        block of code is only sometimes used with a normal context manager:
+        cm = optional_cm if condition else nullcontext()
+        with cm:
+            # Perform operation, using optional_cm if condition is True
+        """
 
-class EmptySemaphore:
+        def __init__(self, enter_result=None):
+            self.enter_result = enter_result
+
+        def __enter__(self):
+            return self.enter_result
+
+        def __exit__(self, *excinfo):
+            pass
+
+
+class EmptySemaphore(nullcontext):
     acquire = release = lambda self: None
 
 
@@ -209,13 +230,16 @@ class WorkerPool:
     when the pool received a trigger_shutdown().
     """
 
-    def __init__(self, execmodel, hasprimary=False):
-        """by default allow unlimited number of spawns."""
+<
+    def __init__(self, execmodel, hasprimary=False, size=None):
+        """ by default allow unlimited number of spawns. """
+
         self.execmodel = execmodel
         self._running_lock = self.execmodel.Lock()
         self._running = set()
         self._shuttingdown = False
         self._waitall_events = []
+        self._semaphore = self.execmodel.Semaphore(size)
         if hasprimary:
             if self.execmodel.backend != "thread":
                 raise ValueError("hasprimary=True requires thread model")
@@ -278,7 +302,7 @@ class WorkerPool:
         of the given func(*args, **kwargs).
         """
         reply = Reply((func, args, kwargs), self.execmodel)
-        with self._running_lock:
+        with self._semaphore, self._running_lock:
             if self._shuttingdown:
                 raise ValueError("pool is shutting down")
             self._running.add(reply)
