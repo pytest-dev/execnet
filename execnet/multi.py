@@ -11,8 +11,8 @@ from threading import Lock
 from . import gateway_bootstrap
 from . import gateway_io
 from .gateway_base import get_execmodel
-from .gateway_base import reraise
 from .gateway_base import trace
+from .gateway_base import WorkerPool
 from .xspec import XSpec
 
 NO_ENDMARKER_WANTED = object()
@@ -174,7 +174,7 @@ class Group:
     def _register(self, gateway):
         assert not hasattr(gateway, "_group")
         assert gateway.id
-        assert id not in self
+        assert gateway.id not in self
         self._gateways.append(gateway)
         gateway._group = self
 
@@ -289,11 +289,11 @@ class MultiChannel:
                 if first is None:
                     first = sys.exc_info()
         if first:
-            reraise(*first)
+            raise first[1].with_traceback(first[2])
 
 
 def safe_terminate(execmodel, timeout, list_of_paired_functions):
-    workerpool = execmodel.WorkerPool()
+    workerpool = WorkerPool(execmodel)
 
     def termkill(termfunc, killfunc):
         termreply = workerpool.spawn(termfunc)

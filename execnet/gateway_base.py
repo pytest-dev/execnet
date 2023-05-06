@@ -18,17 +18,10 @@ import struct
 import sys
 import traceback
 import weakref
+from _thread import interrupt_main
 from io import BytesIO
 from typing import Callable
 
-
-def reraise(cls, val, tb):
-    raise val.with_traceback(tb)
-
-
-unicode = str
-_long_type = int
-from _thread import interrupt_main
 
 SUBPROCESS32 = False
 # f = open("/tmp/execnet-%s" % os.getpid(), "w")
@@ -36,28 +29,20 @@ SUBPROCESS32 = False
 #     f.write(" ".join([str(x) for x in msg]) + "\n")
 
 
-class EmptySemaphore:
-    acquire = release = lambda self: None
-
-
 def get_execmodel(backend):
     if hasattr(backend, "backend"):
         return backend
     if backend == "thread":
         importdef = {
-            "get_ident": ["thread::get_ident", "_thread::get_ident"],
-            "_start_new_thread": [
-                "thread::start_new_thread",
-                "_thread::start_new_thread",
-            ],
-            "threading": ["threading"],
-            "queue": ["queue"],
-            "sleep": ["time::sleep"],
-            "subprocess": ["subprocess"],
-            "socket": ["socket"],
-            "_fdopen": ["os::fdopen"],
-            "_lock": ["threading"],
-            "_event": ["threading"],
+            "get_ident": "_thread::get_ident",
+            "_start_new_thread": "_thread::start_new_thread",
+            "queue": "queue",
+            "sleep": "time::sleep",
+            "subprocess": "subprocess",
+            "socket": "socket",
+            "_fdopen": "os::fdopen",
+            "_lock": "threading",
+            "_event": "threading",
         }
 
         def exec_start(self, func, args=()):
@@ -65,16 +50,15 @@ def get_execmodel(backend):
 
     elif backend == "eventlet":
         importdef = {
-            "get_ident": ["eventlet.green.thread::get_ident"],
-            "_spawn_n": ["eventlet::spawn_n"],
-            "threading": ["eventlet.green.threading"],
-            "queue": ["eventlet.queue"],
-            "sleep": ["eventlet::sleep"],
-            "subprocess": ["eventlet.green.subprocess"],
-            "socket": ["eventlet.green.socket"],
-            "_fdopen": ["eventlet.green.os::fdopen"],
-            "_lock": ["eventlet.green.threading"],
-            "_event": ["eventlet.green.threading"],
+            "get_ident": "eventlet.green.thread::get_ident",
+            "_spawn_n": "eventlet::spawn_n",
+            "queue": "eventlet.queue",
+            "sleep": "eventlet::sleep",
+            "subprocess": "eventlet.green.subprocess",
+            "socket": "eventlet.green.socket",
+            "_fdopen": "eventlet.green.os::fdopen",
+            "_lock": "eventlet.green.threading",
+            "_event": "eventlet.green.threading",
         }
 
         def exec_start(self, func, args=()):
@@ -82,17 +66,16 @@ def get_execmodel(backend):
 
     elif backend == "gevent":
         importdef = {
-            "get_ident": ["gevent.thread::get_ident"],
-            "_spawn_n": ["gevent::spawn"],
-            "threading": ["threading"],
-            "queue": ["gevent.queue"],
-            "sleep": ["gevent::sleep"],
-            "subprocess": ["gevent.subprocess"],
-            "socket": ["gevent.socket"],
+            "get_ident": "gevent.thread::get_ident",
+            "_spawn_n": "gevent::spawn",
+            "queue": "gevent.queue",
+            "sleep": "gevent::sleep",
+            "subprocess": "gevent.subprocess",
+            "socket": "gevent.socket",
             # XXX
-            "_fdopen": ["gevent.fileobject::FileObjectThread"],
-            "_lock": ["gevent.lock"],
-            "_event": ["gevent.event"],
+            "_fdopen": "gevent.fileobject::FileObjectThread",
+            "_lock": "gevent.lock",
+            "_event": "gevent.event",
         }
 
         def exec_start(self, func, args=()):
@@ -105,41 +88,30 @@ def get_execmodel(backend):
         def __init__(self, name):
             self._importdef = importdef
             self.backend = name
-            self._count = 0
 
         def __repr__(self):
             return "<ExecModel %r>" % self.backend
 
         def __getattr__(self, name):
-            locs = self._importdef.get(name)
-            if locs is None:
+            loc = self._importdef.get(name)
+            if loc is None:
                 raise AttributeError(name)
-            for loc in locs:
-                parts = loc.split("::")
-                loc = parts.pop(0)
-                try:
-                    mod = __import__(loc, None, None, "__doc__")
-                except ImportError:
-                    pass
-                else:
-                    if parts:
-                        mod = getattr(mod, parts[0])
-                    setattr(self, name, mod)
-                    return mod
+            parts = loc.split("::")
+            try:
+                mod = __import__(parts[0], None, None, "__doc__")
+            except ImportError:
+                pass
+            else:
+                if len(parts) > 1:
+                    mod = getattr(mod, parts[1])
+                setattr(self, name, mod)
+                return mod
             raise AttributeError(name)
 
         start = exec_start
 
         def fdopen(self, fd, mode, bufsize=1):
             return self._fdopen(fd, mode, bufsize)
-
-        def WorkerPool(self, hasprimary=False):
-            return WorkerPool(self, hasprimary=hasprimary)
-
-        def Semaphore(self, size=None):
-            if size is None:
-                return EmptySemaphore()
-            return self._lock.Semaphore(size)
 
         def Lock(self):
             return self._lock.RLock()
@@ -149,10 +121,6 @@ def get_execmodel(backend):
 
         def Event(self):
             return self._event.Event()
-
-        def PopenPiped(self, args):
-            PIPE = self.subprocess.PIPE
-            return self.subprocess.Popen(args, stdout=PIPE, stdin=PIPE)
 
     return ExecModel(backend)
 
@@ -178,7 +146,7 @@ class Reply:
         try:
             return self._result
         except AttributeError:
-            reraise(*(self._excinfo[:3]))  # noqa
+            raise self._excinfo[1].with_traceback(self._excinfo[2])
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
@@ -189,7 +157,7 @@ class Reply:
         try:
             try:
                 self._result = func(*args, **kwargs)
-            except:
+            except BaseException:
                 # sys may be already None when shutting down the interpreter
                 if sys is not None:
                     self._excinfo = sys.exc_info()
@@ -388,9 +356,10 @@ class Popen2IO:
 class Message:
     """encapsulates Messages and their wire protocol."""
 
-    _types: list[Callable[[Message, BaseGateway], None]] = []
+    # message code -> name, handler
+    _types: dict[int, tuple[str, Callable[[Message, BaseGateway], None]]] = {}
 
-    def __init__(self, msgcode, channelid=0, data=""):
+    def __init__(self, msgcode, channelid=0, data=b""):
         self.msgcode = msgcode
         self.channelid = channelid
         self.data = data
@@ -412,21 +381,16 @@ class Message:
         io.write(header + self.data)
 
     def received(self, gateway):
-        self._types[self.msgcode](self, gateway)
+        handler = self._types[self.msgcode][1]
+        handler(self, gateway)
 
     def __repr__(self):
-        name = self._types[self.msgcode].__name__.upper()
+        name = self._types[self.msgcode][0]
         return "<Message {} channel={} lendata={}>".format(
             name, self.channelid, len(self.data)
         )
 
-
-class GatewayReceivedTerminate(Exception):
-    """Receiverthread got termination message."""
-
-
-def _setupmessages():
-    def status(message, gateway):
+    def _status(message, gateway):
         # we use the channelid to send back information
         # but don't instantiate a channel object
         d = {
@@ -437,49 +401,60 @@ def _setupmessages():
         gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
         gateway._send(Message.CHANNEL_CLOSE, message.channelid)
 
-    def channel_exec(message, gateway):
-        channel = gateway._channelfactory.new(message.channelid)
-        gateway._local_schedulexec(channel=channel, sourcetask=message.data)
+    STATUS = 0
+    _types[STATUS] = ("STATUS", _status)
 
-    def channel_data(message, gateway):
-        gateway._channelfactory._local_receive(message.channelid, message.data)
-
-    def channel_close(message, gateway):
-        gateway._channelfactory._local_close(message.channelid)
-
-    def channel_close_error(message, gateway):
-        remote_error = RemoteError(loads_internal(message.data))
-        gateway._channelfactory._local_close(message.channelid, remote_error)
-
-    def channel_last_message(message, gateway):
-        gateway._channelfactory._local_close(message.channelid, sendonly=True)
-
-    def gateway_terminate(message, gateway):
-        raise GatewayReceivedTerminate(gateway)
-
-    def reconfigure(message, gateway):
+    def _reconfigure(message, gateway):
         if message.channelid == 0:
             target = gateway
         else:
             target = gateway._channelfactory.new(message.channelid)
         target._strconfig = loads_internal(message.data, gateway)
 
-    types = [
-        status,
-        reconfigure,
-        gateway_terminate,
-        channel_exec,
-        channel_data,
-        channel_close,
-        channel_close_error,
-        channel_last_message,
-    ]
-    for i, handler in enumerate(types):
-        Message._types.append(handler)
-        setattr(Message, handler.__name__.upper(), i)
+    RECONFIGURE = 1
+    _types[RECONFIGURE] = ("RECONFIGURE", _reconfigure)
+
+    def _gateway_terminate(message, gateway):
+        raise GatewayReceivedTerminate(gateway)
+
+    GATEWAY_TERMINATE = 2
+    _types[GATEWAY_TERMINATE] = ("GATEWAY_TERMINATE", _gateway_terminate)
+
+    def _channel_exec(message, gateway):
+        channel = gateway._channelfactory.new(message.channelid)
+        gateway._local_schedulexec(channel=channel, sourcetask=message.data)
+
+    CHANNEL_EXEC = 3
+    _types[CHANNEL_EXEC] = ("CHANNEL_EXEC", _channel_exec)
+
+    def _channel_data(message, gateway):
+        gateway._channelfactory._local_receive(message.channelid, message.data)
+
+    CHANNEL_DATA = 4
+    _types[CHANNEL_DATA] = ("CHANNEL_DATA", _channel_data)
+
+    def _channel_close(message, gateway):
+        gateway._channelfactory._local_close(message.channelid)
+
+    CHANNEL_CLOSE = 5
+    _types[CHANNEL_CLOSE] = ("CHANNEL_CLOSE", _channel_close)
+
+    def _channel_close_error(message, gateway):
+        remote_error = RemoteError(loads_internal(message.data))
+        gateway._channelfactory._local_close(message.channelid, remote_error)
+
+    CHANNEL_CLOSE_ERROR = 6
+    _types[CHANNEL_CLOSE_ERROR] = ("CHANNEL_CLOSE_ERROR", _channel_close_error)
+
+    def _channel_last_message(message, gateway):
+        gateway._channelfactory._local_close(message.channelid, sendonly=True)
+
+    CHANNEL_LAST_MESSAGE = 7
+    _types[CHANNEL_LAST_MESSAGE] = ("CHANNEL_LAST_MESSAGE", _channel_last_message)
 
 
-_setupmessages()
+class GatewayReceivedTerminate(Exception):
+    """Receiverthread got termination message."""
 
 
 def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sysex):
@@ -488,7 +463,7 @@ def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sys
         errortext = "".join(l)
     except sysex:
         raise
-    except:
+    except BaseException:
         errortext = f"{excinfo[0].__name__}: {excinfo[1]}"
     return errortext
 
@@ -497,8 +472,8 @@ class RemoteError(Exception):
     """Exception containing a stringified error from the other side."""
 
     def __init__(self, formatted):
+        super().__init__()
         self.formatted = formatted
-        Exception.__init__(self)
 
     def __str__(self):
         return self.formatted
@@ -918,7 +893,7 @@ class BaseGateway:
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
-        self._receivepool = self.execmodel.WorkerPool()
+        self._receivepool = WorkerPool(self.execmodel)
 
     def _trace(self, *msg):
         self.__trace(self.id, *msg)
@@ -1020,7 +995,7 @@ class WorkerGateway(BaseGateway):
             self._trace("[serve] " + msg)
 
         hasprimary = self.execmodel.backend == "thread"
-        self._execpool = self.execmodel.WorkerPool(hasprimary=hasprimary)
+        self._execpool = WorkerPool(self.execmodel, hasprimary=hasprimary)
         trace("spawning receiver thread")
         self._initreceive()
         try:
@@ -1053,7 +1028,7 @@ class WorkerGateway(BaseGateway):
         except KeyboardInterrupt:
             channel.close(INTERRUPT_TEXT)
             raise
-        except:
+        except BaseException:
             excinfo = self.exc_info()
             if not isinstance(excinfo[1], EOFError):
                 if not channel.gateway._channelfactory.finished:
@@ -1100,10 +1075,34 @@ class _Stop(Exception):
     pass
 
 
+class opcode:
+    """container for name -> num mappings."""
+
+    BUILDTUPLE = b"@"
+    BYTES = b"A"
+    CHANNEL = b"B"
+    FALSE = b"C"
+    FLOAT = b"D"
+    FROZENSET = b"E"
+    INT = b"F"
+    LONG = b"G"
+    LONGINT = b"H"
+    LONGLONG = b"I"
+    NEWDICT = b"J"
+    NEWLIST = b"K"
+    NONE = b"L"
+    PY2STRING = b"M"
+    PY3STRING = b"N"
+    SET = b"O"
+    SETITEM = b"P"
+    STOP = b"Q"
+    TRUE = b"R"
+    UNICODE = b"S"
+    COMPLEX = b"T"
+
+
 class Unserializer:
-    num2func: dict[
-        int, Callable[[Unserializer], None]
-    ] = {}  # is filled after this class definition
+    num2func: dict[bytes, Callable[[Unserializer], None]] = {}
     py2str_as_py3str = True  # True
     py3str_as_py2str = False  # false means py2 will get unicode
 
@@ -1143,30 +1142,46 @@ class Unserializer:
     def load_none(self):
         self.stack.append(None)
 
+    num2func[opcode.NONE] = load_none
+
     def load_true(self):
         self.stack.append(True)
 
+    num2func[opcode.TRUE] = load_true
+
     def load_false(self):
         self.stack.append(False)
+
+    num2func[opcode.FALSE] = load_false
 
     def load_int(self):
         i = self._read_int4()
         self.stack.append(i)
 
+    num2func[opcode.INT] = load_int
+
     def load_longint(self):
         s = self._read_byte_string()
         self.stack.append(int(s))
 
+    num2func[opcode.LONGINT] = load_longint
+
     load_long = load_int
+    num2func[opcode.LONG] = load_long
     load_longlong = load_longint
+    num2func[opcode.LONGLONG] = load_longlong
 
     def load_float(self):
         binary = self.stream.read(FLOAT_FORMAT_SIZE)
         self.stack.append(struct.unpack(FLOAT_FORMAT, binary)[0])
 
+    num2func[opcode.FLOAT] = load_float
+
     def load_complex(self):
         binary = self.stream.read(COMPLEX_FORMAT_SIZE)
         self.stack.append(complex(*struct.unpack(COMPLEX_FORMAT, binary)))
+
+    num2func[opcode.COMPLEX] = load_complex
 
     def _read_int4(self):
         return struct.unpack("!i", self.stream.read(4))[0]
@@ -1184,6 +1199,8 @@ class Unserializer:
         else:
             self.stack.append(as_bytes.decode("utf-8"))
 
+    num2func[opcode.PY3STRING] = load_py3string
+
     def load_py2string(self):
         as_bytes = self._read_byte_string()
         if self.py2str_as_py3str:
@@ -1192,16 +1209,24 @@ class Unserializer:
             s = as_bytes
         self.stack.append(s)
 
+    num2func[opcode.PY2STRING] = load_py2string
+
     def load_bytes(self):
         s = self._read_byte_string()
         self.stack.append(s)
 
+    num2func[opcode.BYTES] = load_bytes
+
     def load_unicode(self):
         self.stack.append(self._read_byte_string().decode("utf-8"))
+
+    num2func[opcode.UNICODE] = load_unicode
 
     def load_newlist(self):
         length = self._read_int4()
         self.stack.append([None] * length)
+
+    num2func[opcode.NEWLIST] = load_newlist
 
     def load_setitem(self):
         if len(self.stack) < 3:
@@ -1210,8 +1235,12 @@ class Unserializer:
         key = self.stack.pop()
         self.stack[-1][key] = value
 
+    num2func[opcode.SETITEM] = load_setitem
+
     def load_newdict(self):
         self.stack.append({})
+
+    num2func[opcode.NEWDICT] = load_newdict
 
     def _load_collection(self, type_):
         length = self._read_int4()
@@ -1225,45 +1254,29 @@ class Unserializer:
     def load_buildtuple(self):
         self._load_collection(tuple)
 
+    num2func[opcode.BUILDTUPLE] = load_buildtuple
+
     def load_set(self):
         self._load_collection(set)
+
+    num2func[opcode.SET] = load_set
 
     def load_frozenset(self):
         self._load_collection(frozenset)
 
+    num2func[opcode.FROZENSET] = load_frozenset
+
     def load_stop(self):
         raise _Stop
+
+    num2func[opcode.STOP] = load_stop
 
     def load_channel(self):
         id = self._read_int4()
         newchannel = self.channelfactory.new(id)
         self.stack.append(newchannel)
 
-
-# automatically build opcodes and byte-encoding
-
-
-class opcode:
-    """container for name -> num mappings."""
-
-
-def _buildopcodes():
-    l = []
-    later_added = {"COMPLEX": 1}
-    for name, func in Unserializer.__dict__.items():
-        if name.startswith("load_"):
-            opname = name[5:].upper()
-            l.append((opname, func))
-    l.sort(key=lambda x: (later_added.get(x[0], 0), x[0]))
-
-    for i, (opname, func) in enumerate(l):
-        assert i < 26, "xxx"
-        i = bchr(64 + i)
-        Unserializer.num2func[i] = func
-        setattr(opcode, opname, i)
-
-
-_buildopcodes()
+    num2func[opcode.CHANNEL] = load_channel
 
 
 def dumps(obj):
@@ -1320,7 +1333,7 @@ def dumps_internal(obj):
 
 
 class _Serializer:
-    _dispatch = {object: Callable[["_Serializer", object], None]}
+    _dispatch: dict[type, Callable[[_Serializer, object], None]] = {}
 
     def __init__(self, write=None):
         if write is None:
@@ -1340,7 +1353,7 @@ class _Serializer:
             streamlist = self._streamlist
         except AttributeError:
             return None
-        return type(streamlist[0])().join(streamlist)
+        return b"".join(streamlist)
 
     def _save(self, obj):
         tp = type(obj)
