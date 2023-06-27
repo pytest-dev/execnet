@@ -116,7 +116,7 @@ class ThreadExecModel(ExecModel):
     def fdopen(self, fd, mode, bufsize=1):
         import os
 
-        return os.fdopen(fd, mode, bufsize)
+        return os.fdopen(fd, mode, bufsize, encoding="utf-8")
 
     def Lock(self):
         import threading
