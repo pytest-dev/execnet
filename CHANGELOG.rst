@@ -1,13 +1,15 @@
 2.0.0 (unreleased)
 ------------------
 
-* removed support for Python < 3.7
-  * apply pyupgrade --py37-plus
-  * minimal mypy fixes and python2 support code drop
-* migrate packaging to hatch
-* drop deprecated apis of old makegateway names
-* Removed ``py`` testing dependency
+* Removed support for Python < 3.7.
 
+  - Applied ``pyupgrade --py37-plus``.
+  - Minimal ``mypy`` fixes and dropped Python 2 support code.
+
+* Migrated packaging to ``hatch``.
+* Dropped deprecated APIs of old makegateway names.
+* Removed ``py`` testing dependency.
+* Explicitly pass ``encoding`` when opening files in the gateway to get rid of warnings when using ``PYTHONWARNDEFAULTENCODING=1`` (#195).
 
 
 1.9.0 (2021-06-13)
