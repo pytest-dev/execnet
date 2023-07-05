@@ -49,11 +49,11 @@ Homepage = "https://execnet.readthedocs.io/en/latest/"
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "execnet/_version.py"
+version-file = "src/execnet/_version.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/execnet",
+    "/src/execnet",
 ]
 
 
