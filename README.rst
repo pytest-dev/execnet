@@ -30,7 +30,7 @@ a minimal and fast API targeting the following uses:
 * write scripts to administer multiple hosts
 
 Features
-------------------
+--------
 
 * zero-install bootstrapping: no remote installation required!
 
