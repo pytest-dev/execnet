@@ -1,0 +1,2 @@
+# restructured text files forced to LF because of doc8 pre-commit hook.
+*.rst eol=lf
