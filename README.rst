@@ -13,8 +13,8 @@ Important
 .. image:: https://img.shields.io/pypi/pyversions/execnet.svg
     :target: https://pypi.org/project/execnet/
 
-.. image:: https://github.com/pytest-dev/execnet/workflows/build/badge.svg
-    :target: https://github.com/pytest-dev/execnet/actions?query=workflow%3Abuild
+.. image:: https://github.com/pytest-dev/execnet/workflows/test/badge.svg
+    :target: https://github.com/pytest-dev/execnet/actions?query=workflow%3Atest
 
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg
     :target: https://github.com/python/black
@@ -30,7 +30,7 @@ a minimal and fast API targeting the following uses:
 * write scripts to administer multiple hosts
 
 Features
-------------------
+--------
 
 * zero-install bootstrapping: no remote installation required!
 

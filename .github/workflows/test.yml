@@ -1,0 +1,63 @@
+name: test
+
+on:
+  push:
+    branches:
+      - "master"
+      - "test-me-*"
+
+  pull_request:
+    branches:
+      - "master"
+
+# Cancel running jobs for the same workflow and branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build and Check Package
+      uses: hynek/build-and-inspect-python-package@v1.5
+
+  test:
+
+    needs: [package]
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, ubuntu-latest ]
+        python: [ "3.7","3.8","3.10","3.11", "pypy-3.7" ]
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Download Package
+      uses: actions/download-artifact@v3
+      with:
+        name: Packages
+        path: dist
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python }}
+
+    - name: Install tox
+      run: |
+        python -m pip install --upgrade pip
+        pip install tox
+
+    - name: Test
+      shell: bash
+      run: |
+        tox run -e py --installpkg `find dist/*.tar.gz`
