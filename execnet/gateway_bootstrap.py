@@ -75,7 +75,7 @@ def bootstrap_socket(io, id):
 
 def sendexec(io, *sources):
     source = "\n".join(sources)
-    io.write((repr(source) + "\n").encode("ascii"))
+    io.write((repr(source) + "\n").encode("utf-8"))
 
 
 def fix_pid_for_jython_popen(gw):
