@@ -1,4 +1,4 @@
-2.0.0 (unreleased)
+2.0.0 (2023-07-06)
 ------------------
 
 * Removed support for Python < 3.7.
@@ -10,6 +10,7 @@
 * Dropped deprecated APIs of old makegateway names.
 * Removed ``py`` testing dependency.
 * Explicitly pass ``encoding`` when opening files in the gateway to get rid of warnings when using ``PYTHONWARNDEFAULTENCODING=1`` (#195).
+* Fixed error when loading source code files from a path containing non-ascii characters.
 
 
 1.9.0 (2021-06-13)
