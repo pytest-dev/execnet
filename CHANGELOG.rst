@@ -1,3 +1,8 @@
+2.0.1 (2023-07-08)
+------------------
+
+* Re-release without code changes, just to include docs and tests into the source distribution.
+
 2.0.0 (2023-07-06)
 ------------------
 
