@@ -53,11 +53,11 @@ version-file = "src/execnet/_version.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/src",
     "/doc",
+    "/src",
     "/testing",
+    "tox.ini",
 ]
-
 
 [tool.mypy]
 python_version = "3.7"

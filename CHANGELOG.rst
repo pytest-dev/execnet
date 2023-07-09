@@ -1,3 +1,8 @@
+2.0.2 (2023-07-09)
+------------------
+
+* Re-release without code changes, just to include ``tox.ini`` into the source distribution.
+
 2.0.1 (2023-07-08)
 ------------------
 
