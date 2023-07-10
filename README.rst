@@ -1,9 +1,6 @@
 execnet: distributed Python deployment and communication
 ========================================================
 
-**execnet currently is in maintenance-only mode, mostly because it is still the backend
-of the pytest-xdist plugin. Do not use in new projects.**
-
 .. image:: https://img.shields.io/pypi/v/execnet.svg
     :target: https://pypi.org/project/execnet/
 
