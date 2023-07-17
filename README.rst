@@ -1,9 +1,6 @@
 execnet: distributed Python deployment and communication
 ========================================================
 
-Important
----------
-
 .. image:: https://img.shields.io/pypi/v/execnet.svg
     :target: https://pypi.org/project/execnet/
 
