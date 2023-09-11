@@ -20,7 +20,7 @@ jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Build and Check Package
       uses: hynek/build-and-inspect-python-package@v1.5
 
@@ -37,7 +37,7 @@ jobs:
         python: [ "3.7","3.8","3.10","3.11", "pypy-3.7" ]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
