@@ -307,7 +307,7 @@ def safe_terminate(execmodel, timeout, list_of_paired_functions):
         reply = workerpool.spawn(termkill, termfunc, killfunc)
         replylist.append(reply)
     for reply in replylist:
-        reply.get()
+        reply.get(timeout=timeout)
     workerpool.waitall(timeout=timeout)
 
 
