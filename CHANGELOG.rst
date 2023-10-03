@@ -130,7 +130,7 @@
   (this also fixes the bpython interaction issues)
 
 - Fix issue38: provide ability to connect to Vagrant VMs easily
-  using :code:`vagrant_ssh=defaut` or :code:`vagrant_ssh=machinename`
+  using :code:`vagrant_ssh=default` or :code:`vagrant_ssh=machinename`
   this feature is experimental and will be refined in future releases.
   Thanks Christian Theune for the discussion and the initial pull request.
 
@@ -432,7 +432,7 @@
 
 * make internal protocols more robust against serialization failures
 
-* fix a seralization bug with nested tuples containing empty tuples
+* fix a serialization bug with nested tuples containing empty tuples
   (thanks to ronny for discovering it)
 
 * setting the environment variable EXECNET_DEBUG will generate per
