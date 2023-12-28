@@ -58,14 +58,16 @@ def shell_split_path(path):
 
 def is_frozen_environment():
     """Check if running in a Frozen environment."""
-    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+    return getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+
 
 def get_python_executable():
     """Get the correct Python interpreter path."""
     if is_frozen_environment():
-        return os.environ.get('PYTHON_EXECUTABLE', 'python')
+        return os.environ.get("PYTHON_EXECUTABLE", "python")
     else:
         return sys.executable
+
 
 def popen_args(spec):
     python_executable = get_python_executable()
