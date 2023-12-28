@@ -194,7 +194,6 @@ def _source_of_function(function):
         args = sig.args
     if not args or args[0] != "channel":
         raise ValueError("expected first function argument to be `channel`")
-
     closure = function.__closure__
     codeobj = function.__code__
 
