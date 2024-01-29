@@ -13,9 +13,9 @@ class XSpec:
     """
 
     # XXX allow customization, for only allow specific key names
-    popen = (
-        ssh
-    ) = socket = python = chdir = nice = dont_write_bytecode = execmodel = None
+    popen = ssh = socket = python = chdir = nice = dont_write_bytecode = execmodel = (
+        None
+    )
 
     def __init__(self, string):
         self._spec = string
