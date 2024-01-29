@@ -26,7 +26,7 @@ def clientside():
         while 1:
             r, w, e = select.select(inputlist, [], [])
             if sys.stdin in r:
-                line = raw_input()
+                line = raw_input()  # noqa:F821
                 sock.sendall(line + "\n")
             if sock in r:
                 line = sock.recv(4096)

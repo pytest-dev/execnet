@@ -1,5 +1,4 @@
 import os
-import sys
 
 import pytest
 from execnet.gateway_base import WorkerPool
@@ -61,7 +60,7 @@ def test_running_semnatics(pool, execmodel):
 
 
 def test_waitfinish_on_reply(pool):
-    l = []
+    l = []  # noqa:E741
     reply = pool.spawn(lambda: l.append(1))
     reply.waitfinish()
     assert l == [1]
