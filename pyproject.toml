@@ -45,6 +45,9 @@ testing = [
 [project.urls]
 Homepage = "https://execnet.readthedocs.io/en/latest/"
 
+[tool.ruff.lint]
+ignore = ["E741"]
+
 [tool.hatch.version]
 source = "vcs"
 
