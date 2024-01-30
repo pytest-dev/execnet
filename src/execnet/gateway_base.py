@@ -425,8 +425,8 @@ if DEBUG == "2":
             pass  # nothing we can do, likely interpreter-shutdown
 
 elif DEBUG:
-    import tempfile
     import os
+    import tempfile
 
     fn = os.path.join(tempfile.gettempdir(), "execnet-debug-%d" % pid)
     # sys.stderr.write("execnet-debug at %r" % (fn,))

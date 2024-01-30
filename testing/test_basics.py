@@ -19,7 +19,6 @@ from execnet.gateway_base import ChannelFactory
 from execnet.gateway_base import Message
 from execnet.gateway_base import Popen2IO
 
-
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
     reason="failing on Windows on PyPy (#63)",

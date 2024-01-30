@@ -153,8 +153,8 @@ RemoteStatus = RInfo
 
 
 def rinfo_source(channel):
-    import sys
     import os
+    import sys
 
     channel.send(
         dict(

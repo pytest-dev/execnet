@@ -6,7 +6,6 @@ from pathlib import Path
 import execnet
 import pytest
 
-
 # We use the execnet folder in order to avoid triggering a missing apipkg.
 pyimportdir = os.fspath(Path(execnet.__file__).parent)
 

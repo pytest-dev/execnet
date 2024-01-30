@@ -47,9 +47,11 @@ Homepage = "https://execnet.readthedocs.io/en/latest/"
 
 [tool.ruff.lint]
 ignore = ["E741"]
+extend-select = ["I001"]
 
 [tool.ruff.lint.isort]
-case-sensitive = true
+force-single-line = true
+known-third-party = ["src"]
 
 [tool.hatch.version]
 source = "vcs"
