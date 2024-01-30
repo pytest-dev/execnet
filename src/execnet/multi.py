@@ -10,9 +10,9 @@ from threading import Lock
 
 from . import gateway_bootstrap
 from . import gateway_io
+from .gateway_base import WorkerPool
 from .gateway_base import get_execmodel
 from .gateway_base import trace
-from .gateway_base import WorkerPool
 from .xspec import XSpec
 
 NO_ENDMARKER_WANTED = object()

@@ -5,8 +5,8 @@
 
 def serve_rsync(channel):
     import os
-    import stat
     import shutil
+    import stat
     from hashlib import md5
 
     destdir, options = channel.receive()

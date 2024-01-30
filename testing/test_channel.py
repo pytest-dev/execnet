@@ -5,7 +5,6 @@ import time
 
 import pytest
 
-
 needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
 TESTTIMEOUT = 10.0  # seconds

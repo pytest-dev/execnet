@@ -15,7 +15,6 @@ import win32evtlogutil
 import win32service
 import win32serviceutil
 
-
 appname = "ExecNetSocketServer"
 
 

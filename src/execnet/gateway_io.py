@@ -7,9 +7,11 @@ import shlex
 import sys
 
 try:
-    from execnet.gateway_base import Popen2IO, Message
+    from execnet.gateway_base import Message
+    from execnet.gateway_base import Popen2IO
 except ImportError:
-    from __main__ import Popen2IO, Message  # type: ignore[no-redef]
+    from __main__ import Message  # type: ignore[no-redef]
+    from __main__ import Popen2IO  # type: ignore[no-redef]
 
 from functools import partial
 

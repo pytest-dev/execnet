@@ -8,7 +8,6 @@ from __future__ import annotations
 import socket
 import sys
 
-
 host, port = sys.argv[1].split(":")
 hostport = (host, int(port))
 

@@ -6,8 +6,8 @@ from typing import Iterator
 
 import execnet
 import pytest
-from execnet.gateway_base import get_execmodel
 from execnet.gateway_base import WorkerPool
+from execnet.gateway_base import get_execmodel
 
 collect_ignore = ["build", "doc/_build"]
 
