@@ -3,7 +3,6 @@ execnet io initialization code
 
 creates io instances used for gateway io
 """
-import os
 import shlex
 import sys
 
@@ -228,4 +227,4 @@ def serve_proxy_io(proxy_channelX):
 
 
 if __name__ == "__channelexec__":
-    serve_proxy_io(channel)  # type: ignore[name-defined]
+    serve_proxy_io(channel)  # type: ignore[name-defined] # noqa:F821

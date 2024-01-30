@@ -596,7 +596,7 @@ class GatewayReceivedTerminate(Exception):
 
 def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sysex):
     try:
-        l = format_exception(*excinfo)
+        l = format_exception(*excinfo)  # noqa:E741
         errortext = "".join(l)
     except sysex:
         raise
@@ -633,6 +633,7 @@ NO_ENDMARKER_WANTED = object()
 
 class Channel:
     "Communication channel between two Python Interpreter execution points."
+
     RemoteError = RemoteError
     TimeoutError = TimeoutError
     _INTERNALWAKEUP = 1000
@@ -1543,7 +1544,7 @@ class _Serializer:
     def save_int(self, i):
         self._save_integral(i, opcode.INT, opcode.LONGINT)
 
-    def save_long(self, l):
+    def save_long(self, l):  # noqa:E741
         self._save_integral(l, opcode.LONG, opcode.LONGLONG)
 
     def save_float(self, flt):
