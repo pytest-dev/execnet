@@ -525,3 +525,82 @@ def test_regression_gevent_hangs(group, interleave_getstatus):
     if interleave_getstatus:
         print(gw.remote_status())
     assert ch.receive(timeout=0.5) == 1234
+
+
+def test_assert_main_thread_only(execmodel, makegateway):
+    if execmodel.backend != "main_thread_only":
+        pytest.skip("can only run with main_thread_only")
+
+    gw = makegateway(spec=f"execmodel={execmodel.backend}//popen")
+
+    try:
+        # Submit multiple remote_exec requests in quick succession and
+        # assert that all tasks execute in the main thread. It is
+        # necessary to call receive on each channel before the next
+        # remote_exec call, since the channel will raise an error if
+        # concurrent remote_exec requests are submitted as in
+        # test_main_thread_only_concurrent_remote_exec_deadlock.
+        for i in range(10):
+            ch = gw.remote_exec(
+                """
+                    import time, threading
+                    time.sleep(0.02)
+                    channel.send(threading.current_thread() is threading.main_thread())
+            """
+            )
+
+            try:
+                res = ch.receive()
+            finally:
+                ch.close()
+                # This doesn't actually block because we closed
+                # the channel already, but it does check for remote
+                # errors and raise them.
+                ch.waitclose()
+            if res is not True:
+                pytest.fail("remote raised\n%s" % res)
+    finally:
+        gw.exit()
+        gw.join()
+
+
+def test_main_thread_only_concurrent_remote_exec_deadlock(execmodel, makegateway):
+    if execmodel.backend != "main_thread_only":
+        pytest.skip("can only run with main_thread_only")
+
+    gw = makegateway(spec=f"execmodel={execmodel.backend}//popen")
+    channels = []
+    try:
+        # Submit multiple remote_exec requests in quick succession and
+        # assert that MAIN_THREAD_ONLY_DEADLOCK_TEXT is raised if
+        # concurrent remote_exec requests are submitted for the
+        # main_thread_only execmodel (as compensation for the lack of
+        # back pressure in remote_exec calls which do not attempt to
+        # block until the remote main thread is idle).
+        for i in range(2):
+            channels.append(
+                gw.remote_exec(
+                    """
+                    import threading
+                    channel.send(threading.current_thread() is threading.main_thread())
+                    # Wait forever, ensuring that the deadlock case triggers.
+                    channel.gateway.execmodel.Event().wait()
+            """
+                )
+            )
+
+        expected_results = (
+            True,
+            execnet.gateway_base.MAIN_THREAD_ONLY_DEADLOCK_TEXT,
+        )
+        for expected, ch in zip(expected_results, channels):
+            try:
+                res = ch.receive()
+            except execnet.RemoteError as e:
+                res = e.formatted
+            assert res == expected
+    finally:
+        for ch in channels:
+            ch.close()
+        gw.exit()
+        gw.join()

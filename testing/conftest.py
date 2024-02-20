@@ -124,7 +124,7 @@ def anypython(request):
         pytest.skip(f"no {name} found")
     if "execmodel" in request.fixturenames and name != "sys.executable":
         backend = request.getfixturevalue("execmodel").backend
-        if backend != "thread":
+        if backend not in ("thread", "main_thread_only"):
             pytest.xfail(f"cannot run {backend!r} execmodel with bare {name}")
     return executable
 
@@ -173,9 +173,11 @@ def gw(request, execmodel, group):
         return gw
 
 
-@pytest.fixture(params=["thread", "eventlet", "gevent"], scope="session")
+@pytest.fixture(
+    params=["thread", "main_thread_only", "eventlet", "gevent"], scope="session"
+)
 def execmodel(request):
-    if request.param != "thread":
+    if request.param not in ("thread", "main_thread_only"):
         pytest.importorskip(request.param)
     if request.param in ("eventlet", "gevent") and sys.platform == "win32":
         pytest.xfail(request.param + " does not work on win32")

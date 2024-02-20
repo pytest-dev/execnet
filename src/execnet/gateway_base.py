@@ -134,6 +134,10 @@ class ThreadExecModel(ExecModel):
         return threading.Event()
 
 
+class MainThreadOnlyExecModel(ThreadExecModel):
+    backend = "main_thread_only"
+
+
 class EventletExecModel(ExecModel):
     backend = "eventlet"
 
@@ -254,6 +258,8 @@ def get_execmodel(backend):
         return backend
     if backend == "thread":
         return ThreadExecModel()
+    elif backend == "main_thread_only":
+        return MainThreadOnlyExecModel()
     elif backend == "eventlet":
         return EventletExecModel()
     elif backend == "gevent":
@@ -322,7 +328,7 @@ class WorkerPool:
         self._shuttingdown = False
         self._waitall_events = []
         if hasprimary:
-            if self.execmodel.backend != "thread":
+            if self.execmodel.backend not in ("thread", "main_thread_only"):
                 raise ValueError("hasprimary=True requires thread model")
             self._primary_thread_task_ready = self.execmodel.Event()
         else:
@@ -332,7 +338,7 @@ class WorkerPool:
         """integrate the thread with which we are called as a primary
         thread for executing functions triggered with spawn().
         """
-        assert self.execmodel.backend == "thread", self.execmodel
+        assert self.execmodel.backend in ("thread", "main_thread_only"), self.execmodel
         primary_thread_task_ready = self._primary_thread_task_ready
         # interacts with code at REF1
         while 1:
@@ -345,7 +351,11 @@ class WorkerPool:
             with self._running_lock:
                 if self._shuttingdown:
                     break
-                primary_thread_task_ready.clear()
+                # Only clear if _try_send_to_primary_thread has not
+                # yet set the next self._primary_thread_task reply
+                # after waiting for this one to complete.
+                if reply is self._primary_thread_task:
+                    primary_thread_task_ready.clear()
 
     def trigger_shutdown(self):
         with self._running_lock:
@@ -374,6 +384,19 @@ class WorkerPool:
             if not primary_thread_task_ready.is_set():
                 self._primary_thread_task = reply
                 # wake up primary thread
+                primary_thread_task_ready.set()
+                return True
+            elif (
+                self.execmodel.backend == "main_thread_only"
+                and self._primary_thread_task is not None
+            ):
+                self._primary_thread_task.waitfinish()
+                self._primary_thread_task = reply
+                # wake up primary thread (it's okay if this is already set
+                # because we waited for the previous task to finish above
+                # and integrate_as_primary_thread will not clear it when
+                # it enters self._running_lock if it detects that a new
+                # task is available)
                 primary_thread_task_ready.set()
                 return True
         return False
@@ -857,6 +880,9 @@ class Channel:
 
 ENDMARKER = object()
 INTERRUPT_TEXT = "keyboard-interrupted"
+MAIN_THREAD_ONLY_DEADLOCK_TEXT = (
+    "concurrent remote_exec would cause deadlock for main_thread_only execmodel"
+)
 
 
 class ChannelFactory:
@@ -1105,6 +1131,20 @@ class BaseGateway:
 
 class WorkerGateway(BaseGateway):
     def _local_schedulexec(self, channel, sourcetask):
+        if self._execpool.execmodel.backend == "main_thread_only":
+            # It's necessary to wait for a short time in order to ensure
+            # that we do not report a false-positive deadlock error, since
+            # channel close does not elicit a response that would provide
+            # a guarantee to remote_exec callers that the previous task
+            # has released the main thread. If the timeout expires then it
+            # should be practically impossible to report a false-positive.
+            if not self._executetask_complete.wait(timeout=1):
+                channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
+                return
+            # It's only safe to clear here because the above wait proves
+            # that there is not a previous task about to set it again.
+            self._executetask_complete.clear()
+
         sourcetask = loads_internal(sourcetask)
         self._execpool.spawn(self.executetask, (channel, sourcetask))
 
@@ -1132,8 +1172,14 @@ class WorkerGateway(BaseGateway):
         def trace(msg):
             self._trace("[serve] " + msg)
 
-        hasprimary = self.execmodel.backend == "thread"
+        hasprimary = self.execmodel.backend in ("thread", "main_thread_only")
         self._execpool = WorkerPool(self.execmodel, hasprimary=hasprimary)
+        self._executetask_complete = None
+        if self.execmodel.backend == "main_thread_only":
+            self._executetask_complete = self.execmodel.Event()
+            # Initialize state to indicate that there is no previous task
+            # executing so that we don't need a separate flag to track this.
+            self._executetask_complete.set()
         trace("spawning receiver thread")
         self._initreceive()
         try:
@@ -1176,6 +1222,11 @@ class WorkerGateway(BaseGateway):
                     return
             self._trace("ignoring EOFError because receiving finished")
         channel.close()
+        if self._executetask_complete is not None:
+            # Indicate that this task has finished executing, meaning
+            # that there is no possibility of it triggering a deadlock
+            # for the next spawn call.
+            self._executetask_complete.set()
 
 
 #

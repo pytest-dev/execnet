@@ -138,14 +138,14 @@ processes then you often want to call ``group.terminate()``
 yourself and specify a larger or not timeout.
 
 
-threading models: gevent, eventlet, thread
-===========================================
+threading models: gevent, eventlet, thread, main_thread_only
+====================================================================
 
 .. versionadded:: 1.2 (status: experimental!)
 
-execnet supports "thread", "eventlet" and "gevent" as thread models
-on each of the two sides.  You need to decide which model to use
-before you create any gateways::
+execnet supports "main_thread_only", "thread", "eventlet" and "gevent"
+as thread models on each of the two sides.  You need to decide which
+model to use before you create any gateways::
 
     # content of threadmodel.py
     import execnet

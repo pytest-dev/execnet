@@ -164,7 +164,7 @@ def test_pool_clean_shutdown(pool, capfd):
 
 
 def test_primary_thread_integration(execmodel):
-    if execmodel.backend != "thread":
+    if execmodel.backend not in ("thread", "main_thread_only"):
         with pytest.raises(ValueError):
             WorkerPool(execmodel=execmodel, hasprimary=True)
         return
@@ -188,7 +188,7 @@ def test_primary_thread_integration(execmodel):
 
 
 def test_primary_thread_integration_shutdown(execmodel):
-    if execmodel.backend != "thread":
+    if execmodel.backend not in ("thread", "main_thread_only"):
         pytest.skip("can only run with threading")
     pool = WorkerPool(execmodel=execmodel, hasprimary=True)
     queue = execmodel.queue.Queue()
