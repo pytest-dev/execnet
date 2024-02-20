@@ -249,12 +249,25 @@ except ValueError:
 
 @pytest.mark.skipif("not hasattr(os, 'dup')")
 def test_stdouterrin_setnull(execmodel, capfd):
-    gateway_base.init_popen_io(execmodel)
-    os.write(1, b"hello")
-    os.read(0, 1)
-    out, err = capfd.readouterr()
-    assert not out
-    assert not err
+    # Backup and restore stdin state, and rely on capfd to handle
+    # this for stdout and stderr.
+    orig_stdin = sys.stdin
+    orig_stdin_fd = os.dup(0)
+    try:
+        # The returned Popen2IO instance can be garbage collected
+        # prematurely since we don't hold a reference here, but we
+        # tolerate this because it is intended to leave behind a
+        # sane state afterwards.
+        gateway_base.init_popen_io(execmodel)
+        os.write(1, b"hello")
+        os.read(0, 1)
+        out, err = capfd.readouterr()
+        assert not out
+        assert not err
+    finally:
+        sys.stdin = orig_stdin
+        os.dup2(orig_stdin_fd, 0)
+        os.close(orig_stdin_fd)
 
 
 class PseudoChannel:

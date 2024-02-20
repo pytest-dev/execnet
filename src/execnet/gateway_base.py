@@ -61,7 +61,7 @@ class ExecModel(metaclass=abc.ABCMeta):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def fdopen(self, fd, mode, bufsize=1):
+    def fdopen(self, fd, mode, bufsize=1, closefd=True):
         raise NotImplementedError()
 
     @abc.abstractmethod
@@ -113,10 +113,10 @@ class ThreadExecModel(ExecModel):
 
         return _thread.start_new_thread(func, args)
 
-    def fdopen(self, fd, mode, bufsize=1):
+    def fdopen(self, fd, mode, bufsize=1, closefd=True):
         import os
 
-        return os.fdopen(fd, mode, bufsize, encoding="utf-8")
+        return os.fdopen(fd, mode, bufsize, encoding="utf-8", closefd=closefd)
 
     def Lock(self):
         import threading
@@ -174,10 +174,10 @@ class EventletExecModel(ExecModel):
 
         return eventlet.spawn_n(func, *args)
 
-    def fdopen(self, fd, mode, bufsize=1):
+    def fdopen(self, fd, mode, bufsize=1, closefd=True):
         import eventlet.green.os
 
-        return eventlet.green.os.fdopen(fd, mode, bufsize)
+        return eventlet.green.os.fdopen(fd, mode, bufsize, closefd=closefd)
 
     def Lock(self):
         import eventlet.green.threading
@@ -231,11 +231,11 @@ class GeventExecModel(ExecModel):
 
         return gevent.spawn(func, *args)
 
-    def fdopen(self, fd, mode, bufsize=1):
+    def fdopen(self, fd, mode, bufsize=1, closefd=True):
         # XXX
         import gevent.fileobject
 
-        return gevent.fileobject.FileObjectThread(fd, mode, bufsize)
+        return gevent.fileobject.FileObjectThread(fd, mode, bufsize, closefd=closefd)
 
     def Lock(self):
         import gevent.lock
@@ -1682,8 +1682,10 @@ def init_popen_io(execmodel):
             os.dup2(fd, 2)
         os.close(fd)
         io = Popen2IO(stdout, stdin, execmodel)
-        sys.stdin = execmodel.fdopen(0, "r", 1)
-        sys.stdout = execmodel.fdopen(1, "w", 1)
+        # Use closefd=False since 0 and 1 are shared with
+        # sys.__stdin__ and sys.__stdout__.
+        sys.stdin = execmodel.fdopen(0, "r", 1, closefd=False)
+        sys.stdout = execmodel.fdopen(1, "w", 1, closefd=False)
     return io
 
 
