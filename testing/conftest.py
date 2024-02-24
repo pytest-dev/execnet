@@ -109,7 +109,7 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("gw", gwtypes, indirect=True)
 
 
-@lru_cache()
+@lru_cache
 def getexecutable(name):
     if name == "sys.executable":
         return sys.executable
