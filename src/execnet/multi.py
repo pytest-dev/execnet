@@ -4,7 +4,6 @@ Managing Gateway Groups and interactions with multiple channels.
 (c) 2008-2014, Holger Krekel and others
 """
 import atexit
-import sys
 from functools import partial
 from threading import Lock
 
@@ -285,11 +284,11 @@ class MultiChannel:
         for ch in self._channels:
             try:
                 ch.waitclose()
-            except ch.RemoteError:
+            except ch.RemoteError as exc:
                 if first is None:
-                    first = sys.exc_info()
+                    first = exc
         if first:
-            raise first[1].with_traceback(first[2])
+            raise first
 
 
 def safe_terminate(execmodel, timeout, list_of_paired_functions):

@@ -94,14 +94,13 @@ def startserver(serversock, loop=False):
                 exec_from_one_connection(serversock)
             except (KeyboardInterrupt, SystemExit):
                 raise
-            except BaseException:
+            except BaseException as exc:
                 if debug:
                     import traceback
 
                     traceback.print_exc()
                 else:
-                    excinfo = sys.exc_info()
-                    print_("got exception", excinfo[1])
+                    print_("got exception", exc)
             os.chdir(execute_path)
             if not loop:
                 break
