@@ -70,8 +70,8 @@ def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     assert str(pid) not in output.stdout, output
 
 
-def test_close_initiating_remote_no_error(testdir, anypython):
-    p = testdir.makepyfile(
+def test_close_initiating_remote_no_error(pytester, anypython):
+    p = pytester.makepyfile(
         """
         import sys
         sys.path.insert(0, sys.argv[1])
@@ -96,14 +96,14 @@ def test_close_initiating_remote_no_error(testdir, anypython):
     assert not lines
 
 
-def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
+def test_terminate_implicit_does_trykill(pytester, anypython, capfd, pool):
     if pool.execmodel.backend not in ("thread", "main_thread_only"):
         pytest.xfail("only os threading model supported")
     if sys.version_info >= (3, 12):
         pytest.xfail(
             "since python3.12 this test triggers RuntimeError: can't create new thread at interpreter shutdown"
         )
-    p = testdir.makepyfile(
+    p = pytester.makepyfile(
         """
         import sys
         sys.path.insert(0, %r)
