@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 import types
 import zlib
@@ -11,20 +12,40 @@ from importlib import import_module
 from importlib.abc import Loader
 from importlib.metadata import Distribution
 from importlib.metadata import DistributionFinder
-from typing import Any
 from typing import IO
+from typing import TYPE_CHECKING
+from typing import Any
 from typing import Iterable
 from typing import Sequence
 
+if TYPE_CHECKING:
+    pass
+
+
+class DictDistribution(Distribution):
+    data: dict[str, str]
+
+    def __init__(self, data: dict[str, str]) -> None:
+        self.data = data
+
+    def read_text(self, filename):
+        return self.data[filename]
+
+    def locate_file(self, path: str | os.PathLike[str]) -> os.PathLike[str]:
+        raise FileNotFoundError(path)
+
 
 class DictImporter(DistributionFinder, Loader):
-    def __init__(self, sources: dict[str, str]):
+    """a limited loader/importer for distributins send via json-lines"""
+
+    def __init__(self, sources: dict[str, str], distribution: DictDistribution):
         self.sources = sources
+        self.distribution = distribution
 
     def find_distributions(
         self, context: DistributionFinder.Context = DistributionFinder.Context()
     ) -> Iterable[Distribution]:
-        return []
+        return [self.distribution]
 
     def find_module(
         self, fullname: str, path: Sequence[str | bytes] | None = None
@@ -64,11 +85,12 @@ class DictImporter(DistributionFinder, Loader):
 
 def bootstrap(
     modules: dict[str, str],
+    distribution: dict[str, str],
     entry: str,
     args: dict[str, Any],
     set_argv: list[str] | None,
 ) -> None:
-    importer = DictImporter(modules)
+    importer = DictImporter(modules, distribution=DictDistribution(distribution))
     sys.meta_path.append(importer)
     module, attr = entry.split(":")
     loaded_module = import_module(module)
