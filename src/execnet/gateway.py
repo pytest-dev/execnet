@@ -143,7 +143,7 @@ class RInfo:
         self.__dict__.update(kwargs)
 
     def __repr__(self):
-        info = ", ".join("%s=%s" % item for item in sorted(self.__dict__.items()))
+        info = ", ".join(f"{k}={v}" for k, v in sorted(self.__dict__.items()))
         return "<RInfo %r>" % info
 
 
@@ -201,8 +201,8 @@ def _source_of_function(function):
 
     try:
         source = inspect.getsource(function)
-    except OSError:
-        raise ValueError("can't find source file for %s" % function)
+    except OSError as e:
+        raise ValueError("can't find source file for %s" % function) from e
 
     source = textwrap.dedent(source)  # just for inner functions
 

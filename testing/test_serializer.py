@@ -50,9 +50,8 @@ sys.stdout.write(repr(obj))
         res = subprocess.run(
             [str(self.executable), str(script_file)],
             capture_output=True,
+            check=True,
         )
-        if res.returncode:
-            raise ValueError(res.stderr)
 
         return res.stdout.decode("ascii").splitlines()
 

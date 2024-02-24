@@ -42,7 +42,7 @@ def serve_rsync(channel):
             entrynames = {}
             for entryname in msg:
                 destpath = os.path.join(path, entryname)
-                receive_directory_structure(destpath, relcomponents + [entryname])
+                receive_directory_structure(destpath, [*relcomponents, entryname])
                 entrynames[entryname] = True
             if options.get("delete"):
                 for othername in os.listdir(path):

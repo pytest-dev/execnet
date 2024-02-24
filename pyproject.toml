@@ -46,8 +46,35 @@ testing = [
 Homepage = "https://execnet.readthedocs.io/en/latest/"
 
 [tool.ruff.lint]
-ignore = ["E741"]
-extend-select = ["I001"]
+extend-select = [
+    "B",    # bugbear
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "PYI",  # flake8-pyi
+    "UP",   # pyupgrade
+    "RUF",  # ruff
+    "W",    # pycodestyle
+    "PIE",  # flake8-pie
+    "PGH",  # pygrep-hooks
+    "PLE",  # pylint error
+    "PLW",  # pylint warning
+]
+ignore = [
+    # bugbear ignore
+    "B007",  # Loop control variable `i` not used within loop body
+    "B011",  # Do not `assert False` (`python -O` removes these calls)
+    # pycodestyle ignore
+    "E501",  # Line too long
+    "E741",  # Ambiguous variable name
+    # ruff ignore
+    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
+    # pylint ignore
+    "PLW0603",  # Using the global statement
+    "PLW0120",  # remove the else and dedent its contents
+    "PLW2901",  # for loop variable overwritten by assignment target
+    "PLR5501",  # Use `elif` instead of `else` then `if`
+]
 
 [tool.ruff.lint.isort]
 force-single-line = true

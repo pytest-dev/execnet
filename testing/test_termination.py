@@ -66,7 +66,7 @@ def test_termination_on_remote_channel_receive(monkeypatch, makegateway):
     gw.remote_exec("channel.receive()")
     gw._group.terminate()
     command = ["ps", "-p", str(pid)]
-    output = subprocess.run(command, capture_output=True, text=True)
+    output = subprocess.run(command, capture_output=True, text=True, check=False)
     assert str(pid) not in output.stdout, output
 
 

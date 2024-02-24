@@ -48,7 +48,7 @@ exec(
 def exec_from_one_connection(serversock):
     print_(progname, "Entering Accept loop", serversock.getsockname())
     clientsock, address = serversock.accept()
-    print_(progname, "got new connection from %s %s" % address)
+    print_(progname, "got new connection from {} {}".format(*address))
     clientfile = clientsock.makefile("rb")
     print_("reading line")
     # rstrip so that we can use \r\n for telnet testing
@@ -60,7 +60,7 @@ def exec_from_one_connection(serversock):
         co = compile(source + "\n", "<socket server>", "exec")
         print_(progname, "compiled source, executing")
         try:
-            exec_(co, g)  # noqa
+            exec_(co, g)  # noqa: F821
         finally:
             print_(progname, "finished executing code")
             # background thread might hold a reference to this (!?)

@@ -494,7 +494,7 @@ class TestTracing:
     ],
 )
 def test_popen_args(spec, expected_args):
-    expected_args = expected_args + ["-u", "-c", gateway_io.popen_bootstrapline]
+    expected_args = [*expected_args, "-u", "-c", gateway_io.popen_bootstrapline]
     args = gateway_io.popen_args(execnet.XSpec(spec))
     assert args == expected_args
 

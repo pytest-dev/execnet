@@ -50,7 +50,7 @@ def bootstrap_exec(io, spec):
     except EOFError:
         ret = io.wait()
         if ret == 255:
-            raise HostNotFound(io.remoteaddress)
+            raise HostNotFound(io.remoteaddress) from None
 
 
 def bootstrap_socket(io, id):
