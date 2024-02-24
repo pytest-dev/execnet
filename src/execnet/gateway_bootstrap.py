@@ -78,20 +78,6 @@ def sendexec(io, *sources):
     io.write((repr(source) + "\n").encode("utf-8"))
 
 
-def fix_pid_for_jython_popen(gw):
-    """
-    fix for jython 2.5.1
-    """
-    spec, io = gw.spec, gw._io
-    if spec.popen and not spec.via:
-        # XXX: handle the case of remote being jython
-        #      and not having the popen pid
-        if io.popen.pid is None:
-            io.popen.pid = gw.remote_exec(
-                "import os; channel.send(os.getpid())"
-            ).receive()
-
-
 def bootstrap(io, spec):
     if spec.popen:
         if spec.via or spec.python:
@@ -105,5 +91,4 @@ def bootstrap(io, spec):
     else:
         raise ValueError("unknown gateway type, can't bootstrap")
     gw = Gateway(io, spec)
-    fix_pid_for_jython_popen(gw)
     return gw
