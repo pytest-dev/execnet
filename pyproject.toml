@@ -11,7 +11,7 @@ dynamic = ["version"]
 description = "execnet: rapid multi-Python deployment"
 readme = {"file" = "README.rst", "content-type" = "text/x-rst"}
 license = "MIT"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 authors = [
     { name = "holger krekel and others" },
 ]
@@ -22,11 +22,11 @@ classifiers = [
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
     "Topic :: Software Development :: Libraries",
@@ -68,4 +68,4 @@ include = [
 ]
 
 [tool.mypy]
-python_version = "3.7"
+python_version = "3.8"

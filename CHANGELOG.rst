@@ -1,3 +1,8 @@
+2.1.0 (UNRELEASED)
+
+* Removed support for Python 3.7.
+* Added official support for Python 3.12.
+
 2.0.2 (2023-07-09)
 ------------------
 
