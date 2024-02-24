@@ -19,6 +19,9 @@ from functools import partial
 class Popen2IOMaster(Popen2IO):
     def __init__(self, args, execmodel):
         PIPE = execmodel.subprocess.PIPE
+        if is_frozen_environment():
+            args[0] = str(sys.executable)
+        os.environ["EXECNET_SPAWNING_SUBPROCESS"] = "1"
         self.popen = p = execmodel.subprocess.Popen(args, stdout=PIPE, stdin=PIPE)
         super().__init__(p.stdin, p.stdout, execmodel=execmodel)
 
@@ -54,8 +57,22 @@ def shell_split_path(path):
     return shlex.split(path)
 
 
+def is_frozen_environment():
+    """Check if running in a Frozen environment."""
+    return getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+
+
+def get_python_executable():
+    """Get the correct Python interpreter path."""
+    if is_frozen_environment():
+        return os.environ.get("PYTHON_EXECUTABLE", "python")
+    else:
+        return sys.executable
+
+
 def popen_args(spec):
-    args = shell_split_path(spec.python) if spec.python else [sys.executable]
+    python_executable = get_python_executable()
+    args = shell_split_path(spec.python) if spec.python else [python_executable]
     args.append("-u")
     if spec.dont_write_bytecode:
         args.append("-B")
