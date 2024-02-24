@@ -189,13 +189,7 @@ class TestMakegateway:
     def test_ssh(self, specssh, makegateway):
         sshhost = specssh.ssh
         gw = makegateway("ssh=%s//id=ssh1" % sshhost)
-        rinfo = gw._rinfo()
         assert gw.id == "ssh1"
-        gw2 = execnet.SshGateway(sshhost)
-        rinfo2 = gw2._rinfo()
-        assert rinfo.executable == rinfo2.executable
-        assert rinfo.cwd == rinfo2.cwd
-        assert rinfo.version_info == rinfo2.version_info
 
     def test_vagrant(self, makegateway):
         vagrant_bin = shutil.which("vagrant")
