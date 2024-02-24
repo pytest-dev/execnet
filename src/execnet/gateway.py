@@ -201,8 +201,8 @@ def _source_of_function(function):
 
     try:
         source = inspect.getsource(function)
-    except OSError:
-        raise ValueError("can't find source file for %s" % function)
+    except OSError as e:
+        raise ValueError("can't find source file for %s" % function) from e
 
     source = textwrap.dedent(source)  # just for inner functions
 

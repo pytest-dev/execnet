@@ -289,7 +289,7 @@ class Reply:
         try:
             return self._result
         except AttributeError:
-            raise self._exc
+            raise self._exc from None
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
@@ -528,7 +528,7 @@ class Message:
             if not header:
                 raise EOFError("empty read")
         except EOFError as e:
-            raise EOFError("couldn't load message header, " + e.args[0])
+            raise EOFError("couldn't load message header, " + e.args[0]) from None
         msgtype, channel, payload = struct.unpack("!bii", header)
         return Message(msgtype, channel, io.read(payload))
 
@@ -851,7 +851,7 @@ class Channel:
         try:
             x = itemqueue.get(timeout=timeout)
         except self.gateway.execmodel.queue.Empty:
-            raise self.TimeoutError("no item after %r seconds" % timeout)
+            raise self.TimeoutError("no item after %r seconds" % timeout) from None
         if x is ENDMARKER:
             itemqueue.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()
@@ -865,7 +865,7 @@ class Channel:
         try:
             return self.receive()
         except EOFError:
-            raise StopIteration
+            raise StopIteration from None
 
     __next__ = next
 
@@ -1108,7 +1108,7 @@ class BaseGateway:
         except (OSError, ValueError) as e:
             self._trace("failed to send", message, e)
             # ValueError might be because the IO is already closed
-            raise OSError("cannot send (already closed?)")
+            raise OSError("cannot send (already closed?)") from e
 
     def _local_schedulexec(self, channel, sourcetask):
         channel.close("execution disallowed")
@@ -1316,12 +1316,12 @@ class Unserializer:
                     loader = self.num2func[opcode]
                 except KeyError:
                     raise LoadError(
-                        "unknown opcode %r - " "wire protocol corruption?" % (opcode,)
-                    )
+                        "unknown opcode %r - wire protocol corruption?" % (opcode,)
+                    ) from None
                 loader(self)
         except _Stop:
             if len(self.stack) != 1:
-                raise LoadError("internal unserialization error")
+                raise LoadError("internal unserialization error") from None
             return self.stack.pop(0)
         else:
             raise LoadError("didn't get STOP")
@@ -1550,7 +1550,7 @@ class _Serializer:
             methodname = "save_" + tp.__name__
             meth = getattr(self.__class__, methodname, None)
             if meth is None:
-                raise DumpError(f"can't serialize {tp}")
+                raise DumpError(f"can't serialize {tp}") from None
             dispatch = self._dispatch[tp] = meth
         dispatch(self, obj)
 
@@ -1574,8 +1574,8 @@ class _Serializer:
     def _write_unicode_string(self, s):
         try:
             as_bytes = s.encode("utf-8")
-        except UnicodeEncodeError:
-            raise DumpError("strings must be utf-8 encodable")
+        except UnicodeEncodeError as e:
+            raise DumpError("strings must be utf-8 encodable") from e
         self._write_byte_sequence(as_bytes)
 
     def _write_byte_sequence(self, bytes_):
