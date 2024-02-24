@@ -55,7 +55,7 @@ class promptagent(Thread):
 
         while 1:
             try:
-                clientfile.write("%s %s >>> " % loc)
+                clientfile.write("{} {} >>> ".format(*loc))
                 clientfile.flush()
                 line = filein.readline()
                 if not line:

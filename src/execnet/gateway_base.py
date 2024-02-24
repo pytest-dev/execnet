@@ -542,9 +542,7 @@ class Message:
 
     def __repr__(self):
         name = self._types[self.msgcode][0]
-        return "<Message {} channel={} lendata={}>".format(
-            name, self.channelid, len(self.data)
-        )
+        return f"<Message {name} channel={self.channelid} lendata={len(self.data)}>"
 
     def _status(message, gateway):
         # we use the channelid to send back information
@@ -1316,7 +1314,7 @@ class Unserializer:
                     loader = self.num2func[opcode]
                 except KeyError:
                     raise LoadError(
-                        "unknown opcode %r - wire protocol corruption?" % (opcode,)
+                        f"unknown opcode {opcode!r} - wire protocol corruption?"
                     ) from None
                 loader(self)
         except _Stop:
@@ -1593,7 +1591,7 @@ class _Serializer:
     def save_int(self, i):
         self._save_integral(i, opcode.INT, opcode.LONGINT)
 
-    def save_long(self, l):  # noqa:E741
+    def save_long(self, l):
         self._save_integral(l, opcode.LONG, opcode.LONGLONG)
 
     def save_float(self, flt):

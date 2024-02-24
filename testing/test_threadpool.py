@@ -60,7 +60,7 @@ def test_running_semnatics(pool, execmodel):
 
 
 def test_waitfinish_on_reply(pool):
-    l = []  # noqa:E741
+    l = []
     reply = pool.spawn(lambda: l.append(1))
     reply.waitfinish()
     assert l == [1]

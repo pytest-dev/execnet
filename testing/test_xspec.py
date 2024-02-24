@@ -200,6 +200,7 @@ class TestMakegateway:
             capture_output=True,
             encoding="utf-8",
             errors="replace",
+            check=True,
         ).stdout
         print(res)
         if ",default,state,shutoff\n" in res:
@@ -211,8 +212,8 @@ class TestMakegateway:
 
         gw = makegateway("vagrant_ssh=default//python=python3")
         rinfo = gw._rinfo()
-        rinfo.cwd == "/home/vagrant"
-        rinfo.executable == "/usr/bin/python"
+        assert rinfo.cwd == "/home/vagrant"
+        assert rinfo.executable == "/usr/bin/python"
 
     def test_socket(self, specsocket, makegateway):
         gw = makegateway("socket=%s//id=sock1" % specsocket.socket)

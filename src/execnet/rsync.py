@@ -24,7 +24,7 @@ class RSync:
     def __init__(self, sourcedir, callback=None, verbose=True):
         self._sourcedir = str(sourcedir)
         self._verbose = verbose
-        assert callback is None or hasattr(callback, "__call__")
+        assert callback is None or callable(callback)
         self._callback = callback
         self._channels = {}
         self._receivequeue = Queue()
@@ -168,7 +168,7 @@ class RSync:
                 names.append(name)
                 subpaths.append(p)
         mode = os.lstat(path).st_mode
-        self._broadcast([mode] + names)
+        self._broadcast([mode, *names])
         for p in subpaths:
             self._send_directory_structure(p)
 

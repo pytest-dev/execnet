@@ -143,7 +143,7 @@ class RInfo:
         self.__dict__.update(kwargs)
 
     def __repr__(self):
-        info = ", ".join("%s=%s" % item for item in sorted(self.__dict__.items()))
+        info = ", ".join(f"{k}={v}" for k, v in sorted(self.__dict__.items()))
         return "<RInfo %r>" % info
 
 

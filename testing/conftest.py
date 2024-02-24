@@ -152,8 +152,8 @@ def gw(request, execmodel, group):
                 proxygw = group.makegateway("popen//id=%s" % pname)
             # assert group['proxygw'].remote_status().receiving
             gw = group.makegateway(
-                "socket//id=socket//installvia=%s"
-                "//execmodel=%s" % (pname, execmodel.backend)
+                f"socket//id=socket//installvia={pname}"
+                f"//execmodel={execmodel.backend}"
             )
             gw.proxygw = proxygw
             assert pname in group
