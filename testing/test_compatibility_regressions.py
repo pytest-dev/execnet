@@ -1,7 +1,7 @@
 from execnet import gateway_base
 
 
-def test_opcodes():
+def test_opcodes() -> None:
     data = vars(gateway_base.opcode)
     computed = {k: v for k, v in data.items() if "__" not in k}
     assert computed == {

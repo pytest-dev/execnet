@@ -10,43 +10,44 @@ import socket
 import sys
 from threading import Thread
 from traceback import print_exc
+from typing import NoReturn
 
 
-def clientside():
+def clientside() -> NoReturn:
     print("client side starting")
-    host, port = sys.argv[1].split(":")
-    port = int(port)
+    host, portstr = sys.argv[1].split(":")
+    port = int(portstr)
     myself = open(os.path.abspath(sys.argv[0])).read()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((host, port))
-    sock.sendall(repr(myself) + "\n")
+    sock.sendall((repr(myself) + "\n").encode())
     print("send boot string")
     inputlist = [sock, sys.stdin]
     try:
         while 1:
             r, w, e = select.select(inputlist, [], [])
             if sys.stdin in r:
-                line = raw_input()  # noqa:F821
-                sock.sendall(line + "\n")
+                line = input()
+                sock.sendall((line + "\n").encode())
             if sock in r:
-                line = sock.recv(4096)
+                line = sock.recv(4096).decode()
                 sys.stdout.write(line)
                 sys.stdout.flush()
     except BaseException:
         import traceback
 
-        print(traceback.print_exc())
+        traceback.print_exc()
 
     sys.exit(1)
 
 
 class promptagent(Thread):
-    def __init__(self, clientsock):
+    def __init__(self, clientsock) -> None:
         print("server side starting")
-        super.__init__()
+        super.__init__()  # type: ignore[call-overload]
         self.clientsock = clientsock
 
-    def run(self):
+    def run(self) -> None:
         print("Entering thread prompt loop")
         clientfile = self.clientsock.makefile("w")
 

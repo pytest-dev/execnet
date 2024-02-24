@@ -26,7 +26,7 @@ def write(data):
     print("received:", repr(data))
 
 
-outchan.setcallback(write)
+outchan.setcallback(write)  # type: ignore[attr-defined]
 
 gw.remote_exec(
     """

@@ -1,6 +1,8 @@
 """
 code to initialize the remote side of a gateway once the io is created
 """
+from __future__ import annotations
+
 import inspect
 import os
 
@@ -8,6 +10,8 @@ import execnet
 
 from . import gateway_base
 from .gateway import Gateway
+from .gateway_base import IO
+from .xspec import XSpec
 
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
@@ -16,7 +20,7 @@ class HostNotFound(Exception):
     pass
 
 
-def bootstrap_import(io, spec):
+def bootstrap_import(io: IO, spec: XSpec) -> None:
     # only insert the importdir into the path if we must.  This prevents
     # bugs where backports expect to be shadowed by the standard library on
     # newer versions of python but would instead shadow the standard library
@@ -35,7 +39,7 @@ def bootstrap_import(io, spec):
     assert s == b"1", repr(s)
 
 
-def bootstrap_exec(io, spec):
+def bootstrap_exec(io: IO, spec: XSpec) -> None:
     try:
         sendexec(
             io,
@@ -49,11 +53,11 @@ def bootstrap_exec(io, spec):
         assert s == b"1"
     except EOFError:
         ret = io.wait()
-        if ret == 255:
+        if ret == 255 and hasattr(io, "remoteaddress"):
             raise HostNotFound(io.remoteaddress) from None
 
 
-def bootstrap_socket(io, id):
+def bootstrap_socket(io: IO, id) -> None:
     # XXX: switch to spec
     from execnet.gateway_socket import SocketIO
 
@@ -73,12 +77,12 @@ def bootstrap_socket(io, id):
     assert s == b"1"
 
 
-def sendexec(io, *sources):
+def sendexec(io: IO, *sources: str) -> None:
     source = "\n".join(sources)
     io.write((repr(source) + "\n").encode("utf-8"))
 
 
-def bootstrap(io, spec):
+def bootstrap(io: IO, spec: XSpec) -> Gateway:
     if spec.popen:
         if spec.via or spec.python:
             bootstrap_exec(io, spec)

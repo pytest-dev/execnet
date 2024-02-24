@@ -1,18 +1,26 @@
 """
 (c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import Literal
+from typing import cast
+
+if TYPE_CHECKING:
+    from execnet.gateway_base import Channel
 
 
-def serve_rsync(channel):
+def serve_rsync(channel: Channel) -> None:
     import os
     import shutil
     import stat
     from hashlib import md5
 
-    destdir, options = channel.receive()
+    destdir, options = cast("tuple[str, dict[str, object]]", channel.receive())
     modifiedfiles = []
 
-    def remove(path):
+    def remove(path: str) -> None:
         assert path.startswith(destdir)
         try:
             os.unlink(path)
@@ -20,7 +28,7 @@ def serve_rsync(channel):
             # assume it's a dir
             shutil.rmtree(path, True)
 
-    def receive_directory_structure(path, relcomponents):
+    def receive_directory_structure(path: str, relcomponents: list[str]) -> None:
         try:
             st = os.lstat(path)
         except OSError:
@@ -77,7 +85,7 @@ def serve_rsync(channel):
     channel.send(("list_done", None))
 
     for path, (mode, time, size) in modifiedfiles:
-        data = channel.receive()
+        data = cast(bytes, channel.receive())
         channel.send(("ack", path[len(destdir) + 1 :]))
         if data is not None:
             if STRICT_CHECK and len(data) != size:
@@ -97,7 +105,9 @@ def serve_rsync(channel):
     msg = channel.receive()
     while msg != 42:
         # we get symlink
-        _type, relpath, linkpoint = msg
+        _type, relpath, linkpoint = cast(
+            "tuple[Literal['linkbase', 'link'], str, str]", msg
+        )
         path = os.path.join(destdir, relpath)
         try:
             remove(path)

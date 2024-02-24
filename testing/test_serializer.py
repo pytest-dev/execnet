@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import subprocess
 import sys
@@ -11,7 +13,7 @@ pyimportdir = os.fspath(Path(execnet.__file__).parent)
 
 
 class PythonWrapper:
-    def __init__(self, executable, tmp_path):
+    def __init__(self, executable: str, tmp_path: Path) -> None:
         self.executable = executable
         self.tmp_path = tmp_path
 
@@ -31,7 +33,7 @@ sys.stdout.write(serializer.dumps_internal({obj_rep}))
         )
         return res.stdout
 
-    def load(self, data: bytes):
+    def load(self, data: bytes) -> list[str]:
         script_file = self.tmp_path.joinpath("load.py")
         script_file.write_text(
             rf"""
@@ -55,22 +57,22 @@ sys.stdout.write(repr(obj))
 
         return res.stdout.decode("ascii").splitlines()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<PythonWrapper for {self.executable}>"
 
 
 @pytest.fixture
-def py3(request, tmp_path):
+def py3(tmp_path: Path) -> PythonWrapper:
     return PythonWrapper(sys.executable, tmp_path)
 
 
 @pytest.fixture
-def dump(py3):
+def dump(py3: PythonWrapper):
     return py3.dump
 
 
 @pytest.fixture
-def load(py3):
+def load(py3: PythonWrapper):
     return py3.load
 
 
@@ -86,14 +88,14 @@ simple_tests = [
 
 
 @pytest.mark.parametrize(["tp_name", "repr"], simple_tests)
-def test_simple(tp_name, repr, dump, load):
+def test_simple(tp_name, repr, dump, load) -> None:
     p = dump(repr)
     tp, v = load(p)
     assert tp == tp_name
     assert v == repr
 
 
-def test_set(load, dump):
+def test_set(load, dump) -> None:
     p = dump("set((1, 2, 3))")
 
     tp, v = load(p)
@@ -114,7 +116,7 @@ def test_frozenset(load, dump):
     assert v == "frozenset({1, 2, 3})"
 
 
-def test_long(load, dump):
+def test_long(load, dump) -> None:
     really_big = "9223372036854775807324234"
     p = dump(really_big)
     tp, v = load(p)
@@ -122,41 +124,41 @@ def test_long(load, dump):
     assert v == really_big
 
 
-def test_bytes(dump, load):
+def test_bytes(dump, load) -> None:
     p = dump("b'hi'")
     tp, v = load(p)
     assert tp == "bytes"
     assert v == "b'hi'"
 
 
-def test_str(dump, load):
+def test_str(dump, load) -> None:
     p = dump("'xyz'")
     tp, s = load(p)
     assert tp == "str"
     assert s == "'xyz'"
 
 
-def test_unicode(load, dump):
+def test_unicode(load, dump) -> None:
     p = dump("u'hi'")
     tp, s = load(p)
     assert tp == "str"
     assert s == "'hi'"
 
 
-def test_bool(dump, load):
+def test_bool(dump, load) -> None:
     p = dump("True")
     tp, s = load(p)
     assert s == "True"
     assert tp == "bool"
 
 
-def test_none(dump, load):
+def test_none(dump, load) -> None:
     p = dump("None")
     tp, s = load(p)
     assert s == "None"
 
 
-def test_tuple_nested_with_empty_in_between(dump, load):
+def test_tuple_nested_with_empty_in_between(dump, load) -> None:
     p = dump("(1, (), 3)")
     tp, s = load(p)
     assert tp == "tuple"

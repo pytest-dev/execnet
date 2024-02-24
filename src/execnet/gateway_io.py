@@ -3,8 +3,17 @@ execnet io initialization code
 
 creates io instances used for gateway io
 """
+from __future__ import annotations
+
 import shlex
 import sys
+from typing import TYPE_CHECKING
+from typing import cast
+
+if TYPE_CHECKING:
+    from execnet.gateway_base import Channel
+    from execnet.gateway_base import ExecModel
+    from execnet.xspec import XSpec
 
 try:
     from execnet.gateway_base import Message
@@ -17,33 +26,32 @@ from functools import partial
 
 
 class Popen2IOMaster(Popen2IO):
-    def __init__(self, args, execmodel):
+    # Set externally, for some specs only.
+    remoteaddress: str
+
+    def __init__(self, args, execmodel) -> None:
         PIPE = execmodel.subprocess.PIPE
         self.popen = p = execmodel.subprocess.Popen(args, stdout=PIPE, stdin=PIPE)
         super().__init__(p.stdin, p.stdout, execmodel=execmodel)
 
-    def wait(self):
+    def wait(self) -> int | None:
         try:
-            return self.popen.wait()
+            return self.popen.wait()  # type: ignore[no-any-return]
         except OSError:
-            pass  # subprocess probably dead already
+            return None
 
-    def kill(self):
-        killpopen(self.popen)
-
-
-def killpopen(popen):
-    try:
-        popen.kill()
-    except OSError as e:
-        sys.stderr.write("ERROR killing: %s\n" % e)
-        sys.stderr.flush()
+    def kill(self) -> None:
+        try:
+            self.popen.kill()
+        except OSError as e:
+            sys.stderr.write("ERROR killing: %s\n" % e)
+            sys.stderr.flush()
 
 
 popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
 
 
-def shell_split_path(path):
+def shell_split_path(path: str) -> list[str]:
     """
     Use shell lexer to split the given path into a list of components,
     taking care to handle Windows' '\' correctly.
@@ -54,7 +62,7 @@ def shell_split_path(path):
     return shlex.split(path)
 
 
-def popen_args(spec):
+def popen_args(spec: XSpec) -> list[str]:
     args = shell_split_path(spec.python) if spec.python else [sys.executable]
     args.append("-u")
     if spec.dont_write_bytecode:
@@ -63,7 +71,7 @@ def popen_args(spec):
     return args
 
 
-def ssh_args(spec):
+def ssh_args(spec: XSpec) -> list[str]:
     # NOTE: If changing this, you need to sync those changes to vagrant_args
     # as well, or, take some time to further refactor the commonalities of
     # ssh_args and vagrant_args.
@@ -72,19 +80,21 @@ def ssh_args(spec):
     if spec.ssh_config is not None:
         args.extend(["-F", str(spec.ssh_config)])
 
+    assert spec.ssh is not None
     args.extend(spec.ssh.split())
     remotecmd = f'{remotepython} -c "{popen_bootstrapline}"'
     args.append(remotecmd)
     return args
 
 
-def vagrant_ssh_args(spec):
+def vagrant_ssh_args(spec: XSpec) -> list[str]:
     # This is the vagrant-wrapped version of SSH. Unfortunately the
     # command lines are incompatible to just channel through ssh_args
     # due to ordering/templating issues.
     # NOTE: This should be kept in sync with the ssh_args behaviour.
     # spec.vagrant is identical to spec.ssh in that they both carry
     # the remote host "address".
+    assert spec.vagrant_ssh is not None
     remotepython = spec.python or "python"
     args = ["vagrant", "ssh", spec.vagrant_ssh, "--", "-C"]
     if spec.ssh_config is not None:
@@ -94,7 +104,7 @@ def vagrant_ssh_args(spec):
     return args
 
 
-def create_io(spec, execmodel):
+def create_io(spec: XSpec, execmodel) -> Popen2IOMaster:
     if spec.popen:
         args = popen_args(spec)
         return Popen2IOMaster(args, execmodel)
@@ -108,6 +118,7 @@ def create_io(spec, execmodel):
         io = Popen2IOMaster(args, execmodel)
         io.remoteaddress = spec.vagrant_ssh
         return io
+    assert False
 
 
 #
@@ -132,7 +143,7 @@ class ProxyIO:
     instantiates and interacts with the sub.
     """
 
-    def __init__(self, proxy_channel, execmodel):
+    def __init__(self, proxy_channel: Channel, execmodel: ExecModel) -> None:
         # after exchanging the control channel we use proxy_channel
         # for messaging IO
         self.controlchan = proxy_channel.gateway.newchannel()
@@ -141,69 +152,80 @@ class ProxyIO:
         self.iochan_file = self.iochan.makefile("r")
         self.execmodel = execmodel
 
-    def read(self, nbytes):
-        return self.iochan_file.read(nbytes)
+    def read(self, nbytes: int) -> bytes:
+        # TODO(typing): The IO protocol requires bytes here but ChannelFileRead
+        # returns str.
+        return self.iochan_file.read(nbytes)  # type: ignore[return-value]
 
-    def write(self, data):
-        return self.iochan.send(data)
+    def write(self, data: bytes) -> None:
+        self.iochan.send(data)
 
-    def _controll(self, event):
+    def _controll(self, event: int) -> object:
         self.controlchan.send(event)
         return self.controlchan.receive()
 
-    def close_write(self):
+    def close_write(self) -> None:
         self._controll(RIO_CLOSE_WRITE)
 
-    def kill(self):
+    def close_read(self) -> None:
+        raise NotImplementedError()
+
+    def kill(self) -> None:
         self._controll(RIO_KILL)
 
-    def wait(self):
-        return self._controll(RIO_WAIT)
+    def wait(self) -> int | None:
+        response = self._controll(RIO_WAIT)
+        assert response is None or isinstance(response, int)
+        return response
 
     @property
-    def remoteaddress(self):
-        return self._controll(RIO_REMOTEADDRESS)
+    def remoteaddress(self) -> str:
+        response = self._controll(RIO_REMOTEADDRESS)
+        assert isinstance(response, str)
+        return response
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<RemoteIO via {self.iochan.gateway.id}>"
 
 
 class PseudoSpec:
-    def __init__(self, vars):
+    def __init__(self, vars) -> None:
         self.__dict__.update(vars)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> None:
         return None
 
 
-def serve_proxy_io(proxy_channelX):
+def serve_proxy_io(proxy_channelX: Channel) -> None:
     execmodel = proxy_channelX.gateway.execmodel
     log = partial(
         proxy_channelX.gateway._trace, "serve_proxy_io:%s" % proxy_channelX.id
     )
-    spec = PseudoSpec(proxy_channelX.receive())
+    spec = cast("XSpec", PseudoSpec(proxy_channelX.receive()))
     # create sub IO object which we will proxy back to our proxy initiator
     sub_io = create_io(spec, execmodel)
-    control_chan = proxy_channelX.receive()
+    control_chan = cast("Channel", proxy_channelX.receive())
     log("got control chan", control_chan)
 
     # read data from master, forward it to the sub
     # XXX writing might block, thus blocking the receiver thread
-    def forward_to_sub(data):
+    def forward_to_sub(data: bytes) -> None:
         log("forward data to sub, size %s" % len(data))
         sub_io.write(data)
 
     proxy_channelX.setcallback(forward_to_sub)
 
-    def control(data):
+    def control(data: int) -> None:
         if data == RIO_WAIT:
             control_chan.send(sub_io.wait())
         elif data == RIO_KILL:
-            control_chan.send(sub_io.kill())
+            sub_io.kill()
+            control_chan.send(None)
         elif data == RIO_REMOTEADDRESS:
             control_chan.send(sub_io.remoteaddress)
         elif data == RIO_CLOSE_WRITE:
-            control_chan.send(sub_io.close_write())
+            sub_io.close_write()
+            control_chan.send(None)
 
     control_chan.setcallback(control)
 

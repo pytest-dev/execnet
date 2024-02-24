@@ -1,10 +1,19 @@
-import sys
+from __future__ import annotations
 
+import sys
+from typing import cast
+
+from execnet.gateway import Gateway
+from execnet.gateway_base import ExecModel
 from execnet.gateway_bootstrap import HostNotFound
+from execnet.multi import Group
+from execnet.xspec import XSpec
 
 
 class SocketIO:
-    def __init__(self, sock, execmodel):
+    remoteaddress: str
+
+    def __init__(self, sock, execmodel: ExecModel) -> None:
         self.sock = sock
         self.execmodel = execmodel
         socket = execmodel.socket
@@ -15,7 +24,7 @@ class SocketIO:
         except (AttributeError, OSError):
             sys.stderr.write("WARNING: cannot set socketoption")
 
-    def read(self, numbytes):
+    def read(self, numbytes: int) -> bytes:
         "Read exactly 'bytes' bytes from the socket."
         buf = b""
         while len(buf) < numbytes:
@@ -25,29 +34,31 @@ class SocketIO:
             buf += t
         return buf
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
         self.sock.sendall(data)
 
-    def close_read(self):
+    def close_read(self) -> None:
         try:
             self.sock.shutdown(0)
         except self.execmodel.socket.error:
             pass
 
-    def close_write(self):
+    def close_write(self) -> None:
         try:
             self.sock.shutdown(1)
         except self.execmodel.socket.error:
             pass
 
-    def wait(self):
+    def wait(self) -> None:
         pass
 
-    def kill(self):
+    def kill(self) -> None:
         pass
 
 
-def start_via(gateway, hostport=None):
+def start_via(
+    gateway: Gateway, hostport: tuple[str, int] | None = None
+) -> tuple[str, int]:
     """return a host, port tuple,
     after instantiating a socketserver on the given gateway
     """
@@ -61,7 +72,7 @@ def start_via(gateway, hostport=None):
     # execute the above socketserverbootstrap on the other side
     channel = gateway.remote_exec(socketserver)
     channel.send((host, port))
-    (realhost, realport) = channel.receive()
+    realhost, realport = cast("tuple[str, int]", channel.receive())
     # self._trace("new_remote received"
     #               "port=%r, hostname = %r" %(realport, hostname))
     if not realhost or realhost == "0.0.0.0":
@@ -69,14 +80,15 @@ def start_via(gateway, hostport=None):
     return realhost, realport
 
 
-def create_io(spec, group, execmodel):
+def create_io(spec: XSpec, group: Group, execmodel: ExecModel) -> SocketIO:
+    assert spec.socket is not None
     assert not spec.python, "socket: specifying python executables not yet supported"
     gateway_id = spec.installvia
     if gateway_id:
         host, port = start_via(group[gateway_id])
     else:
-        host, port = spec.socket.split(":")
-        port = int(port)
+        host, port_str = spec.socket.split(":")
+        port = int(port_str)
 
     socket = execmodel.socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

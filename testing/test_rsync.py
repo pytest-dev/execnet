@@ -7,24 +7,25 @@ import types
 import execnet
 import pytest
 from execnet import RSync
+from execnet.gateway import Gateway
 
 
 @pytest.fixture(scope="module")
-def group(request):
+def group(request: pytest.FixtureRequest) -> execnet.Group:
     group = execnet.Group()
     request.addfinalizer(group.terminate)
     return group
 
 
 @pytest.fixture(scope="module")
-def gw1(request, group):
+def gw1(request: pytest.FixtureRequest, group: execnet.Group) -> Gateway:
     gw = group.makegateway("popen//id=gw1")
     request.addfinalizer(gw.exit)
     return gw
 
 
 @pytest.fixture(scope="module")
-def gw2(request, group):
+def gw2(request: pytest.FixtureRequest, group: execnet.Group) -> Gateway:
     gw = group.makegateway("popen//id=gw2")
     request.addfinalizer(gw.exit)
     return gw
@@ -44,7 +45,7 @@ class _dirs(types.SimpleNamespace):
 
 
 @pytest.fixture
-def dirs(request, tmp_path) -> _dirs:
+def dirs(tmp_path: pathlib.Path) -> _dirs:
     dirs = _dirs(
         source=tmp_path / "source",
         dest1=tmp_path / "dest1",
@@ -56,7 +57,7 @@ def dirs(request, tmp_path) -> _dirs:
     return dirs
 
 
-def are_paths_equal(path1, path2):
+def are_paths_equal(path1: pathlib.Path, path2: pathlib.Path) -> bool:
     if os.path.__name__ == "ntpath":
         # On Windows, os.readlink returns an extended path (\\?\)
         # for absolute symlinks. However, extended does not compare
@@ -72,13 +73,13 @@ def are_paths_equal(path1, path2):
 
 
 class TestRSync:
-    def test_notargets(self, dirs):
+    def test_notargets(self, dirs: _dirs) -> None:
         rsync = RSync(dirs.source)
         with pytest.raises(IOError):
             rsync.send()
-        assert rsync.send(raises=False) is None
+        assert rsync.send(raises=False) is None  # type: ignore[func-returns-value]
 
-    def test_dirsync(self, dirs, gw1, gw2):
+    def test_dirsync(self, dirs: _dirs, gw1: Gateway, gw2: Gateway) -> None:
         dest = dirs.dest1
         dest2 = dirs.dest2
         source = dirs.source
@@ -115,7 +116,7 @@ class TestRSync:
         assert not dest.joinpath("subdir", "file1").exists()
         assert dest2.joinpath("subdir", "file1").exists()
 
-    def test_dirsync_twice(self, dirs, gw1, gw2):
+    def test_dirsync_twice(self, dirs: _dirs, gw1: Gateway, gw2: Gateway) -> None:
         source = dirs.source
         source.joinpath("hello").touch()
         rsync = RSync(source)
@@ -124,15 +125,17 @@ class TestRSync:
         assert dirs.dest1.joinpath("hello").exists()
         with pytest.raises(IOError):
             rsync.send()
-        assert rsync.send(raises=False) is None
+        assert rsync.send(raises=False) is None  # type: ignore[func-returns-value]
         rsync.add_target(gw1, dirs.dest2)
         rsync.send()
         assert dirs.dest2.joinpath("hello").exists()
         with pytest.raises(IOError):
             rsync.send()
-        assert rsync.send(raises=False) is None
+        assert rsync.send(raises=False) is None  # type: ignore[func-returns-value]
 
-    def test_rsync_default_reporting(self, capsys, dirs, gw1):
+    def test_rsync_default_reporting(
+        self, capsys: pytest.CaptureFixture[str], dirs: _dirs, gw1: Gateway
+    ) -> None:
         source = dirs.source
         source.joinpath("hello").touch()
         rsync = RSync(source)
@@ -141,7 +144,9 @@ class TestRSync:
         out, err = capsys.readouterr()
         assert out.find("hello") != -1
 
-    def test_rsync_non_verbose(self, capsys, dirs, gw1):
+    def test_rsync_non_verbose(
+        self, capsys: pytest.CaptureFixture[str], dirs: _dirs, gw1: Gateway
+    ) -> None:
         source = dirs.source
         source.joinpath("hello").touch()
         rsync = RSync(source, verbose=False)
@@ -155,7 +160,7 @@ class TestRSync:
         sys.platform == "win32" or getattr(os, "_name", "") == "nt",
         reason="irrelevant on windows",
     )
-    def test_permissions(self, dirs, gw1, gw2):
+    def test_permissions(self, dirs: _dirs, gw1: Gateway, gw2: Gateway) -> None:
         source = dirs.source
         dest = dirs.dest1
         onedir = dirs.source / "one"
@@ -194,7 +199,7 @@ class TestRSync:
         sys.platform == "win32" or getattr(os, "_name", "") == "nt",
         reason="irrelevant on windows",
     )
-    def test_read_only_directories(self, dirs, gw1):
+    def test_read_only_directories(self, dirs: _dirs, gw1: Gateway) -> None:
         source = dirs.source
         dest = dirs.dest1
         sub = source / "sub"
@@ -214,7 +219,7 @@ class TestRSync:
         assert dest.joinpath("sub", "subsub").stat().st_mode & 0o700
 
     @needssymlink
-    def test_symlink_rsync(self, dirs, gw1):
+    def test_symlink_rsync(self, dirs: _dirs, gw1: Gateway) -> None:
         source = dirs.source
         dest = dirs.dest1
         subdir = dirs.source / "subdir"
@@ -236,7 +241,7 @@ class TestRSync:
         assert are_paths_equal(abslink, expected)
 
     @needssymlink
-    def test_symlink2_rsync(self, dirs, gw1):
+    def test_symlink2_rsync(self, dirs: _dirs, gw1: Gateway) -> None:
         source = dirs.source
         dest = dirs.dest1
         subdir = dirs.source / "subdir"
@@ -261,7 +266,7 @@ class TestRSync:
         link3 = pathlib.Path(os.readlink(str(destsub / "link3")))
         assert are_paths_equal(link3, source.parent)
 
-    def test_callback(self, dirs, gw1):
+    def test_callback(self, dirs: _dirs, gw1: Gateway) -> None:
         dest = dirs.dest1
         source = dirs.source
         source.joinpath("existent").write_text("a" * 100)
@@ -278,15 +283,15 @@ class TestRSync:
 
         assert total == {("list", 110): True, ("ack", 100): True, ("ack", 10): True}
 
-    def test_file_disappearing(self, dirs, gw1):
+    def test_file_disappearing(self, dirs: _dirs, gw1: Gateway) -> None:
         dest = dirs.dest1
         source = dirs.source
         source.joinpath("ex").write_text("a" * 100)
         source.joinpath("ex2").write_text("a" * 100)
 
         class DRsync(RSync):
-            def filter(self, x):
-                assert x != source
+            def filter(self, x: str) -> bool:
+                assert x != str(source)
                 if x.endswith("ex2"):
                     self.x = 1
                     source.joinpath("ex2").unlink()

@@ -1,11 +1,16 @@
+from __future__ import annotations
+
 import shutil
 import sys
 from functools import lru_cache
 from typing import Callable
+from typing import Generator
 from typing import Iterator
 
 import execnet
 import pytest
+from execnet.gateway import Gateway
+from execnet.gateway_base import ExecModel
 from execnet.gateway_base import WorkerPool
 from execnet.gateway_base import get_execmodel
 
@@ -15,7 +20,7 @@ rsyncdirs = ["conftest.py", "execnet", "testing", "doc"]
 
 
 @pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_setup(item):
+def pytest_runtest_setup(item: pytest.Item) -> Generator[None, None, None]:
     if item.fspath.purebasename in ("test_group", "test_info"):
         getspecssh(item.config)  # will skip if no gx given
     yield
@@ -31,7 +36,7 @@ def group_function() -> Iterator[execnet.Group]:
 
 
 @pytest.fixture
-def makegateway(group_function) -> Callable[[str], execnet.gateway.Gateway]:
+def makegateway(group_function: execnet.Group) -> Callable[[str], Gateway]:
     return group_function.makegateway
 
 
@@ -39,7 +44,7 @@ pytest_plugins = ["pytester", "doctest"]
 
 
 # configuration information for tests
-def pytest_addoption(parser):
+def pytest_addoption(parser: pytest.Parser) -> None:
     group = parser.getgroup("execnet", "execnet testing options")
     group.addoption(
         "--gx",
@@ -66,20 +71,20 @@ def pytest_addoption(parser):
 
 
 @pytest.fixture
-def specssh(request):
+def specssh(request: pytest.FixtureRequest) -> execnet.XSpec:
     return getspecssh(request.config)
 
 
 @pytest.fixture
-def specsocket(request):
+def specsocket(request: pytest.FixtureRequest) -> execnet.XSpec:
     return getsocketspec(request.config)
 
 
-def getgspecs(config):
-    return map(execnet.XSpec, config.getvalueorskip("gspecs"))
+def getgspecs(config: pytest.Config) -> list[execnet.XSpec]:
+    return [execnet.XSpec(gspec) for gspec in config.getvalueorskip("gspecs")]
 
 
-def getspecssh(config):
+def getspecssh(config: pytest.Config) -> execnet.XSpec:
     xspecs = getgspecs(config)
     for spec in xspecs:
         if spec.ssh:
@@ -89,7 +94,7 @@ def getspecssh(config):
     pytest.skip("need '--gx ssh=...'")
 
 
-def getsocketspec(config):
+def getsocketspec(config: pytest.Config) -> execnet.XSpec:
     xspecs = getgspecs(config)
     for spec in xspecs:
         if spec.socket:
@@ -97,7 +102,7 @@ def getsocketspec(config):
     pytest.skip("need '--gx socket=...'")
 
 
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "gw" in metafunc.fixturenames:
         assert "anypython" not in metafunc.fixturenames, "need combine?"
         if hasattr(metafunc.function, "gwtypes"):
@@ -110,14 +115,14 @@ def pytest_generate_tests(metafunc):
 
 
 @lru_cache
-def getexecutable(name):
+def getexecutable(name: str) -> str | None:
     if name == "sys.executable":
         return sys.executable
     return shutil.which(name)
 
 
 @pytest.fixture(params=("sys.executable", "pypy3"))
-def anypython(request):
+def anypython(request: pytest.FixtureRequest) -> str:
     name = request.param
     executable = getexecutable(name)
     if executable is None:
@@ -130,14 +135,18 @@ def anypython(request):
 
 
 @pytest.fixture(scope="session")
-def group():
+def group() -> Iterator[execnet.Group]:
     g = execnet.Group()
     yield g
     g.terminate(timeout=1)
 
 
 @pytest.fixture
-def gw(request, execmodel, group):
+def gw(
+    request: pytest.FixtureRequest,
+    execmodel: ExecModel,
+    group: execnet.Group,
+) -> Gateway:
     try:
         return group[request.param]
     except KeyError:
@@ -155,7 +164,8 @@ def gw(request, execmodel, group):
                 f"socket//id=socket//installvia={pname}"
                 f"//execmodel={execmodel.backend}"
             )
-            gw.proxygw = proxygw
+            # TODO(typing): Clarify this assignment.
+            gw.proxygw = proxygw  # type: ignore[attr-defined]
             assert pname in group
         elif request.param == "ssh":
             sshhost = request.getfixturevalue("specssh").ssh
@@ -176,7 +186,7 @@ def gw(request, execmodel, group):
 @pytest.fixture(
     params=["thread", "main_thread_only", "eventlet", "gevent"], scope="session"
 )
-def execmodel(request):
+def execmodel(request: pytest.FixtureRequest) -> ExecModel:
     if request.param not in ("thread", "main_thread_only"):
         pytest.importorskip(request.param)
     if request.param in ("eventlet", "gevent") and sys.platform == "win32":
@@ -185,5 +195,5 @@ def execmodel(request):
 
 
 @pytest.fixture
-def pool(execmodel):
+def pool(execmodel: ExecModel) -> WorkerPool:
     return WorkerPool(execmodel=execmodel)

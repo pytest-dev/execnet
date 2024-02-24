@@ -1,19 +1,26 @@
 """
     tests for multi channels and gateway Groups
 """
+from __future__ import annotations
+
 import gc
 from time import sleep
+from typing import Callable
 
 import execnet
 import pytest
 from execnet import XSpec
+from execnet.gateway import Gateway
 from execnet.gateway_base import Channel
+from execnet.gateway_base import ExecModel
 from execnet.multi import Group
 from execnet.multi import safe_terminate
 
 
 class TestMultiChannelAndGateway:
-    def test_multichannel_container_basics(self, gw, execmodel):
+    def test_multichannel_container_basics(
+        self, gw: Gateway, execmodel: ExecModel
+    ) -> None:
         mch = execnet.MultiChannel([Channel(gw, i) for i in range(3)])
         assert len(mch) == 3
         channels = list(mch)
@@ -26,21 +33,21 @@ class TestMultiChannelAndGateway:
         assert channels[1] in mch
         assert channels[2] in mch
 
-    def test_multichannel_receive_each(self):
+    def test_multichannel_receive_each(self) -> None:
         class pseudochannel:
-            def receive(self):
+            def receive(self) -> object:
                 return 12
 
         pc1 = pseudochannel()
         pc2 = pseudochannel()
-        multichannel = execnet.MultiChannel([pc1, pc2])
+        multichannel = execnet.MultiChannel([pc1, pc2])  # type: ignore[list-item]
         l = multichannel.receive_each(withchannel=True)
         assert len(l) == 2
-        assert l == [(pc1, 12), (pc2, 12)]
-        l = multichannel.receive_each(withchannel=False)
-        assert l == [12, 12]
+        assert l == [(pc1, 12), (pc2, 12)]  # type: ignore[comparison-overlap]
+        l2 = multichannel.receive_each(withchannel=False)
+        assert l2 == [12, 12]
 
-    def test_multichannel_send_each(self):
+    def test_multichannel_send_each(self) -> None:
         gm = execnet.Group(["popen"] * 2)
         mc = gm.remote_exec(
             """
@@ -52,12 +59,12 @@ class TestMultiChannelAndGateway:
         l = mc.receive_each()
         assert l == [42, 42]
 
-    def test_Group_execmodel_setting(self):
+    def test_Group_execmodel_setting(self) -> None:
         gm = execnet.Group()
         gm.set_execmodel("thread")
         assert gm.execmodel.backend == "thread"
         assert gm.remote_execmodel.backend == "thread"
-        gm._gateways.append(1)
+        gm._gateways.append(1)  # type: ignore[arg-type]
         try:
             with pytest.raises(ValueError):
                 gm.set_execmodel("eventlet")
@@ -65,7 +72,7 @@ class TestMultiChannelAndGateway:
         finally:
             gm._gateways.pop()
 
-    def test_multichannel_receive_queue_for_two_subprocesses(self):
+    def test_multichannel_receive_queue_for_two_subprocesses(self) -> None:
         gm = execnet.Group(["popen"] * 2)
         mc = gm.remote_exec(
             """
@@ -81,23 +88,23 @@ class TestMultiChannelAndGateway:
         assert item != item2
         mc.waitclose()
 
-    def test_multichannel_waitclose(self):
+    def test_multichannel_waitclose(self) -> None:
         l = []
 
         class pseudochannel:
-            def waitclose(self):
+            def waitclose(self) -> None:
                 l.append(0)
 
-        multichannel = execnet.MultiChannel([pseudochannel(), pseudochannel()])
+        multichannel = execnet.MultiChannel([pseudochannel(), pseudochannel()])  # type: ignore[list-item]
         multichannel.waitclose()
         assert len(l) == 2
 
 
 class TestGroup:
-    def test_basic_group(self, monkeypatch):
+    def test_basic_group(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import atexit
 
-        atexitlist = []
+        atexitlist: list[Callable[[], object]] = []
         monkeypatch.setattr(atexit, "register", atexitlist.append)
         group = Group()
         assert atexitlist == [group._cleanup_atexit]
@@ -105,7 +112,7 @@ class TestGroup:
         joinlist = []
 
         class PseudoIO:
-            def wait(self):
+            def wait(self) -> None:
                 pass
 
         class PseudoSpec:
@@ -116,15 +123,15 @@ class TestGroup:
             _io = PseudoIO()
             spec = PseudoSpec()
 
-            def exit(self):
+            def exit(self) -> None:
                 exitlist.append(self)
-                group._unregister(self)
+                group._unregister(self)  # type: ignore[arg-type]
 
-            def join(self):
+            def join(self) -> None:
                 joinlist.append(self)
 
         gw = PseudoGW()
-        group._register(gw)
+        group._register(gw)  # type: ignore[arg-type]
         assert len(exitlist) == 0
         assert len(joinlist) == 0
         group._cleanup_atexit()
@@ -136,12 +143,12 @@ class TestGroup:
         assert len(exitlist) == 1
         assert len(joinlist) == 1
 
-    def test_group_default_spec(self):
+    def test_group_default_spec(self) -> None:
         group = Group()
         group.defaultspec = "not-existing-type"
         pytest.raises(ValueError, group.makegateway)
 
-    def test_group_PopenGateway(self):
+    def test_group_PopenGateway(self) -> None:
         group = Group()
         gw = group.makegateway("popen")
         assert list(group) == [gw]
@@ -150,7 +157,7 @@ class TestGroup:
         group._cleanup_atexit()
         assert not group._gateways
 
-    def test_group_ordering_and_termination(self):
+    def test_group_ordering_and_termination(self) -> None:
         group = Group()
         group.makegateway("popen//id=3")
         group.makegateway("popen//id=2")
@@ -165,7 +172,7 @@ class TestGroup:
         assert not group
         assert repr(group) == "<Group []>"
 
-    def test_group_id_allocation(self):
+    def test_group_id_allocation(self) -> None:
         group = Group()
         specs = [XSpec("popen"), XSpec("popen//id=hello")]
         group.allocate_id(specs[0])
@@ -178,14 +185,14 @@ class TestGroup:
         #    group.allocate_id, XSpec("popen//id=hello"))
         group.terminate()
 
-    def test_gateway_and_id(self):
+    def test_gateway_and_id(self) -> None:
         group = Group()
         gw = group.makegateway("popen//id=hello")
         assert group["hello"] == gw
         with pytest.raises((TypeError, AttributeError)):
-            del group["hello"]
+            del group["hello"]  # type: ignore[attr-defined]
         with pytest.raises((TypeError, AttributeError)):
-            group["hello"] = 5
+            group["hello"] = 5  # type: ignore[index]
         assert "hello" in group
         assert gw in group
         assert len(group) == 1
@@ -194,7 +201,7 @@ class TestGroup:
         with pytest.raises(KeyError):
             _ = group["hello"]
 
-    def test_default_group(self):
+    def test_default_group(self) -> None:
         oldlist = list(execnet.default_group)
         gw = execnet.makegateway("popen")
         try:
@@ -205,18 +212,18 @@ class TestGroup:
         finally:
             gw.exit()
 
-    def test_remote_exec_args(self):
+    def test_remote_exec_args(self) -> None:
         group = Group()
         group.makegateway("popen")
 
-        def fun(channel, arg):
+        def fun(channel, arg) -> None:
             channel.send(arg)
 
         mch = group.remote_exec(fun, arg=1)
         result = mch.receive_each()
         assert result == [1]
 
-    def test_terminate_with_proxying(self):
+    def test_terminate_with_proxying(self) -> None:
         group = Group()
         group.makegateway("popen//id=master")
         group.makegateway("popen//via=master//id=worker")
@@ -224,7 +231,7 @@ class TestGroup:
 
 
 @pytest.mark.xfail(reason="active_count() has been broken for some time")
-def test_safe_terminate(execmodel):
+def test_safe_terminate(execmodel: ExecModel) -> None:
     if execmodel.backend not in ("thread", "main_thread_only"):
         pytest.xfail(
             "execution model %r does not support task count" % execmodel.backend
@@ -234,21 +241,21 @@ def test_safe_terminate(execmodel):
     active = threading.active_count()
     l = []
 
-    def term():
+    def term() -> None:
         sleep(3)
 
-    def kill():
+    def kill() -> None:
         l.append(1)
 
     safe_terminate(execmodel, 1, [(term, kill)] * 10)
     assert len(l) == 10
     sleep(0.1)
     gc.collect()
-    assert execmodel.active_count() == active
+    assert execmodel.active_count() == active  # type: ignore[attr-defined]
 
 
 @pytest.mark.xfail(reason="active_count() has been broken for some time")
-def test_safe_terminate2(execmodel):
+def test_safe_terminate2(execmodel: ExecModel) -> None:
     if execmodel.backend not in ("thread", "main_thread_only"):
         pytest.xfail(
             "execution model %r does not support task count" % execmodel.backend
@@ -258,10 +265,10 @@ def test_safe_terminate2(execmodel):
     active = threading.active_count()
     l = []
 
-    def term():
+    def term() -> None:
         return
 
-    def kill():
+    def kill() -> None:
         l.append(1)
 
     safe_terminate(execmodel, 3, [(term, kill)] * 10)
