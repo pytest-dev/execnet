@@ -36,7 +36,7 @@ def test_exit_blocked_worker_execution_gateway(anypython, makegateway, pool):
 
 
 def test_endmarker_delivery_on_remote_killterm(makegateway, execmodel):
-    if execmodel.backend != "thread":
+    if execmodel.backend not in ("thread", "main_thread_only"):
         pytest.xfail("test and execnet not compatible to greenlets yet")
     gw = makegateway("popen")
     q = execmodel.queue.Queue()
@@ -97,8 +97,12 @@ def test_close_initiating_remote_no_error(testdir, anypython):
 
 
 def test_terminate_implicit_does_trykill(testdir, anypython, capfd, pool):
-    if pool.execmodel != "thread":
+    if pool.execmodel.backend not in ("thread", "main_thread_only"):
         pytest.xfail("only os threading model supported")
+    if sys.version_info >= (3, 12):
+        pytest.xfail(
+            "since python3.12 this test triggers RuntimeError: can't create new thread at interpreter shutdown"
+        )
     p = testdir.makepyfile(
         """
         import sys

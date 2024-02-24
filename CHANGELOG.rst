@@ -1,7 +1,22 @@
 2.1.0 (UNRELEASED)
+------------------
 
+* `#243 <https://github.com/pytest-dev/execnet/pull/243>`__: Added ``main_thread_only``
+  execmodel which is derived from the thread execmodel and only executes ``remote_exec``
+  calls in the main thread.
+
+  Callers of ``remote_exec`` must use the returned channel to wait for a task to complete
+  before they call remote_exec again, otherwise the ``remote_exec`` call will fail with a
+  ``concurrent remote_exec would cause deadlock`` error. The main_thread_only execmodel
+  provides solutions for `#96 <https://github.com/pytest-dev/execnet/issues/96>`__ and
+  `pytest-dev/pytest-xdist#620 <https://github.com/pytest-dev/pytest-xdist/issues/620>`__
+  (pending a new `pytest-xdist` release).
+
+  Also fixed ``init_popen_io`` to use ``closefd=False`` for shared stdin and stdout file
+  descriptors, preventing ``Bad file descriptor`` errors triggered by test_stdouterrin_setnull.
 * Removed support for Python 3.7.
 * Added official support for Python 3.12.
+
 
 2.0.2 (2023-07-09)
 ------------------
