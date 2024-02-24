@@ -5,7 +5,6 @@ gateway code for initiating popen, socket and ssh connections.
 import inspect
 import linecache
 import os
-import sys
 import textwrap
 import types
 
@@ -56,10 +55,9 @@ class Gateway(gateway_base.BaseGateway):
             self._send(Message.GATEWAY_TERMINATE)
             self._trace("--> io.close_write")
             self._io.close_write()
-        except (ValueError, EOFError, OSError):
-            v = sys.exc_info()[1]
+        except (ValueError, EOFError, OSError) as exc:
             self._trace("io-error: could not send termination sequence")
-            self._trace(" exception: %r" % v)
+            self._trace(" exception: %r" % exc)
 
     def reconfigure(self, py2str_as_py3str=True, py3str_as_py2str=False):
         """

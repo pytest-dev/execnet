@@ -84,6 +84,6 @@ def create_io(spec, group, execmodel):
     io.remoteaddress = "%s:%d" % (host, port)
     try:
         sock.connect((host, port))
-    except execmodel.socket.gaierror:
-        raise HostNotFound(str(sys.exc_info()[1]))
+    except execmodel.socket.gaierror as e:
+        raise HostNotFound() from e
     return io

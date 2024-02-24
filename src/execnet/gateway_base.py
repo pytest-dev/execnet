@@ -289,7 +289,7 @@ class Reply:
         try:
             return self._result
         except AttributeError:
-            raise self._excinfo[1].with_traceback(self._excinfo[2])
+            raise self._exc
 
     def waitfinish(self, timeout=None):
         if not self._result_ready.wait(timeout):
@@ -300,10 +300,8 @@ class Reply:
         try:
             try:
                 self._result = func(*args, **kwargs)
-            except BaseException:
-                # sys may be already None when shutting down the interpreter
-                if sys is not None:
-                    self._excinfo = sys.exc_info()
+            except BaseException as exc:
+                self._exc = exc
         finally:
             self._result_ready.set()
             self.running = False
@@ -460,10 +458,9 @@ elif DEBUG:
             line = " ".join(map(str, msg))
             debugfile.write(line + "\n")
             debugfile.flush()
-        except Exception:
+        except Exception as exc:
             try:
-                v = sys.exc_info()[1]
-                sys.stderr.write(f"[{pid}] exception during tracing: {v!r}\n")
+                sys.stderr.write(f"[{pid}] exception during tracing: {exc!r}\n")
             except Exception:
                 pass  # nothing we can do, likely interpreter-shutdown
 
@@ -530,8 +527,7 @@ class Message:
             header = io.read(9)  # type 1, channel 4, payload 4
             if not header:
                 raise EOFError("empty read")
-        except EOFError:
-            e = sys.exc_info()[1]
+        except EOFError as e:
             raise EOFError("couldn't load message header, " + e.args[0])
         msgtype, channel, payload = struct.unpack("!bii", header)
         return Message(msgtype, channel, io.read(payload))
@@ -617,14 +613,20 @@ class GatewayReceivedTerminate(Exception):
     """Receiverthread got termination message."""
 
 
-def geterrortext(excinfo, format_exception=traceback.format_exception, sysex=sysex):
+def geterrortext(
+    exc: BaseException,
+    format_exception=traceback.format_exception,
+    sysex=sysex,
+) -> str:
     try:
-        l = format_exception(*excinfo)  # noqa:E741
+        # In py310, can change this to:
+        # l = format_exception(exc)
+        l = format_exception(type(exc), exc, exc.__traceback__)
         errortext = "".join(l)
     except sysex:
         raise
     except BaseException:
-        errortext = f"{excinfo[0].__name__}: {excinfo[1]}"
+        errortext = f"{type(exc).__name__}: {exc}"
     return errortext
 
 
@@ -963,10 +965,9 @@ class ChannelFactory:
             try:
                 data = loads_internal(data, channel, strconfig)
                 callback(data)  # even if channel may be already closed
-            except Exception:
-                excinfo = sys.exc_info()
-                self.gateway._trace("exception during callback: %s" % excinfo[1])
-                errortext = self.gateway._geterrortext(excinfo)
+            except Exception as exc:
+                self.gateway._trace("exception during callback: %s" % exc)
+                errortext = self.gateway._geterrortext(exc)
                 self.gateway._send(
                     Message.CHANNEL_CLOSE_ERROR, id, dumps_internal(errortext)
                 )
@@ -1043,7 +1044,6 @@ class ChannelFileRead(ChannelFile):
 
 
 class BaseGateway:
-    exc_info = sys.exc_info
     _sysex = sysex
     id = "<worker>"
 
@@ -1080,11 +1080,11 @@ class BaseGateway:
                     del msg
         except (KeyboardInterrupt, GatewayReceivedTerminate):
             pass
-        except EOFError:
+        except EOFError as exc:
             log("EOF without prior gateway termination message")
-            self._error = self.exc_info()[1]
-        except Exception:
-            log(self._geterrortext(self.exc_info()))
+            self._error = exc
+        except Exception as exc:
+            log(self._geterrortext(exc))
         log("finishing receiving thread")
         # wake up and terminate any execution waiting to receive
         self._channelfactory._finished_receiving()
@@ -1105,8 +1105,7 @@ class BaseGateway:
         try:
             message.to_io(self._io)
             self._trace("sent", message)
-        except (OSError, ValueError):
-            e = sys.exc_info()[1]
+        except (OSError, ValueError) as e:
             self._trace("failed to send", message, e)
             # ValueError might be because the IO is already closed
             raise OSError("cannot send (already closed?)")
@@ -1212,12 +1211,11 @@ class WorkerGateway(BaseGateway):
         except KeyboardInterrupt:
             channel.close(INTERRUPT_TEXT)
             raise
-        except BaseException:
-            excinfo = self.exc_info()
-            if not isinstance(excinfo[1], EOFError):
+        except BaseException as exc:
+            if not isinstance(exc, EOFError):
                 if not channel.gateway._channelfactory.finished:
-                    self._trace(f"got exception: {excinfo[1]!r}")
-                    errortext = self._geterrortext(excinfo)
+                    self._trace(f"got exception: {exc!r}")
+                    errortext = self._geterrortext(exc)
                     channel.close(errortext)
                     return
             self._trace("ignoring EOFError because receiving finished")

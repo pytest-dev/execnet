@@ -229,16 +229,14 @@ def test_geterrortext(checker):
     out = checker.run_check(
         inspect.getsource(gateway_base)
         + """
-class Arg:
+class Arg(Exception):
     pass
-errortext = geterrortext((Arg, "1", 4))
+errortext = geterrortext(Arg())
 assert "Arg" in errortext
-import sys
 try:
     raise ValueError("17")
-except ValueError:
-    excinfo = sys.exc_info()
-    s = geterrortext(excinfo)
+except ValueError as exc:
+    s = geterrortext(exc)
     assert "17" in s
     print ("all passed")
     """
