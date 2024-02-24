@@ -11,7 +11,6 @@ import sys
 
 import execnet
 
-
 parser = optparse.OptionParser(usage=__doc__)
 parser.add_option(
     "-f",
@@ -129,7 +128,7 @@ def getinfo(sshname, ssh_config=None, loginfo=sys.stdout):
     if ssh_config:
         spec = f"ssh=-F {ssh_config} {sshname}"
     else:
-        spec += "ssh=%s" % sshname
+        spec = "ssh=%s" % sshname
     debug("connecting to", repr(spec))
     try:
         gw = execnet.makegateway(spec)

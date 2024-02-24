@@ -3,12 +3,19 @@
 
 (c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
+from __future__ import annotations
+
 import os
 import stat
 from hashlib import md5
 from queue import Queue
+from typing import Callable
+from typing import Literal
 
 import execnet.rsync_remote
+from execnet.gateway import Gateway
+from execnet.gateway_base import BaseGateway
+from execnet.gateway_base import Channel
 
 
 class RSync:
@@ -21,48 +28,64 @@ class RSync:
     a path on remote side).
     """
 
-    def __init__(self, sourcedir, callback=None, verbose=True):
+    def __init__(self, sourcedir, callback=None, verbose: bool = True) -> None:
         self._sourcedir = str(sourcedir)
         self._verbose = verbose
         assert callback is None or callable(callback)
         self._callback = callback
-        self._channels = {}
-        self._receivequeue = Queue()
-        self._links = []
+        self._channels: dict[Channel, Callable[[], None] | None] = {}
+        self._receivequeue: Queue[
+            tuple[
+                Channel,
+                (
+                    None
+                    | tuple[Literal["send"], tuple[list[str], bytes]]
+                    | tuple[Literal["list_done"], None]
+                    | tuple[Literal["ack"], str]
+                    | tuple[Literal["links"], None]
+                    | tuple[Literal["done"], None]
+                ),
+            ]
+        ] = Queue()
+        self._links: list[tuple[Literal["linkbase", "link"], str, str]] = []
 
-    def filter(self, path):
+    def filter(self, path: str) -> bool:
         return True
 
-    def _end_of_channel(self, channel):
+    def _end_of_channel(self, channel: Channel) -> None:
         if channel in self._channels:
             # too early!  we must have got an error
             channel.waitclose()
             # or else we raise one
             raise OSError(f"connection unexpectedly closed: {channel.gateway} ")
 
-    def _process_link(self, channel):
+    def _process_link(self, channel: Channel) -> None:
         for link in self._links:
             channel.send(link)
         # completion marker, this host is done
         channel.send(42)
 
-    def _done(self, channel):
+    def _done(self, channel: Channel) -> None:
         """Call all callbacks"""
         finishedcallback = self._channels.pop(channel)
         if finishedcallback:
             finishedcallback()
         channel.waitclose()
 
-    def _list_done(self, channel):
+    def _list_done(self, channel: Channel) -> None:
         # sum up all to send
         if self._callback:
             s = sum([self._paths[i] for i in self._to_send[channel]])
             self._callback("list", s, channel)
 
-    def _send_item(self, channel, data):
+    def _send_item(
+        self,
+        channel: Channel,
+        modified_rel_path_components: list[str],
+        checksum: bytes,
+    ) -> None:
         """Send one item"""
-        modified_rel_path, checksum = data
-        modifiedpath = os.path.join(self._sourcedir, *modified_rel_path)
+        modifiedpath = os.path.join(self._sourcedir, *modified_rel_path_components)
         try:
             f = open(modifiedpath, "rb")
             data = f.read()
@@ -70,7 +93,7 @@ class RSync:
             data = None
 
         # provide info to progress callback function
-        modified_rel_path = "/".join(modified_rel_path)
+        modified_rel_path = "/".join(modified_rel_path_components)
         if data is not None:
             self._paths[modified_rel_path] = len(data)
         else:
@@ -88,11 +111,11 @@ class RSync:
                 self._report_send_file(channel.gateway, modified_rel_path)
         channel.send(data)
 
-    def _report_send_file(self, gateway, modified_rel_path):
+    def _report_send_file(self, gateway: BaseGateway, modified_rel_path: str) -> None:
         if self._verbose:
             print(f"{gateway} <= {modified_rel_path}")
 
-    def send(self, raises=True):
+    def send(self, raises: bool = True) -> None:
         """Sends a sourcedir to all added targets. Flag indicates
         whether to raise an error or return in case of lack of
         targets
@@ -110,8 +133,8 @@ class RSync:
 
         # paths and to_send are only used for doing
         # progress-related callbacks
-        self._paths = {}
-        self._to_send = {}
+        self._paths: dict[str, int] = {}
+        self._to_send: dict[Channel, list[str]] = {}
 
         # send modified file to clients
         while self._channels:
@@ -119,30 +142,34 @@ class RSync:
             if req is None:
                 self._end_of_channel(channel)
             else:
-                command, data = req
-                if command == "links":
+                if req[0] == "links":
                     self._process_link(channel)
-                elif command == "done":
+                elif req[0] == "done":
                     self._done(channel)
-                elif command == "ack":
+                elif req[0] == "ack":
                     if self._callback:
-                        self._callback("ack", self._paths[data], channel)
-                elif command == "list_done":
+                        self._callback("ack", self._paths[req[1]], channel)
+                elif req[0] == "list_done":
                     self._list_done(channel)
-                elif command == "send":
-                    self._send_item(channel, data)
-                    del data
+                elif req[0] == "send":
+                    self._send_item(channel, req[1][0], req[1][1])
                 else:
-                    assert "Unknown command %s" % command
+                    assert "Unknown command %s" % req[0]  # type: ignore[unreachable]
 
-    def add_target(self, gateway, destdir, finishedcallback=None, **options):
+    def add_target(
+        self,
+        gateway: Gateway,
+        destdir: str | os.PathLike[str],
+        finishedcallback: Callable[[], None] | None = None,
+        **options,
+    ) -> None:
         """Adds a remote target specified via a gateway
         and a remote destination directory.
         """
         for name in options:
             assert name in ("delete",)
 
-        def itemcallback(req):
+        def itemcallback(req) -> None:
             self._receivequeue.put((channel, req))
 
         channel = gateway.remote_exec(execnet.rsync_remote)
@@ -151,14 +178,19 @@ class RSync:
         channel.send((str(destdir), options))
         self._channels[channel] = finishedcallback
 
-    def _broadcast(self, msg):
+    def _broadcast(self, msg: object) -> None:
         for channel in self._channels:
             channel.send(msg)
 
-    def _send_link(self, linktype, basename, linkpoint):
+    def _send_link(
+        self,
+        linktype: Literal["linkbase", "link"],
+        basename: str,
+        linkpoint: str,
+    ) -> None:
         self._links.append((linktype, basename, linkpoint))
 
-    def _send_directory(self, path):
+    def _send_directory(self, path: str) -> None:
         # dir: send a list of entries
         names = []
         subpaths = []
@@ -172,7 +204,7 @@ class RSync:
         for p in subpaths:
             self._send_directory_structure(p)
 
-    def _send_link_structure(self, path):
+    def _send_link_structure(self, path: str) -> None:
         sourcedir = self._sourcedir
         basename = path[len(self._sourcedir) + 1 :]
         linkpoint = os.readlink(path)
@@ -189,8 +221,10 @@ class RSync:
             relpath = os.path.relpath(linkpoint, sourcedir)
         except ValueError:
             relpath = None
-        if relpath not in (None, os.curdir, os.pardir) and not relpath.startswith(
-            os.pardir + os.sep
+        if (
+            relpath is not None
+            and relpath not in (os.curdir, os.pardir)
+            and not relpath.startswith(os.pardir + os.sep)
         ):
             self._send_link("linkbase", basename, relpath)
         else:
@@ -198,7 +232,7 @@ class RSync:
             self._send_link("link", basename, linkpoint)
         self._broadcast(None)
 
-    def _send_directory_structure(self, path):
+    def _send_directory_structure(self, path: str) -> None:
         try:
             st = os.lstat(path)
         except OSError:

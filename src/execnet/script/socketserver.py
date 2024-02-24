@@ -11,21 +11,23 @@
 """
 # this part of the program only executes on the server side
 #
+from __future__ import annotations
+
 import os
 import sys
+from typing import TYPE_CHECKING
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    from execnet.gateway_base import Channel
+    from execnet.gateway_base import ExecModel
 
 progname = "socket_readline_exec_server-1.2"
 
-
-def get_fcntl():
-    try:
-        import fcntl
-    except ImportError:
-        fcntl = None
-    return fcntl
-
-
-fcntl = get_fcntl()
 
 debug = 0
 
@@ -35,7 +37,7 @@ if debug:  # and not os.isatty(sys.stdin.fileno())
     sys.stdout = sys.stderr = f
 
 
-def print_(*args):
+def print_(*args) -> None:
     print(" ".join(str(arg) for arg in args))
 
 
@@ -45,7 +47,7 @@ exec(
 )
 
 
-def exec_from_one_connection(serversock):
+def exec_from_one_connection(serversock) -> None:
     print_(progname, "Entering Accept loop", serversock.getsockname())
     clientsock, address = serversock.accept()
     print_(progname, "got new connection from {} {}".format(*address))
@@ -60,14 +62,14 @@ def exec_from_one_connection(serversock):
         co = compile(source + "\n", "<socket server>", "exec")
         print_(progname, "compiled source, executing")
         try:
-            exec_(co, g)  # noqa: F821
+            exec_(co, g)  # type: ignore[name-defined] # noqa: F821
         finally:
             print_(progname, "finished executing code")
             # background thread might hold a reference to this (!?)
             # clientsock.close()
 
 
-def bind_and_listen(hostport, execmodel):
+def bind_and_listen(hostport: str | tuple[str, int], execmodel: ExecModel):
     socket = execmodel.socket
     if isinstance(hostport, str):
         host, port = hostport.split(":")
@@ -86,7 +88,7 @@ def bind_and_listen(hostport, execmodel):
     return serversock
 
 
-def startserver(serversock, loop=False):
+def startserver(serversock, loop: bool = False) -> None:
     execute_path = os.getcwd()
     try:
         while 1:
@@ -123,9 +125,10 @@ if __name__ == "__main__":
     startserver(serversock, loop=True)
 
 elif __name__ == "__channelexec__":
-    chan = globals()["channel"]
+    chan: Channel = globals()["channel"]
     execmodel = chan.gateway.execmodel
     bindname = chan.receive()
+    assert isinstance(bindname, (str, tuple))
     sock = bind_and_listen(bindname, execmodel)
     port = sock.getsockname()
     chan.send(port)

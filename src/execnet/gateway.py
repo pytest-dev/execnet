@@ -2,16 +2,25 @@
 gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2013, Holger Krekel and others
 """
+from __future__ import annotations
+
 import inspect
 import linecache
 import os
 import textwrap
 import types
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import Callable
 
 import execnet
 
 from . import gateway_base
+from .gateway_base import IO
+from .gateway_base import Channel
 from .gateway_base import Message
+from .multi import Group
+from .xspec import XSpec
 
 importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
@@ -19,20 +28,23 @@ importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 class Gateway(gateway_base.BaseGateway):
     """Gateway to a local or remote Python Interpreter."""
 
-    def __init__(self, io, spec):
+    _group: Group
+
+    def __init__(self, io: IO, spec: XSpec) -> None:
         super().__init__(io=io, id=spec.id, _startcount=1)
         self.spec = spec
         self._initreceive()
 
     @property
-    def remoteaddress(self):
-        return self._io.remoteaddress
+    def remoteaddress(self) -> str:
+        # Only defined for remote IO types.
+        return self._io.remoteaddress  # type: ignore[attr-defined,no-any-return]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """return string representing gateway type and status."""
         try:
-            r = self.hasreceiver() and "receive-live" or "not-receiving"
-            i = len(self._channelfactory.channels())
+            r: str = self.hasreceiver() and "receive-live" or "not-receiving"
+            i = str(len(self._channelfactory.channels()))
         except AttributeError:
             r = "uninitialized"
             i = "no"
@@ -40,7 +52,7 @@ class Gateway(gateway_base.BaseGateway):
             self.__class__.__name__, self.id, r, self.execmodel.backend, i
         )
 
-    def exit(self):
+    def exit(self) -> None:
         """trigger gateway exit.  Defer waiting for finishing
         of receiver-thread and subprocess activity to when
         group.terminate() is called.
@@ -59,7 +71,9 @@ class Gateway(gateway_base.BaseGateway):
             self._trace("io-error: could not send termination sequence")
             self._trace(" exception: %r" % exc)
 
-    def reconfigure(self, py2str_as_py3str=True, py3str_as_py2str=False):
+    def reconfigure(
+        self, py2str_as_py3str: bool = True, py3str_as_py2str: bool = False
+    ) -> None:
         """
         set the string coercion for this gateway
         the default is to try to convert py2 str as py3 str,
@@ -69,7 +83,7 @@ class Gateway(gateway_base.BaseGateway):
         data = gateway_base.dumps_internal(self._strconfig)
         self._send(Message.RECONFIGURE, data=data)
 
-    def _rinfo(self, update=False):
+    def _rinfo(self, update: bool = False) -> RInfo:
         """return some sys/env information from remote."""
         if update or not hasattr(self, "_cache_rinfo"):
             ch = self.remote_exec(rinfo_source)
@@ -79,11 +93,11 @@ class Gateway(gateway_base.BaseGateway):
                 ch.waitclose()
         return self._cache_rinfo
 
-    def hasreceiver(self):
+    def hasreceiver(self) -> bool:
         """return True if gateway is able to receive data."""
         return self._receivepool.active_count() > 0
 
-    def remote_status(self):
+    def remote_status(self) -> RemoteStatus:
         """return information object about remote execution status."""
         channel = self.newchannel()
         self._send(Message.STATUS, channel.id)
@@ -93,7 +107,11 @@ class Gateway(gateway_base.BaseGateway):
         self._channelfactory._local_close(channel.id)
         return RemoteStatus(statusdict)
 
-    def remote_exec(self, source, **kwargs):
+    def remote_exec(
+        self,
+        source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
+        **kwargs: object,
+    ) -> Channel:
         """return channel object and connect it to a remote
         execution thread where the given ``source`` executes.
 
@@ -113,7 +131,7 @@ class Gateway(gateway_base.BaseGateway):
         file_name = None
         if isinstance(source, types.ModuleType):
             file_name = inspect.getsourcefile(source)
-            linecache.updatecache(file_name)
+            linecache.updatecache(file_name)  # type: ignore[arg-type]
             source = inspect.getsource(source)
         elif isinstance(source, types.FunctionType):
             call_name = source.__name__
@@ -133,24 +151,29 @@ class Gateway(gateway_base.BaseGateway):
         )
         return channel
 
-    def remote_init_threads(self, num=None):
+    def remote_init_threads(self, num: int | None = None) -> None:
         """DEPRECATED.  Is currently a NO-OPERATION already."""
         print("WARNING: remote_init_threads()" " is a no-operation in execnet-1.2")
 
 
 class RInfo:
-    def __init__(self, kwargs):
+    def __init__(self, kwargs) -> None:
         self.__dict__.update(kwargs)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         info = ", ".join(f"{k}={v}" for k, v in sorted(self.__dict__.items()))
         return "<RInfo %r>" % info
+
+    if TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            ...
 
 
 RemoteStatus = RInfo
 
 
-def rinfo_source(channel):
+def rinfo_source(channel) -> None:
     import os
     import sys
 
@@ -165,7 +188,7 @@ def rinfo_source(channel):
     )
 
 
-def _find_non_builtin_globals(source, codeobj):
+def _find_non_builtin_globals(source: str, codeobj: types.CodeType) -> list[str]:
     import ast
     import builtins
 
@@ -179,7 +202,7 @@ def _find_non_builtin_globals(source, codeobj):
     ]
 
 
-def _source_of_function(function):
+def _source_of_function(function: types.FunctionType | Callable[..., object]) -> str:
     if function.__name__ == "<lambda>":
         raise ValueError("can't evaluate lambda functions'")
     # XXX: we dont check before remote instantiation
