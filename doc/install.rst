@@ -1,7 +1,7 @@
 Info in a nutshell
 ====================
 
-**Pythons**: 3.7+, PyPy 3
+**Pythons**: 3.8+, PyPy 3
 
 **Operating systems**: Linux, Windows, OSX, Unix
 
