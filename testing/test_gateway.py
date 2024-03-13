@@ -1,6 +1,7 @@
 """
 mostly functional tests of gateways.
 """
+
 from __future__ import annotations
 
 import os

@@ -2,6 +2,7 @@
 gateway code for initiating popen, socket and ssh connections.
 (c) 2004-2013, Holger Krekel and others
 """
+
 from __future__ import annotations
 
 import inspect
@@ -48,9 +49,7 @@ class Gateway(gateway_base.BaseGateway):
         except AttributeError:
             r = "uninitialized"
             i = "no"
-        return "<{} id={!r} {}, {} model, {} active channels>".format(
-            self.__class__.__name__, self.id, r, self.execmodel.backend, i
-        )
+        return f"<{self.__class__.__name__} id={self.id!r} {r}, {self.execmodel.backend} model, {i} active channels>"
 
     def exit(self) -> None:
         """trigger gateway exit.  Defer waiting for finishing
@@ -166,8 +165,7 @@ class RInfo:
 
     if TYPE_CHECKING:
 
-        def __getattr__(self, name: str) -> Any:
-            ...
+        def __getattr__(self, name: str) -> Any: ...
 
 
 RemoteStatus = RInfo

@@ -11,6 +11,7 @@ NOTE: aims to be compatible to Python 2.5-3.X, Jython and IronPython
     - Ronny Pfannschmidt
     - many others
 """
+
 from __future__ import annotations
 
 import abc
@@ -32,51 +33,39 @@ from typing import overload
 
 
 class WriteIO(Protocol):
-    def write(self, data: bytes, /) -> None:
-        ...
+    def write(self, data: bytes, /) -> None: ...
 
 
 class ReadIO(Protocol):
-    def read(self, numbytes: int, /) -> bytes:
-        ...
+    def read(self, numbytes: int, /) -> bytes: ...
 
 
 class IO(Protocol):
     execmodel: ExecModel
 
-    def read(self, numbytes: int, /) -> bytes:
-        ...
+    def read(self, numbytes: int, /) -> bytes: ...
 
-    def write(self, data: bytes, /) -> None:
-        ...
+    def write(self, data: bytes, /) -> None: ...
 
-    def close_read(self) -> None:
-        ...
+    def close_read(self) -> None: ...
 
-    def close_write(self) -> None:
-        ...
+    def close_write(self) -> None: ...
 
-    def wait(self) -> int | None:
-        ...
+    def wait(self) -> int | None: ...
 
-    def kill(self) -> None:
-        ...
+    def kill(self) -> None: ...
 
 
 class Event(Protocol):
     """Protocol for types which look like threading.Event."""
 
-    def is_set(self) -> bool:
-        ...
+    def is_set(self) -> bool: ...
 
-    def set(self) -> None:
-        ...
+    def set(self) -> None: ...
 
-    def clear(self) -> None:
-        ...
+    def clear(self) -> None: ...
 
-    def wait(self, timeout: float | None = None) -> bool:
-        ...
+    def wait(self, timeout: float | None = None) -> bool: ...
 
 
 class ExecModel(metaclass=abc.ABCMeta):
@@ -973,9 +962,9 @@ MAIN_THREAD_ONLY_DEADLOCK_TEXT = (
 
 class ChannelFactory:
     def __init__(self, gateway: BaseGateway, startcount: int = 1) -> None:
-        self._channels: weakref.WeakValueDictionary[
-            int, Channel
-        ] = weakref.WeakValueDictionary()
+        self._channels: weakref.WeakValueDictionary[int, Channel] = (
+            weakref.WeakValueDictionary()
+        )
         # Channel ID => (callback, end marker, strconfig)
         self._callbacks: dict[
             int, tuple[Callable[[Any], Any], object, tuple[bool, bool]]

@@ -3,6 +3,7 @@
 
 (c) 2006-2009, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
+
 from __future__ import annotations
 
 import os

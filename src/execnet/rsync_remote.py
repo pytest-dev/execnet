@@ -1,6 +1,7 @@
 """
 (c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
