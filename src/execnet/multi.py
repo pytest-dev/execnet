@@ -3,6 +3,7 @@ Managing Gateway Groups and interactions with multiple channels.
 
 (c) 2008-2014, Holger Krekel and others
 """
+
 from __future__ import annotations
 
 import atexit

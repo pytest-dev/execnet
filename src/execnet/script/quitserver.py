@@ -1,8 +1,9 @@
 """
 
-  send a "quit" signal to a remote server
+send a "quit" signal to a remote server
 
 """
+
 from __future__ import annotations
 
 import socket

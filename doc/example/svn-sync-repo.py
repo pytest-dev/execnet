@@ -5,6 +5,7 @@ small utility for hot-syncing a svn repository through ssh.
 uses execnet.
 
 """
+
 import os
 import pathlib
 import subprocess

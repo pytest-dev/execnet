@@ -1,6 +1,7 @@
 """
-    tests for multi channels and gateway Groups
+tests for multi channels and gateway Groups
 """
+
 from __future__ import annotations
 
 import gc

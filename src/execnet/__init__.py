@@ -6,6 +6,7 @@ pure python lib for connecting to local and remote Python Interpreters.
 
 (c) 2012, Holger Krekel and others
 """
+
 from ._version import version as __version__
 from .gateway_base import DataFormatError
 from .gateway_base import RemoteError

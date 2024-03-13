@@ -5,6 +5,7 @@ obtain system info from remote machine.
 
 (c) Holger Krekel, MIT license
 """
+
 import optparse
 import re
 import sys

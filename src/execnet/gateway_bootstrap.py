@@ -1,6 +1,7 @@
 """
 code to initialize the remote side of a gateway once the io is created
 """
+
 from __future__ import annotations
 
 import inspect

@@ -1,14 +1,15 @@
 #! /usr/bin/env python
 """
-    start socket based minimal readline exec server
+start socket based minimal readline exec server
 
-    it can exeuted in 2 modes of operation
+it can exeuted in 2 modes of operation
 
-    1. as normal script, that listens for new connections
+1. as normal script, that listens for new connections
 
-    2. via existing_gateway.remote_exec (as imported module)
+2. via existing_gateway.remote_exec (as imported module)
 
 """
+
 # this part of the program only executes on the server side
 #
 from __future__ import annotations
