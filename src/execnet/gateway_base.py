@@ -1203,7 +1203,7 @@ class BaseGateway:
     def join(self, timeout: float | None = None) -> None:
         """Wait for receiverthread to terminate."""
         self._trace("waiting for receiver thread to finish")
-        self._receivepool.waitall()
+        self._receivepool.waitall(timeout)
 
 
 class WorkerGateway(BaseGateway):
