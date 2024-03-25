@@ -1,5 +1,5 @@
-"""
-gateway code for initiating popen, socket and ssh connections.
+"""Gateway code for initiating popen, socket and ssh connections.
+
 (c) 2004-2013, Holger Krekel and others
 """
 
@@ -42,7 +42,7 @@ class Gateway(gateway_base.BaseGateway):
         return self._io.remoteaddress  # type: ignore[attr-defined,no-any-return]
 
     def __repr__(self) -> str:
-        """return string representing gateway type and status."""
+        """A string representing gateway type and status."""
         try:
             r: str = self.hasreceiver() and "receive-live" or "not-receiving"
             i = str(len(self._channelfactory.channels()))
@@ -52,9 +52,10 @@ class Gateway(gateway_base.BaseGateway):
         return f"<{self.__class__.__name__} id={self.id!r} {r}, {self.execmodel.backend} model, {i} active channels>"
 
     def exit(self) -> None:
-        """trigger gateway exit.  Defer waiting for finishing
-        of receiver-thread and subprocess activity to when
-        group.terminate() is called.
+        """Trigger gateway exit.
+
+        Defer waiting for finishing of receiver-thread and subprocess activity
+        to when group.terminate() is called.
         """
         self._trace("gateway.exit() called")
         if self not in self._group:
@@ -73,17 +74,17 @@ class Gateway(gateway_base.BaseGateway):
     def reconfigure(
         self, py2str_as_py3str: bool = True, py3str_as_py2str: bool = False
     ) -> None:
-        """
-        set the string coercion for this gateway
-        the default is to try to convert py2 str as py3 str,
-        but not to try and convert py3 str to py2 str
+        """Set the string coercion for this gateway.
+
+        The default is to try to convert py2 str as py3 str, but not to try and
+        convert py3 str to py2 str.
         """
         self._strconfig = (py2str_as_py3str, py3str_as_py2str)
         data = gateway_base.dumps_internal(self._strconfig)
         self._send(Message.RECONFIGURE, data=data)
 
     def _rinfo(self, update: bool = False) -> RInfo:
-        """return some sys/env information from remote."""
+        """Return some sys/env information from remote."""
         if update or not hasattr(self, "_cache_rinfo"):
             ch = self.remote_exec(rinfo_source)
             try:
@@ -93,11 +94,11 @@ class Gateway(gateway_base.BaseGateway):
         return self._cache_rinfo
 
     def hasreceiver(self) -> bool:
-        """return True if gateway is able to receive data."""
+        """Whether gateway is able to receive data."""
         return self._receivepool.active_count() > 0
 
     def remote_status(self) -> RemoteStatus:
-        """return information object about remote execution status."""
+        """Obtain information about the remote execution status."""
         channel = self.newchannel()
         self._send(Message.STATUS, channel.id)
         statusdict = channel.receive()
@@ -111,7 +112,7 @@ class Gateway(gateway_base.BaseGateway):
         source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
         **kwargs: object,
     ) -> Channel:
-        """return channel object and connect it to a remote
+        """Return channel object and connect it to a remote
         execution thread where the given ``source`` executes.
 
         * ``source`` is a string: execute source string remotely
@@ -120,7 +121,7 @@ class Gateway(gateway_base.BaseGateway):
           call function with ``**kwargs``, adding a
           ``channel`` object to the keyword arguments.
         * ``source`` is a pure module: execute source of module
-          with a ``channel`` in its global namespace
+          with a ``channel`` in its global namespace.
 
         In all cases the binding ``__name__='__channelexec__'``
         will be available in the global namespace of the remotely
@@ -152,7 +153,7 @@ class Gateway(gateway_base.BaseGateway):
 
     def remote_init_threads(self, num: int | None = None) -> None:
         """DEPRECATED.  Is currently a NO-OPERATION already."""
-        print("WARNING: remote_init_threads()" " is a no-operation in execnet-1.2")
+        print("WARNING: remote_init_threads() is a no-operation in execnet-1.2")
 
 
 class RInfo:

@@ -1,6 +1,4 @@
-"""
-code to initialize the remote side of a gateway once the io is created
-"""
+"""Code to initialize the remote side of a gateway once the IO is created."""
 
 from __future__ import annotations
 
@@ -22,9 +20,9 @@ class HostNotFound(Exception):
 
 
 def bootstrap_import(io: IO, spec: XSpec) -> None:
-    # only insert the importdir into the path if we must.  This prevents
+    # Only insert the importdir into the path if we must.  This prevents
     # bugs where backports expect to be shadowed by the standard library on
-    # newer versions of python but would instead shadow the standard library
+    # newer versions of python but would instead shadow the standard library.
     sendexec(
         io,
         "import sys",

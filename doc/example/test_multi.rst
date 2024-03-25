@@ -1,4 +1,4 @@
-advanced (multi) channel communication
+Advanced (multi) channel communication
 =====================================================
 
 MultiChannel: container for multiple channels
@@ -19,7 +19,7 @@ Use ``execnet.MultiChannel`` to work with multiple channels::
     >>> sum(mch.receive_each())
     3
 
-receive results from sub processes with a Queue
+Receive results from sub processes with a Queue
 -----------------------------------------------------
 
 Use ``MultiChannel.make_receive_queue()`` to get a queue
@@ -52,7 +52,7 @@ data immediately and without blocking execution::
 Note that the callback function will be executed in the
 receiver thread and should not block or run for too long.
 
-robustly receive results and termination notification
+Robustly receive results and termination notification
 -----------------------------------------------------
 
 Use ``MultiChannel.make_receive_queue(endmarker)`` to specify
@@ -76,7 +76,7 @@ is blocked in execution and is terminated/killed::
 
 
 
-saturate multiple Hosts and CPUs with tasks to process
+Saturate multiple Hosts and CPUs with tasks to process
 --------------------------------------------------------
 
 If you have multiple CPUs or hosts you can create as many
