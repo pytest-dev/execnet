@@ -164,13 +164,6 @@ you can execute this little test file::
     <RInfo 'numchannels=0, numexecuting=0, execmodel=thread'>
     1
 
-.. note::
-
-    With python3 you can (as of December 2013) only use the thread model
-    because neither eventlet-0.14.0 nor gevent-1.0 support Python3.
-    When they start to support Python3, execnet will probably just work
-    because it is itself Python3 compatible.
-
 How to execute in the main thread
 ------------------------------------------------
 
