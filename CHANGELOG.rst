@@ -14,6 +14,7 @@
 
   Also fixed ``init_popen_io`` to use ``closefd=False`` for shared stdin and stdout file
   descriptors, preventing ``Bad file descriptor`` errors triggered by test_stdouterrin_setnull.
+* The library is now typed and the typing is exposed to type-checkers.
 * Re-exported ``Gateway`` and ``Channel`` from ``execnet``. The constructors
   are private.
 * Fixed ``GatewayBase.join()`` timeout argument getting ignored.
