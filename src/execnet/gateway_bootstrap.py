@@ -8,7 +8,6 @@ import os
 import execnet
 
 from . import gateway_base
-from .gateway import Gateway
 from .gateway_base import IO
 from .xspec import XSpec
 
@@ -81,7 +80,7 @@ def sendexec(io: IO, *sources: str) -> None:
     io.write((repr(source) + "\n").encode("utf-8"))
 
 
-def bootstrap(io: IO, spec: XSpec) -> Gateway:
+def bootstrap(io: IO, spec: XSpec) -> execnet.Gateway:
     if spec.popen:
         if spec.via or spec.python:
             bootstrap_exec(io, spec)
@@ -93,5 +92,5 @@ def bootstrap(io: IO, spec: XSpec) -> Gateway:
         bootstrap_socket(io, spec)
     else:
         raise ValueError("unknown gateway type, can't bootstrap")
-    gw = Gateway(io, spec)
+    gw = execnet.Gateway(io, spec)
     return gw

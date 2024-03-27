@@ -8,6 +8,8 @@ pure python lib for connecting to local and remote Python Interpreters.
 """
 
 from ._version import version as __version__
+from .gateway import Gateway
+from .gateway_base import Channel
 from .gateway_base import DataFormatError
 from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
@@ -32,10 +34,12 @@ __all__ = [
     "RemoteError",
     "TimeoutError",
     "XSpec",
+    "Gateway",
     "Group",
     "MultiChannel",
     "RSync",
     "default_group",
+    "Channel",
     "dumps",
     "loads",
     "load",

@@ -708,6 +708,7 @@ class Channel:
     _executing = False
 
     def __init__(self, gateway: BaseGateway, id: int) -> None:
+        """:private:"""
         assert isinstance(id, int)
         assert not isinstance(gateway, type)
         self.gateway = gateway
