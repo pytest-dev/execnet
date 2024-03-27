@@ -67,7 +67,7 @@ class RSync:
         channel.send(42)
 
     def _done(self, channel: Channel) -> None:
-        """Call all callbacks"""
+        """Call all callbacks."""
         finishedcallback = self._channels.pop(channel)
         if finishedcallback:
             finishedcallback()
@@ -85,7 +85,7 @@ class RSync:
         modified_rel_path_components: list[str],
         checksum: bytes,
     ) -> None:
-        """Send one item"""
+        """Send one item."""
         modifiedpath = os.path.join(self._sourcedir, *modified_rel_path_components)
         try:
             f = open(modifiedpath, "rb")
@@ -117,9 +117,10 @@ class RSync:
             print(f"{gateway} <= {modified_rel_path}")
 
     def send(self, raises: bool = True) -> None:
-        """Sends a sourcedir to all added targets. Flag indicates
-        whether to raise an error or return in case of lack of
-        targets
+        """Sends a sourcedir to all added targets.
+
+        raises indicates whether to raise an error or return in case of lack of
+        targets.
         """
         if not self._channels:
             if raises:
@@ -164,9 +165,8 @@ class RSync:
         finishedcallback: Callable[[], None] | None = None,
         **options,
     ) -> None:
-        """Adds a remote target specified via a gateway
-        and a remote destination directory.
-        """
+        """Add a remote target specified via a gateway and a remote destination
+        directory."""
         for name in options:
             assert name in ("delete",)
 

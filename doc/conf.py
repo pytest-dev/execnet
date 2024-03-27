@@ -26,7 +26,11 @@ release = ".".join(version.split(".")[:2])
 # Add any Sphinx extension module names here, as strings.
 # They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = ["sphinx.ext.autodoc", "sphinx.ext.doctest"]
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.doctest",
+    "sphinx.ext.intersphinx",
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -83,6 +87,16 @@ pygments_style = "sphinx"
 # A list of ignored prefixes for module index sorting.
 # modindex_common_prefix = []
 
+intersphinx_mapping = {
+    "python": ("https://docs.python.org/3", None),
+}
+
+nitpicky = True
+nitpick_ignore = [
+    ("py:class", "execnet.gateway_base.ChannelFileRead"),
+    ("py:class", "execnet.gateway_base.ChannelFileWrite"),
+    ("py:class", "execnet.gateway.Gateway"),
+]
 
 # -- Options for HTML output --------------------------------------------------
 

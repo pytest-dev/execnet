@@ -1,5 +1,3 @@
-
-
 .. image:: _static/pythonring.png
    :align: right
 
@@ -17,9 +15,9 @@ communication for distributing execution across many Python interpreters
 across version, platform and network barriers.  It has
 a minimal and fast API targeting the following uses:
 
-* distribute tasks to (many) local or remote CPUs
-* write and deploy hybrid multi-process applications
-* write scripts to administer multiple environments
+* Distribute tasks to (many) local or remote CPUs
+* Write and deploy hybrid multi-process applications
+* Write scripts to administer multiple environments
 
 .. _`channel-send/receive`: http://en.wikipedia.org/wiki/Channel_(programming)
 .. _`share-nothing model`: http://en.wikipedia.org/wiki/Shared_nothing_architecture
@@ -30,25 +28,25 @@ a minimal and fast API targeting the following uses:
 Features
 ------------------
 
-* automatic bootstrapping: no manual remote installation.
+* Automatic bootstrapping: no manual remote installation.
 
-* safe and simple serialization of python builtin
+* Safe and simple serialization of Python builtin
   types for sending/receiving structured data messages.
   (New in 1.1) execnet offers a new :ref:`dumps/loads <dumps/loads>`
   API which allows cross-interpreter compatible serialization
   of Python builtin types.
 
-* flexible communication: synchronous send/receive as well as
+* Flexible communication: synchronous send/receive as well as
   callback/queue mechanisms supported
 
-* easy creation, handling and termination of multiple processes
+* Easy creation, handling and termination of multiple processes
 
-* well tested interactions between CPython 2.5-2.7, CPython-3.3, Jython 2.5.1
+* Well tested interactions between CPython 2.5-2.7, CPython-3.3, Jython 2.5.1
   and PyPy interpreters.
 
-* fully interoperable between Windows and Unix-ish systems.
+* Fully interoperable between Windows and Unix-ish systems.
 
-* many tested :doc:`examples`
+* Many tested :doc:`examples`
 
 Known uses
 -------------------
@@ -64,7 +62,7 @@ Known uses
 * Ronny Pfannschmidt uses it for his `anyvc`_ VCS-abstraction project
   to bridge the Python2/Python3 version gap.
 
-* sysadmins and developers are using it for ad-hoc custom scripting
+* Sysadmins and developers are using it for ad-hoc custom scripting
 
 .. _`quora`: http://quora.com
 .. _`connecting CPython and PyPy`: http://www.quora.com/Quora-Infrastructure/Did-Quoras-switch-to-PyPy-result-in-increased-memory-consumption
@@ -87,7 +85,6 @@ used as backend of the popular `pytest-xdist <https://github.com/pytest-dev/pyte
 since version 1.2.
 
 .. _`basic API`: basics.html
-.. _`actively developed`: https://github.com/pytest-dev/execnet
 .. _`Holger Krekel`: http://twitter.com/hpk42
 
 .. toctree::

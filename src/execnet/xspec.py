@@ -7,11 +7,12 @@ from __future__ import annotations
 
 class XSpec:
     """Execution Specification: key1=value1//key2=value2 ...
-    * keys need to be unique within the specification scope
-    * neither key nor value are allowed to contain "//"
-    * keys are not allowed to contain "="
-    * keys are not allowed to start with underscore
-    * if no "=value" is given, assume a boolean True value
+
+    * Keys need to be unique within the specification scope
+    * Neither key nor value are allowed to contain "//"
+    * Keys are not allowed to contain "="
+    * Keys are not allowed to start with underscore
+    * If no "=value" is given, assume a boolean True value
     """
 
     # XXX allow customization, for only allow specific key names

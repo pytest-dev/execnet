@@ -1,5 +1,5 @@
-basic local and remote communication
-=========================================
+Basic local and remote communication
+====================================
 
 Execute source code in subprocess, communicate through a channel
 -------------------------------------------------------------------
@@ -25,8 +25,8 @@ messages between two processes.
 
 .. _`share-nothing model`: http://en.wikipedia.org/wiki/Shared_nothing_architecture
 
-remote-exec a function (avoiding inlined source part I)
--------------------------------------------------------------------
+Remote-exec a function (avoiding inlined source part I)
+-------------------------------------------------------
 
 You can send and remote execute parametrized pure functions like this:
 
@@ -49,8 +49,8 @@ Notes:
   between the nodes).
 
 
-remote-exec a module (avoiding inlined source part II)
---------------------------------------------------------------
+Remote-exec a module (avoiding inlined source part II)
+------------------------------------------------------
 
 You can pass a module object to ``remote_exec`` in which case
 its source code will be sent.  No dependencies will be transferred
@@ -86,8 +86,8 @@ A local subprocess gateway has the same working directory as the instantiatior::
 
 "ssh" gateways default to the login home directory.
 
-Get information from remote ssh account
---------------------------------------------
+Get information from remote SSH account
+---------------------------------------
 
 Use simple execution to obtain information from remote environments::
 
@@ -143,7 +143,7 @@ and use it to transfer information::
 
 
 
-a simple command loop pattern
+A simple command loop pattern
 --------------------------------------------------------------
 
 If you want the remote side to serve a number
@@ -189,6 +189,6 @@ itself into the remote socket endpoint::
     gw = execnet.makegateway("socket=TARGET-IP:8888")
 
 That's it, you can now use the gateway object just like
-a popen- or ssh-based one.
+a popen- or SSH-based one.
 
 .. include:: test_ssh_fileserver.rst

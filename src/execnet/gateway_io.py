@@ -1,7 +1,6 @@
-"""
-execnet io initialization code
+"""execnet IO initialization code.
 
-creates io instances used for gateway io
+Creates IO instances used for gateway IO.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ class Popen2IOMaster(Popen2IO):
     # Set externally, for some specs only.
     remoteaddress: str
 
-    def __init__(self, args, execmodel) -> None:
+    def __init__(self, args, execmodel: ExecModel) -> None:
         PIPE = execmodel.subprocess.PIPE
         self.popen = p = execmodel.subprocess.Popen(args, stdout=PIPE, stdin=PIPE)
         super().__init__(p.stdin, p.stdout, execmodel=execmodel)
@@ -105,7 +104,7 @@ def vagrant_ssh_args(spec: XSpec) -> list[str]:
     return args
 
 
-def create_io(spec: XSpec, execmodel) -> Popen2IOMaster:
+def create_io(spec: XSpec, execmodel: ExecModel) -> Popen2IOMaster:
     if spec.popen:
         args = popen_args(spec)
         return Popen2IOMaster(args, execmodel)
@@ -137,11 +136,12 @@ RIO_CLOSE_WRITE = 4
 
 class ProxyIO:
     """A Proxy IO object allows to instantiate a Gateway
-    through another "via" gateway.  A master:ProxyIO object
-    provides an IO object effectively connected to the sub
-    via the forwarder.  To achieve this, master:ProxyIO interacts
-    with forwarder:serve_proxy_io() which itself
-    instantiates and interacts with the sub.
+    through another "via" gateway.
+
+    A master:ProxyIO object provides an IO object effectively connected to the
+    sub via the forwarder. To achieve this, master:ProxyIO interacts with
+    forwarder:serve_proxy_io() which itself instantiates and interacts with the
+    sub.
     """
 
     def __init__(self, proxy_channel: Channel, execmodel: ExecModel) -> None:

@@ -1,4 +1,3 @@
-
 Receive file contents from remote SSH account
 -----------------------------------------------------
 

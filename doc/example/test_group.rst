@@ -5,7 +5,7 @@ Usings Groups for managing multiple gateways
 ------------------------------------------------------
 
 Use ``execnet.Group`` to manage membership and lifetime of
-of multiple gateways::
+multiple gateways::
 
     >>> import execnet
     >>> group = execnet.Group(['popen'] * 2)
@@ -25,7 +25,7 @@ of multiple gateways::
     >>> group
     <Group []>
 
-Assigning Gateway IDs
+Assigning gateway IDs
 ------------------------------------------------------
 
 All gateways are created as part of a group and receive
@@ -66,12 +66,12 @@ you actually use the ``execnet.default_group``::
     >>> execnet.default_group.defaultspec # used for empty makegateway() calls
     'popen'
 
-Robust Termination of ssh/popen processes
+Robust termination of SSH/popen processes
 -----------------------------------------------
 
 Use ``group.terminate(timeout)`` if you want to terminate
-member gateways and ensure that no local sub processes remain
-you can specify a ``timeout`` after which an attempt at killing
+member gateways and ensure that no local subprocesses remain.
+You can specify a ``timeout`` after which an attempt at killing
 the related process is made::
 
     >>> import execnet
@@ -86,7 +86,7 @@ the related process is made::
 
 execnet aims to provide totally robust termination so if
 you have left-over processes or other termination issues
-please :doc:`report them <../support>`.  thanks!
+please :doc:`report them <../support>`.  Thanks!
 
 
 Using Groups to manage a certain type of gateway

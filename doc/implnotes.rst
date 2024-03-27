@@ -1,8 +1,7 @@
-
 gateway_base.py
 ----------------------
 
-the code of this module is sent to the "other side"
+The code of this module is sent to the "other side"
 as a means of bootstrapping a Gateway object
 capable of receiving and executing code,
 and routing data through channels.

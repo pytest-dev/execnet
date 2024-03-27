@@ -1,5 +1,5 @@
 
-Debugging execnet / Wire messages
+Debugging execnet / wire messages
 ===============================================================
 
 By setting the environment variable ``EXECNET_DEBUG`` you can

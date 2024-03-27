@@ -35,15 +35,16 @@ NO_ENDMARKER_WANTED = object()
 
 
 class Group:
-    """Gateway Groups."""
+    """Gateway Group."""
 
     defaultspec = "popen"
 
     def __init__(
         self, xspecs: Iterable[XSpec | str | None] = (), execmodel: str = "thread"
     ) -> None:
-        """initialize group and make gateways as specified.
-        execmodel can be 'thread' or 'eventlet'.
+        """Initialize a group and make gateways as specified.
+
+        execmodel can be one of the supported execution models.
         """
         self._gateways: list[Gateway] = []
         self._autoidcounter = 0
@@ -72,13 +73,11 @@ class Group:
     ) -> None:
         """Set the execution model for local and remote site.
 
-        execmodel can be one of "thread" or "eventlet" (XXX gevent).
+        execmodel can be one of the supported execution models.
         It determines the execution model for any newly created gateway.
-        If remote_execmodel is not specified it takes on the value
-        of execmodel.
+        If remote_execmodel is not specified it takes on the value of execmodel.
 
         NOTE: Execution models can only be set before any gateway is created.
-
         """
         if self._gateways:
             raise ValueError(
@@ -115,7 +114,8 @@ class Group:
         return iter(list(self._gateways))
 
     def makegateway(self, spec: XSpec | str | None = None) -> Gateway:
-        """create and configure a gateway to a Python interpreter.
+        """Create and configure a gateway to a Python interpreter.
+
         The ``spec`` string encodes the target gateway type
         and configuration information. The general format is::
 
@@ -127,7 +127,7 @@ class Group:
 
             id=<string>     specifies the gateway id
             python=<path>   specifies which python interpreter to execute
-            execmodel=model 'thread', 'main_thread_only', 'eventlet', 'gevent' model for execution
+            execmodel=model 'thread', 'main_thread_only', 'eventlet', 'gevent' execution model
             chdir=<path>    specifies to which directory to change
             nice=<path>     specifies process priority of new process
             env:NAME=value  specifies a remote environment variable setting.
@@ -207,13 +207,15 @@ class Group:
         self.terminate(timeout=1.0)
 
     def terminate(self, timeout: float | None = None) -> None:
-        """trigger exit of member gateways and wait for termination
-        of member gateways and associated subprocesses.  After waiting
-        timeout seconds try to to kill local sub processes of popen-
-        and ssh-gateways.  Timeout defaults to None meaning
-        open-ended waiting and no kill attempts.
-        """
+        """Trigger exit of member gateways and wait for termination
+        of member gateways and associated subprocesses.
 
+        After waiting timeout seconds try to to kill local sub processes of
+        popen- and ssh-gateways.
+
+        Timeout defaults to None meaning open-ended waiting and no kill
+        attempts.
+        """
         while self:
             vias: set[str] = set()
             for gw in self:
@@ -247,8 +249,7 @@ class Group:
         **kwargs,
     ) -> MultiChannel:
         """remote_exec source on all member gateways and return
-        MultiChannel connecting to all sub processes.
-        """
+        a MultiChannel connecting to all sub processes."""
         channels = []
         for gw in self:
             channels.append(gw.remote_exec(source, **kwargs))
