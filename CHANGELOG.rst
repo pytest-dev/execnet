@@ -14,6 +14,8 @@
 
   Also fixed ``init_popen_io`` to use ``closefd=False`` for shared stdin and stdout file
   descriptors, preventing ``Bad file descriptor`` errors triggered by test_stdouterrin_setnull.
+* Re-exported ``Gateway`` and ``Channel`` from ``execnet``. The constructors
+  are private.
 * Fixed ``GatewayBase.join()`` timeout argument getting ignored.
 * Removed support for Python 3.7.
 * Added official support for Python 3.12.

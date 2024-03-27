@@ -27,6 +27,7 @@ class Gateway(gateway_base.BaseGateway):
     _group: Group
 
     def __init__(self, io: IO, spec: XSpec) -> None:
+        """:private:"""
         super().__init__(io=io, id=spec.id, _startcount=1)
         self.spec = spec
         self._initreceive()
