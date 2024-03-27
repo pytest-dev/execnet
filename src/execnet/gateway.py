@@ -7,14 +7,11 @@ from __future__ import annotations
 
 import inspect
 import linecache
-import os
 import textwrap
 import types
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Callable
-
-import execnet
 
 from . import gateway_base
 from .gateway_base import IO
@@ -22,8 +19,6 @@ from .gateway_base import Channel
 from .gateway_base import Message
 from .multi import Group
 from .xspec import XSpec
-
-importdir = os.path.dirname(os.path.dirname(execnet.__file__))
 
 
 class Gateway(gateway_base.BaseGateway):
