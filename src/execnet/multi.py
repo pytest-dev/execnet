@@ -11,6 +11,7 @@ import types
 from functools import partial
 from threading import Lock
 from typing import TYPE_CHECKING
+from typing import Any
 from typing import Callable
 from typing import Iterable
 from typing import Iterator
@@ -277,16 +278,16 @@ class MultiChannel:
             ch.send(item)
 
     @overload
-    def receive_each(self, withchannel: Literal[False] = ...) -> list[object]:
+    def receive_each(self, withchannel: Literal[False] = ...) -> list[Any]:
         pass
 
     @overload
-    def receive_each(self, withchannel: Literal[True]) -> list[tuple[Channel, object]]:
+    def receive_each(self, withchannel: Literal[True]) -> list[tuple[Channel, Any]]:
         pass
 
     def receive_each(
         self, withchannel: bool = False
-    ) -> list[tuple[Channel, object]] | list[object]:
+    ) -> list[tuple[Channel, Any]] | list[Any]:
         assert not hasattr(self, "_queue")
         l: list[object] = []
         for ch in self._channels:

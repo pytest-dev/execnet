@@ -911,7 +911,7 @@ class Channel:
             raise OSError(f"cannot send to {self!r}")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
-    def receive(self, timeout: float | None = None) -> object:
+    def receive(self, timeout: float | None = None) -> Any:
         """Receive a data item that was sent from the other side.
 
         timeout: None [default] blocked waiting. A positive number
@@ -935,10 +935,10 @@ class Channel:
         else:
             return x
 
-    def __iter__(self) -> Iterator[object]:
+    def __iter__(self) -> Iterator[Any]:
         return self
 
-    def next(self) -> object:
+    def next(self) -> Any:
         try:
             return self.receive()
         except EOFError:
@@ -1403,7 +1403,7 @@ class Unserializer:
         else:
             self.channelfactory = gw._channelfactory
 
-    def load(self, versioned: bool = False) -> object:
+    def load(self, versioned: bool = False) -> Any:
         if versioned:
             ver = self.stream.read(1)
             if ver != DUMPFORMAT_VERSION:
@@ -1587,7 +1587,7 @@ def dump(byteio, obj: object) -> None:
 
 def loads(
     bytestring: bytes, py2str_as_py3str: bool = False, py3str_as_py2str: bool = False
-) -> object:
+) -> Any:
     """Deserialize the given bytestring to an object.
 
     py2str_as_py3str: If true then string (str) objects previously
@@ -1609,7 +1609,7 @@ def loads(
 
 def load(
     io: ReadIO, py2str_as_py3str: bool = False, py3str_as_py2str: bool = False
-) -> object:
+) -> Any:
     """Derserialize an object form the specified stream.
 
     Behaviour and parameters are otherwise the same as with ``loads``
@@ -1622,7 +1622,7 @@ def loads_internal(
     bytestring: bytes,
     channelfactory=None,
     strconfig: tuple[bool, bool] | None = None,
-) -> object:
+) -> Any:
     io = BytesIO(bytestring)
     return Unserializer(io, channelfactory, strconfig).load()
 
