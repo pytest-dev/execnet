@@ -11,6 +11,8 @@ from ._version import version as __version__
 from .gateway import Gateway
 from .gateway_base import Channel
 from .gateway_base import DataFormatError
+from .gateway_base import DumpError
+from .gateway_base import LoadError
 from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
 from .gateway_base import dump
@@ -41,8 +43,10 @@ __all__ = [
     "default_group",
     "Channel",
     "dumps",
+    "dump",
+    "DumpError",
     "loads",
     "load",
-    "dump",
+    "LoadError",
     "DataFormatError",
 ]
