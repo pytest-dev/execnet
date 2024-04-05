@@ -1,4 +1,4 @@
-2.1.0 (UNRELEASED)
+2.1.0 (2024-04-05)
 ------------------
 
 * `#243 <https://github.com/pytest-dev/execnet/pull/243>`__: Added ``main_thread_only``
