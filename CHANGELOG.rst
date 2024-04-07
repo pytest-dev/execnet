@@ -1,5 +1,5 @@
-TBD
----
+2.1.1 (2024-04-08)
+------------------
 
 * `#267 <https://github.com/pytest-dev/execnet/issue/267>`__ Fixed regression
   in 2.1.0 where the ``strconfig`` argument to ``load``/``loads`` is ignored.
