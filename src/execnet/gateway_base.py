@@ -1391,9 +1391,7 @@ class Unserializer:
             gw: BaseGateway | None = channel_or_gateway.gateway
         else:
             gw = channel_or_gateway
-        if channel_or_gateway is None:
-            strconfig = None
-        else:
+        if channel_or_gateway is not None:
             strconfig = channel_or_gateway._strconfig
         if strconfig:
             self.py2str_as_py3str, self.py3str_as_py2str = strconfig

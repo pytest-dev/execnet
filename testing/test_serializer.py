@@ -163,3 +163,8 @@ def test_tuple_nested_with_empty_in_between(dump, load) -> None:
     tp, s = load(p)
     assert tp == "tuple"
     assert s == "(1, (), 3)"
+
+
+def test_py2_string_loads() -> None:
+    """Regression test for #267."""
+    assert execnet.loads(b"\x02M\x00\x00\x00\x01aQ") == b"a"
