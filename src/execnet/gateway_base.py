@@ -207,9 +207,9 @@ class EventletExecModel(ExecModel):
 
     def sleep(self, delay: float) -> None:
         import eventlet
-# f = open("/tmp/execnet-%s" % os.getpid(), "w")
-# def log_extra(*msg):
-#     f.write(" ".join([str(x) for x in msg]) + "\n")
+        # f = open("/tmp/execnet-%s" % os.getpid(), "w")
+        # def log_extra(*msg):
+        #     f.write(" ".join([str(x) for x in msg]) + "\n")
 
         eventlet.sleep(delay)
 
