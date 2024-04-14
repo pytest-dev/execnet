@@ -119,8 +119,7 @@ def decode_b85_zip_json(encoded: bytes | str):
 
 @runtime_checkable
 class SourceProvidingLoader(Protocol):
-    def get_source(self, name: str) -> str:
-        ...
+    def get_source(self, name: str) -> str: ...
 
 
 def naive_pack_module(module: types.ModuleType, dist: Distribution) -> object:
