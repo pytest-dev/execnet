@@ -645,3 +645,47 @@ def test_main_thread_only_concurrent_remote_exec_deadlock(
             ch.close()
         gw.exit()
         gw.join()
+
+
+def test_concurrent_rinfo(execmodel: gateway_base.ExecModel) -> None:
+    # Use a temporary Group to force the desired execmodel, since
+    # groups used by fixtures tend to use the thread execmodel.
+    group = execnet.Group(execmodel=execmodel.backend)
+    gw = group.makegateway(f"execmodel={execmodel.backend}//popen")
+
+    # For main_thread_only _rinfo will deadlock unless the gateway
+    # has cached the result earlier, but only if sleep_time
+    # exceeds the 1 second grace period in the WorkerGateway
+    # _local_schedulexec method. For other execmodels, a shorter
+    # sleep_time is sufficient to test concurrent _rinfo.
+    sleep_time = 1.5 if execmodel.backend == "main_thread_only" else 0.5
+    try:
+        if execmodel.backend == "main_thread_only":
+            # Cache rinfo like pytest-dist does for backward compatibility,
+            # in order to prevent a deadlock error when pytest-cov requests
+            # rinfo while the main thread is busy with the pytest-xdist
+            # WorkerController's remote_exec call.
+            gw._rinfo()
+            assert hasattr(gw, "_cache_rinfo")
+
+        ch = gw.remote_exec(
+            """
+                import os, time
+                time.sleep({sleep_time})
+                channel.send(os.getpid())
+        """.format(
+                sleep_time=sleep_time
+            )
+        )
+        rinfo = gw._rinfo()
+        try:
+            res = ch.receive()
+        finally:
+            ch.close()
+            ch.waitclose()
+
+        assert res == rinfo.pid
+    finally:
+        gw.exit()
+        gw.join()
+        group.terminate(0.5)
