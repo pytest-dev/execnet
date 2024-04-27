@@ -669,13 +669,11 @@ def test_concurrent_rinfo(execmodel: gateway_base.ExecModel) -> None:
             assert hasattr(gw, "_cache_rinfo")
 
         ch = gw.remote_exec(
-            """
+            f"""
                 import os, time
                 time.sleep({sleep_time})
                 channel.send(os.getpid())
-        """.format(
-                sleep_time=sleep_time
-            )
+        """
         )
         rinfo = gw._rinfo()
         try:
