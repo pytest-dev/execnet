@@ -207,6 +207,9 @@ class EventletExecModel(ExecModel):
 
     def sleep(self, delay: float) -> None:
         import eventlet
+        # f = open("/tmp/execnet-%s" % os.getpid(), "w")
+        # def log_extra(*msg):
+        #     f.write(" ".join([str(x) for x in msg]) + "\n")
 
         eventlet.sleep(delay)
 
@@ -313,6 +316,8 @@ class Reply:
     """Provide access to the result of a function execution that got dispatched
     through WorkerPool.spawn()."""
 
+    _exception: BaseException | None = None
+
     def __init__(self, task, threadmodel: ExecModel) -> None:
         self.task = task
         self._result_ready = threadmodel.Event()
@@ -325,10 +330,10 @@ class Reply:
         including its traceback.
         """
         self.waitfinish(timeout)
-        try:
+        if self._exception is None:
             return self._result
-        except AttributeError:
-            raise self._exc from None
+        else:
+            raise self._exception.with_traceback(self._exception.__traceback__)
 
     def waitfinish(self, timeout: float | None = None) -> None:
         if not self._result_ready.wait(timeout):
@@ -339,8 +344,9 @@ class Reply:
         try:
             try:
                 self._result = func(*args, **kwargs)
-            except BaseException as exc:
-                self._exc = exc
+            except BaseException as e:
+                # sys may be already None when shutting down the interpreter
+                self._exception = e
         finally:
             self._result_ready.set()
             self.running = False
@@ -523,7 +529,9 @@ class Popen2IO:
             except (AttributeError, OSError):
                 pass
         self._read = getattr(infile, "buffer", infile).read
-        self._write = getattr(outfile, "buffer", outfile).write
+        _outfile = getattr(outfile, "buffer", outfile)
+        self._write = _outfile.write
+        self._flush = _outfile.flush
         self.execmodel = execmodel
 
     def read(self, numbytes: int) -> bytes:
@@ -541,7 +549,7 @@ class Popen2IO:
         """Write out all data bytes."""
         assert isinstance(data, bytes)
         self._write(data)
-        self.outfile.flush()
+        self._flush()
 
     def close_read(self) -> None:
         self.infile.close()
