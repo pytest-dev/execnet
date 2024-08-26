@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import pytest
+
 from execnet.gateway_base import ExecModel
 from execnet.gateway_base import WorkerPool
 

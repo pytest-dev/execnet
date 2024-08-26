@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Any
 from typing import Callable
 
-import execnet
 import pytest
+
+import execnet
 from execnet import gateway
 from execnet import gateway_base
 from execnet import gateway_io

@@ -6,12 +6,13 @@ import subprocess
 import sys
 from typing import Callable
 
-import execnet
 import pytest
+from test_gateway import TESTTIMEOUT
+
+import execnet
 from execnet.gateway import Gateway
 from execnet.gateway_base import ExecModel
 from execnet.gateway_base import WorkerPool
-from test_gateway import TESTTIMEOUT
 
 execnetdir = pathlib.Path(execnet.__file__).parent.parent
 

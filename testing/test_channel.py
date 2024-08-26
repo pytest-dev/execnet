@@ -7,6 +7,7 @@ from __future__ import annotations
 import time
 
 import pytest
+
 from execnet.gateway import Gateway
 from execnet.gateway_base import Channel
 

@@ -7,8 +7,9 @@ from typing import Callable
 from typing import Generator
 from typing import Iterator
 
-import execnet
 import pytest
+
+import execnet
 from execnet.gateway import Gateway
 from execnet.gateway_base import ExecModel
 from execnet.gateway_base import WorkerPool
