@@ -4,8 +4,9 @@ import platform
 import sys
 import types
 
-import execnet
 import pytest
+
+import execnet
 from execnet import RSync
 from execnet.gateway import Gateway
 

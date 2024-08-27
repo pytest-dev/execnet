@@ -8,8 +8,9 @@ import gc
 from time import sleep
 from typing import Callable
 
-import execnet
 import pytest
+
+import execnet
 from execnet import XSpec
 from execnet.gateway import Gateway
 from execnet.gateway_base import Channel
