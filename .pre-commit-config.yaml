@@ -13,14 +13,14 @@ repos:
     hooks:
     -   id: check-yaml
 -   repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.2
+    rev: v0.6.3
     hooks:
       - id: ruff
         args: [ --fix ]
         exclude: "^doc/"
       - id: ruff-format
 -   repo: https://github.com/PyCQA/doc8
-    rev: 'v1.1.1'
+    rev: 'v1.1.2'
     hooks:
     -   id: doc8
         args: ["--ignore", "D001"]
