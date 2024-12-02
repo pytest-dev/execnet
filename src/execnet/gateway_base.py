@@ -760,7 +760,7 @@ class Channel:
                         callback(olditem)
 
     def __repr__(self) -> str:
-        flag = self.isclosed() and "closed" or "open"
+        flag = (self.isclosed() and "closed") or "open"
         return "<Channel id=%d %s>" % (self.id, flag)
 
     def __del__(self) -> None:
@@ -1079,7 +1079,7 @@ class ChannelFile:
             self.channel.close()
 
     def __repr__(self) -> str:
-        state = self.channel.isclosed() and "closed" or "open"
+        state = (self.channel.isclosed() and "closed") or "open"
         return "<ChannelFile %d %s>" % (self.channel.id, state)
 
 
