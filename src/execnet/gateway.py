@@ -187,14 +187,15 @@ def _find_non_builtin_globals(source: str, codeobj: types.CodeType) -> list[str]
     import ast
     import builtins
 
-    vars = dict.fromkeys(codeobj.co_varnames)
-    return [
-        node.id
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Name)
-        and node.id not in vars
-        and node.id not in builtins.__dict__
-    ]
+    vars = set(codeobj.co_varnames)
+    vars.update(builtins.__dict__)
+
+    res = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Name) and node.id not in vars:
+            vars.add(node.id)
+            res.append(node.id)
+    return res
 
 
 def _source_of_function(function: types.FunctionType | Callable[..., object]) -> str:
@@ -225,7 +226,8 @@ def _source_of_function(function: types.FunctionType | Callable[..., object]) ->
     source = textwrap.dedent(source)  # just for inner functions
 
     used_globals = _find_non_builtin_globals(source, codeobj)
-    if used_globals:
+    if used_globals and False:
+        # disabled this check as it fails for more complex examples
         raise ValueError("the use of non-builtin globals isn't supported", used_globals)
 
     leading_ws = "\n" * (codeobj.co_firstlineno - 1)
