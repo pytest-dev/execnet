@@ -345,7 +345,7 @@ def safe_terminate(
         reply = workerpool.spawn(termkill, termfunc, killfunc)
         replylist.append(reply)
     for reply in replylist:
-        reply.get()
+        reply.get(timeout=timeout)
     workerpool.waitall(timeout=timeout)
 
 
