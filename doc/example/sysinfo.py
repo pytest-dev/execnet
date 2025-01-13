@@ -19,8 +19,7 @@ parser.add_option(
     action="store",
     dest="ssh_config",
     default=None,
-    help="use given ssh config file,"
-    " and add info all contained hosts for getting info",
+    help="use given ssh config file, and add info all contained hosts for getting info",
 )
 parser.add_option(
     "-i",
@@ -28,7 +27,7 @@ parser.add_option(
     action="store",
     dest="ignores",
     default=None,
-    help="ignore hosts " "(useful if the list of hostnames come from a file list)",
+    help="ignore hosts (useful if the list of hostnames come from a file list)",
 )
 
 

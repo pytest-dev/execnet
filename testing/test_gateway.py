@@ -509,9 +509,9 @@ class TestTracing:
         gw.exit()
 
     def test_no_tracing_by_default(self):
-        assert (
-            gateway_base.trace == gateway_base.notrace
-        ), "trace does not to default to empty tracing"
+        assert gateway_base.trace == gateway_base.notrace, (
+            "trace does not to default to empty tracing"
+        )
 
 
 @pytest.mark.parametrize(

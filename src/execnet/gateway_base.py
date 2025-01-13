@@ -1237,7 +1237,7 @@ class WorkerGateway(BaseGateway):
         self._trace("shutting down execution pool")
         self._execpool.trigger_shutdown()
         if not self._execpool.waitall(5.0):
-            self._trace("execution ongoing after 5 secs," " trying interrupt_main")
+            self._trace("execution ongoing after 5 secs, trying interrupt_main")
             # We try hard to terminate execution based on the assumption
             # that there is only one gateway object running per-process.
             if sys.platform != "win32":
@@ -1248,7 +1248,7 @@ class WorkerGateway(BaseGateway):
                 interrupt_main()
             if not self._execpool.waitall(10.0):
                 self._trace(
-                    "execution did not finish in another 10 secs, " "calling os._exit()"
+                    "execution did not finish in another 10 secs, calling os._exit()"
                 )
                 os._exit(1)
 
