@@ -162,8 +162,7 @@ def gw(
                 proxygw = group.makegateway("popen//id=%s" % pname)
             # assert group['proxygw'].remote_status().receiving
             gw = group.makegateway(
-                f"socket//id=socket//installvia={pname}"
-                f"//execmodel={execmodel.backend}"
+                f"socket//id=socket//installvia={pname}//execmodel={execmodel.backend}"
             )
             # TODO(typing): Clarify this assignment.
             gw.proxygw = proxygw  # type: ignore[attr-defined]
@@ -176,8 +175,7 @@ def gw(
         elif request.param == "proxy":
             group.makegateway("popen//id=proxy-transport")
             gw = group.makegateway(
-                "popen//via=proxy-transport//id=proxy"
-                "//execmodel=%s" % execmodel.backend
+                "popen//via=proxy-transport//id=proxy//execmodel=%s" % execmodel.backend
             )
         else:
             assert 0, f"unknown execmodel: {request.param}"

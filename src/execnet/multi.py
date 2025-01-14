@@ -82,7 +82,7 @@ class Group:
         """
         if self._gateways:
             raise ValueError(
-                "can not set execution models if " "gateways have been created already"
+                "can not set execution models if gateways have been created already"
             )
         if remote_execmodel is None:
             remote_execmodel = execmodel
