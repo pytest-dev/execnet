@@ -1,2 +1,2 @@
 def test_function():
-    import funcmultiplier
+    import funcmultiplier  # type: ignore[import]
