@@ -4,11 +4,13 @@ on:
   push:
     branches:
       - "master"
+      - "main"
       - "test-me-*"
 
   pull_request:
     branches:
       - "master"
+      - "main"
 
 # Cancel running jobs for the same workflow and branch.
 concurrency:
@@ -34,7 +36,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ windows-latest, ubuntu-latest ]
-        python: [ "3.8","3.10","3.11","3.12", "pypy-3.8" ]
+        python: [ "3.9","3.10","3.11","3.12", "pypy-3.9" ]
 
     steps:
     - uses: actions/checkout@v4
