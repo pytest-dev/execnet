@@ -48,7 +48,7 @@ class Popen2IOMaster(Popen2IO):
             sys.stderr.flush()
 
 
-popen_bootstrapline = "import sys;exec(eval(sys.stdin.readline()))"
+popen_bootstrapline = "import sys;import json;exec(json.loads(sys.stdin.readline()))"
 
 
 def shell_split_path(path: str) -> list[str]:
