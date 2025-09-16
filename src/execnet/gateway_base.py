@@ -1007,7 +1007,7 @@ class ChannelFactory:
         except KeyError:
             pass
         try:
-            callback, endmarker, strconfig = self._callbacks.pop(id)
+            callback, endmarker, _strconfig = self._callbacks.pop(id)
         except KeyError:
             pass
         else:
@@ -1037,7 +1037,7 @@ class ChannelFactory:
         # executes in receiver thread
         channel = self._channels.get(id)
         try:
-            callback, endmarker, strconfig = self._callbacks[id]
+            callback, _endmarker, strconfig = self._callbacks[id]
         except KeyError:
             queue = channel._items if channel is not None else None
             if queue is None:

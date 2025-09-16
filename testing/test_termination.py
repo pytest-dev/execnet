@@ -102,7 +102,7 @@ def test_close_initiating_remote_no_error(
     popen = subprocess.Popen(
         [anypython, str(p), str(execnetdir)], stdout=None, stderr=subprocess.PIPE
     )
-    out, err = popen.communicate()
+    _out, err = popen.communicate()
     print(err)
     errstr = err.decode("utf8")
     lines = [x for x in errstr.splitlines() if "*sys-package" not in x]
@@ -151,6 +151,6 @@ def test_terminate_implicit_does_trykill(
     popen.stdout.readline()
     reply = pool.spawn(popen.communicate)
     reply.get(timeout=50)
-    out, err = capfd.readouterr()
+    _out, err = capfd.readouterr()
     lines = [x for x in err.splitlines() if "*sys-package" not in x]
     assert not lines or "Killed" in err

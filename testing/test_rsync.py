@@ -142,7 +142,7 @@ class TestRSync:
         rsync = RSync(source)
         rsync.add_target(gw1, dirs.dest1)
         rsync.send()
-        out, err = capsys.readouterr()
+        out, _err = capsys.readouterr()
         assert out.find("hello") != -1
 
     def test_rsync_non_verbose(

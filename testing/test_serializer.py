@@ -155,7 +155,7 @@ def test_bool(dump, load) -> None:
 
 def test_none(dump, load) -> None:
     p = dump("None")
-    tp, s = load(p)
+    _tp, s = load(p)
     assert s == "None"
 
 
