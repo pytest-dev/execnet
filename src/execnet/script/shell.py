@@ -26,7 +26,7 @@ def clientside() -> NoReturn:
     inputlist = [sock, sys.stdin]
     try:
         while 1:
-            r, w, e = select.select(inputlist, [], [])
+            r, _w, _e = select.select(inputlist, [], [])
             if sys.stdin in r:
                 line = input()
                 sock.sendall((line + "\n").encode())
