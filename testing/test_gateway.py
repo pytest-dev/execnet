@@ -503,7 +503,7 @@ class TestTracing:
         monkeypatch.setenv("EXECNET_DEBUG", "2")
         gw = makegateway("popen")
         pid = gw.remote_exec("import os ; channel.send(os.getpid())").receive()
-        out, err = capfd.readouterr()
+        _out, err = capfd.readouterr()
         worker_line = "[%s] creating workergateway" % pid
         assert worker_line in err
         gw.exit()
