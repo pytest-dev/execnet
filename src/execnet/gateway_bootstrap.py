@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import json
 import os
 
 import execnet
@@ -25,13 +26,13 @@ def bootstrap_import(io: IO, spec: XSpec) -> None:
     sendexec(
         io,
         "import sys",
-        "if %r not in sys.path:" % importdir,
-        "    sys.path.insert(0, %r)" % importdir,
+        f"if {importdir!r} not in sys.path:",
+        f"    sys.path.insert(0, {importdir!r})",
         "from execnet.gateway_base import serve, init_popen_io, get_execmodel",
         "sys.stdout.write('1')",
         "sys.stdout.flush()",
-        "execmodel = get_execmodel(%r)" % spec.execmodel,
-        "serve(init_popen_io(execmodel), id='%s-worker')" % spec.id,
+        f"execmodel = get_execmodel({spec.execmodel!r})",
+        f"serve(init_popen_io(execmodel), id='{spec.id}-worker')",
     )
     s = io.read(1)
     assert s == b"1", repr(s)
@@ -77,7 +78,8 @@ def bootstrap_socket(io: IO, id) -> None:
 
 def sendexec(io: IO, *sources: str) -> None:
     source = "\n".join(sources)
-    io.write((repr(source) + "\n").encode("utf-8"))
+    encoded = (json.dumps(source) + "\n").encode("utf-8")
+    io.write(encoded)
 
 
 def bootstrap(io: IO, spec: XSpec) -> execnet.Gateway:

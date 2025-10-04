@@ -1,19 +1,21 @@
 [build-system]
-requires = [
-    "hatchling",
-    "hatch-vcs",
-]
 build-backend = "hatchling.build"
+requires = [
+  "hatch-vcs",
+  "hatchling",
+]
 
 [project]
 name = "execnet"
-dynamic = ["version"]
 description = "execnet: rapid multi-Python deployment"
 readme = {"file" = "README.rst", "content-type" = "text/x-rst"}
 license = "MIT"
-requires-python = ">=3.8"
 authors = [
     { name = "holger krekel and others" },
+]
+requires-python = ">=3.8"
+dynamic = [
+  "version",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -33,17 +35,17 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
     "Topic :: System :: Networking",
 ]
-
 [project.optional-dependencies]
 testing = [
-    "pre-commit",
-    "pytest",
-    "tox",
-    "hatch",
+  "hatch",
+  "pre-commit",
+  "pytest",
+  "tox",
 ]
 
 [project.urls]
 Homepage = "https://execnet.readthedocs.io/en/latest/"
+
 
 [tool.ruff.lint]
 extend-select = [
