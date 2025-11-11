@@ -52,8 +52,13 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
 
-    - name: Install tox
-      run: pip install tox
+    - name: Install dependencies
+      run: pip install tox twine
+
+    - name: Check package
+      shell: bash
+      run: |
+        twine check --strict dist/*
 
     - name: Test
       shell: bash
