@@ -1,1 +1,0 @@
-Test on pypy-3.11 instead of pypy-3.8
