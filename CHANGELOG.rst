@@ -1,7 +1,7 @@
-2.1.2 (2025-11-10)
+2.1.2 (2025-11-11)
 ------------------
 
-* `#376 <https://github.com/pytest-dev/execnet/issues/376>`__ fix artifact building - pin minimal version of hatch
+* `#376 <https://github.com/pytest-dev/execnet/issues/376>`__ fix artifact building - pin minimal version of hatch.
 
 
 2.1.1 (2024-04-08)
