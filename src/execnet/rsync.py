@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 import stat
+from collections.abc import Callable
 from hashlib import md5
 from queue import Queue
-from typing import Callable
 from typing import Literal
 
 import execnet.rsync_remote

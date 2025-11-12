@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import shutil
 import sys
+from collections.abc import Callable
+from collections.abc import Generator
+from collections.abc import Iterator
 from functools import lru_cache
-from typing import Callable
-from typing import Generator
-from typing import Iterator
 
 import pytest
 

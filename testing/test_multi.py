@@ -5,8 +5,8 @@ tests for multi channels and gateway Groups
 from __future__ import annotations
 
 import gc
+from collections.abc import Callable
 from time import sleep
-from typing import Callable
 
 import pytest
 

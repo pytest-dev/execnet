@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import atexit
 import types
+from collections.abc import Callable
+from collections.abc import Iterable
+from collections.abc import Iterator
+from collections.abc import Sequence
 from functools import partial
 from threading import Lock
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Callable
-from typing import Iterable
-from typing import Iterator
 from typing import Literal
-from typing import Sequence
 from typing import overload
 
 from . import gateway_bootstrap

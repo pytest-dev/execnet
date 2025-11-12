@@ -18,12 +18,12 @@ import sys
 import traceback
 import weakref
 from _thread import interrupt_main
+from collections.abc import Callable
+from collections.abc import Iterator
+from collections.abc import MutableSet
 from io import BytesIO
 from typing import Any
-from typing import Callable
-from typing import Iterator
 from typing import Literal
-from typing import MutableSet
 from typing import Protocol
 from typing import cast
 from typing import overload
