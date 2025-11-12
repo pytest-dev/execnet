@@ -9,9 +9,9 @@ import inspect
 import linecache
 import textwrap
 import types
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Callable
 
 from . import gateway_base
 from .gateway_base import IO

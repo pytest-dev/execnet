@@ -4,7 +4,7 @@ import shutil
 import signal
 import subprocess
 import sys
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from test_gateway import TESTTIMEOUT

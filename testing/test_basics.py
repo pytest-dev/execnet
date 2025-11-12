@@ -6,11 +6,11 @@ import os
 import subprocess
 import sys
 import textwrap
+from collections.abc import Callable
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from typing import Callable
 
 import pytest
 

@@ -9,8 +9,8 @@ import pathlib
 import shutil
 import signal
 import sys
+from collections.abc import Callable
 from textwrap import dedent
-from typing import Callable
 
 import pytest
 
@@ -635,7 +635,7 @@ def test_main_thread_only_concurrent_remote_exec_deadlock(
             True,
             execnet.gateway_base.MAIN_THREAD_ONLY_DEADLOCK_TEXT,
         )
-        for expected, ch in zip(expected_results, channels):
+        for expected, ch in zip(expected_results, channels, strict=True):
             try:
                 res = ch.receive()
             except execnet.RemoteError as e:
