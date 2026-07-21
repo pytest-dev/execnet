@@ -115,10 +115,7 @@ def startserver(serversock, loop: bool = False) -> None:
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) > 1:
-        hostport = sys.argv[1]
-    else:
-        hostport = ":8888"
+    hostport = sys.argv[1] if len(sys.argv) > 1 else ":8888"
     from execnet.gateway_base import get_execmodel
 
     execmodel = get_execmodel("thread")

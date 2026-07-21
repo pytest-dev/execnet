@@ -20,7 +20,7 @@ import weakref
 from _thread import interrupt_main
 from collections.abc import Callable
 from collections.abc import Iterator
-from collections.abc import MutableSet
+from contextlib import suppress
 from io import BytesIO
 from typing import Any
 from typing import Literal
@@ -364,7 +364,7 @@ class WorkerPool:
     def __init__(self, execmodel: ExecModel, hasprimary: bool = False) -> None:
         self.execmodel = execmodel
         self._running_lock = self.execmodel.Lock()
-        self._running: MutableSet[Reply] = set()
+        self._running: set[Reply] = set()
         self._shuttingdown = False
         self._waitall_events: list[Event] = []
         if hasprimary:
@@ -788,10 +788,8 @@ class Channel:
                     msgcode = Message.CHANNEL_LAST_MESSAGE
                 else:
                     msgcode = Message.CHANNEL_CLOSE
-                try:
+                with suppress(OSError, ValueError):  # ignore problems with sending
                     self.gateway._send(msgcode, self.id)
-                except (OSError, ValueError):  # ignore problems with sending
-                    pass
 
     def _getremoteerror(self):
         try:
@@ -1002,15 +1000,10 @@ class ChannelFactory:
     # internal methods, called from the receiver thread
     #
     def _no_longer_opened(self, id: int) -> None:
-        try:
-            del self._channels[id]
-        except KeyError:
-            pass
-        try:
-            callback, endmarker, _strconfig = self._callbacks.pop(id)
-        except KeyError:
-            pass
-        else:
+        self._channels.pop(id, None)
+        item = self._callbacks.pop(id, None)
+        if item is not None:
+            callback, endmarker, _strconfig = item
             if endmarker is not NO_ENDMARKER_WANTED:
                 callback(endmarker)
 
@@ -1299,14 +1292,15 @@ class WorkerGateway(BaseGateway):
         except KeyboardInterrupt:
             channel.close(INTERRUPT_TEXT)
             raise
-        except BaseException as exc:
-            if not isinstance(exc, EOFError):
-                if not channel.gateway._channelfactory.finished:
-                    self._trace(f"got exception: {exc!r}")
-                    errortext = self._geterrortext(exc)
-                    channel.close(errortext)
-                    return
+        except EOFError:
             self._trace("ignoring EOFError because receiving finished")
+
+        except BaseException as exc:
+            if not channel.gateway._channelfactory.finished:
+                self._trace(f"got exception: {exc!r}")
+                errortext = self._geterrortext(exc)
+                channel.close(errortext)
+                return
         channel.close()
         if self._executetask_complete is not None:
             # Indicate that this task has finished executing, meaning
@@ -1773,10 +1767,7 @@ def init_popen_io(execmodel: ExecModel) -> Popen2IO:
         try:
             devnull = os.devnull
         except AttributeError:
-            if os.name == "nt":
-                devnull = "NUL"
-            else:
-                devnull = "/dev/null"
+            devnull = "NUL" if os.name == "nt" else "/dev/null"
         # stdin
         stdin = execmodel.fdopen(os.dup(0), "r", 1)
         fd = os.open(devnull, os.O_RDONLY)
