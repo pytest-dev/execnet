@@ -491,7 +491,7 @@ elif DEBUG:
 
     fn = os.path.join(tempfile.gettempdir(), "execnet-debug-%d" % pid)
     # sys.stderr.write("execnet-debug at %r" % (fn,))
-    debugfile = open(fn, "w")  # noqa: SIM115
+    debugfile = open(fn, "w")
 
     def trace(*msg: object) -> None:
         try:
@@ -499,7 +499,7 @@ elif DEBUG:
             debugfile.write(line + "\n")
             debugfile.flush()
         except Exception as exc:
-            try:  # noqa: SIM105
+            try:
                 sys.stderr.write(f"[{pid}] exception during tracing: {exc!r}\n")
             except Exception:
                 pass  # nothing we can do, likely interpreter-shutdown
@@ -788,7 +788,7 @@ class Channel:
                     msgcode = Message.CHANNEL_LAST_MESSAGE
                 else:
                     msgcode = Message.CHANNEL_CLOSE
-                with suppress(KeyError, ValueError):  # ignore problems with sending
+                with suppress(OSError, ValueError):  # ignore problems with sending
                     self.gateway._send(msgcode, self.id)
 
     def _getremoteerror(self):
@@ -1001,11 +1001,11 @@ class ChannelFactory:
     #
     def _no_longer_opened(self, id: int) -> None:
         self._channels.pop(id, None)
-        callback, endmarker, _strconfig = self._callbacks.pop(
-            id, (lambda x: None, NO_ENDMARKER_WANTED, None)
-        )
-        if endmarker is not NO_ENDMARKER_WANTED:
-            callback(endmarker)
+        item = self._callbacks.pop(id, None)
+        if item is not None:
+            callback, endmarker, _strconfig = item
+            if endmarker is not NO_ENDMARKER_WANTED:
+                callback(endmarker)
 
     def _local_close(self, id: int, remoteerror=None, sendonly: bool = False) -> None:
         channel = self._channels.get(id)
@@ -1761,8 +1761,8 @@ def init_popen_io(execmodel: ExecModel) -> Popen2IO:
         io = Popen2IO(sys.stdout, sys.stdin, execmodel)
         import tempfile
 
-        sys.stdin = tempfile.TemporaryFile("r")  # noqa: SIM115
-        sys.stdout = tempfile.TemporaryFile("w")  # noqa: SIM115
+        sys.stdin = tempfile.TemporaryFile("r")
+        sys.stdout = tempfile.TemporaryFile("w")
     else:
         try:
             devnull = os.devnull

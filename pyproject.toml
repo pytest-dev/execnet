@@ -34,7 +34,7 @@ classifiers = [
     "Topic :: System :: Networking",
 ]
 
-[dependency-groups]
+[project.optional-dependencies]
 testing = [
     "pre-commit",
     "pytest>8.0",
@@ -43,6 +43,11 @@ testing = [
     "hatch",
     "uv",
     "gevent",
+]
+
+[dependency-groups]
+testing = [
+    "execnet[testing]",
 ]
 
 [project.urls]
@@ -80,7 +85,9 @@ ignore = [
     "PLW2901",  # for loop variable overwritten by assignment target
     "PLR5501",  # Use `elif` instead of `else` then `if`
     "UP031",  # Use format specifiers instead of percent format
-    
+    # flake8-simplify: overeager for this codebase
+    "SIM105",  # try-except-pass -> suppress (bad with dynamic exc types / shutdown)
+    "SIM115",  # open() without context manager (intentional long-lived handles)
 ]
 
 [tool.ruff.lint.isort]

@@ -202,7 +202,7 @@ wheels = [
 name = "execnet"
 source = { editable = "." }
 
-[package.dev-dependencies]
+[package.optional-dependencies]
 testing = [
     { name = "gevent" },
     { name = "hatch" },
@@ -213,18 +213,25 @@ testing = [
     { name = "uv" },
 ]
 
+[package.dev-dependencies]
+testing = [
+    { name = "execnet", extra = ["testing"] },
+]
+
 [package.metadata]
+requires-dist = [
+    { name = "gevent", marker = "extra == 'testing'" },
+    { name = "hatch", marker = "extra == 'testing'" },
+    { name = "pre-commit", marker = "extra == 'testing'" },
+    { name = "pytest", marker = "extra == 'testing'", specifier = ">8.0" },
+    { name = "pytest-timeout", marker = "extra == 'testing'" },
+    { name = "tox", marker = "extra == 'testing'" },
+    { name = "uv", marker = "extra == 'testing'" },
+]
+provides-extras = ["testing"]
 
 [package.metadata.requires-dev]
-testing = [
-    { name = "gevent" },
-    { name = "hatch" },
-    { name = "pre-commit" },
-    { name = "pytest", specifier = ">8.0" },
-    { name = "pytest-timeout" },
-    { name = "tox" },
-    { name = "uv" },
-]
+testing = [{ name = "execnet", extras = ["testing"] }]
 
 [[package]]
 name = "filelock"

@@ -51,7 +51,7 @@ class SocketServerService(win32serviceutil.ServiceFramework):
         # Redirect stdout and stderr to prevent "IOError: [Errno 9]
         # Bad file descriptor". Windows services don't have functional
         # output streams.
-        sys.stdout = sys.stderr = open("nul", "w")  # noqa: SIM115
+        sys.stdout = sys.stderr = open("nul", "w")
 
         # Write a 'started' event to the event log...
         win32evtlogutil.ReportEvent(
