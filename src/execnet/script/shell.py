@@ -18,7 +18,8 @@ def clientside() -> NoReturn:
     print("client side starting")
     host, portstr = sys.argv[1].split(":")
     port = int(portstr)
-    myself = open(os.path.abspath(sys.argv[0])).read()
+    with open(os.path.abspath(sys.argv[0])) as fd:
+        myself = fd.read()
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.connect((host, port))
     sock.sendall((repr(myself) + "\n").encode())

@@ -86,10 +86,10 @@ class RSync:
         checksum: bytes,
     ) -> None:
         """Send one item."""
-        modifiedpath = os.path.join(self._sourcedir, *modified_rel_path_components)
+        modified_path = os.path.join(self._sourcedir, *modified_rel_path_components)
         try:
-            f = open(modifiedpath, "rb")
-            data = f.read()
+            with open(modified_path, "rb") as fp:
+                data = fp.read()
         except OSError:
             data = None
 
@@ -105,7 +105,6 @@ class RSync:
         # print "sending", modified_rel_path, data and len(data) or 0, checksum
 
         if data is not None:
-            f.close()
             if checksum is not None and checksum == md5(data).digest():
                 data = None  # not really modified
             else:

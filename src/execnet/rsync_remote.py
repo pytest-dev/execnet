@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Literal
 from typing import cast
@@ -67,9 +68,8 @@ def serve_rsync(channel: Channel) -> None:
                     if msg_size != st.st_size:
                         pass
                     elif msg_mtime != st.st_mtime:
-                        f = open(path, "rb")
-                        checksum = md5(f.read()).digest()
-                        f.close()
+                        with open(path, "rb") as fp:
+                            checksum = md5(fp.read()).digest()
                     elif msg_mode and msg_mode != st.st_mode:
                         os.chmod(path, msg_mode | 0o700)
                         return
@@ -91,9 +91,8 @@ def serve_rsync(channel: Channel) -> None:
         if data is not None:
             if STRICT_CHECK and len(data) != size:
                 raise OSError(f"file modified during rsync: {path!r}")
-            f = open(path, "wb")
-            f.write(data)
-            f.close()
+            with open(path, "wb") as fp:
+                fp.write(data)
         try:
             if mode:
                 os.chmod(path, mode)
@@ -110,10 +109,9 @@ def serve_rsync(channel: Channel) -> None:
             "tuple[Literal['linkbase', 'link'], str, str]", msg
         )
         path = os.path.join(destdir, relpath)
-        try:
+        with suppress(OSError):
             remove(path)
-        except OSError:
-            pass
+
         if _type == "linkbase":
             src = os.path.join(destdir, linkpoint)
         else:
