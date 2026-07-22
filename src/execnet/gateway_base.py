@@ -179,123 +179,6 @@ class MainThreadOnlyExecModel(ThreadExecModel):
     backend = "main_thread_only"
 
 
-class EventletExecModel(ExecModel):
-    backend = "eventlet"
-
-    @property
-    def queue(self):
-        import eventlet
-
-        return eventlet.queue
-
-    @property
-    def subprocess(self):
-        import eventlet.green.subprocess
-
-        return eventlet.green.subprocess
-
-    @property
-    def socket(self):
-        import eventlet.green.socket
-
-        return eventlet.green.socket
-
-    def get_ident(self) -> int:
-        import eventlet.green.thread
-
-        return eventlet.green.thread.get_ident()  # type: ignore[no-any-return]
-
-    def sleep(self, delay: float) -> None:
-        import eventlet
-
-        eventlet.sleep(delay)
-
-    def start(self, func, args=()) -> None:
-        import eventlet
-
-        eventlet.spawn_n(func, *args)
-
-    def fdopen(self, fd, mode, bufsize=1, closefd=True):
-        import eventlet.green.os
-
-        return eventlet.green.os.fdopen(fd, mode, bufsize, closefd=closefd)
-
-    def Lock(self):
-        import eventlet.green.threading
-
-        return eventlet.green.threading.RLock()
-
-    def RLock(self):
-        import eventlet.green.threading
-
-        return eventlet.green.threading.RLock()
-
-    def Event(self):
-        import eventlet.green.threading
-
-        return eventlet.green.threading.Event()
-
-
-class GeventExecModel(ExecModel):
-    backend = "gevent"
-
-    @property
-    def queue(self):
-        import gevent.queue
-
-        return gevent.queue
-
-    @property
-    def subprocess(self):
-        import gevent.subprocess
-
-        return gevent.subprocess
-
-    @property
-    def socket(self):
-        import gevent
-
-        return gevent.socket
-
-    def get_ident(self) -> int:
-        import gevent.thread
-
-        return gevent.thread.get_ident()  # type: ignore[no-any-return]
-
-    def sleep(self, delay: float) -> None:
-        import gevent
-
-        gevent.sleep(delay)
-
-    def start(self, func, args=()) -> None:
-        import gevent
-
-        gevent.spawn(func, *args)
-
-    def fdopen(self, fd, mode, bufsize=1, closefd=True):
-        import gevent.fileobject
-
-        # Prefer FileObject (FileObjectPosix on Unix). FileObjectThread keeps a
-        # native threadpool alive and can prevent interpreter shutdown, which
-        # hangs tests/scripts that open stdio via init_popen_io and then exit.
-        return gevent.fileobject.FileObject(fd, mode, bufsize, closefd=closefd)
-
-    def Lock(self):
-        import gevent.lock
-
-        return gevent.lock.RLock()
-
-    def RLock(self):
-        import gevent.lock
-
-        return gevent.lock.RLock()
-
-    def Event(self):
-        import gevent.event
-
-        return gevent.event.Event()
-
-
 def get_execmodel(backend: str | ExecModel) -> ExecModel:
     if isinstance(backend, ExecModel):
         return backend
@@ -303,10 +186,6 @@ def get_execmodel(backend: str | ExecModel) -> ExecModel:
         return ThreadExecModel()
     elif backend == "main_thread_only":
         return MainThreadOnlyExecModel()
-    elif backend == "eventlet":
-        return EventletExecModel()
-    elif backend == "gevent":
-        return GeventExecModel()
     else:
         raise ValueError(f"unknown execmodel {backend!r}")
 
