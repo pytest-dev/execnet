@@ -41,19 +41,27 @@ def trio_host_enabled() -> bool:
 
 
 def should_use_trio_popen(spec: Any) -> bool:
-    """Trio path only for local same-interpreter popen (module bootstrap)."""
+    """Trio path for local popen.
+
+    Same-interpreter popen launches the worker module directly; a foreign
+    interpreter (``python=``) is provisioned via ``uv`` and only taken when
+    ``uv`` is available (otherwise the legacy source-copy path handles it).
+    """
     if not trio_host_enabled():
         return False
     if not getattr(spec, "popen", False):
         return False
     if getattr(spec, "via", None):
         return False
-    # A foreign interpreter (python=) is handled by the future uv-provisioned
-    # remote path, not the same-interpreter module launch.
-    if getattr(spec, "python", None):
-        return False
     execmodel = getattr(spec, "execmodel", None)
-    return execmodel in (None, "thread", "main_thread_only")
+    if execmodel not in (None, "thread", "main_thread_only"):
+        return False
+    if getattr(spec, "python", None):
+        from . import _provision
+
+        # Direct launch if the interpreter already has execnet; else uv-provision.
+        return _provision.target_has_execnet(spec.python) or _provision.uv_available()
+    return True
 
 
 class AsyncByteIO(Protocol):
@@ -486,13 +494,21 @@ def popen_module_args(spec: Any) -> list[str]:
     """Launch the Trio worker as a module: ``python -m execnet._trio_worker``.
 
     No source is sent over the wire; the worker imports the installed execnet +
-    trio.  Only valid for same-interpreter popen (see ``should_use_trio_popen``).
-    The coordinator version is passed so the worker can do a rough compatibility
+    trio.  Used for same-interpreter popen and for a ``python=`` interpreter that
+    already has execnet (so ``sys.executable`` stays that interpreter).  The
+    coordinator version is passed so the worker can do a rough compatibility
     check against its own installed version.
     """
     import execnet
 
-    args = [sys.executable, "-u"]
+    if getattr(spec, "python", None):
+        from .gateway_io import shell_split_path
+
+        interpreter = shell_split_path(spec.python)
+    else:
+        interpreter = [sys.executable]
+
+    args = [*interpreter, "-u"]
     if getattr(spec, "dont_write_bytecode", False):
         args.append("-B")
     args += [
@@ -531,15 +547,23 @@ class _TempIO:
 
 
 def makegateway_popen_trio(group: Any, spec: Any) -> Any:
-    """Create a same-interpreter popen Gateway on the Trio IO path.
+    """Create a popen Gateway on the Trio IO path.
 
-    The worker is launched as ``python -m execnet._trio_worker`` and imports the
-    installed execnet + trio; nothing is sent over the wire to bootstrap it.
+    Same-interpreter popen launches ``python -m execnet._trio_worker`` directly;
+    a foreign interpreter (``python=``) is provisioned via ``uv``.  Either way the
+    worker imports execnet + trio; nothing is sent over the wire to bootstrap it.
     """
     import execnet
 
+    from . import _provision
+
     host: TrioHost = group._ensure_trio_host()
-    args = popen_module_args(spec)
+    if spec.python and not _provision.target_has_execnet(spec.python):
+        # bare interpreter: provision execnet + trio via uv
+        args = _provision.uv_worker_argv(spec)
+    else:
+        # same interpreter, or a python= that already has execnet
+        args = popen_module_args(spec)
 
     async def _create_and_attach() -> Any:
         process = await open_popen_process(args)
