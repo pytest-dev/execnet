@@ -278,3 +278,41 @@ def test_safe_terminate2(execmodel: ExecModel) -> None:
     sleep(0.1)
     gc.collect()
     assert threading.active_count() == active
+
+
+@pytest.mark.timeout(5)
+def test_safe_terminate_does_not_hang_when_kill_blocks(
+    execmodel: ExecModel,
+) -> None:
+    """Regression for #43/#221: a stuck kill must not hang terminate forever.
+
+    Before the fix, reply.get() waited without a timeout after termfunc timed
+    out, so a blocking killfunc made Group.terminate() hang indefinitely
+    (seen via pytest-xdist teardown).
+    """
+    kill_started = execmodel.Event()
+    release_kill = execmodel.Event()
+    other_killed: list[int] = []
+
+    def term_slow() -> None:
+        execmodel.sleep(10)
+
+    def kill_hang() -> None:
+        kill_started.set()
+        release_kill.wait()
+
+    def kill_ok() -> None:
+        other_killed.append(1)
+
+    safe_terminate(
+        execmodel,
+        0.2,
+        [
+            (term_slow, kill_hang),
+            (term_slow, kill_ok),
+        ],
+    )
+
+    assert kill_started.is_set()
+    assert other_killed == [1]
+    release_kill.set()

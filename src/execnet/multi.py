@@ -17,6 +17,7 @@ from threading import Lock
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
+from typing import TypeAlias
 from typing import overload
 
 from . import gateway_bootstrap
@@ -328,25 +329,44 @@ class MultiChannel:
             raise first
 
 
+TermKillFunc: TypeAlias = Callable[[], object]
+TermKillPair: TypeAlias = tuple[TermKillFunc, TermKillFunc]
+
+
 def safe_terminate(
-    execmodel: ExecModel, timeout: float | None, list_of_paired_functions
+    execmodel: ExecModel,
+    timeout: float | None,
+    list_of_paired_functions: Sequence[TermKillPair],
 ) -> None:
+    """Run terminate/kill pairs in parallel with a hard wait bound.
+
+    Each termfunc is given ``timeout``.  If it does not finish, killfunc runs.
+    Waiting for the worker pool is also bounded so a stuck kill cannot hang
+    the caller forever (see issues #43 / #221).
+    """
     workerpool = WorkerPool(execmodel)
 
-    def termkill(termfunc, killfunc) -> None:
+    def termkill(termfunc: TermKillFunc, killfunc: TermKillFunc) -> None:
         termreply = workerpool.spawn(termfunc)
         try:
             termreply.get(timeout=timeout)
         except OSError:
             killfunc()
 
-    replylist = []
-    for termfunc, killfunc in list_of_paired_functions:
-        reply = workerpool.spawn(termkill, termfunc, killfunc)
-        replylist.append(reply)
+    replylist = [
+        workerpool.spawn(termkill, termfunc, killfunc)
+        for termfunc, killfunc in list_of_paired_functions
+    ]
+    # Allow term timeout plus a kill attempt; never block indefinitely.
+    wait_timeout = None if timeout is None else timeout * 2
     for reply in replylist:
-        reply.get()
-    workerpool.waitall(timeout=timeout)
+        try:
+            reply.waitfinish(timeout=wait_timeout)
+        except OSError:
+            # termkill still running (typically stuck in killfunc).
+            continue
+        reply.get()  # propagate worker exceptions, if any
+    workerpool.waitall(timeout=wait_timeout)
 
 
 default_group = Group()

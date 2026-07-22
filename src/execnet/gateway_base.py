@@ -273,10 +273,12 @@ class GeventExecModel(ExecModel):
         gevent.spawn(func, *args)
 
     def fdopen(self, fd, mode, bufsize=1, closefd=True):
-        # XXX
         import gevent.fileobject
 
-        return gevent.fileobject.FileObjectThread(fd, mode, bufsize, closefd=closefd)
+        # Prefer FileObject (FileObjectPosix on Unix). FileObjectThread keeps a
+        # native threadpool alive and can prevent interpreter shutdown, which
+        # hangs tests/scripts that open stdio via init_popen_io and then exit.
+        return gevent.fileobject.FileObject(fd, mode, bufsize, closefd=closefd)
 
     def Lock(self):
         import gevent.lock
