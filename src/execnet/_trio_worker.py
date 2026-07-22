@@ -11,7 +11,6 @@ from typing import Any
 
 import trio
 
-from . import gateway_base
 from .gateway_base import MAIN_THREAD_ONLY_DEADLOCK_TEXT
 from .gateway_base import WorkerGateway
 from .gateway_base import get_execmodel
@@ -211,6 +210,10 @@ def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
 
     model = get_execmodel(execmodel)
     read_fd, write_fd = _prepare_protocol_fds()
+    # Bootstrap handshake: the coordinator waits for this byte on our stdout
+    # before starting the Message protocol.  We are launched as a plain module
+    # (``python -m execnet._trio_worker``), so nothing was sent to bootstrap us.
+    os.write(write_fd, b"1")
     # Keep the historic trace token so tests looking for workergateway still pass.
     trace(f"creating workergateway on trio id={id!r}")
 
@@ -250,3 +253,55 @@ def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
         # Trio's to_thread cache uses non-daemon threads that would otherwise
         # keep this disposable worker process alive after serve returns.
         os._exit(0)
+
+
+def _rough_version(version: str) -> tuple[int, ...]:
+    """Leading numeric (major, minor) of a version string; ``()`` if unparsable."""
+    parts: list[int] = []
+    for chunk in version.split(".")[:2]:
+        number = ""
+        for char in chunk:
+            if char.isdigit():
+                number += char
+            else:
+                break
+        if not number:
+            break
+        parts.append(int(number))
+    return tuple(parts)
+
+
+def _check_version(coordinator_version: str) -> None:
+    """Warn on a real (major/minor) execnet version mismatch across the wire.
+
+    A minimal (patch-level) mismatch is tolerated.  For same-interpreter popen
+    the versions are always identical; this guards the future remote paths.
+    """
+    import execnet
+
+    ours = _rough_version(execnet.__version__)
+    theirs = _rough_version(coordinator_version)
+    if ours and theirs and ours != theirs:
+        sys.stderr.write(
+            "WARNING: execnet version mismatch: coordinator %s worker %s\n"
+            % (coordinator_version, execnet.__version__)
+        )
+        sys.stderr.flush()
+
+
+def _main() -> None:
+    """Entry point for ``python -m execnet._trio_worker <id> <execmodel> [ver]``.
+
+    The worker imports execnet + trio from the environment; no source is sent
+    over the wire to bootstrap it.
+    """
+    argv = sys.argv
+    worker_id = argv[1] if len(argv) > 1 else "worker"
+    execmodel = argv[2] if len(argv) > 2 else "thread"
+    if len(argv) > 3:
+        _check_version(argv[3])
+    serve_popen_trio(id=worker_id, execmodel=execmodel)
+
+
+if __name__ == "__main__":
+    _main()
