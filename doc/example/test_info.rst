@@ -172,7 +172,7 @@ sends back the results.
 Instantiate gateways through sockets
 -----------------------------------------------------
 
-.. _`socketserver.py`: https://raw.githubusercontent.com/pytest-dev/execnet/master/execnet/script/socketserver.py
+.. _`socketserver.py`: https://raw.githubusercontent.com/pytest-dev/execnet/main/src/execnet/script/socketserver.py
 
 In cases where you do not have SSH-access to a machine
 you need to download a small version-independent standalone
