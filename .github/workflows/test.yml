@@ -3,12 +3,12 @@ name: test
 on:
   push:
     branches:
-      - "master"
+      - "main"
       - "test-me-*"
 
   pull_request:
     branches:
-      - "master"
+      - "main"
 
 # Cancel running jobs for the same workflow and branch.
 concurrency:

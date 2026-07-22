@@ -7,7 +7,7 @@ This document describes the steps to make a new ``execnet`` release.
 Version
 -------
 
-``master`` should always be green and a potential release candidate. ``execnet`` follows
+``main`` should always be green and a potential release candidate. ``execnet`` follows
 semantic versioning, so given that the current version is ``X.Y.Z``, to find the next version number
 one needs to look at the ``CHANGELOG.rst`` file:
 
@@ -22,7 +22,7 @@ Steps
 
 To publish a new release ``X.Y.Z``, the steps are as follows:
 
-#. Create a new branch named ``release-X.Y.Z`` from the latest ``master``.
+#. Create a new branch named ``release-X.Y.Z`` from the latest ``main``.
 
 #. Update the ``CHANGELOG.rst`` file with the new release information.
 
@@ -30,4 +30,4 @@ To publish a new release ``X.Y.Z``, the steps are as follows:
 
 #. Once the PR is **green** and **approved**, start the ``deploy`` workflow manually from the branch ``release-VERSION``, passing ``VERSION`` as parameter.
 
-#. Merge the release PR to ``master``.
+#. Merge the release PR to ``main``.
