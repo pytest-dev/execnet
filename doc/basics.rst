@@ -57,10 +57,6 @@ Examples for valid gateway specifications
   same interpreter as the one it is initiated from and additionally
   remotely sets an environment variable ``NAME`` to ``value``.
 
-* ``popen//execmodel=eventlet`` specifies a subprocess that uses the
-  same interpreter as the one it is initiated from but will run the
-  other side using eventlet for handling IO and dispatching threads.
-
 * ``socket=192.168.1.4:8888`` specifies a Python Socket server
   process that listens on ``192.168.1.4:8888``
 
@@ -138,30 +134,29 @@ processes then you often want to call ``group.terminate()``
 yourself and specify a larger or not timeout.
 
 
-threading models: gevent, eventlet, thread, main_thread_only
+threading models: thread, main_thread_only
 ====================================================================
 
 .. versionadded:: 1.2 (status: experimental!)
 
-execnet supports "main_thread_only", "thread", "eventlet" and "gevent"
-as thread models on each of the two sides.  You need to decide which
-model to use before you create any gateways::
+execnet supports "thread" and "main_thread_only" as thread models on
+each of the two sides.  You need to decide which model to use before
+you create any gateways::
 
     # content of threadmodel.py
     import execnet
-    # locally use "eventlet", remotely use "thread" model
-    execnet.set_execmodel("eventlet", "thread")
+    # locally use "thread", remotely use "main_thread_only" model
+    execnet.set_execmodel("thread", "main_thread_only")
     gw = execnet.makegateway()
     print (gw)
     print (gw.remote_status())
     print (gw.remote_exec("channel.send(1)").receive())
 
-You need to have eventlet installed in your environment and then
-you can execute this little test file::
+You can execute this little test file::
 
     $ python threadmodel.py
-    <Gateway id='gw0' receive-live, eventlet model, 0 active channels>
-    <RInfo 'numchannels=0, numexecuting=0, execmodel=thread'>
+    <Gateway id='gw0' receive-live, thread model, 0 active channels>
+    <RInfo 'numchannels=0, numexecuting=0, execmodel=main_thread_only'>
     1
 
 How to execute in the main thread

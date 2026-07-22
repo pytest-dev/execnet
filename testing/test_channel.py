@@ -214,8 +214,6 @@ class TestChannelBasicBehaviour:
     def check_channel_callback_stays_active(
         self, gw: Gateway, earlyfree: bool = True
     ) -> Channel | None:
-        if gw.spec.execmodel == "gevent":
-            pytest.xfail("investigate gevent failure")
         # with 'earlyfree==True', this tests the "sendonly" channel state.
         l: list[int] = []
         channel = gw.remote_exec(

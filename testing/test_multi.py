@@ -69,7 +69,7 @@ class TestMultiChannelAndGateway:
         gm._gateways.append(1)  # type: ignore[arg-type]
         try:
             with pytest.raises(ValueError):
-                gm.set_execmodel("eventlet")
+                gm.set_execmodel("main_thread_only")
             assert gm.execmodel.backend == "thread"
         finally:
             gm._gateways.pop()

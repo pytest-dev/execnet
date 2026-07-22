@@ -138,7 +138,7 @@ class Group:
 
             id=<string>     specifies the gateway id
             python=<path>   specifies which python interpreter to execute
-            execmodel=model 'thread', 'main_thread_only', 'eventlet', 'gevent' execution model
+            execmodel=model 'thread' or 'main_thread_only' execution model
             chdir=<path>    specifies to which directory to change
             nice=<path>     specifies process priority of new process
             env:NAME=value  specifies a remote environment variable setting.

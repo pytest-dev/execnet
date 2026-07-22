@@ -535,36 +535,6 @@ def test_popen_args(spec: str, expected_args: list[str]) -> None:
     assert args == expected_args
 
 
-@pytest.mark.parametrize(
-    "interleave_getstatus",
-    [
-        pytest.param(True, id="interleave-remote-status"),
-        pytest.param(
-            False,
-            id="no-interleave-remote-status",
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pytest-dev/execnet/issues/123",
-            ),
-        ),
-    ],
-)
-def test_regression_gevent_hangs(
-    group: execnet.Group, interleave_getstatus: bool
-) -> None:
-    pytest.importorskip("gevent")
-    gw = group.makegateway("popen//execmodel=gevent")
-
-    print(gw.remote_status())
-
-    def sendback(channel) -> None:
-        channel.send(1234)
-
-    ch = gw.remote_exec(sendback)
-    if interleave_getstatus:
-        print(gw.remote_status())
-    assert ch.receive(timeout=0.5) == 1234
-
-
 def test_assert_main_thread_only(
     execmodel: gateway_base.ExecModel, makegateway: Callable[[str], Gateway]
 ) -> None:

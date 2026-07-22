@@ -64,8 +64,8 @@ class TestXSpec:
     def test_execmodel(self) -> None:
         spec = XSpec("execmodel=thread")
         assert spec.execmodel == "thread"
-        spec = XSpec("execmodel=eventlet")
-        assert spec.execmodel == "eventlet"
+        spec = XSpec("execmodel=main_thread_only")
+        assert spec.execmodel == "main_thread_only"
 
     def test_ssh_options_and_config(self) -> None:
         spec = XSpec("ssh=-p 22100 user@host//python=python3")
