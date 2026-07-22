@@ -12,6 +12,9 @@ description = "execnet: rapid multi-Python deployment"
 readme = {"file" = "README.rst", "content-type" = "text/x-rst"}
 license = "MIT"
 requires-python = ">=3.10"
+dependencies = [
+    "trio>=0.32",
+]
 authors = [
     { name = "holger krekel and others" },
 ]

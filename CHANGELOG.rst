@@ -2,6 +2,10 @@
 ------------------
 
 * `#380 <https://github.com/pytest-dev/execnet/pull/380>`__: Add support for Python 3.13 and 3.14, and drop EOL 3.8 and 3.9.
+* Trio host-thread Message IO for local ``popen`` + import bootstrap (coordinator and
+  worker). Adds a hard ``trio`` dependency. Disable with ``EXECNET_TRIO_HOST=0``.
+  Other gateway types and greenlet execmodels keep the legacy thread path.
+
 
 2.1.2 (2025-11-11)
 ------------------
