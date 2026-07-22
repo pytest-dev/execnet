@@ -26,8 +26,9 @@ event loop (``execnet._trio_host.TrioHost``):
 * Coordinator: ``trio.lowlevel.open_process`` plus async framed
   reader/writer tasks per gateway (one host thread per ``Group``).
 * Worker: ``serve_popen_trio`` adopts stdio pipe fds into Trio
-  streams; ``remote_exec`` still runs on the existing WorkerPool
-  (including ``main_thread_only`` primary-thread integration).
+  streams; ``remote_exec`` is scheduled from the Trio nursery
+  (``trio.to_thread`` for ``thread``, main-thread handoff for
+  ``main_thread_only``).
 
 Sync ``Channel`` / ``Gateway`` APIs are unchanged.  Sends from
 non-host threads wait until the frame is written (so abrupt

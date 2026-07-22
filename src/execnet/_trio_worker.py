@@ -1,14 +1,150 @@
-"""Worker-side Trio networking entry for popen/import bootstrap."""
+"""Worker-side Trio networking and exec scheduling for popen/import bootstrap."""
 
 from __future__ import annotations
 
 import os
+import queue
 import sys
+import threading
+from typing import TYPE_CHECKING
+from typing import Any
+
+import trio
 
 from . import gateway_base
+from .gateway_base import MAIN_THREAD_ONLY_DEADLOCK_TEXT
 from .gateway_base import WorkerGateway
 from .gateway_base import get_execmodel
+from .gateway_base import loads_internal
 from .gateway_base import trace
+
+if TYPE_CHECKING:
+    from . import _trio_host
+    from .gateway_base import Channel
+    from .gateway_base import ExecModel
+
+ExecItem = tuple[Any, ...]
+
+
+class TrioWorkerExec:
+    """Schedule ``remote_exec`` work from the Trio host nursery.
+
+    * ``thread``: run ``executetask`` via ``trio.to_thread`` (concurrent).
+    * ``main_thread_only``: hand off to the process main thread (GUI-safe).
+    """
+
+    def __init__(
+        self,
+        host: _trio_host.TrioHost,
+        gateway: WorkerGateway,
+        *,
+        main_thread_only: bool,
+    ) -> None:
+        self.host = host
+        self.gateway = gateway
+        self.main_thread_only = main_thread_only
+        self._lock = threading.Lock()
+        self._running = 0
+        self._shutting_down = False
+        self._idle = threading.Event()
+        self._idle.set()
+        self._primary_q: queue.SimpleQueue[
+            tuple[Channel, ExecItem, threading.Event] | None
+        ] = queue.SimpleQueue()
+        self._primary_wake = threading.Event()
+        # Serialize main_thread_only admission (wait+clear) so two tasks cannot
+        # both observe the idle Event before either clears it.
+        self._admit_lock = trio.Lock()
+
+    def active_count(self) -> int:
+        with self._lock:
+            return self._running
+
+    def _track_start(self) -> None:
+        with self._lock:
+            self._running += 1
+            self._idle.clear()
+
+    def _track_finish(self) -> None:
+        with self._lock:
+            self._running -= 1
+            if self._running == 0:
+                self._idle.set()
+
+    def schedule(self, channel: Channel, sourcetask: bytes) -> None:
+        """Called from the Trio receiver while holding ``_receivelock``.
+
+        Must not block: deadlock checks and exec run in a nursery task.
+        """
+        item = loads_internal(sourcetask)
+        assert isinstance(item, tuple)
+        with self._lock:
+            if self._shutting_down:
+                channel.close("execution disallowed")
+                return
+        # Already on the Trio host thread (Message handler).
+        self.host.start_soon(self._run_exec, channel, item)
+
+    async def _run_exec(self, channel: Channel, item: ExecItem) -> None:
+        if self.main_thread_only:
+            complete = self.gateway._executetask_complete
+            assert complete is not None
+
+            def _wait_slot() -> bool:
+                return complete.wait(timeout=1)
+
+            async with self._admit_lock:
+                if not await trio.to_thread.run_sync(
+                    _wait_slot, abandon_on_cancel=True
+                ):
+                    channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
+                    return
+                complete.clear()
+
+        self._track_start()
+        try:
+            if self.main_thread_only:
+                done = threading.Event()
+                self._primary_q.put((channel, item, done))
+                self._primary_wake.set()
+                await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
+            else:
+                await trio.to_thread.run_sync(
+                    self.gateway.executetask,
+                    (channel, item),
+                    abandon_on_cancel=True,
+                )
+        finally:
+            self._track_finish()
+
+    def integrate_as_primary_thread(self) -> None:
+        """Block the main thread running main_thread_only exec tasks."""
+        while True:
+            self._primary_wake.wait()
+            try:
+                task = self._primary_q.get_nowait()
+            except queue.Empty:
+                self._primary_wake.clear()
+                try:
+                    task = self._primary_q.get_nowait()
+                except queue.Empty:
+                    continue
+            if task is None:
+                break
+            channel, item, done = task
+            try:
+                self.gateway.executetask((channel, item))
+            finally:
+                done.set()
+
+    def trigger_shutdown(self) -> None:
+        with self._lock:
+            self._shutting_down = True
+        self._primary_q.put(None)
+        self._primary_wake.set()
+
+    def waitall(self, timeout: float | None = None) -> bool:
+        return self._idle.wait(timeout)
 
 
 def _prepare_protocol_fds() -> tuple[int, int]:
@@ -25,24 +161,20 @@ def _prepare_protocol_fds() -> tuple[int, int]:
     except AttributeError:
         devnull = "NUL" if os.name == "nt" else "/dev/null"
 
-    # Protocol read end: former stdin (fed by coordinator stdout write / our stdin)
     read_fd = os.dup(0)
     fd = os.open(devnull, os.O_RDONLY)
     os.dup2(fd, 0)
     os.close(fd)
 
-    # Protocol write end: former stdout
     write_fd = os.dup(1)
     fd = os.open(devnull, os.O_WRONLY)
     os.dup2(fd, 1)
 
     if os.name == "nt":
-        # Match init_popen_io: keep a stderr handle then point fd 2 at null.
         sys.stderr = os.fdopen(os.dup(2), "w", 1)
         os.dup2(fd, 2)
     os.close(fd)
 
-    # Replace sys.stdin/out with the null fds (closefd=False).
     sys.stdin = os.fdopen(0, "r", 1, closefd=False)
     sys.stdout = os.fdopen(1, "w", 1, closefd=False)
     return read_fd, write_fd
@@ -51,7 +183,7 @@ def _prepare_protocol_fds() -> tuple[int, int]:
 class _WorkerIOStub:
     """Minimal IO stub so WorkerGateway can be constructed without sync pipes."""
 
-    def __init__(self, execmodel: gateway_base.ExecModel) -> None:
+    def __init__(self, execmodel: ExecModel) -> None:
         self.execmodel = execmodel
 
     def read(self, numbytes: int) -> bytes:
@@ -74,7 +206,7 @@ class _WorkerIOStub:
 
 
 def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
-    """Serve a WorkerGateway with Message IO on a Trio host thread."""
+    """Serve a WorkerGateway with Message IO + exec scheduling on Trio."""
     from . import _trio_host
 
     model = get_execmodel(execmodel)
@@ -88,10 +220,13 @@ def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
         io_stub = _WorkerIOStub(model)
         gateway = WorkerGateway(io=io_stub, id=id, _startcount=2)
 
-        hasprimary = model.backend in ("thread", "main_thread_only")
-        gateway._execpool = gateway_base.WorkerPool(model, hasprimary=hasprimary)
+        main_thread_only = model.backend == "main_thread_only"
+        trio_exec = TrioWorkerExec(host, gateway, main_thread_only=main_thread_only)
+        # Duck-type as WorkerPool for STATUS / _terminate_execution.
+        gateway._execpool = trio_exec  # type: ignore[assignment]
+        gateway._trio_exec = trio_exec
         gateway._executetask_complete = None
-        if model.backend == "main_thread_only":
+        if main_thread_only:
             gateway._executetask_complete = model.Event()
             gateway._executetask_complete.set()
 
@@ -103,9 +238,9 @@ def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
         gateway._attach_trio_session(session)
 
         try:
-            if hasprimary:
+            if main_thread_only:
                 trace("integrating as primary thread (trio worker)")
-                gateway._execpool.integrate_as_primary_thread()
+                trio_exec.integrate_as_primary_thread()
             gateway.join()
         except KeyboardInterrupt:
             # Match WorkerGateway.serve(): swallow in the worker.

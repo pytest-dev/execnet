@@ -1245,7 +1245,14 @@ class BaseGateway:
 
 
 class WorkerGateway(BaseGateway):
+    _trio_exec: Any = None
+
     def _local_schedulexec(self, channel: Channel, sourcetask: bytes) -> None:
+        trio_exec = getattr(self, "_trio_exec", None)
+        if trio_exec is not None:
+            trio_exec.schedule(channel, sourcetask)
+            return
+
         if self._execpool.execmodel.backend == "main_thread_only":
             assert self._executetask_complete is not None
             # It's necessary to wait for a short time in order to ensure
