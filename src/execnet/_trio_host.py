@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import queue
 import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -40,20 +41,19 @@ def trio_host_enabled() -> bool:
 
 
 def should_use_trio_popen(spec: Any) -> bool:
-    """PoC: Trio path only for local popen with import bootstrap."""
+    """Trio path only for local same-interpreter popen (module bootstrap)."""
     if not trio_host_enabled():
         return False
     if not getattr(spec, "popen", False):
         return False
     if getattr(spec, "via", None):
         return False
+    # A foreign interpreter (python=) is handled by the future uv-provisioned
+    # remote path, not the same-interpreter module launch.
     if getattr(spec, "python", None):
         return False
-    # Worker exec still uses WorkerPool; greenlet models stay on the legacy path.
     execmodel = getattr(spec, "execmodel", None)
-    if execmodel not in (None, "thread", "main_thread_only"):
-        return False
-    return True
+    return execmodel in (None, "thread", "main_thread_only")
 
 
 class AsyncByteIO(Protocol):
@@ -273,7 +273,9 @@ class ProtocolSession:
     def is_alive(self) -> bool:
         return not self._done.is_set()
 
-    async def task(self, task_status: trio.TaskStatus[None] = trio.TASK_STATUS_IGNORED) -> None:
+    async def task(
+        self, task_status: trio.TaskStatus[None] = trio.TASK_STATUS_IGNORED
+    ) -> None:
         try:
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(self._writer)
@@ -480,30 +482,27 @@ async def open_popen_process(args: list[str]) -> trio.Process:
     )
 
 
-async def bootstrap_import_async(
-    process: trio.Process,
-    *,
-    importdir: str,
-    execmodel: str,
-    gateway_id: str,
-) -> ProcessStreamsIO:
-    """Send import-bootstrap source and wait for the handshake byte."""
-    io = ProcessStreamsIO(process)
-    sources = [
-        "import sys",
-        "if %r not in sys.path:" % importdir,
-        "    sys.path.insert(0, %r)" % importdir,
-        "from execnet._trio_worker import serve_popen_trio",
-        "sys.stdout.write('1')",
-        "sys.stdout.flush()",
-        "serve_popen_trio(id=%r, execmodel=%r)" % (f"{gateway_id}-worker", execmodel),
+def popen_module_args(spec: Any) -> list[str]:
+    """Launch the Trio worker as a module: ``python -m execnet._trio_worker``.
+
+    No source is sent over the wire; the worker imports the installed execnet +
+    trio.  Only valid for same-interpreter popen (see ``should_use_trio_popen``).
+    The coordinator version is passed so the worker can do a rough compatibility
+    check against its own installed version.
+    """
+    import execnet
+
+    args = [sys.executable, "-u"]
+    if getattr(spec, "dont_write_bytecode", False):
+        args.append("-B")
+    args += [
+        "-m",
+        "execnet._trio_worker",
+        f"{spec.id}-worker",
+        spec.execmodel,
+        execnet.__version__,
     ]
-    source = "\n".join(sources)
-    await io.write_all((repr(source) + "\n").encode("utf-8"))
-    ack = await io.read_exact(1)
-    if ack != b"1":
-        raise EOFError(f"bad bootstrap handshake: {ack!r}")
-    return io
+    return args
 
 
 class _TempIO:
@@ -532,25 +531,23 @@ class _TempIO:
 
 
 def makegateway_popen_trio(group: Any, spec: Any) -> Any:
-    """Create a popen Gateway using Trio process + protocol IO on both sides."""
+    """Create a same-interpreter popen Gateway on the Trio IO path.
+
+    The worker is launched as ``python -m execnet._trio_worker`` and imports the
+    installed execnet + trio; nothing is sent over the wire to bootstrap it.
+    """
     import execnet
 
-    from . import gateway_io
-    from .gateway_bootstrap import importdir
-
     host: TrioHost = group._ensure_trio_host()
-    args = gateway_io.popen_args(spec)
-    remote_execmodel = spec.execmodel
+    args = popen_module_args(spec)
 
     async def _create_and_attach() -> Any:
         process = await open_popen_process(args)
         try:
-            async_io = await bootstrap_import_async(
-                process,
-                importdir=importdir,
-                execmodel=remote_execmodel,
-                gateway_id=spec.id,
-            )
+            async_io = ProcessStreamsIO(process)
+            ack = await async_io.read_exact(1)
+            if ack != b"1":
+                raise EOFError(f"bad bootstrap handshake: {ack!r}")
         except BaseException:
             with trio.move_on_after(5):
                 process.kill()

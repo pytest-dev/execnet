@@ -18,17 +18,21 @@ for standardizing or versioning the protocol.
 Trio host-thread IO (popen / import bootstrap)
 ----------------------------------------------
 
-For local ``popen`` gateways that use import-based bootstrap
-(same installed ``execnet`` + ``trio`` on both sides), Message
-protocol IO runs inside a dedicated OS thread hosting a Trio
-event loop (``execnet._trio_host.TrioHost``):
+For local same-interpreter ``popen`` gateways, Message protocol IO
+runs inside a dedicated OS thread hosting a Trio event loop
+(``execnet._trio_host.TrioHost``).  No source is sent over the wire:
+the worker is launched as ``python -m execnet._trio_worker`` and
+imports the installed ``execnet`` + ``trio`` (a rough major/minor
+version check guards against an incompatible install):
 
 * Coordinator: ``trio.lowlevel.open_process`` plus async framed
   reader/writer tasks per gateway (one host thread per ``Group``).
+  It waits for the worker's ``b"1"`` handshake before starting the
+  Message protocol.
 * Worker: ``serve_popen_trio`` adopts stdio pipe fds into Trio
-  streams; ``remote_exec`` is scheduled from the Trio nursery
-  (``trio.to_thread`` for ``thread``, main-thread handoff for
-  ``main_thread_only``).
+  streams and writes the handshake byte; ``remote_exec`` is
+  scheduled from the Trio nursery (``trio.to_thread`` for ``thread``,
+  main-thread handoff for ``main_thread_only``).
 
 Sync ``Channel`` / ``Gateway`` APIs are unchanged.  Sends from
 non-host threads wait until the frame is written (so abrupt
