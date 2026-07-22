@@ -178,6 +178,7 @@ class ProtocolSession:
         self.process = process
         self.host = host
         self._outbound: queue.SimpleQueue[object] = queue.SimpleQueue()
+        self._wake: trio.Event | None = None
         self._done = threading.Event()
         self._process_exitcode: int | None = None
         self._process_done = threading.Event()
@@ -200,6 +201,7 @@ class ProtocolSession:
             if self._send_closed or self._done.is_set():
                 raise OSError("cannot send (already closed?)")
             self._outbound.put((message.pack(), done, errors))
+        self._wake_writer()
         if done is None:
             return
         if not done.wait(timeout=120.0):
@@ -207,12 +209,25 @@ class ProtocolSession:
         if errors:
             raise OSError("cannot send (already closed?)") from errors[0]
 
+    def _wake_writer(self) -> None:
+        wake = self._wake
+        if wake is None:
+            return
+        if self.host.is_host_thread():
+            wake.set()
+        else:
+            try:
+                self.host.call_sync(wake.set)
+            except Exception:
+                pass
+
     def request_close_write(self) -> None:
         with self._lock:
             if self._send_closed:
                 return
             self._send_closed = True
             self._outbound.put(_CLOSE_WRITE)
+        self._wake_writer()
 
     def request_close_read(self) -> None:
         # Reader observes EOF / cancel; nothing required from callers.
@@ -294,31 +309,47 @@ class ProtocolSession:
         log("finishing receiver")
 
     async def _writer(self) -> None:
+        self._wake = trio.Event()
         while True:
-            # abandon_on_cancel: queue.get blocks forever until a sentinel;
-            # nursery shutdown must not wait on it.
-            item = await trio.to_thread.run_sync(
-                self._outbound.get, abandon_on_cancel=True
-            )
-            if item is _CLOSE_WRITE:
+            while True:
                 try:
-                    await self.io.aclose_write()
-                except Exception as exc:
-                    self.gateway._trace("aclose_write failed", exc)
-                return
-            assert isinstance(item, tuple)
-            blob, done, errors = item
-            assert isinstance(blob, bytes)
+                    item = self._outbound.get_nowait()
+                except queue.Empty:
+                    break
+                if not await self._writer_handle_item(item):
+                    return
+            # Reset wake before re-check to avoid losing a notification.
+            self._wake = trio.Event()
             try:
-                await self.io.write_all(blob)
+                item = self._outbound.get_nowait()
+            except queue.Empty:
+                await self._wake.wait()
+                continue
+            if not await self._writer_handle_item(item):
+                return
+
+    async def _writer_handle_item(self, item: object) -> bool:
+        """Handle one outbound queue item. Return False when writer should stop."""
+        if item is _CLOSE_WRITE:
+            try:
+                await self.io.aclose_write()
             except Exception as exc:
-                self.gateway._trace("write failed", exc)
-                errors.append(exc)
-                with self._lock:
-                    self._send_closed = True
-            finally:
-                if done is not None:
-                    done.set()
+                self.gateway._trace("aclose_write failed", exc)
+            return False
+        assert isinstance(item, tuple)
+        blob, done, errors = item
+        assert isinstance(blob, bytes)
+        try:
+            await self.io.write_all(blob)
+        except Exception as exc:
+            self.gateway._trace("write failed", exc)
+            errors.append(exc)
+            with self._lock:
+                self._send_closed = True
+        finally:
+            if done is not None:
+                done.set()
+        return True
 
     async def _supervisor(self) -> None:
         assert self.process is not None
@@ -329,10 +360,10 @@ class ProtocolSession:
 
     async def _finish(self) -> None:
         gateway = self.gateway
-        # Unblock a writer thread left in queue.get after cancel.
         with self._lock:
             self._send_closed = True
             self._outbound.put(_CLOSE_WRITE)
+        self._wake_writer()
         gateway._trace("[trio-receiver] finishing channels")
         gateway._channelfactory._finished_receiving()
         # Unblock WorkerGateway.serve()/join before heavy exec-pool shutdown
@@ -402,6 +433,14 @@ class TrioHost:
         if self._token is None:
             raise RuntimeError("TrioHost is not running")
         return trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
+
+    def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
+        """Schedule a task on the root nursery (must be called on the host thread)."""
+        if not self.is_host_thread():
+            raise RuntimeError("start_soon requires the Trio host thread")
+        if self._nursery is None:
+            raise RuntimeError("TrioHost nursery is not available")
+        self._nursery.start_soon(async_fn, *args)
 
     async def start_session(
         self,
