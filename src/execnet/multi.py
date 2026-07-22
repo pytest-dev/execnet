@@ -52,6 +52,7 @@ class Group:
         self._autoidcounter = 0
         self._autoidlock = Lock()
         self._gateways_to_join: list[Gateway] = []
+        self._trio_host: Any = None
         # we use the same execmodel for all of the Gateway objects
         # we spawn on our side.  Probably we should not allow different
         # execmodels between different groups but not clear.
@@ -61,6 +62,14 @@ class Group:
         for xspec in xspecs:
             self.makegateway(xspec)
         atexit.register(self._cleanup_atexit)
+
+    def _ensure_trio_host(self) -> Any:
+        if self._trio_host is None:
+            from . import _trio_host
+
+            self._trio_host = _trio_host.TrioHost(name="execnet-trio-group")
+            self._trio_host.start()
+        return self._trio_host
 
     @property
     def execmodel(self) -> ExecModel:
@@ -143,7 +152,11 @@ class Group:
         self.allocate_id(spec)
         if spec.execmodel is None:
             spec.execmodel = self.remote_execmodel.backend
-        if spec.via:
+        from . import _trio_host
+
+        if _trio_host.should_use_trio_popen(spec):
+            gw = _trio_host.makegateway_popen_trio(self, spec)
+        elif spec.via:
             assert not spec.socket
             master = self[spec.via]
             proxy_channel = master.remote_exec(gateway_io)
@@ -207,6 +220,9 @@ class Group:
     def _cleanup_atexit(self) -> None:
         trace(f"=== atexit cleanup {self!r} ===")
         self.terminate(timeout=1.0)
+        if self._trio_host is not None:
+            self._trio_host.stop(timeout=1.0)
+            self._trio_host = None
 
     def terminate(self, timeout: float | None = None) -> None:
         """Trigger exit of member gateways and wait for termination

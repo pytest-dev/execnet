@@ -563,6 +563,23 @@ class Message:
         self.channelid = channelid
         self.data = data
 
+    def pack(self) -> bytes:
+        """Return the full wire frame (9-byte header + payload)."""
+        header = struct.pack("!bii", self.msgcode, self.channelid, len(self.data))
+        return header + self.data
+
+    @staticmethod
+    def from_header(header: bytes) -> tuple[int, int, int]:
+        """Unpack a 9-byte header into (msgtype, channelid, payload_len)."""
+        if len(header) != 9:
+            raise EOFError("couldn't load message header, short read")
+        msgtype, channel, payload = struct.unpack("!bii", header)
+        return msgtype, channel, payload
+
+    @staticmethod
+    def from_parts(msgtype: int, channel: int, data: bytes) -> Message:
+        return Message(msgtype, channel, data)
+
     @staticmethod
     def from_io(io: ReadIO) -> Message:
         try:
@@ -571,12 +588,11 @@ class Message:
                 raise EOFError("empty read")
         except EOFError as e:
             raise EOFError("couldn't load message header, " + e.args[0]) from None
-        msgtype, channel, payload = struct.unpack("!bii", header)
+        msgtype, channel, payload = Message.from_header(header)
         return Message(msgtype, channel, io.read(payload))
 
     def to_io(self, io: WriteIO) -> None:
-        header = struct.pack("!bii", self.msgcode, self.channelid, len(self.data))
-        io.write(header + self.data)
+        io.write(self.pack())
 
     def received(self, gateway: BaseGateway) -> None:
         handler = self._types[self.msgcode][1]
@@ -1125,6 +1141,7 @@ class ChannelFileRead(ChannelFile):
 class BaseGateway:
     _sysex = sysex
     id = "<worker>"
+    _trio_session: Any = None
 
     def __init__(self, io: IO, id, _startcount: int = 2) -> None:
         self.execmodel = io.execmodel
@@ -1137,11 +1154,18 @@ class BaseGateway:
         self.__trace = trace
         self._geterrortext = geterrortext
         self._receivepool = WorkerPool(self.execmodel)
+        self._trio_session = None
 
     def _trace(self, *msg: object) -> None:
         self.__trace(self.id, *msg)
 
+    def _attach_trio_session(self, session: Any) -> None:
+        """Attach a Trio ProtocolSession for Message IO (no receiver thread)."""
+        self._trio_session = session
+
     def _initreceive(self) -> None:
+        if self._trio_session is not None:
+            return
         self._receivepool.spawn(self._thread_receiver)
 
     def _thread_receiver(self) -> None:
@@ -1181,6 +1205,15 @@ class BaseGateway:
 
     def _send(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
         message = Message(msgcode, channelid, data)
+        session = self._trio_session
+        if session is not None:
+            try:
+                session.enqueue_message(message)
+                self._trace("sent", message)
+            except (OSError, ValueError) as e:
+                self._trace("failed to send", message, e)
+                raise OSError("cannot send (already closed?)") from e
+            return
         try:
             message.to_io(self._io)
             self._trace("sent", message)
@@ -1204,6 +1237,10 @@ class BaseGateway:
     def join(self, timeout: float | None = None) -> None:
         """Wait for receiverthread to terminate."""
         self._trace("waiting for receiver thread to finish")
+        session = self._trio_session
+        if session is not None:
+            session.wait_done(timeout)
+            return
         self._receivepool.waitall(timeout)
 
 
