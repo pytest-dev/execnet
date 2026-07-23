@@ -15,34 +15,44 @@ to and from InputOutput objects.  The details of this protocol
 are locally defined in this module.  There is no need
 for standardizing or versioning the protocol.
 
-Trio host-thread IO (popen / import bootstrap)
-----------------------------------------------
+Trio host-thread IO
+-------------------
 
-For local same-interpreter ``popen`` gateways, Message protocol IO
-runs inside a dedicated OS thread hosting a Trio event loop
-(``execnet._trio_host.TrioHost``).  No source is sent over the wire:
-the worker is launched as ``python -m execnet._trio_worker`` and
-imports the installed ``execnet`` + ``trio`` (a rough major/minor
-version check guards against an incompatible install):
+``popen`` and ``ssh`` gateways run their Message protocol IO inside a
+dedicated OS thread hosting a Trio event loop
+(``execnet._trio_host.TrioHost``).  No source is sent over the wire; the
+worker is launched as ``python -m execnet._trio_worker`` and imports the
+installed ``execnet`` + ``trio`` (a rough major/minor version check guards
+against an incompatible install).  How the worker environment is obtained
+depends on the target:
 
-* Coordinator: ``trio.lowlevel.open_process`` plus async framed
-  reader/writer tasks per gateway (one host thread per ``Group``).
-  It waits for the worker's ``b"1"`` handshake before starting the
-  Message protocol.
-* Worker: ``serve_popen_trio`` adopts stdio pipe fds into Trio
-  streams and writes the handshake byte; ``remote_exec`` is
-  scheduled from the Trio nursery (``trio.to_thread`` for ``thread``,
-  main-thread handoff for ``main_thread_only``).
+* Same-interpreter ``popen`` -> ``sys.executable -m execnet._trio_worker``.
+* A ``python=`` interpreter that already has execnet -> that interpreter
+  directly (so ``sys.executable`` is preserved).
+* A bare ``python=`` interpreter or an ``ssh`` remote -> provisioned via
+  ``uv`` (``execnet._provision``): ``uv run --with <req>`` where ``<req>``
+  is ``execnet==<ver>`` for a released coordinator or a locally-built,
+  version-cached wheel for a dev coordinator.
 
-Sync ``Channel`` / ``Gateway`` APIs are unchanged.  Sends from
-non-host threads wait until the frame is written (so abrupt
-``os._exit`` cannot drop queued data).  Sends from the Trio host
-thread (receiver callbacks) only enqueue, to avoid deadlocking
-the writer task.
+Coordinator and worker roles:
 
-Disable with ``EXECNET_TRIO_HOST=0``.  Other gateway types
-(``ssh``, ``socket``, ``via``, ``python=…``, greenlet execmodels)
-still use the legacy thread receiver and sync ``Popen`` path.
+* Coordinator: ``trio.lowlevel.open_process`` (directly, or wrapped in
+  ``ssh``) plus async framed reader/writer tasks per gateway (one host
+  thread per ``Group``).  It waits for the worker's ``b"1"`` handshake
+  before starting the Message protocol.
+* Worker: ``serve_popen_trio`` adopts stdio pipe fds into Trio streams and
+  writes the handshake byte; ``remote_exec`` is scheduled from the Trio
+  nursery (``trio.to_thread`` for ``thread``, main-thread handoff for
+  ``main_thread_only``).
+
+Sync ``Channel`` / ``Gateway`` APIs are unchanged.  Sends from non-host
+threads wait until the frame is written (so abrupt ``os._exit`` cannot drop
+queued data).  Sends from the Trio host thread (receiver callbacks) only
+enqueue, to avoid deadlocking the writer task.
+
+Disable with ``EXECNET_TRIO_HOST=0``.  Other gateway types (``socket``,
+``via``, greenlet execmodels) still use the legacy thread receiver and sync
+``Popen`` path.
 
 Legacy thread model
 -------------------

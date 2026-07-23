@@ -384,6 +384,8 @@ class TestSshPopenGateway:
     def test_sshconfig_config_parsing(
         self, monkeypatch: pytest.MonkeyPatch, makegateway: Callable[[str], Gateway]
     ) -> None:
+        # white-box test of the legacy Popen2IOMaster arg construction
+        monkeypatch.setenv("EXECNET_TRIO_HOST", "0")
         l = []
         monkeypatch.setattr(
             gateway_io, "Popen2IOMaster", lambda *args, **kwargs: l.append(args[0])
@@ -395,6 +397,17 @@ class TestSshPopenGateway:
         popen_args = l[0]
         i = popen_args.index("-F")
         assert popen_args[i + 1] == "qwe"
+
+    def test_ssh_trio_args_include_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from execnet import _provision
+        from execnet import _trio_host
+
+        monkeypatch.setattr(_provision, "coordinator_requirement", lambda: "execnet")
+        args = _trio_host.ssh_trio_args(execnet.XSpec("ssh=xyz//ssh_config=qwe"))
+        assert args[args.index("-F") + 1] == "qwe"
+        assert "xyz" in args
 
     def test_sshaddress(self, gw: Gateway, specssh: execnet.XSpec) -> None:
         assert gw.remoteaddress == specssh.ssh
