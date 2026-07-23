@@ -170,11 +170,6 @@ class Group:
         elif spec.popen or spec.ssh or spec.vagrant_ssh:
             io = gateway_io.create_io(spec, execmodel=self.execmodel)
             gw = gateway_bootstrap.bootstrap(io, spec)
-        elif spec.socket:
-            from . import gateway_socket
-
-            sio = gateway_socket.create_io(spec, self, execmodel=self.execmodel)
-            gw = gateway_bootstrap.bootstrap(sio, spec)
         else:
             raise ValueError(f"no gateway type found for {spec._spec!r}")
         gw.spec = spec
