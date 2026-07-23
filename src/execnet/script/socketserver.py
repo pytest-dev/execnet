@@ -48,7 +48,7 @@ exec(
 )
 
 
-def exec_from_one_connection(serversock) -> None:
+def exec_from_one_connection(serversock, execmodel: ExecModel) -> None:
     print_(progname, "Entering Accept loop", serversock.getsockname())
     clientsock, address = serversock.accept()
     print_(progname, "got new connection from {} {}".format(*address))
@@ -89,12 +89,12 @@ def bind_and_listen(hostport: str | tuple[str, int], execmodel: ExecModel):
     return serversock
 
 
-def startserver(serversock, loop: bool = False) -> None:
+def startserver(serversock, execmodel: ExecModel, loop: bool = False) -> None:
     execute_path = os.getcwd()
     try:
         while 1:
             try:
-                exec_from_one_connection(serversock)
+                exec_from_one_connection(serversock, execmodel)
             except (KeyboardInterrupt, SystemExit):
                 raise
             except BaseException as exc:
@@ -112,15 +112,40 @@ def startserver(serversock, loop: bool = False) -> None:
         serversock.shutdown(2)
 
 
-if __name__ == "__main__":
-    import sys
+def main(argv: list[str] | None = None) -> None:
+    """Console entry point (``execnet-socketserver``).
 
-    hostport = sys.argv[1] if len(sys.argv) > 1 else ":8888"
+    Bind a socket and serve gateway connections.  Intended to be run directly,
+    e.g. provisioned on a host with ``uvx --from execnet execnet-socketserver``.
+    """
+    import argparse
+
     from execnet.gateway_base import get_execmodel
 
+    parser = argparse.ArgumentParser(
+        prog="execnet-socketserver",
+        description="Serve execnet gateway connections over a socket.",
+    )
+    parser.add_argument(
+        "hostport",
+        nargs="?",
+        default=":8888",
+        help="address to bind as HOST:PORT or :PORT (default: :8888)",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="serve a single connection and exit instead of looping",
+    )
+    args = parser.parse_args(argv)
+
     execmodel = get_execmodel("thread")
-    serversock = bind_and_listen(hostport, execmodel)
-    startserver(serversock, loop=True)
+    serversock = bind_and_listen(args.hostport, execmodel)
+    startserver(serversock, execmodel, loop=not args.once)
+
+
+if __name__ == "__main__":
+    main()
 
 elif __name__ == "__channelexec__":
     chan: Channel = globals()["channel"]
@@ -130,4 +155,4 @@ elif __name__ == "__channelexec__":
     sock = bind_and_listen(bindname, execmodel)
     port = sock.getsockname()
     chan.send(port)
-    startserver(sock)
+    startserver(sock, execmodel)
