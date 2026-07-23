@@ -103,7 +103,7 @@ class Gateway(gateway_base.BaseGateway):
         """Whether gateway is able to receive data."""
         session = self._trio_session
         if session is not None:
-            return session.is_alive()
+            return bool(session.is_alive())
         return self._receivepool.active_count() > 0
 
     def remote_status(self) -> RemoteStatus:

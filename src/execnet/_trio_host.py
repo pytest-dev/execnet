@@ -12,11 +12,13 @@ import queue
 import subprocess
 import sys
 import threading
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
 from typing import TypeVar
+from typing import cast
 
 import trio
 
@@ -26,6 +28,7 @@ from .gateway_base import Message
 from .gateway_base import trace
 
 if TYPE_CHECKING:
+    from .gateway import Gateway
     from .gateway_base import BaseGateway
 
 T = TypeVar("T")
@@ -251,7 +254,7 @@ class ProtocolSession:
         async def _wait() -> int | None:
             assert self.process is not None
             # Always await wait() so the child is reaped (no zombies).
-            code = await self.process.wait()
+            code: int | None = await self.process.wait()
             self._process_exitcode = code
             self._process_done.set()
             return code
@@ -434,15 +437,17 @@ class TrioHost:
         finally:
             self._nursery = None
 
-    def call(self, async_fn: Callable[..., Any], *args: Any) -> Any:
+    def call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
         if self._token is None:
             raise RuntimeError("TrioHost is not running")
-        return trio.from_thread.run(async_fn, *args, trio_token=self._token)
+        return cast("T", trio.from_thread.run(async_fn, *args, trio_token=self._token))
 
     def call_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
         if self._token is None:
             raise RuntimeError("TrioHost is not running")
-        return trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
+        return cast(
+            "T", trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
+        )
 
     def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
         """Schedule a task on the root nursery (must be called on the host thread)."""
@@ -546,7 +551,7 @@ class _TempIO:
         return
 
 
-def makegateway_popen_trio(group: Any, spec: Any) -> Any:
+def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
     """Create a popen Gateway on the Trio IO path.
 
     Same-interpreter popen launches ``python -m execnet._trio_worker`` directly;
@@ -565,7 +570,7 @@ def makegateway_popen_trio(group: Any, spec: Any) -> Any:
         # same interpreter, or a python= that already has execnet
         args = popen_module_args(spec)
 
-    async def _create_and_attach() -> Any:
+    async def _create_and_attach() -> Gateway:
         process = await open_popen_process(args)
         try:
             async_io = ProcessStreamsIO(process)

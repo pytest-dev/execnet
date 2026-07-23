@@ -46,6 +46,7 @@ testing = [
     "tox",
     "hatch",
     "uv",
+    "asyncssh",
 ]
 
 [dependency-groups]
@@ -122,3 +123,7 @@ warn_unused_ignores = false
 disallow_untyped_calls = false
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = ["asyncssh.*"]
+ignore_missing_imports = true

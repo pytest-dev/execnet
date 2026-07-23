@@ -44,9 +44,7 @@ def target_has_execnet(python: str) -> bool:
 
     argv = [*shell_split_path(python), "-c", "import execnet, trio"]
     try:
-        completed = subprocess.run(
-            argv, capture_output=True, timeout=30, check=False
-        )
+        completed = subprocess.run(argv, capture_output=True, timeout=30, check=False)
         return completed.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
