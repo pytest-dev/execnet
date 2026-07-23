@@ -551,24 +551,19 @@ class _TempIO:
         return
 
 
-def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
-    """Create a popen Gateway on the Trio IO path.
+def _open_trio_gateway(
+    group: Any, spec: Any, args: list[str], *, remoteaddress: str | None = None
+) -> Gateway:
+    """Spawn ``args``, do the worker handshake, and attach a Trio session.
 
-    Same-interpreter popen launches ``python -m execnet._trio_worker`` directly;
-    a foreign interpreter (``python=``) is provisioned via ``uv``.  Either way the
-    worker imports execnet + trio; nothing is sent over the wire to bootstrap it.
+    Shared by the popen and ssh factories; ``args`` already encodes how the
+    worker is launched (direct module, uv-provisioned, or wrapped in ssh).
     """
     import execnet
 
-    from . import _provision
+    from .gateway_bootstrap import HostNotFound
 
     host: TrioHost = group._ensure_trio_host()
-    if spec.python and not _provision.target_has_execnet(spec.python):
-        # bare interpreter: provision execnet + trio via uv
-        args = _provision.uv_worker_argv(spec)
-    else:
-        # same interpreter, or a python= that already has execnet
-        args = popen_module_args(spec)
 
     async def _create_and_attach() -> Gateway:
         process = await open_popen_process(args)
@@ -577,6 +572,16 @@ def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
             ack = await async_io.read_exact(1)
             if ack != b"1":
                 raise EOFError(f"bad bootstrap handshake: {ack!r}")
+        except EOFError:
+            with trio.move_on_after(5):
+                code = await process.wait()
+                # ssh exits 255 when it cannot reach/authenticate the host.
+                if remoteaddress is not None and code == 255:
+                    raise HostNotFound(remoteaddress) from None
+            with trio.move_on_after(5):
+                process.kill()
+                await process.wait()
+            raise
         except BaseException:
             with trio.move_on_after(5):
                 process.kill()
@@ -586,7 +591,61 @@ def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
         gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
         session = await host.start_session(gw, async_io, process=process)
         gw._attach_trio_session(session)
-        gw._io = SyncIOHandle(group.execmodel, session)
+        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
         return gw
 
     return host.call(_create_and_attach)
+
+
+def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
+    """Create a popen Gateway on the Trio IO path.
+
+    Same-interpreter popen launches ``python -m execnet._trio_worker`` directly;
+    a foreign interpreter (``python=``) is provisioned via ``uv``.  Either way the
+    worker imports execnet + trio; nothing is sent over the wire to bootstrap it.
+    """
+    from . import _provision
+
+    if spec.python and not _provision.target_has_execnet(spec.python):
+        # bare interpreter: provision execnet + trio via uv
+        args = _provision.uv_worker_argv(spec)
+    else:
+        # same interpreter, or a python= that already has execnet
+        args = popen_module_args(spec)
+    return _open_trio_gateway(group, spec, args)
+
+
+def ssh_trio_args(spec: Any) -> list[str]:
+    """``ssh [-F cfg] <host> '<uv worker command>'`` for the Trio ssh path.
+
+    The remote runs the uv-provisioned worker module; the worker command is
+    shell-quoted for the remote shell.
+    """
+    import shlex
+
+    from . import _provision
+
+    remote_command = shlex.join(_provision.uv_worker_argv(spec))
+    args = ["ssh", "-C"]
+    if getattr(spec, "ssh_config", None):
+        args += ["-F", spec.ssh_config]
+    assert spec.ssh is not None
+    args += spec.ssh.split()
+    args.append(remote_command)
+    return args
+
+
+def makegateway_ssh_trio(group: Any, spec: Any) -> Gateway:
+    """Create an ssh Gateway on the Trio IO path (uv-provisioned worker)."""
+    args = ssh_trio_args(spec)
+    return _open_trio_gateway(group, spec, args, remoteaddress=spec.ssh)
+
+
+def should_use_trio_ssh(spec: Any) -> bool:
+    """Trio path for ssh gateways (worker provisioned on the remote via uv)."""
+    if not trio_host_enabled():
+        return False
+    if not getattr(spec, "ssh", None):
+        return False
+    execmodel = getattr(spec, "execmodel", None)
+    return execmodel in (None, "thread", "main_thread_only")

@@ -156,6 +156,8 @@ class Group:
 
         if _trio_host.should_use_trio_popen(spec):
             gw = _trio_host.makegateway_popen_trio(self, spec)
+        elif _trio_host.should_use_trio_ssh(spec):
+            gw = _trio_host.makegateway_ssh_trio(self, spec)
         elif spec.via:
             assert not spec.socket
             master = self[spec.via]

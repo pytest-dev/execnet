@@ -9,7 +9,6 @@ execnet Message protocol needs raw bytes).
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 import sys
 import threading
@@ -134,7 +133,12 @@ def ssh_config(ssh_server: SSHServerThread, tmp_path) -> str:
     return path
 
 
-def test_ssh_roundtrip(ssh_config: str) -> None:
+@pytest.mark.parametrize("trio_host", ["1", "0"], ids=["trio", "legacy"])
+def test_ssh_roundtrip(
+    ssh_config: str, monkeypatch: pytest.MonkeyPatch, trio_host: str
+) -> None:
+    # trio=1 provisions the worker over ssh with uv; legacy=0 source-copies it.
+    monkeypatch.setenv("EXECNET_TRIO_HOST", trio_host)
     group = execnet.Group()
     try:
         gw = group.makegateway(
