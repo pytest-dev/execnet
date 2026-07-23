@@ -37,6 +37,9 @@ classifiers = [
     "Topic :: System :: Networking",
 ]
 
+[project.scripts]
+execnet-socketserver = "execnet.script.socketserver:main"
+
 [project.optional-dependencies]
 testing = [
     "pre-commit",

@@ -58,7 +58,9 @@ Examples for valid gateway specifications
   remotely sets an environment variable ``NAME`` to ``value``.
 
 * ``socket=192.168.1.4:8888`` specifies a Python Socket server
-  process that listens on ``192.168.1.4:8888``
+  process that listens on ``192.168.1.4:8888``.  Such a server can be
+  started with the ``execnet-socketserver`` console command, e.g. run
+  anywhere with ``uvx --from execnet execnet-socketserver :8888``.
 
 .. versionadded:: 1.5
 
