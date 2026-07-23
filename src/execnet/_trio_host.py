@@ -500,11 +500,9 @@ def popen_module_args(spec: Any) -> list[str]:
 
     No source is sent over the wire; the worker imports the installed execnet +
     trio.  Used for same-interpreter popen and for a ``python=`` interpreter that
-    already has execnet (so ``sys.executable`` stays that interpreter).  The
-    coordinator version is passed so the worker can do a rough compatibility
-    check against its own installed version.
+    already has execnet (so ``sys.executable`` stays that interpreter).
     """
-    import execnet
+    from . import _provision
 
     if getattr(spec, "python", None):
         from .gateway_io import shell_split_path
@@ -516,13 +514,7 @@ def popen_module_args(spec: Any) -> list[str]:
     args = [*interpreter, "-u"]
     if getattr(spec, "dont_write_bytecode", False):
         args.append("-B")
-    args += [
-        "-m",
-        "execnet._trio_worker",
-        f"{spec.id}-worker",
-        spec.execmodel,
-        execnet.__version__,
-    ]
+    args += ["-m", "execnet._trio_worker", _provision.worker_cli_arg(spec)]
     return args
 
 
@@ -552,12 +544,19 @@ class _TempIO:
 
 
 def _open_trio_gateway(
-    group: Any, spec: Any, args: list[str], *, remoteaddress: str | None = None
+    group: Any,
+    spec: Any,
+    args: list[str],
+    *,
+    remoteaddress: str | None = None,
+    preamble: bytes = b"",
 ) -> Gateway:
     """Spawn ``args``, do the worker handshake, and attach a Trio session.
 
     Shared by the popen and ssh factories; ``args`` already encodes how the
     worker is launched (direct module, uv-provisioned, or wrapped in ssh).
+    ``preamble`` is streamed to the worker's stdin before the handshake (used to
+    ship a wheel to a remote that receives it with ``head -c``).
     """
     import execnet
 
@@ -569,6 +568,8 @@ def _open_trio_gateway(
         process = await open_popen_process(args)
         try:
             async_io = ProcessStreamsIO(process)
+            if preamble:
+                await async_io.write_all(preamble)
             ack = await async_io.read_exact(1)
             if ack != b"1":
                 raise EOFError(f"bad bootstrap handshake: {ack!r}")
@@ -615,30 +616,30 @@ def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
     return _open_trio_gateway(group, spec, args)
 
 
-def ssh_trio_args(spec: Any) -> list[str]:
-    """``ssh [-F cfg] <host> '<uv worker command>'`` for the Trio ssh path.
+def ssh_trio_args(spec: Any) -> tuple[list[str], bytes]:
+    """``(ssh argv, stdin preamble)`` for the Trio ssh path.
 
-    The remote runs the uv-provisioned worker module; the worker command is
-    shell-quoted for the remote shell.
+    The remote runs the uv-provisioned worker; for a dev coordinator the
+    preamble carries the wheel bytes that the remote command receives.
     """
-    import shlex
-
     from . import _provision
 
-    remote_command = shlex.join(_provision.uv_worker_argv(spec))
+    remote_command, preamble = _provision.ssh_remote_command(spec)
     args = ["ssh", "-C"]
     if getattr(spec, "ssh_config", None):
         args += ["-F", spec.ssh_config]
     assert spec.ssh is not None
     args += spec.ssh.split()
     args.append(remote_command)
-    return args
+    return args, preamble
 
 
 def makegateway_ssh_trio(group: Any, spec: Any) -> Gateway:
     """Create an ssh Gateway on the Trio IO path (uv-provisioned worker)."""
-    args = ssh_trio_args(spec)
-    return _open_trio_gateway(group, spec, args, remoteaddress=spec.ssh)
+    args, preamble = ssh_trio_args(spec)
+    return _open_trio_gateway(
+        group, spec, args, remoteaddress=spec.ssh, preamble=preamble
+    )
 
 
 def should_use_trio_ssh(spec: Any) -> bool:
