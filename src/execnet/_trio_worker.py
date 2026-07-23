@@ -204,8 +204,59 @@ class _WorkerIOStub:
         return
 
 
+def _build_worker_gateway(
+    host: _trio_host.TrioHost, id: str, model: ExecModel
+) -> tuple[WorkerGateway, TrioWorkerExec, bool]:
+    """Construct the WorkerGateway + Trio exec pool (no IO yet)."""
+    trace(f"creating workergateway on trio id={id!r}")
+    io_stub = _WorkerIOStub(model)
+    gateway = WorkerGateway(io=io_stub, id=id, _startcount=2)
+
+    main_thread_only = model.backend == "main_thread_only"
+    trio_exec = TrioWorkerExec(host, gateway, main_thread_only=main_thread_only)
+    # Duck-type as WorkerPool for STATUS / _terminate_execution.
+    gateway._execpool = trio_exec  # type: ignore[assignment]
+    gateway._trio_exec = trio_exec
+    gateway._executetask_complete = None
+    if main_thread_only:
+        gateway._executetask_complete = model.Event()
+        gateway._executetask_complete.set()
+    return gateway, trio_exec, main_thread_only
+
+
+def _run_worker(host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel) -> None:
+    """Attach ``io`` as the gateway session and serve until shutdown."""
+    gateway, trio_exec, main_thread_only = _build_worker_gateway(host, id, model)
+
+    async def _start() -> _trio_host.ProtocolSession:
+        return await host.start_session(gateway, io)
+
+    session = host.call(_start)
+    gateway._attach_trio_session(session)
+
+    try:
+        if main_thread_only:
+            trace("integrating as primary thread (trio worker)")
+            trio_exec.integrate_as_primary_thread()
+        gateway.join()
+    except KeyboardInterrupt:
+        # Match WorkerGateway.serve(): swallow in the worker.
+        trace("swallowing keyboardinterrupt, serve finished")
+    finally:
+        host.stop(timeout=5.0)
+        # Trio's to_thread cache uses non-daemon threads that would otherwise
+        # keep this disposable worker process alive after serve returns.
+        os._exit(0)
+
+
+async def _make_fd_io(read_fd: int, write_fd: int) -> Any:
+    from . import _trio_host
+
+    return _trio_host.FdStreamsIO(read_fd, write_fd)
+
+
 def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
-    """Serve a WorkerGateway with Message IO + exec scheduling on Trio."""
+    """Serve a WorkerGateway over the stdio pipes (popen / ssh worker)."""
     from . import _trio_host
 
     model = get_execmodel(execmodel)
@@ -214,45 +265,27 @@ def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
     # before starting the Message protocol.  We are launched as a plain module
     # (``python -m execnet._trio_worker``), so nothing was sent to bootstrap us.
     os.write(write_fd, b"1")
-    # Keep the historic trace token so tests looking for workergateway still pass.
-    trace(f"creating workergateway on trio id={id!r}")
 
     host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
     host.start()
-    try:
-        io_stub = _WorkerIOStub(model)
-        gateway = WorkerGateway(io=io_stub, id=id, _startcount=2)
+    io = host.call(_make_fd_io, read_fd, write_fd)
+    _run_worker(host, io, id, model)
 
-        main_thread_only = model.backend == "main_thread_only"
-        trio_exec = TrioWorkerExec(host, gateway, main_thread_only=main_thread_only)
-        # Duck-type as WorkerPool for STATUS / _terminate_execution.
-        gateway._execpool = trio_exec  # type: ignore[assignment]
-        gateway._trio_exec = trio_exec
-        gateway._executetask_complete = None
-        if main_thread_only:
-            gateway._executetask_complete = model.Event()
-            gateway._executetask_complete.set()
 
-        async def _start() -> _trio_host.ProtocolSession:
-            async_io = _trio_host.FdStreamsIO(read_fd, write_fd)
-            return await host.start_session(gateway, async_io)
+def serve_socket_trio(id: str, execmodel: str, socket_fd: int) -> None:
+    """Serve a WorkerGateway over an inherited socket fd.
 
-        session = host.call(_start)
-        gateway._attach_trio_session(session)
+    Used for the socketserver (an accepted TCP connection) and, in future, a
+    popen socketpair.  The socket is adopted inside Trio and the handshake is
+    written on the host loop; config comes from the CLI.
+    """
+    from . import _trio_host
 
-        try:
-            if main_thread_only:
-                trace("integrating as primary thread (trio worker)")
-                trio_exec.integrate_as_primary_thread()
-            gateway.join()
-        except KeyboardInterrupt:
-            # Match WorkerGateway.serve(): swallow in the worker.
-            trace("swallowing keyboardinterrupt, serve finished")
-    finally:
-        host.stop(timeout=5.0)
-        # Trio's to_thread cache uses non-daemon threads that would otherwise
-        # keep this disposable worker process alive after serve returns.
-        os._exit(0)
+    model = get_execmodel(execmodel)
+    host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
+    host.start()
+    io = host.call(_trio_host.adopt_socket, socket_fd)
+    _run_worker(host, io, id, model)
 
 
 def _rough_version(version: str) -> tuple[int, ...]:
@@ -290,17 +323,30 @@ def _check_version(coordinator_version: str) -> None:
 
 
 def _main() -> None:
-    """Entry point for ``python -m execnet._trio_worker <config-json>``.
+    """Entry point for ``python -m execnet._trio_worker <config-json> [--socket-fd N]``.
 
     ``<config-json>`` is the coordinator's ``_provision.worker_cli_arg`` payload:
-    ``{"id", "execmodel", "coordinator_version"}``.  The worker imports execnet +
-    trio from the environment; no source is sent over the wire to bootstrap it.
+    ``{"id", "execmodel", "coordinator_version"}``.  With ``--socket-fd`` the
+    worker serves over that inherited socket (socketserver); otherwise over the
+    stdio pipes (popen / ssh).  The worker imports execnet + trio from the
+    environment; no source is sent over the wire to bootstrap it.
     """
+    import argparse
     import json
 
-    config = json.loads(sys.argv[1])
+    parser = argparse.ArgumentParser(prog="execnet._trio_worker")
+    parser.add_argument("config", help="JSON worker config")
+    # Protocol transport: an inherited socket fd (socketserver, or a future popen
+    # socketpair); without it the worker serves over the stdio pipes (ssh).
+    parser.add_argument("--socket-fd", type=int, default=None)
+    ns = parser.parse_args()
+
+    config = json.loads(ns.config)
     _check_version(config["coordinator_version"])
-    serve_popen_trio(id=config["id"], execmodel=config["execmodel"])
+    if ns.socket_fd is not None:
+        serve_socket_trio(config["id"], config["execmodel"], ns.socket_fd)
+    else:
+        serve_popen_trio(id=config["id"], execmodel=config["execmodel"])
 
 
 if __name__ == "__main__":

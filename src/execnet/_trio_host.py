@@ -137,6 +137,45 @@ class FdStreamsIO:
         await self._write.aclose()
 
 
+class SocketStreamIO:
+    """Async IO over a single bidirectional Trio stream (a socket).
+
+    ``read_exact`` never over-reads (``receive_some(k)`` returns at most ``k``
+    bytes), so no cross-call buffering is needed.  ``aclose`` on a Trio stream is
+    idempotent, so close-read and close-write both just close the socket.
+    """
+
+    def __init__(self, stream: trio.abc.Stream) -> None:
+        self._stream = stream
+
+    async def read_exact(self, n: int) -> bytes:
+        return await read_exact_receive_stream(self._stream, n)
+
+    async def write_all(self, data: bytes) -> None:
+        await self._stream.send_all(data)
+
+    async def aclose_read(self) -> None:
+        await self._stream.aclose()
+
+    async def aclose_write(self) -> None:
+        await self._stream.aclose()
+
+
+async def adopt_socket(socket_fd: int) -> SocketStreamIO:
+    """Worker side: wrap an inherited socket fd and send the handshake.
+
+    Runs on the Trio host loop.  The coordinator waits for ``b"1"`` before
+    starting the Message protocol; the worker config comes from the CLI.
+    """
+    import socket as _socket
+
+    sock = _socket.socket(fileno=socket_fd)
+    stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
+    io = SocketStreamIO(stream)
+    await io.write_all(b"1")
+    return io
+
+
 class SyncIOHandle:
     """Sync IO facade for Group.terminate wait/kill/close_write."""
 
@@ -647,6 +686,62 @@ def should_use_trio_ssh(spec: Any) -> bool:
     if not trio_host_enabled():
         return False
     if not getattr(spec, "ssh", None):
+        return False
+    execmodel = getattr(spec, "execmodel", None)
+    return execmodel in (None, "thread", "main_thread_only")
+
+
+def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
+    """Connect a Trio TCP stream to a running ``execnet-socketserver``.
+
+    The server spawns the worker and synthesises its config, so the coordinator
+    just connects, waits for the worker's ``b"1"`` handshake, and attaches a Trio
+    session (no local process).
+    """
+    import execnet
+
+    from .gateway_bootstrap import HostNotFound
+
+    host: TrioHost = group._ensure_trio_host()
+    assert spec.socket is not None
+    host_str, _, port_str = spec.socket.rpartition(":")
+    address = (host_str, int(port_str))
+
+    async def _create_and_attach() -> Gateway:
+        try:
+            stream = await trio.open_tcp_stream(*address)
+        except OSError as exc:
+            raise HostNotFound(spec.socket) from exc
+        io = SocketStreamIO(stream)
+        try:
+            ack = await io.read_exact(1)
+            if ack != b"1":
+                raise EOFError(f"bad socket handshake: {ack!r}")
+        except BaseException:
+            with trio.move_on_after(5):
+                await stream.aclose()
+            raise
+
+        gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
+        session = await host.start_session(gw, io)
+        gw._attach_trio_session(session)
+        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=spec.socket)
+        return gw
+
+    return host.call(_create_and_attach)
+
+
+def should_use_trio_socket(spec: Any) -> bool:
+    """Trio path for direct ``socket=host:port`` gateways.
+
+    ``installvia`` (start a server through another gateway) still uses the legacy
+    path for now.
+    """
+    if not trio_host_enabled():
+        return False
+    if not getattr(spec, "socket", None):
+        return False
+    if getattr(spec, "installvia", None):
         return False
     execmodel = getattr(spec, "execmodel", None)
     return execmodel in (None, "thread", "main_thread_only")
