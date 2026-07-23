@@ -32,7 +32,15 @@ depends on the target:
 * A bare ``python=`` interpreter or an ``ssh`` remote -> provisioned via
   ``uv`` (``execnet._provision``): ``uv run --with <req>`` where ``<req>``
   is ``execnet==<ver>`` for a released coordinator or a locally-built,
-  version-cached wheel for a dev coordinator.
+  version-cached wheel for a dev coordinator.  For an ``ssh`` remote on a
+  dev coordinator the wheel is not on the remote filesystem, so the remote
+  command is a POSIX-sh prelude that reads the wheel bytes from stdin
+  (``head -c N`` into a temp dir) and ``exec``s ``uv`` against it; the
+  coordinator streams those bytes before the Message protocol.
+
+The worker configuration (id, execmodel, coordinator version) is passed as a
+single JSON CLI argument (``_provision.worker_cli_arg``), so every launcher
+shares one contract instead of scattered positional args.
 
 Coordinator and worker roles:
 

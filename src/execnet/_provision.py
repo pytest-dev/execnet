@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -143,36 +144,74 @@ def coordinator_requirement() -> str:
     return str(_build_wheel(version))
 
 
-def uv_run_argv(
-    *, python: str | None, requirement: str, module_args: list[str]
-) -> list[str]:
-    """Build ``uv run [--python X] --with <req> python -u -m execnet._trio_worker …``.
+def worker_cli_arg(spec: Any) -> str:
+    """Single JSON CLI argument carrying the worker config (the whole 'spec thing').
 
-    ``--no-project`` keeps the surrounding execnet checkout from being synced, so
-    the ephemeral env holds only the requirement (+ trio).
+    Passed to ``python -m execnet._trio_worker`` by every launcher (popen, uv,
+    ssh) so the worker config lives in one place rather than scattered positional
+    args.
     """
-    argv = ["uv", "run", "--no-project"]
-    if python:
-        argv += ["--python", python]
-    argv += [
-        "--with",
-        requirement,
-        "python",
-        "-u",
-        "-m",
-        "execnet._trio_worker",
-        *module_args,
-    ]
-    return argv
+    import execnet
+
+    return json.dumps(
+        {
+            "id": f"{spec.id}-worker",
+            "execmodel": spec.execmodel,
+            "coordinator_version": execnet.__version__,
+        }
+    )
+
+
+def worker_module_tokens(spec: Any) -> list[str]:
+    """``python -u -m execnet._trio_worker <config>`` tokens."""
+    return ["python", "-u", "-m", "execnet._trio_worker", worker_cli_arg(spec)]
+
+
+def _uv_prefix(spec: Any) -> list[str]:
+    # --no-project keeps the surrounding execnet checkout from being synced.
+    prefix = ["uv", "run", "--no-project"]
+    if spec.python:
+        prefix += ["--python", spec.python]
+    return prefix
 
 
 def uv_worker_argv(spec: Any) -> list[str]:
-    """Full ``uv run`` argv to launch the Trio worker for ``spec``."""
+    """``uv run`` argv to launch the Trio worker locally (wheel path is local)."""
+    return [
+        *_uv_prefix(spec),
+        "--with",
+        coordinator_requirement(),
+        *worker_module_tokens(spec),
+    ]
+
+
+def ssh_remote_command(spec: Any) -> tuple[str, bytes]:
+    """Remote shell command + stdin preamble to launch the worker over ssh.
+
+    Released coordinator -> ``uv run --with execnet==<ver> …`` with no preamble.
+    Dev coordinator -> a POSIX-sh prelude that receives the wheel bytes from
+    stdin (``head -c N``) into a temp dir and ``exec``s uv against it; the wheel
+    bytes are returned as the preamble to stream before the Message protocol.
+    """
     import execnet
 
-    module_args = [f"{spec.id}-worker", spec.execmodel, execnet.__version__]
-    return uv_run_argv(
-        python=spec.python,
-        requirement=coordinator_requirement(),
-        module_args=module_args,
+    version = execnet.__version__
+    worker = worker_module_tokens(spec)
+    if _RELEASED_RE.match(version):
+        command = shlex.join(
+            [*_uv_prefix(spec), "--with", f"execnet=={version}", *worker]
+        )
+        return command, b""
+
+    wheel = _build_wheel(version)
+    data = wheel.read_bytes()
+    # "$d/"<name>: expand the temp dir, concatenate the (quoted) wheel filename.
+    remote_wheel = '"$d/"' + shlex.quote(wheel.name)
+    uv_run = " ".join(shlex.quote(token) for token in [*_uv_prefix(spec), "--with"])
+    worker_cmd = " ".join(shlex.quote(token) for token in worker)
+    prelude = (
+        f"d=$(mktemp -d) && "
+        f"head -c {len(data)} > {remote_wheel} && "
+        f"exec {uv_run} {remote_wheel} {worker_cmd}"
     )
+    return prelude, data

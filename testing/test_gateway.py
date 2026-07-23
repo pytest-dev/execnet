@@ -404,10 +404,16 @@ class TestSshPopenGateway:
         from execnet import _provision
         from execnet import _trio_host
 
-        monkeypatch.setattr(_provision, "coordinator_requirement", lambda: "execnet")
-        args = _trio_host.ssh_trio_args(execnet.XSpec("ssh=xyz//ssh_config=qwe"))
+        monkeypatch.setattr(
+            _provision, "ssh_remote_command", lambda spec: ("worker-cmd", b"")
+        )
+        args, preamble = _trio_host.ssh_trio_args(
+            execnet.XSpec("ssh=xyz//ssh_config=qwe")
+        )
         assert args[args.index("-F") + 1] == "qwe"
         assert "xyz" in args
+        assert args[-1] == "worker-cmd"
+        assert preamble == b""
 
     def test_sshaddress(self, gw: Gateway, specssh: execnet.XSpec) -> None:
         assert gw.remoteaddress == specssh.ssh

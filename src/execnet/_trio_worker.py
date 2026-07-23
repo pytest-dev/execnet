@@ -290,17 +290,17 @@ def _check_version(coordinator_version: str) -> None:
 
 
 def _main() -> None:
-    """Entry point for ``python -m execnet._trio_worker <id> <execmodel> [ver]``.
+    """Entry point for ``python -m execnet._trio_worker <config-json>``.
 
-    The worker imports execnet + trio from the environment; no source is sent
-    over the wire to bootstrap it.
+    ``<config-json>`` is the coordinator's ``_provision.worker_cli_arg`` payload:
+    ``{"id", "execmodel", "coordinator_version"}``.  The worker imports execnet +
+    trio from the environment; no source is sent over the wire to bootstrap it.
     """
-    argv = sys.argv
-    worker_id = argv[1] if len(argv) > 1 else "worker"
-    execmodel = argv[2] if len(argv) > 2 else "thread"
-    if len(argv) > 3:
-        _check_version(argv[3])
-    serve_popen_trio(id=worker_id, execmodel=execmodel)
+    import json
+
+    config = json.loads(sys.argv[1])
+    _check_version(config["coordinator_version"])
+    serve_popen_trio(id=config["id"], execmodel=config["execmodel"])
 
 
 if __name__ == "__main__":
