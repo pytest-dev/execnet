@@ -548,6 +548,17 @@ class Message:
     CHANNEL_LAST_MESSAGE = 7
     _types[CHANNEL_LAST_MESSAGE] = ("CHANNEL_LAST_MESSAGE", _channel_last_message)
 
+    def _gateway_start_socket(message: Message, gateway: BaseGateway) -> None:
+        # Start a one-shot socketserver on this (Trio) gateway's host and reply
+        # with the bound (host, port) on the request channel.  Handled natively
+        # instead of shipping source via remote_exec.
+        from . import _trio_host
+
+        _trio_host.handle_start_socket(gateway, message.channelid, message.data)
+
+    GATEWAY_START_SOCKET = 8
+    _types[GATEWAY_START_SOCKET] = ("GATEWAY_START_SOCKET", _gateway_start_socket)
+
 
 class GatewayReceivedTerminate(Exception):
     """Receiverthread got termination message."""
