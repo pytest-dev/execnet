@@ -1,11 +1,14 @@
-"""Test the ``execnet-socketserver`` console entry point end to end."""
+"""Test the ``execnet-socketserver`` console entry point end to end.
+
+The Trio socketserver binds a port and spawns a ``python -m execnet._trio_worker``
+subprocess per connection (no inline code execution); the coordinator connects
+over a Trio TCP stream.
+"""
 
 from __future__ import annotations
 
 import shutil
-import socket
 import subprocess
-import time
 from collections.abc import Iterator
 
 import pytest
@@ -19,33 +22,25 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _free_port() -> int:
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
-
-
 @pytest.fixture
 def socketserver_port() -> Iterator[int]:
     assert SERVER is not None
-    port = _free_port()
     proc = subprocess.Popen(
-        [SERVER, f"127.0.0.1:{port}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        [SERVER, ":0"],  # ephemeral port; it prints the one it bound
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
     try:
-        # loop mode: a throwaway probe just consumes one accept iteration
-        for _ in range(100):
-            try:
-                socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+        assert proc.stdout is not None
+        port = None
+        while True:
+            line = proc.stdout.readline()
+            if not line:
+                pytest.fail("execnet-socketserver exited before binding")
+            if "listening on" in line:
+                port = int(line.split()[-1])
                 break
-            except OSError:
-                time.sleep(0.1)
-        else:
-            pytest.fail("execnet-socketserver did not start")
         yield port
     finally:
         proc.kill()

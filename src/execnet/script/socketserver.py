@@ -112,15 +112,74 @@ def startserver(serversock, execmodel: ExecModel, loop: bool = False) -> None:
         serversock.shutdown(2)
 
 
+async def _trio_serve(hostport: str, once: bool) -> None:
+    """Trio TCP server that spawns a worker subprocess per connection.
+
+    No code is executed inline: each accepted socket is handed (by fd) to a
+    fresh ``python -m execnet._trio_worker --socket-fd`` process which serves the
+    gateway over it.
+    """
+    import itertools
+    import json
+    import subprocess
+
+    import trio
+
+    import execnet
+
+    host, _, port_str = hostport.rpartition(":")
+    listeners = await trio.open_tcp_listeners(int(port_str), host=host or None)
+    addr = listeners[0].socket.getsockname()
+    # Report the bound address (port may be ephemeral) for callers to read.
+    print("execnet-socketserver listening on %s %s" % (addr[0], addr[1]), flush=True)
+
+    counter = itertools.count()
+
+    with trio.CancelScope() as scope:
+
+        async def handler(stream: trio.SocketStream) -> None:
+            fd = stream.socket.fileno()
+            # Synthesise the worker config (socketserver workers default to the
+            # thread model, matching the legacy socket server).
+            config = json.dumps(
+                {
+                    "id": "socketworker%d" % next(counter),
+                    "execmodel": "thread",
+                    "coordinator_version": execnet.__version__,
+                }
+            )
+            proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "execnet._trio_worker",
+                    config,
+                    "--socket-fd",
+                    str(fd),
+                ],
+                pass_fds=[fd],
+            )
+            # The child forked with a copy of the fd; release ours.
+            await stream.aclose()
+            if once:
+                scope.cancel()
+                return
+            # Reap the worker without blocking other connections.
+            await trio.to_thread.run_sync(proc.wait)
+
+        await trio.serve_listeners(handler, listeners)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Console entry point (``execnet-socketserver``).
 
-    Bind a socket and serve gateway connections.  Intended to be run directly,
-    e.g. provisioned on a host with ``uvx --from execnet execnet-socketserver``.
+    Serve execnet gateway connections over a socket, spawning a worker
+    subprocess per connection.  Intended to be run directly, e.g. provisioned on
+    a host with ``uvx --from execnet execnet-socketserver``.
     """
     import argparse
 
-    from execnet.gateway_base import get_execmodel
+    import trio
 
     parser = argparse.ArgumentParser(
         prog="execnet-socketserver",
@@ -138,10 +197,7 @@ def main(argv: list[str] | None = None) -> None:
         help="serve a single connection and exit instead of looping",
     )
     args = parser.parse_args(argv)
-
-    execmodel = get_execmodel("thread")
-    serversock = bind_and_listen(args.hostport, execmodel)
-    startserver(serversock, execmodel, loop=not args.once)
+    trio.run(_trio_serve, args.hostport, args.once)
 
 
 if __name__ == "__main__":
