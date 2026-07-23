@@ -55,26 +55,6 @@ def bootstrap_exec(io: IO, spec: XSpec) -> None:
             raise HostNotFound(io.remoteaddress) from None
 
 
-def bootstrap_socket(io: IO, id) -> None:
-    # XXX: switch to spec
-    from execnet.gateway_socket import SocketIO
-
-    sendexec(
-        io,
-        inspect.getsource(gateway_base),
-        "import socket",
-        inspect.getsource(SocketIO),
-        "try: execmodel",
-        "except NameError:",
-        "   execmodel = get_execmodel('thread')",
-        "io = SocketIO(clientsock, execmodel)",
-        "io.write('1'.encode('ascii'))",
-        "serve(io, id='%s-worker')" % id,
-    )
-    s = io.read(1)
-    assert s == b"1"
-
-
 def sendexec(io: IO, *sources: str) -> None:
     source = "\n".join(sources)
     io.write((repr(source) + "\n").encode("utf-8"))
@@ -88,8 +68,6 @@ def bootstrap(io: IO, spec: XSpec) -> execnet.Gateway:
             bootstrap_import(io, spec)
     elif spec.ssh or spec.vagrant_ssh:
         bootstrap_exec(io, spec)
-    elif spec.socket:
-        bootstrap_socket(io, spec)
     else:
         raise ValueError("unknown gateway type, can't bootstrap")
     gw = execnet.Gateway(io, spec)
