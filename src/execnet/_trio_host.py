@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import os
 import queue
 import subprocess
@@ -163,6 +164,49 @@ class SocketStreamIO:
 
     async def aclose_write(self) -> None:
         await self._stream.aclose()
+
+
+_CHANNEL_EOF = object()
+
+
+class ChannelByteIO:
+    """Async byte IO tunnelled over a sync execnet ``Channel``.
+
+    INTERIM HACK: the ``via`` transport currently runs the sub-gateway protocol
+    as raw bytes over a channel to the master, which double-frames it (sub frame
+    -> CHANNEL_DATA -> master frame).  This bridges the sync ``Channel`` to the
+    async protocol; it should be replaced by a proper relayed transport rather
+    than tunnelling bytes through the channel layer.
+
+    The channel callback (on the host loop) feeds an unbounded memory channel
+    that ``read_exact`` drains; writes ``channel.send`` raw frames.
+    """
+
+    def __init__(self, channel: Any) -> None:
+        self._channel = channel
+        self._send, self._recv = trio.open_memory_channel[Any](math.inf)
+        self._buf = bytearray()
+        channel.setcallback(self._send.send_nowait, endmarker=_CHANNEL_EOF)
+
+    async def read_exact(self, n: int) -> bytes:
+        while len(self._buf) < n:
+            data = await self._recv.receive()
+            if data is _CHANNEL_EOF:
+                raise EOFError("channel closed")
+            assert isinstance(data, bytes)
+            self._buf += data
+        out = bytes(self._buf[:n])
+        del self._buf[:n]
+        return out
+
+    async def write_all(self, data: bytes) -> None:
+        self._channel.send(data)
+
+    async def aclose_read(self) -> None:
+        return
+
+    async def aclose_write(self) -> None:
+        self._channel.close()
 
 
 async def adopt_socket(socket_fd: int) -> SocketStreamIO:
@@ -828,3 +872,95 @@ def start_socketserver_via(
     if not realhost or realhost in ("0.0.0.0", "::"):
         realhost = "localhost"
     return realhost, int(realport)
+
+
+async def _start_popen_and_relay(
+    gateway: BaseGateway, channelid: int, worker_config: str
+) -> None:
+    """Spawn a popen sub-worker and relay its Message protocol over the channel.
+
+    Runs on the master's Trio host: bytes from the channel go to the sub's
+    stdin, and the sub's stdout goes back on the channel (the ``via`` transport).
+    """
+    args = [sys.executable, "-u", "-m", "execnet._trio_worker", worker_config]
+    process = await open_popen_process(args)
+    channel = gateway._channelfactory.new(channelid)
+    send_ch, recv_ch = trio.open_memory_channel[Any](math.inf)
+    channel.setcallback(send_ch.send_nowait, endmarker=_CHANNEL_EOF)
+
+    async def coordinator_to_sub() -> None:
+        assert process.stdin is not None
+        async for data in recv_ch:
+            if data is _CHANNEL_EOF:
+                break
+            await process.stdin.send_all(data)
+        with trio.move_on_after(5):
+            await process.stdin.aclose()
+
+    async def sub_to_coordinator() -> None:
+        assert process.stdout is not None
+        while True:
+            data = await process.stdout.receive_some(65536)
+            if not data:
+                break
+            channel.send(data)
+        channel.close()
+
+    try:
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(coordinator_to_sub)
+            nursery.start_soon(sub_to_coordinator)
+    finally:
+        with trio.move_on_after(5):
+            await process.wait()
+
+
+def handle_start_popen(gateway: BaseGateway, channelid: int, data: bytes) -> None:
+    """Worker handler for ``Message.GATEWAY_START_POPEN`` (on the host thread)."""
+    worker_config = loads_internal(data)
+    assert isinstance(worker_config, str)
+    host: TrioHost = gateway._trio_exec.host  # type: ignore[attr-defined]
+    host.start_soon(_start_popen_and_relay, gateway, channelid, worker_config)
+
+
+def should_use_trio_via(spec: Any) -> bool:
+    """Trio path for ``popen//via=<gw>`` (a popen sub-gateway on the master).
+
+    Only a same-interpreter popen sub is supported for now (no ssh/foreign sub).
+    """
+    if not trio_host_enabled():
+        return False
+    if not getattr(spec, "via", None):
+        return False
+    if getattr(spec, "socket", None) or getattr(spec, "ssh", None):
+        return False
+    if getattr(spec, "python", None):
+        return False
+    execmodel = getattr(spec, "execmodel", None)
+    return execmodel in (None, "thread", "main_thread_only")
+
+
+def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
+    """Create a ``via`` gateway: a popen sub relayed through the master gateway."""
+    import execnet
+
+    from . import _provision
+
+    master = group[spec.via]
+    host: TrioHost = group._ensure_trio_host()
+    channel = master.newchannel()
+    worker_config = _provision.worker_cli_arg(spec)
+    master._send(Message.GATEWAY_START_POPEN, channel.id, dumps_internal(worker_config))
+
+    async def _create_and_attach() -> Gateway:
+        io = ChannelByteIO(channel)
+        ack = await io.read_exact(1)
+        if ack != b"1":
+            raise EOFError(f"bad via handshake: {ack!r}")
+        gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
+        session = await host.start_session(gw, io)
+        gw._attach_trio_session(session)
+        gw._io = SyncIOHandle(group.execmodel, session)
+        return gw
+
+    return host.call(_create_and_attach)
