@@ -7,6 +7,8 @@ Sync Channel/Gateway APIs talk to this host via thread-safe queues and
 
 from __future__ import annotations
 
+import itertools
+import json
 import os
 import queue
 import subprocess
@@ -25,6 +27,8 @@ import trio
 from .gateway_base import ExecModel
 from .gateway_base import GatewayReceivedTerminate
 from .gateway_base import Message
+from .gateway_base import dumps_internal
+from .gateway_base import loads_internal
 from .gateway_base import trace
 
 if TYPE_CHECKING:
@@ -703,15 +707,21 @@ def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
     from .gateway_bootstrap import HostNotFound
 
     host: TrioHost = group._ensure_trio_host()
-    assert spec.socket is not None
-    host_str, _, port_str = spec.socket.rpartition(":")
-    address = (host_str, int(port_str))
+    if getattr(spec, "installvia", None):
+        realhost, realport = start_socketserver_via(group[spec.installvia])
+        address = (realhost, realport)
+        remoteaddress = "%s:%d" % (realhost, realport)
+    else:
+        assert spec.socket is not None
+        host_str, _, port_str = spec.socket.rpartition(":")
+        address = (host_str, int(port_str))
+        remoteaddress = spec.socket
 
     async def _create_and_attach() -> Gateway:
         try:
             stream = await trio.open_tcp_stream(*address)
         except OSError as exc:
-            raise HostNotFound(spec.socket) from exc
+            raise HostNotFound(remoteaddress) from exc
         io = SocketStreamIO(stream)
         try:
             ack = await io.read_exact(1)
@@ -725,23 +735,96 @@ def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
         gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
         session = await host.start_session(gw, io)
         gw._attach_trio_session(session)
-        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=spec.socket)
+        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
         return gw
 
     return host.call(_create_and_attach)
 
 
 def should_use_trio_socket(spec: Any) -> bool:
-    """Trio path for direct ``socket=host:port`` gateways.
-
-    ``installvia`` (start a server through another gateway) still uses the legacy
-    path for now.
-    """
+    """Trio path for ``socket=host:port`` gateways, including ``installvia``."""
     if not trio_host_enabled():
         return False
     if not getattr(spec, "socket", None):
         return False
-    if getattr(spec, "installvia", None):
-        return False
     execmodel = getattr(spec, "execmodel", None)
     return execmodel in (None, "thread", "main_thread_only")
+
+
+_socket_worker_counter = itertools.count()
+
+
+def _spawn_socket_worker(fd: int) -> subprocess.Popen[bytes]:
+    """Spawn a worker subprocess serving over the inherited socket ``fd``."""
+    import execnet
+
+    config = json.dumps(
+        {
+            "id": "socketworker%d" % next(_socket_worker_counter),
+            "execmodel": "thread",
+            "coordinator_version": execnet.__version__,
+        }
+    )
+    return subprocess.Popen(
+        [sys.executable, "-m", "execnet._trio_worker", config, "--socket-fd", str(fd)],
+        pass_fds=[fd],
+    )
+
+
+async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> None:
+    """Hand an accepted socket to a fresh worker subprocess (server side).
+
+    ``reap`` waits for the worker (loop server); when false the worker outlives
+    this task (one-shot / installvia).
+    """
+    proc = _spawn_socket_worker(stream.socket.fileno())
+    # The child forked with a copy of the fd; release ours.
+    await stream.aclose()
+    if reap:
+        await trio.to_thread.run_sync(proc.wait)
+
+
+async def _start_socket_and_reply(
+    gateway: BaseGateway, channelid: int, bind_host: str
+) -> None:
+    """Bind an ephemeral port, reply with its address, then serve one connection.
+
+    Runs as a task on the worker's Trio host (scheduled from the message
+    handler).  The reply travels back on ``channelid`` like a STATUS reply.
+    """
+    listeners = await trio.open_tcp_listeners(0, host=bind_host)
+    addr = listeners[0].socket.getsockname()
+    gateway._send(Message.CHANNEL_DATA, channelid, dumps_internal((addr[0], addr[1])))
+    gateway._send(Message.CHANNEL_CLOSE, channelid)
+
+    stream = await listeners[0].accept()
+    for listener in listeners:
+        await listener.aclose()
+    await serve_socket_connection(stream, reap=True)
+
+
+def handle_start_socket(gateway: BaseGateway, channelid: int, data: bytes) -> None:
+    """Worker handler for ``Message.GATEWAY_START_SOCKET`` (on the host thread)."""
+    bind_host = loads_internal(data)
+    assert isinstance(bind_host, str)
+    host: TrioHost = gateway._trio_exec.host  # type: ignore[attr-defined]
+    # The receiver runs on the host thread, so schedule the async work directly.
+    host.start_soon(_start_socket_and_reply, gateway, channelid, bind_host)
+
+
+def start_socketserver_via(
+    via_gateway: Any, bind_host: str = "localhost"
+) -> tuple[str, int]:
+    """Ask ``via_gateway`` (protocol message) to start a one-shot socket listener.
+
+    Returns the ``(host, port)`` the coordinator should connect to.
+    """
+    channel = via_gateway.newchannel()
+    via_gateway._send(
+        Message.GATEWAY_START_SOCKET, channel.id, dumps_internal(bind_host)
+    )
+    realhost, realport = channel.receive()
+    channel.waitclose()
+    if not realhost or realhost in ("0.0.0.0", "::"):
+        realhost = "localhost"
+    return realhost, int(realport)

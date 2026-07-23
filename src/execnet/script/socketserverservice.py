@@ -15,8 +15,6 @@ import win32evtlogutil
 import win32service
 import win32serviceutil
 
-from execnet.gateway_base import get_execmodel
-
 from . import socketserver
 
 appname = "ExecNetSocketServer"
@@ -65,12 +63,9 @@ class SocketServerService(win32serviceutil.ServiceFramework):
 
         hostport = ":8888"
         print("Starting py.execnet SocketServer on %s" % hostport)
-        exec_model = get_execmodel("thread")
-        serversock = socketserver.bind_and_listen(hostport, exec_model)
         thread = threading.Thread(
-            target=socketserver.startserver, args=(serversock,), kwargs={"loop": True}
+            target=socketserver.main, args=([hostport],), daemon=True
         )
-        thread.setDaemon(True)
         thread.start()
 
         # wait to be stopped or self.WAIT_TIME to pass
