@@ -559,6 +559,16 @@ class Message:
     GATEWAY_START_SOCKET = 8
     _types[GATEWAY_START_SOCKET] = ("GATEWAY_START_SOCKET", _gateway_start_socket)
 
+    def _gateway_start_popen(message: Message, gateway: BaseGateway) -> None:
+        # Spawn a popen worker subprocess on this (Trio) gateway's host and relay
+        # its Message protocol over the request channel (the ``via`` transport).
+        from . import _trio_host
+
+        _trio_host.handle_start_popen(gateway, message.channelid, message.data)
+
+    GATEWAY_START_POPEN = 9
+    _types[GATEWAY_START_POPEN] = ("GATEWAY_START_POPEN", _gateway_start_popen)
+
 
 class GatewayReceivedTerminate(Exception):
     """Receiverthread got termination message."""

@@ -58,8 +58,17 @@ threads wait until the frame is written (so abrupt ``os._exit`` cannot drop
 queued data).  Sends from the Trio host thread (receiver callbacks) only
 enqueue, to avoid deadlocking the writer task.
 
-Disable with ``EXECNET_TRIO_HOST=0``.  Other gateway types (``socket``,
-``via``, greenlet execmodels) still use the legacy thread receiver and sync
+``socket`` and ``via`` gateways run on the Trio host too.  ``socket``
+connects a Trio TCP stream to an ``execnet-socketserver`` (itself a Trio
+listener spawning ``python -m execnet._trio_worker --socket-fd`` subprocess
+workers).  Infrastructure that used to be driven by ``remote_exec``-ing
+source is now expressed as native protocol messages handled on the target's
+Trio host: ``GATEWAY_START_SOCKET`` (installvia -> bind a one-shot listener,
+reply with its address) and ``GATEWAY_START_POPEN`` (``via`` -> spawn a popen
+sub-worker and relay its protocol over the request channel).
+
+Disable with ``EXECNET_TRIO_HOST=0``.  ssh/foreign-python ``via`` sub-gateways
+and greenlet execmodels still use the legacy thread receiver and sync
 ``Popen`` path.
 
 Legacy thread model
