@@ -76,10 +76,10 @@ class TestXSpec:
         assert args[:-1] == ["vagrant", "ssh", "default", "--", "-C"]
 
     def test_popen_with_sudo_python(self) -> None:
-        from execnet import _trio_host
+        from execnet import _trio_gateway
 
         spec = XSpec("popen//python=sudo python3//id=gw0")
-        args = _trio_host.popen_module_args(spec)
+        args = _trio_gateway.popen_module_args(spec)
         assert args[:5] == ["sudo", "python3", "-u", "-m", "execnet._trio_worker"]
 
     def test_env(self) -> None:

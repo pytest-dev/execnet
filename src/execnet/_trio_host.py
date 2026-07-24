@@ -24,6 +24,10 @@ import trio
 
 from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import ByteStream
+from ._trio_gateway import open_popen_process
+from ._trio_gateway import popen_worker_argv
+from ._trio_gateway import read_handshake_ack
+from ._trio_gateway import staple_process_stream
 from .gateway_base import ExecModel
 from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
@@ -40,27 +44,6 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 _CLOSE_WRITE = object()
-
-
-def staple_process_stream(process: trio.Process) -> ByteStream:
-    """One bidirectional stream over a Trio Process stdin/stdout pair."""
-    assert process.stdin is not None
-    assert process.stdout is not None
-    return trio.StapledStream(process.stdin, process.stdout)
-
-
-def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
-    """One bidirectional stream over OS pipe fds (worker stdio pipes)."""
-    return trio.StapledStream(
-        trio.lowlevel.FdStream(write_fd), trio.lowlevel.FdStream(read_fd)
-    )
-
-
-async def read_handshake_ack(stream: ByteStream, what: str) -> None:
-    """Wait for the worker's single ``b"1"`` ready byte."""
-    ack = await stream.receive_some(1)
-    if ack != b"1":
-        raise EOFError(f"bad {what} handshake: {ack!r}")
 
 
 _CHANNEL_EOF = object()
@@ -458,35 +441,6 @@ class TrioHost:
         self._started = False
 
 
-async def open_popen_process(args: list[str]) -> trio.Process:
-    return await trio.lowlevel.open_process(
-        args,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-    )
-
-
-def popen_module_args(spec: Any) -> list[str]:
-    """Launch the Trio worker as a module: ``python -m execnet._trio_worker``.
-
-    No source is sent over the wire; the worker imports the installed execnet +
-    trio.  Used for same-interpreter popen and for a ``python=`` interpreter that
-    already has execnet (so ``sys.executable`` stays that interpreter).
-    """
-    from . import _provision
-
-    if getattr(spec, "python", None):
-        interpreter = _provision.shell_split_path(spec.python)
-    else:
-        interpreter = [sys.executable]
-
-    args = [*interpreter, "-u"]
-    if getattr(spec, "dont_write_bytecode", False):
-        args.append("-B")
-    args += ["-m", "execnet._trio_worker", _provision.worker_cli_arg(spec)]
-    return args
-
-
 class _TempIO:
     """Placeholder IO used only while constructing a Trio-backed Gateway."""
 
@@ -572,15 +526,7 @@ def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
     a foreign interpreter (``python=``) is provisioned via ``uv``.  Either way the
     worker imports execnet + trio; nothing is sent over the wire to bootstrap it.
     """
-    from . import _provision
-
-    if spec.python and not _provision.target_has_execnet(spec.python):
-        # bare interpreter: provision execnet + trio via uv
-        args = _provision.uv_worker_argv(spec)
-    else:
-        # same interpreter, or a python= that already has execnet
-        args = popen_module_args(spec)
-    return _open_trio_gateway(group, spec, args)
+    return _open_trio_gateway(group, spec, popen_worker_argv(spec))
 
 
 def ssh_trio_args(spec: Any) -> tuple[list[str], bytes]:

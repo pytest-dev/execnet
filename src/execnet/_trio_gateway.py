@@ -21,7 +21,11 @@ unbounded memory channels.
 from __future__ import annotations
 
 import math
+import subprocess
+import sys
+import types
 from collections.abc import AsyncIterator
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from contextlib import suppress
 from typing import Any
@@ -29,6 +33,7 @@ from typing import Protocol
 
 import trio
 
+from ._exec_source import normalize_exec_source
 from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
 from .gateway_base import Message
@@ -58,6 +63,69 @@ class ByteStream(Protocol):
     async def send_eof(self) -> None: ...
 
     async def aclose(self) -> None: ...
+
+
+def staple_process_stream(process: trio.Process) -> ByteStream:
+    """One bidirectional stream over a Trio Process stdin/stdout pair."""
+    assert process.stdin is not None
+    assert process.stdout is not None
+    return trio.StapledStream(process.stdin, process.stdout)
+
+
+def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
+    """One bidirectional stream over OS pipe fds (worker stdio pipes)."""
+    return trio.StapledStream(
+        trio.lowlevel.FdStream(write_fd), trio.lowlevel.FdStream(read_fd)
+    )
+
+
+async def read_handshake_ack(stream: ByteStream, what: str) -> None:
+    """Wait for the worker's single ``b"1"`` ready byte."""
+    ack = await stream.receive_some(1)
+    if ack != b"1":
+        raise EOFError(f"bad {what} handshake: {ack!r}")
+
+
+async def open_popen_process(args: list[str]) -> trio.Process:
+    return await trio.lowlevel.open_process(
+        args,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+    )
+
+
+def popen_module_args(spec: Any) -> list[str]:
+    """Launch the Trio worker as a module: ``python -m execnet._trio_worker``.
+
+    No source is sent over the wire; the worker imports the installed execnet +
+    trio.  Used for same-interpreter popen and for a ``python=`` interpreter that
+    already has execnet (so ``sys.executable`` stays that interpreter).
+    """
+    from . import _provision
+
+    if getattr(spec, "python", None):
+        interpreter = _provision.shell_split_path(spec.python)
+    else:
+        interpreter = [sys.executable]
+
+    args = [*interpreter, "-u"]
+    if getattr(spec, "dont_write_bytecode", False):
+        args.append("-B")
+    args += ["-m", "execnet._trio_worker", _provision.worker_cli_arg(spec)]
+    return args
+
+
+def popen_worker_argv(spec: Any) -> list[str]:
+    """Argv for a popen worker: direct module launch, or uv-provisioned.
+
+    A bare ``python=`` interpreter without execnet gets execnet + trio
+    provisioned via ``uv``; otherwise the worker module is launched directly.
+    """
+    from . import _provision
+
+    if spec.python and not _provision.target_has_execnet(spec.python):
+        return _provision.uv_worker_argv(spec)
+    return popen_module_args(spec)
 
 
 class RawChannel:
@@ -352,6 +420,27 @@ class AsyncGateway:
             channel = self._async_channels[raw.id] = AsyncChannel(raw)
             return channel
 
+    async def remote_exec(
+        self,
+        source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
+        **kwargs: object,
+    ) -> AsyncChannel:
+        """Connect a new channel to remote execution of ``source``.
+
+        Accepts the same source kinds as the sync ``Gateway.remote_exec``:
+        a source string, a pure function called with ``channel`` and
+        ``**kwargs``, or a module.  The remote end closes the channel when
+        execution finishes.
+        """
+        source, file_name, call_name = normalize_exec_source(source, kwargs)
+        channel = self.open_channel()
+        await self._send(
+            Message.CHANNEL_EXEC,
+            channel.id,
+            dumps_internal((source, file_name, call_name, kwargs)),
+        )
+        return channel
+
     async def terminate(self) -> None:
         """Send GATEWAY_TERMINATE to the peer, then close this side."""
         if not self._closed:
@@ -522,3 +611,42 @@ async def serve_gateway(
             yield gateway
         finally:
             await gateway.aclose()
+
+
+@asynccontextmanager
+async def open_popen_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGateway]:
+    """Spawn a popen worker and serve an AsyncGateway over its stdio.
+
+    Runs inside the caller's own trio run -- no host thread involved.  On
+    exit the worker is asked to terminate (GATEWAY_TERMINATE), and killed
+    if it has not exited within a bounded grace period.
+    """
+    from .xspec import XSpec
+
+    if not isinstance(spec, XSpec):
+        spec = XSpec(spec)
+    if spec.execmodel is None:
+        # the sync Group normally stamps this before spawning
+        spec.execmodel = "thread"
+    process = await open_popen_process(popen_worker_argv(spec))
+    try:
+        stream = staple_process_stream(process)
+        await read_handshake_ack(stream, "popen")
+    except BaseException:
+        with trio.CancelScope(shield=True), trio.move_on_after(5):
+            process.kill()
+            await process.wait()
+        raise
+    try:
+        async with serve_gateway(stream, id=spec.id or "popen-async") as gateway:
+            try:
+                yield gateway
+            finally:
+                await gateway.terminate()
+    finally:
+        with trio.CancelScope(shield=True):
+            with trio.move_on_after(5):
+                await process.wait()
+            if process.returncode is None:
+                process.kill()
+                await process.wait()

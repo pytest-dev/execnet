@@ -17,6 +17,7 @@ import trio.testing
 
 from execnet import gateway_base
 from execnet._trio_gateway import AsyncGateway
+from execnet._trio_gateway import open_popen_gateway
 from execnet.gateway_base import Message
 from execnet.gateway_base import RemoteError
 from execnet.gateway_base import dumps_internal
@@ -270,6 +271,73 @@ def test_channel_objects_travel_over_the_wire() -> None:
             assert await extra.receive() == "over the transferred channel"
 
     trio.run(main)
+
+
+def _remote_add(channel, a, b) -> None:  # type: ignore[no-untyped-def]
+    channel.send(a + b)
+
+
+class TestPopenAsyncGateway:
+    """Integration: an AsyncGateway serving a real popen worker inside
+    the user's own trio run (no host thread)."""
+
+    def test_remote_exec_roundtrip(self) -> None:
+        async def main() -> None:
+            async with open_popen_gateway() as gateway:
+                channel = await gateway.remote_exec(
+                    "channel.send(channel.receive() + 1)"
+                )
+                await channel.send(41)
+                assert await channel.receive() == 42
+                await channel.wait_closed()
+
+        trio.run(main)
+
+    def test_remote_exec_function_with_kwargs(self) -> None:
+        async def main() -> None:
+            async with open_popen_gateway() as gateway:
+                channel = await gateway.remote_exec(_remote_add, a=40, b=2)
+                assert await channel.receive() == 42
+
+        trio.run(main)
+
+    def test_remote_error_propagates(self) -> None:
+        async def main() -> None:
+            async with open_popen_gateway() as gateway:
+                channel = await gateway.remote_exec("raise ValueError('kaboom')")
+                with pytest.raises(RemoteError, match="kaboom"):
+                    await channel.receive()
+
+        trio.run(main)
+
+    def test_exec_finish_closes_channel_ending_iteration(self) -> None:
+        async def main() -> None:
+            async with open_popen_gateway() as gateway:
+                channel = await gateway.remote_exec(
+                    "for i in range(3): channel.send(i)"
+                )
+                assert [item async for item in channel] == [0, 1, 2]
+
+        trio.run(main)
+
+    def test_concurrent_remote_execs(self) -> None:
+        async def main() -> None:
+            async with open_popen_gateway() as gateway:
+                results = []
+
+                async def run_one(value: int) -> None:
+                    channel = await gateway.remote_exec(
+                        "channel.send(channel.receive() * 10)"
+                    )
+                    await channel.send(value)
+                    results.append(await channel.receive())
+
+                async with trio.open_nursery() as nursery:
+                    for value in range(5):
+                        nursery.start_soon(run_one, value)
+                assert sorted(results) == [0, 10, 20, 30, 40]
+
+        trio.run(main)
 
 
 def test_channel_reconfigure_string_coercion() -> None:
