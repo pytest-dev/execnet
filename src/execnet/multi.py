@@ -12,7 +12,7 @@ from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Iterator
 from collections.abc import Sequence
-from functools import partial
+from contextlib import suppress
 from threading import Lock
 from typing import TYPE_CHECKING
 from typing import Any
@@ -51,6 +51,7 @@ class Group:
         self._autoidlock = Lock()
         self._gateways_to_join: list[Gateway] = []
         self._trio_host: Any = None
+        self._async_group: Any = None
         # we use the same execmodel for all of the Gateway objects
         # we spawn on our side.  Probably we should not allow different
         # execmodels between different groups but not clear.
@@ -68,6 +69,20 @@ class Group:
             self._trio_host = _trio_host.TrioHost(name="execnet-trio-group")
             self._trio_host.start()
         return self._trio_host
+
+    def _ensure_async_group(self) -> Any:
+        """The FacadeAsyncGroup owning the async side, running on the host."""
+        if self._async_group is None:
+            from . import _trio_host
+
+            host = self._ensure_trio_host()
+
+            async def _start() -> Any:
+                async_group = _trio_host.FacadeAsyncGroup(self, host)
+                return await host._nursery.start(async_group.run)
+
+            self._async_group = host.call(_start)
+        return self._async_group
 
     @property
     def execmodel(self) -> ExecModel:
@@ -152,18 +167,9 @@ class Group:
             spec.execmodel = self.remote_execmodel.backend
         from . import _trio_host
 
-        if spec.socket:
-            gw = _trio_host.makegateway_socket_trio(self, spec)
-        elif spec.via:
-            gw = _trio_host.makegateway_via_trio(self, spec)
-        elif spec.ssh:
-            gw = _trio_host.makegateway_ssh_trio(self, spec)
-        elif spec.vagrant_ssh:
-            gw = _trio_host.makegateway_vagrant_trio(self, spec)
-        elif spec.popen:
-            gw = _trio_host.makegateway_popen_trio(self, spec)
-        else:
+        if not (spec.socket or spec.via or spec.ssh or spec.vagrant_ssh or spec.popen):
             raise ValueError(f"no gateway type found for {spec._spec!r}")
+        gw = _trio_host.makegateway_trio(self, spec)
         gw.spec = spec
         self._register(gw)
         if spec.chdir or spec.nice or spec.env:
@@ -211,6 +217,10 @@ class Group:
     def _cleanup_atexit(self) -> None:
         trace(f"=== atexit cleanup {self!r} ===")
         self.terminate(timeout=1.0)
+        if self._async_group is not None:
+            with suppress(Exception):
+                self._trio_host.call_sync(self._async_group.shutdown.set)
+            self._async_group = None
         if self._trio_host is not None:
             self._trio_host.stop(timeout=1.0)
             self._trio_host = None
@@ -225,7 +235,7 @@ class Group:
         Timeout defaults to None meaning open-ended waiting and no kill
         attempts.
         """
-        while self:
+        while self or self._gateways_to_join:
             vias: set[str] = set()
             for gw in self:
                 if gw.spec.via:
@@ -233,23 +243,16 @@ class Group:
             for gw in self:
                 if gw.id not in vias:
                     gw.exit()
-
-            def join_wait(gw: Gateway) -> None:
+            if self._async_group is not None:
+                # Tunneled (via) gateways terminate before their masters,
+                # each with a GATEWAY_TERMINATE + timeout grace, then kill;
+                # bounded at roughly twice the timeout (issues #43 / #221).
+                try:
+                    self._trio_host.call(self._async_group.terminate, timeout)
+                except Exception as exc:
+                    trace("group terminate error:", exc)
+            for gw in self._gateways_to_join:
                 gw.join()
-                gw._io.wait()
-
-            def kill(gw: Gateway) -> None:
-                trace("Gateways did not come down after timeout: %r" % gw)
-                gw._io.kill()
-
-            safe_terminate(
-                self.execmodel,
-                timeout,
-                [
-                    (partial(join_wait, gw), partial(kill, gw))
-                    for gw in self._gateways_to_join
-                ],
-            )
             self._gateways_to_join[:] = []
 
     def remote_exec(

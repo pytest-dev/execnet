@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 from ._exec_source import normalize_exec_source
 from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
+from .gateway_base import HostNotFound
 from .gateway_base import Message
 from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
@@ -411,6 +412,8 @@ class AsyncGateway:
     """
 
     _error: BaseException | None = None
+    #: where the peer lives, when the transport knows (ssh host, socket addr)
+    remoteaddress: str | None = None
 
     def __init__(self, stream: ByteStream, *, id: str, _startcount: int = 1) -> None:
         self._stream = stream
@@ -420,7 +423,9 @@ class AsyncGateway:
         self._channelfactory = _AsyncChannelFactory(self)
         self._count = _startcount
         self._strconfig = (Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str)
-        self._outbound_send, self._outbound = trio.open_memory_channel[bytes](math.inf)
+        self._outbound_send, self._outbound = trio.open_memory_channel[
+            tuple[bytes, Callable[[BaseException | None], None] | None]
+        ](math.inf)
         self._closed = False
         self._serve_started = False
         self._writer_done = trio.Event()
@@ -526,10 +531,20 @@ class AsyncGateway:
         finally:
             self._closed = True
             self._outbound_send.close()
-            self._finish_channels()
-            with trio.CancelScope(shield=True), suppress(Exception):
-                await self._stream.aclose()
-            self._done.set()
+            try:
+                await self._finalize()
+            finally:
+                with trio.CancelScope(shield=True), suppress(Exception):
+                    await self._stream.aclose()
+                self._done.set()
+
+    async def _finalize(self) -> None:
+        """Serve-shutdown hook: release the channel layer.
+
+        The sync facade overrides this to close its sync channels and shut
+        down execution instead.
+        """
+        self._finish_channels()
 
     async def _reader(self) -> None:
         decoder = FrameDecoder()
@@ -554,20 +569,42 @@ class AsyncGateway:
             self._error = exc
 
     async def _writer(self) -> None:
+        error: BaseException | None = None
         try:
-            async for frame in self._outbound:
-                await self._stream.send_all(frame)
+            async for frame, on_written in self._outbound:
+                try:
+                    await self._stream.send_all(frame)
+                except BaseException as exc:
+                    error = exc
+                    if on_written is not None:
+                        on_written(exc)
+                    raise
+                if on_written is not None:
+                    on_written(None)
         except (trio.BrokenResourceError, trio.ClosedResourceError, OSError) as exc:
             self._trace("writer failed", exc)
             if self._error is None:
                 self._error = exc
-            self._outbound_send.close()  # fail future sends fast
         else:
             # Queue closed and drained: signal write-EOF to the peer.
             with suppress(Exception):
                 await self._stream.send_eof()
         finally:
+            # No more writes will happen: fail queued frames instead of
+            # leaving their senders waiting on acknowledgements.
+            self._outbound_send.close()
+            self._fail_pending_writes(error)
             self._writer_done.set()
+
+    def _fail_pending_writes(self, error: BaseException | None) -> None:
+        exc = error if error is not None else OSError("cannot send (already closed?)")
+        while True:
+            try:
+                _frame, on_written = self._outbound.receive_nowait()
+            except (trio.WouldBlock, trio.EndOfChannel, trio.ClosedResourceError):
+                return
+            if on_written is not None:
+                on_written(exc)
 
     def _dispatch(self, message: Message) -> None:
         """Route one message; runs inline on the serve task."""
@@ -627,14 +664,32 @@ class AsyncGateway:
         # The queue is unbounded, so this never waits on the peer -- but it
         # is a real checkpoint and raises once the gateway is closed.
         try:
-            await self._outbound_send.send(Message(msgcode, channelid, data).pack())
+            await self._outbound_send.send(
+                (Message(msgcode, channelid, data).pack(), None)
+            )
+        except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
+            raise OSError("cannot send (already closed?)") from exc
+
+    def enqueue_frame(
+        self,
+        frame: bytes,
+        on_written: Callable[[BaseException | None], None] | None = None,
+    ) -> None:
+        """Queue one wire frame (sync, loop thread only).
+
+        ``on_written`` fires exactly once: after the frame reached the OS
+        write, or with the failure when it never will.  Raises OSError when
+        the outbound side is already closed.
+        """
+        try:
+            self._outbound_send.send_nowait((frame, on_written))
         except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
             raise OSError("cannot send (already closed?)") from exc
 
     def _send_nowait(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
         """Enqueue a frame from a dispatch handler (sync, inline on the loop)."""
-        with suppress(trio.BrokenResourceError, trio.ClosedResourceError):
-            self._outbound_send.send_nowait(Message(msgcode, channelid, data).pack())
+        with suppress(OSError):
+            self.enqueue_frame(Message(msgcode, channelid, data).pack())
 
     def _finish_channels(self) -> None:
         for channel in list(self._channels.values()):
@@ -657,18 +712,99 @@ async def serve_gateway(
             await gateway.aclose()
 
 
-async def _connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
-    """Spawn a popen worker for ``spec`` and complete the ready handshake."""
-    process = await open_popen_process(popen_worker_argv(spec))
+def ssh_transport_args(spec: Any) -> tuple[list[str], bytes]:
+    """``(ssh argv, stdin preamble)`` for an ssh worker.
+
+    The remote runs the uv-provisioned worker; for a dev coordinator the
+    preamble carries the wheel bytes that the remote command receives.
+    """
+    from . import _provision
+
+    remote_command, preamble = _provision.ssh_remote_command(spec)
+    assert spec.ssh is not None
+    return _provision.ssh_argv(spec.ssh, spec.ssh_config, remote_command), preamble
+
+
+def vagrant_transport_args(spec: Any) -> tuple[list[str], bytes]:
+    """``(vagrant ssh argv, stdin preamble)`` for a vagrant_ssh worker."""
+    from . import _provision
+
+    remote_command, preamble = _provision.ssh_remote_command(spec)
+    assert spec.vagrant_ssh is not None
+    argv = _provision.vagrant_ssh_argv(
+        spec.vagrant_ssh, spec.ssh_config, remote_command
+    )
+    return argv, preamble
+
+
+async def connect_command_worker(
+    args: list[str],
+    *,
+    preamble: bytes = b"",
+    remoteaddress: str | None = None,
+) -> tuple[ByteStream, trio.Process]:
+    """Spawn ``args`` and complete the worker ready handshake.
+
+    ``preamble`` is streamed to the worker's stdin before the handshake
+    (a shipped wheel that the remote receives with ``head -c``).  With a
+    ``remoteaddress``, a handshake EOF plus exit code 255 (ssh could not
+    reach or authenticate the host) becomes :class:`HostNotFound`.
+    """
+    process = await open_popen_process(args)
     try:
         stream = staple_process_stream(process)
-        await read_handshake_ack(stream, "popen")
-    except BaseException:
-        with trio.CancelScope(shield=True), trio.move_on_after(5):
-            process.kill()
-            await process.wait()
+        if preamble:
+            await stream.send_all(preamble)
+        await read_handshake_ack(stream, "bootstrap")
+    except BaseException as exc:
+        host_not_found = False
+        with trio.CancelScope(shield=True):
+            if isinstance(exc, EOFError) and remoteaddress is not None:
+                with trio.move_on_after(5):
+                    host_not_found = await process.wait() == 255
+            with trio.move_on_after(5):
+                process.kill()
+                await process.wait()
+        if host_not_found:
+            assert remoteaddress is not None
+            raise HostNotFound(remoteaddress) from None
         raise
     return stream, process
+
+
+async def connect_socket_worker(
+    address: tuple[str, int], remoteaddress: str
+) -> ByteStream:
+    """Connect to a running socketserver and complete the ready handshake."""
+    try:
+        stream = await trio.open_tcp_stream(*address)
+    except OSError as exc:
+        raise HostNotFound(remoteaddress) from exc
+    try:
+        await read_handshake_ack(stream, "socket")
+    except BaseException:
+        with trio.CancelScope(shield=True), trio.move_on_after(5):
+            await stream.aclose()
+        raise
+    return stream
+
+
+async def start_socketserver_via(
+    gateway: AsyncGateway, bind_host: str = "localhost"
+) -> tuple[str, int]:
+    """Ask ``gateway`` (protocol message) to start a one-shot socket listener.
+
+    Returns the ``(host, port)`` the coordinator should connect to.
+    """
+    channel = gateway.open_channel()
+    await gateway._send(
+        Message.GATEWAY_START_SOCKET, channel.id, dumps_internal(bind_host)
+    )
+    realhost, realport = await channel.receive()
+    await channel.wait_closed()
+    if not realhost or realhost in ("0.0.0.0", "::"):
+        realhost = "localhost"
+    return realhost, int(realport)
 
 
 class AsyncGroup:
@@ -722,9 +858,10 @@ class AsyncGroup:
     async def makegateway(self, spec: str | Any = "popen") -> AsyncGateway:
         """Create a gateway for ``spec`` served on the group's nursery.
 
-        Popen-style specs (including uv-provisioned ``python=``) and
-        ``via=`` sub-gateways relayed through a group member are supported
-        on the async path for now.
+        All transport types are supported: popen (including uv-provisioned
+        ``python=``), ``ssh=``, ``vagrant_ssh=``, ``socket=`` (with
+        ``installvia=``), and ``via=`` sub-gateways relayed through a group
+        member.
         """
         from .xspec import XSpec
 
@@ -732,24 +869,72 @@ class AsyncGroup:
             raise RuntimeError(f"{self!r} is not entered")
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
-        if not (spec.popen or spec.python):
-            raise ValueError(f"unsupported spec for AsyncGroup: {spec!r}")
         if spec.execmodel is None:
             # the sync Group normally stamps this before spawning
             spec.execmodel = "thread"
         if spec.id is None:
             spec.id = "gw%d" % len(self._gateways)
         process: trio.Process | None = None
+        remoteaddress: str | None = None
         if spec.via:
             stream: ByteStream = await self._open_via_stream(spec)
+            remote = spec.ssh or spec.vagrant_ssh
+            if remote:
+                remoteaddress = f"{remote}[via {spec.via}]"
+        elif spec.socket:
+            address, remoteaddress = await self._resolve_socket_address(spec)
+            stream = await connect_socket_worker(address, remoteaddress)
+        elif spec.ssh:
+            args, preamble = ssh_transport_args(spec)
+            remoteaddress = spec.ssh
+            stream, process = await connect_command_worker(
+                args, preamble=preamble, remoteaddress=remoteaddress
+            )
+        elif spec.vagrant_ssh:
+            args, preamble = vagrant_transport_args(spec)
+            remoteaddress = spec.vagrant_ssh
+            stream, process = await connect_command_worker(
+                args, preamble=preamble, remoteaddress=remoteaddress
+            )
+        elif spec.popen or spec.python:
+            stream, process = await connect_command_worker(popen_worker_argv(spec))
         else:
-            stream, process = await _connect_popen_worker(spec)
-        gateway = AsyncGateway(stream, id=spec.id, _startcount=1)
+            raise ValueError(f"unsupported spec for AsyncGroup: {spec!r}")
+        gateway = self._make_gateway(stream, spec)
+        gateway.remoteaddress = remoteaddress
         await self._nursery.start(gateway._serve)
         self._gateways.append(gateway)
         if process is not None:
             self._processes[gateway] = process
+            self._nursery.start_soon(self._reap_process, process)
         return gateway
+
+    def _make_gateway(self, stream: ByteStream, spec: Any) -> AsyncGateway:
+        """Construct the gateway object for a freshly connected stream.
+
+        Overridden by the sync facade to build bridge gateways instead.
+        """
+        return AsyncGateway(stream, id=spec.id, _startcount=1)
+
+    async def _reap_process(self, process: trio.Process) -> None:
+        # Prompt reaping for workers that exit on their own (no zombies).
+        with suppress(Exception):
+            await process.wait()
+
+    async def _resolve_socket_address(self, spec: Any) -> tuple[tuple[str, int], str]:
+        """``((host, port), remoteaddress)`` for a ``socket=`` spec.
+
+        ``installvia=`` asks that group member to start a one-shot
+        socketserver first.  The sync facade overrides this to talk to its
+        sync master gateway.
+        """
+        if getattr(spec, "installvia", None):
+            master = self._gateway_by_id(spec.installvia)
+            realhost, realport = await start_socketserver_via(master)
+            return (realhost, realport), "%s:%d" % (realhost, realport)
+        assert spec.socket is not None
+        host_str, _, port_str = spec.socket.rpartition(":")
+        return (host_str, int(port_str)), spec.socket
 
     async def _open_via_stream(self, spec: Any) -> ByteStream:
         """Ask the ``spec.via`` master to spawn a sub-worker; tunnel over a

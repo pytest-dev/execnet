@@ -23,11 +23,12 @@ from typing import TypeVar
 import trio
 
 from ._trio_gateway import RECEIVE_CHUNK
+from ._trio_gateway import AsyncGateway
+from ._trio_gateway import AsyncGroup
 from ._trio_gateway import ByteStream
 from ._trio_gateway import open_popen_process
-from ._trio_gateway import popen_worker_argv
 from ._trio_gateway import read_handshake_ack
-from ._trio_gateway import staple_process_stream
+from ._trio_gateway import ssh_transport_args
 from .gateway_base import ExecModel
 from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
@@ -40,10 +41,13 @@ from .portal import LoopPortal
 if TYPE_CHECKING:
     from .gateway import Gateway
     from .gateway_base import BaseGateway
+    from .multi import Group
 
 T = TypeVar("T")
 
-_CLOSE_WRITE = object()
+
+# Kept name: the ssh argv/preamble builder moved to the async core.
+ssh_trio_args = ssh_transport_args
 
 
 _CHANNEL_EOF = object()
@@ -106,6 +110,8 @@ class RawTunnelStream:
             return
         self._closed = True
         self._gateway._channelfactory.unregister_raw_receiver(self.channelid)
+        # Unblock our own reader: no more payloads will be routed here.
+        self._send.send_nowait(_CHANNEL_EOF)
         with suppress(OSError):
             self._gateway._send(Message.CHANNEL_CLOSE, self.channelid)
 
@@ -125,19 +131,21 @@ async def adopt_socket(socket_fd: int) -> trio.SocketStream:
 
 
 class SyncIOHandle:
-    """Sync IO facade for Group.terminate wait/kill/close_write."""
+    """Sync IO facade for Gateway.exit close_write and terminate wait/kill."""
 
     remoteaddress: str
 
     def __init__(
         self,
         execmodel: ExecModel,
-        session: ProtocolSession,
+        session: SyncBridgeGateway,
         *,
+        process: trio.Process | None = None,
         remoteaddress: str | None = None,
     ) -> None:
         self.execmodel = execmodel
         self._session = session
+        self._process = process
         if remoteaddress is not None:
             self.remoteaddress = remoteaddress
 
@@ -148,68 +156,134 @@ class SyncIOHandle:
         raise RuntimeError("sync write not supported on Trio IO handle")
 
     def close_read(self) -> None:
-        self._session.request_close_read()
+        return
 
     def close_write(self) -> None:
         self._session.request_close_write()
 
     def wait(self) -> int | None:
-        return self._session.wait_process()
+        process = self._process
+        if process is None:
+            return None
+
+        async def _wait() -> int | None:
+            # Always await wait() so the child is reaped (no zombies).
+            code: int | None = await process.wait()
+            return code
+
+        try:
+            return self._session.host.call(_wait)
+        except Exception:
+            return process.returncode
 
     def kill(self) -> None:
-        self._session.kill_process()
+        process = self._process
+        if process is None:
+            return
+
+        async def _kill() -> None:
+            with trio.move_on_after(5):
+                process.kill()
+                await process.wait()
+
+        try:
+            self._session.host.call(_kill)
+        except Exception as exc:
+            trace("ERROR killing trio process:", exc)
 
 
-class ProtocolSession:
-    """Reader/writer tasks for one gateway connection."""
+class SyncBridgeGateway(AsyncGateway):
+    """Async engine serving a sync ``BaseGateway``.
+
+    The reader/writer/framing machinery is inherited from
+    :class:`AsyncGateway`; dispatch is overridden to run the classic sync
+    ``Message`` handlers (channel queues, callbacks, exec scheduling) under
+    the gateway's receive lock instead of routing to raw channels.
+
+    Foreign threads send through :meth:`enqueue_message`: every enqueue goes
+    through the portal so loop callbacks and threads land in one global FIFO,
+    and non-loop threads wait until the frame hit the OS write (120s ->
+    OSError) so an abrupt ``os._exit`` cannot drop already-"sent" data.
+    """
 
     def __init__(
         self,
-        gateway: BaseGateway,
-        io: ByteStream,
+        stream: ByteStream,
         *,
-        process: trio.Process | None = None,
+        id: str,
+        sync_gateway: BaseGateway,
         host: TrioHost,
     ) -> None:
-        self.gateway = gateway
-        self.io = io
-        self.process = process
+        super().__init__(stream, id=id)
+        self.sync_gateway = sync_gateway
         self.host = host
-        self._outbound_send: trio.MemorySendChannel[object]
-        self._outbound_recv: trio.MemoryReceiveChannel[object]
-        self._outbound_send, self._outbound_recv = trio.open_memory_channel(math.inf)
-        self._done = threading.Event()
-        self._process_exitcode: int | None = None
-        self._process_done = threading.Event()
+        self._done_sync = threading.Event()
         self._send_closed = False
-        self._lock = threading.Lock()
+        self._send_lock = threading.Lock()
 
-    def _post_outbound(self, item: object) -> None:
-        """Schedule ``item`` onto the outbound channel.
+    # -- engine hooks (run on the host loop) --
 
-        Goes through the portal even from the host thread so every send —
-        loop callbacks and foreign threads alike — lands in one global FIFO
-        order.  Raises ``trio.RunFinishedError`` after loop shutdown.
-        """
-        self.host.portal.post(self._outbound_send.send_nowait, item)
+    def _dispatch(self, message: Message) -> None:
+        gateway = self.sync_gateway
+        try:
+            with gateway._receivelock:
+                message.received(gateway)
+        except (GatewayReceivedTerminate, EOFError):
+            raise
+        except Exception as exc:
+            gateway._trace("dispatch failed:", gateway._geterrortext(exc))
+            raise EOFError("error dispatching message") from exc
+
+    async def _finalize(self) -> None:
+        gateway = self.sync_gateway
+        with self._send_lock:
+            self._send_closed = True
+        if gateway._error is None:
+            gateway._error = self._error
+        gateway._trace("[trio-bridge] finishing channels")
+        gateway._channelfactory._finished_receiving()
+        # Unblock the worker's join() before heavy exec-pool shutdown
+        # so the primary thread is not waiting on _done while terminate waits
+        # on the primary thread draining work.
+        self._done_sync.set()
+        gateway._trace("[trio-bridge] terminating execution")
+        # May sleep/SIGINT; keep it off the Trio scheduling thread.
+        await trio.to_thread.run_sync(
+            gateway._terminate_execution, abandon_on_cancel=True
+        )
+
+    # -- sync session interface (any thread) --
 
     def enqueue_message(self, message: Message) -> None:
         """Enqueue a frame; wait until written when safe to block.
 
-        Non-host threads wait for the OS write so abrupt ``os._exit`` (xdist
-        crash tests) cannot drop already-"sent" data still in the queue.
-
-        The Trio host thread (receiver callbacks) must not wait — that would
-        deadlock the writer task on the same event loop.
+        The Trio host thread (receiver callbacks) must not wait — that
+        would deadlock the writer task on the same event loop.
         """
+        frame = message.pack()
         wait = not self.host.portal.is_loop_thread()
         done = threading.Event() if wait else None
         errors: list[BaseException] = []
-        with self._lock:
-            if self._send_closed or self._done.is_set():
+
+        def on_written(error: BaseException | None) -> None:
+            if error is not None:
+                errors.append(error)
+            if done is not None:
+                done.set()
+
+        def post() -> None:
+            try:
+                self.enqueue_frame(frame, on_written)
+            except OSError as exc:
+                on_written(exc)
+
+        with self._send_lock:
+            if self._send_closed:
                 raise OSError("cannot send (already closed?)")
             try:
-                self._post_outbound((message.pack(), done, errors))
+                # Through the portal even from the host thread so every
+                # send lands in one global FIFO order.
+                self.host.portal.post(post)
             except trio.RunFinishedError:
                 raise OSError("cannot send (already closed?)") from None
         if done is None:
@@ -219,155 +293,33 @@ class ProtocolSession:
         if errors:
             raise OSError("cannot send (already closed?)") from errors[0]
 
+    def post_message(self, message: Message) -> None:
+        """Best-effort non-waiting send (Channel.__del__ during GC)."""
+        frame = message.pack()
+
+        def post() -> None:
+            with suppress(OSError):
+                self.enqueue_frame(frame)
+
+        try:
+            self.host.portal.post(post)
+        except trio.RunFinishedError:
+            raise OSError("cannot send (already closed?)") from None
+
     def request_close_write(self) -> None:
-        with self._lock:
+        with self._send_lock:
             if self._send_closed:
                 return
             self._send_closed = True
             with suppress(trio.RunFinishedError):
-                self._post_outbound(_CLOSE_WRITE)
-
-    def request_close_read(self) -> None:
-        # Reader observes EOF / cancel; nothing required from callers.
-        return
+                # The writer drains queued frames, then signals write-EOF.
+                self.host.portal.post(self._outbound_send.close)
 
     def wait_done(self, timeout: float | None = None) -> bool:
-        return self._done.wait(timeout)
-
-    def wait_process(self) -> int | None:
-        if self.process is None:
-            return None
-
-        async def _wait() -> int | None:
-            assert self.process is not None
-            # Always await wait() so the child is reaped (no zombies).
-            code: int | None = await self.process.wait()
-            self._process_exitcode = code
-            self._process_done.set()
-            return code
-
-        try:
-            return self.host.call(_wait)
-        except Exception:
-            self._process_done.wait()
-            return self._process_exitcode
-
-    def kill_process(self) -> None:
-        if self.process is None:
-            return
-
-        async def _kill() -> None:
-            assert self.process is not None
-            with trio.move_on_after(5):
-                self.process.kill()
-                self._process_exitcode = await self.process.wait()
-                self._process_done.set()
-
-        try:
-            self.host.call(_kill)
-        except Exception as exc:
-            trace("ERROR killing trio process:", exc)
+        return self._done_sync.wait(timeout)
 
     def is_alive(self) -> bool:
-        return not self._done.is_set()
-
-    async def task(
-        self, task_status: trio.TaskStatus[None] = trio.TASK_STATUS_IGNORED
-    ) -> None:
-        try:
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(self._writer)
-                if self.process is not None:
-                    nursery.start_soon(self._supervisor)
-                task_status.started()
-                await self._reader()
-                nursery.cancel_scope.cancel()
-        finally:
-            await self._finish()
-
-    async def _reader(self) -> None:
-        gateway = self.gateway
-
-        def log(*msg: object) -> None:
-            gateway._trace("[trio-receiver]", *msg)
-
-        log("RECEIVER: starting")
-        decoder = FrameDecoder()
-        try:
-            while True:
-                data = await self.io.receive_some(RECEIVE_CHUNK)
-                if not data:
-                    decoder.close()  # raises EOFError on a mid-frame EOF
-                    raise EOFError("clean EOF")
-                for msg in decoder.feed(data):
-                    log("received", msg)
-                    with gateway._receivelock:
-                        msg.received(gateway)
-        except GatewayReceivedTerminate:
-            log("GATEWAY_TERMINATE")
-        except EOFError as exc:
-            log("EOF without prior gateway termination message")
-            gateway._error = exc
-        except Exception as exc:
-            log(gateway._geterrortext(exc))
-        log("finishing receiver")
-
-    async def _writer(self) -> None:
-        async for item in self._outbound_recv:
-            if not await self._writer_handle_item(item):
-                return
-
-    async def _writer_handle_item(self, item: object) -> bool:
-        """Handle one outbound queue item. Return False when writer should stop."""
-        if item is _CLOSE_WRITE:
-            try:
-                await self.io.send_eof()
-            except Exception as exc:
-                self.gateway._trace("send_eof failed", exc)
-            return False
-        assert isinstance(item, tuple)
-        blob, done, errors = item
-        assert isinstance(blob, bytes)
-        try:
-            await self.io.send_all(blob)
-        except Exception as exc:
-            self.gateway._trace("write failed", exc)
-            errors.append(exc)
-            with self._lock:
-                self._send_closed = True
-        finally:
-            if done is not None:
-                done.set()
-        return True
-
-    async def _supervisor(self) -> None:
-        assert self.process is not None
-        try:
-            self._process_exitcode = await self.process.wait()
-        finally:
-            self._process_done.set()
-
-    async def _finish(self) -> None:
-        gateway = self.gateway
-        with self._lock:
-            self._send_closed = True
-            with suppress(trio.RunFinishedError):
-                self._post_outbound(_CLOSE_WRITE)
-        gateway._trace("[trio-receiver] finishing channels")
-        gateway._channelfactory._finished_receiving()
-        # Unblock the worker's join() before heavy exec-pool shutdown
-        # so the primary thread is not waiting on _done while terminate waits
-        # on the primary thread draining work.
-        self._done.set()
-        gateway._trace("[trio-receiver] terminating execution")
-        # May sleep/SIGINT; keep it off the Trio scheduling thread.
-        await trio.to_thread.run_sync(
-            gateway._terminate_execution, abandon_on_cancel=True
-        )
-        try:
-            await self.io.aclose()
-        except Exception:
-            pass
+        return not self._done_sync.is_set()
 
 
 class TrioHost:
@@ -430,16 +382,15 @@ class TrioHost:
         self._nursery.start_soon(async_fn, *args)
 
     async def start_session(
-        self,
-        gateway: BaseGateway,
-        io: ByteStream,
-        *,
-        process: trio.Process | None = None,
-    ) -> ProtocolSession:
+        self, gateway: BaseGateway, io: ByteStream
+    ) -> SyncBridgeGateway:
+        """Serve ``gateway`` over ``io`` as a task on the root nursery."""
         if self._nursery is None:
             raise RuntimeError("TrioHost nursery is not available")
-        session = ProtocolSession(gateway, io, process=process, host=self)
-        await self._nursery.start(session.task)
+        session = SyncBridgeGateway(
+            io, id=str(gateway.id), sync_gateway=gateway, host=self
+        )
+        await self._nursery.start(session._serve)
         return session
 
     def stop(self, timeout: float | None = 5.0) -> None:
@@ -484,145 +435,79 @@ class _TempIO:
         return
 
 
-def _open_trio_gateway(
-    group: Any,
-    spec: Any,
-    args: list[str],
-    *,
-    remoteaddress: str | None = None,
-    preamble: bytes = b"",
-) -> Gateway:
-    """Spawn ``args``, do the worker handshake, and attach a Trio session.
+class FacadeAsyncGroup(AsyncGroup):
+    """AsyncGroup owning the async side of a sync ``Group``.
 
-    Shared by the popen and ssh factories; ``args`` already encodes how the
-    worker is launched (direct module, uv-provisioned, or wrapped in ssh).
-    ``preamble`` is streamed to the worker's stdin before the handshake (used to
-    ship a wheel to a remote that receives it with ``head -c``).
+    Runs on the group's :class:`TrioHost`.  Gateways come out as
+    :class:`SyncBridgeGateway` objects bound to freshly built sync
+    ``Gateway`` facades, and the via / installvia flows go through the sync
+    master gateway (its dispatch is sync, so async channels cannot be used
+    on it).
     """
-    import execnet
 
-    from .gateway_base import HostNotFound
+    def __init__(self, group: Group, host: TrioHost) -> None:
+        super().__init__()
+        self.group = group
+        self.host = host
+        self.shutdown = trio.Event()
 
-    host: TrioHost = group._ensure_trio_host()
+    def _make_gateway(self, stream: ByteStream, spec: Any) -> AsyncGateway:
+        import execnet
 
-    async def _create_and_attach() -> Gateway:
-        process = await open_popen_process(args)
-        try:
-            async_io = staple_process_stream(process)
-            if preamble:
-                await async_io.send_all(preamble)
-            await read_handshake_ack(async_io, "bootstrap")
-        except EOFError:
-            with trio.move_on_after(5):
-                code = await process.wait()
-                # ssh exits 255 when it cannot reach/authenticate the host.
-                if remoteaddress is not None and code == 255:
-                    raise HostNotFound(remoteaddress) from None
-            with trio.move_on_after(5):
-                process.kill()
-                await process.wait()
-            raise
-        except BaseException:
-            with trio.move_on_after(5):
-                process.kill()
-                await process.wait()
-            raise
+        sync_gw = execnet.Gateway(_TempIO(self.group.execmodel), spec)
+        bridge = SyncBridgeGateway(
+            stream, id=spec.id, sync_gateway=sync_gw, host=self.host
+        )
+        sync_gw._attach_trio_session(bridge)
+        return bridge
 
-        gw = execnet.Gateway(_TempIO(group.execmodel), spec)
-        session = await host.start_session(gw, async_io, process=process)
-        gw._attach_trio_session(session)
-        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
-        return gw
+    async def _open_via_stream(self, spec: Any) -> ByteStream:
+        from . import _provision
 
-    return host.call(_create_and_attach)
+        master = self.group[spec.via]
+        channelid = master._channelfactory.allocate_id()
+        request = _provision.spawn_request(spec)
+        # Register the raw receiver before the request goes out so no
+        # relayed frame can arrive unrouted.
+        io = RawTunnelStream(master, channelid)
+        master._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
+        await read_handshake_ack(io, "via")
+        return io
 
-
-def makegateway_popen_trio(group: Any, spec: Any) -> Gateway:
-    """Create a popen Gateway on the Trio IO path.
-
-    Same-interpreter popen launches ``python -m execnet._trio_worker`` directly;
-    a foreign interpreter (``python=``) is provisioned via ``uv``.  Either way the
-    worker imports execnet + trio; nothing is sent over the wire to bootstrap it.
-    """
-    return _open_trio_gateway(group, spec, popen_worker_argv(spec))
-
-
-def ssh_trio_args(spec: Any) -> tuple[list[str], bytes]:
-    """``(ssh argv, stdin preamble)`` for the Trio ssh path.
-
-    The remote runs the uv-provisioned worker; for a dev coordinator the
-    preamble carries the wheel bytes that the remote command receives.
-    """
-    from . import _provision
-
-    remote_command, preamble = _provision.ssh_remote_command(spec)
-    assert spec.ssh is not None
-    return _provision.ssh_argv(spec.ssh, spec.ssh_config, remote_command), preamble
-
-
-def makegateway_ssh_trio(group: Any, spec: Any) -> Gateway:
-    """Create an ssh Gateway on the Trio IO path (uv-provisioned worker)."""
-    args, preamble = ssh_trio_args(spec)
-    return _open_trio_gateway(
-        group, spec, args, remoteaddress=spec.ssh, preamble=preamble
-    )
-
-
-def makegateway_vagrant_trio(group: Any, spec: Any) -> Gateway:
-    """Create a ``vagrant ssh``-wrapped Gateway on the Trio IO path."""
-    from . import _provision
-
-    remote_command, preamble = _provision.ssh_remote_command(spec)
-    assert spec.vagrant_ssh is not None
-    args = _provision.vagrant_ssh_argv(
-        spec.vagrant_ssh, spec.ssh_config, remote_command
-    )
-    return _open_trio_gateway(
-        group, spec, args, remoteaddress=spec.vagrant_ssh, preamble=preamble
-    )
-
-
-def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
-    """Connect a Trio TCP stream to a running ``execnet-socketserver``.
-
-    The server spawns the worker and synthesises its config, so the coordinator
-    just connects, waits for the worker's ``b"1"`` handshake, and attaches a Trio
-    session (no local process).
-    """
-    import execnet
-
-    from .gateway_base import HostNotFound
-
-    host: TrioHost = group._ensure_trio_host()
-    if getattr(spec, "installvia", None):
-        realhost, realport = start_socketserver_via(group[spec.installvia])
-        address = (realhost, realport)
-        remoteaddress = "%s:%d" % (realhost, realport)
-    else:
+    async def _resolve_socket_address(self, spec: Any) -> tuple[tuple[str, int], str]:
+        if getattr(spec, "installvia", None):
+            master = self.group[spec.installvia]
+            # Blocking sync channel receive on the master: run in a thread
+            # while this loop keeps dispatching the master's messages.
+            realhost, realport = await trio.to_thread.run_sync(
+                start_socketserver_via, master, abandon_on_cancel=True
+            )
+            return (realhost, realport), "%s:%d" % (realhost, realport)
         assert spec.socket is not None
         host_str, _, port_str = spec.socket.rpartition(":")
-        address = (host_str, int(port_str))
-        remoteaddress = spec.socket
+        return (host_str, int(port_str)), spec.socket
 
-    async def _create_and_attach() -> Gateway:
-        try:
-            stream = await trio.open_tcp_stream(*address)
-        except OSError as exc:
-            raise HostNotFound(remoteaddress) from exc
-        try:
-            await read_handshake_ack(stream, "socket")
-        except BaseException:
-            with trio.move_on_after(5):
-                await stream.aclose()
-            raise
+    async def run(self, task_status: trio.TaskStatus[FacadeAsyncGroup]) -> None:
+        """Own the group nursery as a host task until :attr:`shutdown`."""
+        async with self:
+            task_status.started(self)
+            await self.shutdown.wait()
 
-        gw = execnet.Gateway(_TempIO(group.execmodel), spec)
-        session = await host.start_session(gw, stream)
-        gw._attach_trio_session(session)
-        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
-        return gw
 
-    return host.call(_create_and_attach)
+def makegateway_trio(group: Group, spec: Any) -> Gateway:
+    """Create a sync-facade Gateway for ``spec`` on the group's Trio host."""
+    host: TrioHost = group._ensure_trio_host()
+    async_group: FacadeAsyncGroup = group._ensure_async_group()
+    bridge = host.call(async_group.makegateway, spec)
+    assert isinstance(bridge, SyncBridgeGateway)
+    gw: Gateway = bridge.sync_gateway  # type: ignore[assignment]
+    gw._io = SyncIOHandle(
+        group.execmodel,
+        bridge,
+        process=async_group._processes.get(bridge),
+        remoteaddress=bridge.remoteaddress,
+    )
+    return gw
 
 
 _socket_worker_counter = itertools.count()
@@ -784,31 +669,3 @@ def handle_start_sub(gateway: BaseGateway, channelid: int, data: bytes) -> None:
     assert isinstance(request, dict)
     host: TrioHost = gateway._trio_exec.host  # type: ignore[attr-defined]
     host.start_soon(_start_sub_and_relay, gateway, channelid, request)
-
-
-def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
-    """Create a ``via`` gateway: a sub-worker spawned by and relayed through the master."""
-    import execnet
-
-    from . import _provision
-
-    master = group[spec.via]
-    host: TrioHost = group._ensure_trio_host()
-    channelid = master._channelfactory.allocate_id()
-    request = _provision.spawn_request(spec)
-    remote = spec.ssh or spec.vagrant_ssh
-    remoteaddress = f"{remote}[via {spec.via}]" if remote else None
-
-    async def _create_and_attach() -> Gateway:
-        # Register the raw receiver before the request goes out so no
-        # relayed frame can arrive unrouted.
-        io = RawTunnelStream(master, channelid)
-        master._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
-        await read_handshake_ack(io, "via")
-        gw = execnet.Gateway(_TempIO(group.execmodel), spec)
-        session = await host.start_session(gw, io)
-        gw._attach_trio_session(session)
-        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
-        return gw
-
-    return host.call(_create_and_attach)
