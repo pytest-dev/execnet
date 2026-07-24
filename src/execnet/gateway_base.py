@@ -890,6 +890,12 @@ class ChannelFactory:
         self._callbacks: dict[
             int, tuple[Callable[[Any], Any], object, tuple[bool, bool]]
         ] = {}
+        # Channel ID => (feed, on_close) receiving CHANNEL_DATA verbatim
+        # (no serialization) -- the low-level raw channel routing used by
+        # byte-shaped consumers such as the via tunnel.
+        self._raw_receivers: dict[
+            int, tuple[Callable[[bytes], None], Callable[[RemoteError | None], None]]
+        ] = {}
         self._writelock = gateway.execmodel.Lock()
         self.gateway = gateway
         self.count = startcount
@@ -910,6 +916,31 @@ class ChannelFactory:
                 channel = self._channels[id] = Channel(self.gateway, id)
             return channel
 
+    def allocate_id(self) -> int:
+        """Reserve a fresh channel id without creating a Channel object."""
+        with self._writelock:
+            if self.finished:
+                raise OSError(f"connection already closed: {self.gateway}")
+            id = self.count
+            self.count += 2
+            return id
+
+    def register_raw_receiver(
+        self,
+        id: int,
+        feed: Callable[[bytes], None],
+        on_close: Callable[[RemoteError | None], None],
+    ) -> None:
+        """Route CHANNEL_DATA payloads for ``id`` verbatim to ``feed``.
+
+        ``on_close`` fires once when the channel closes (with the peer's
+        RemoteError, if any) or when receiving finishes.
+        """
+        self._raw_receivers[id] = (feed, on_close)
+
+    def unregister_raw_receiver(self, id: int) -> None:
+        self._raw_receivers.pop(id, None)
+
     def channels(self) -> list[Channel]:
         return self._list(self._channels.values())
 
@@ -925,6 +956,11 @@ class ChannelFactory:
                 callback(endmarker)
 
     def _local_close(self, id: int, remoteerror=None, sendonly: bool = False) -> None:
+        raw = self._raw_receivers.pop(id, None)
+        if raw is not None:
+            _feed, on_close = raw
+            on_close(remoteerror)
+            return
         channel = self._channels.get(id)
         if channel is None:
             # channel already in "deleted" state
@@ -945,6 +981,11 @@ class ChannelFactory:
 
     def _local_receive(self, id: int, data) -> None:
         # executes in receiver thread
+        raw = self._raw_receivers.get(id)
+        if raw is not None:
+            feed, _on_close = raw
+            feed(data)
+            return
         channel = self._channels.get(id)
         try:
             callback, _endmarker, strconfig = self._callbacks[id]
@@ -974,6 +1015,10 @@ class ChannelFactory:
             self._local_close(id, sendonly=True)
         for id in self._list(self._callbacks):
             self._no_longer_opened(id)
+        for id in self._list(self._raw_receivers):
+            item = self._raw_receivers.pop(id, None)
+            if item is not None:
+                item[1](None)
 
 
 class ChannelFile:

@@ -49,36 +49,46 @@ _CLOSE_WRITE = object()
 _CHANNEL_EOF = object()
 
 
-class ChannelByteStream:
-    """``ByteStream`` tunnelled over a sync execnet ``Channel``.
+class RawTunnelStream:
+    """``ByteStream`` over a raw channel id on a sync master ``Gateway``.
 
-    INTERIM HACK: the ``via`` transport currently runs the sub-gateway protocol
-    as raw bytes over a channel to the master, which double-frames it (sub frame
-    -> CHANNEL_DATA -> master frame).  This bridges the sync ``Channel`` to the
-    async protocol; it dissolves once low-level raw channels exist (Phase B.4).
-
-    The channel callback (on the host loop) feeds an unbounded memory channel
-    that ``receive_some`` drains; writes ``channel.send`` raw bytes.
+    The frame-native via tunnel: the master relays whole sub-protocol
+    frames as verbatim CHANNEL_DATA payloads (no serialization, no
+    double-framing), so this stream only buffers payloads; the
+    sub-session's FrameDecoder sees exact frame boundaries.
     """
 
-    def __init__(self, channel: Any) -> None:
-        self._channel = channel
+    def __init__(self, gateway: BaseGateway, channelid: int) -> None:
+        self._gateway = gateway
+        self.channelid = channelid
         self._send, self._recv = trio.open_memory_channel[Any](math.inf)
         self._buf = bytearray()
         self._eof = False
-        channel.setcallback(self._send.send_nowait, endmarker=_CHANNEL_EOF)
+        self._closed = False
+        gateway._channelfactory.register_raw_receiver(
+            channelid, self._on_data, self._on_close
+        )
+
+    def _on_data(self, data: bytes) -> None:
+        self._send.send_nowait(data)
+
+    def _on_close(self, error: Any) -> None:
+        self._send.send_nowait(_CHANNEL_EOF if error is None else error)
 
     async def send_all(self, data: bytes) -> None:
-        self._channel.send(data)
+        self._gateway._send(Message.CHANNEL_DATA, self.channelid, data)
 
     async def receive_some(self, max_bytes: int | None = None) -> bytes:
         if not self._buf and not self._eof:
-            data = await self._recv.receive()
-            if data is _CHANNEL_EOF:
+            item = await self._recv.receive()
+            if item is _CHANNEL_EOF:
                 self._eof = True
+            elif isinstance(item, Exception):
+                self._eof = True
+                raise EOFError(f"via tunnel closed: {item}") from None
             else:
-                assert isinstance(data, bytes)
-                self._buf += data
+                assert isinstance(item, bytes)
+                self._buf += item
         if max_bytes is None:
             max_bytes = len(self._buf)
         out = bytes(self._buf[:max_bytes])
@@ -86,10 +96,18 @@ class ChannelByteStream:
         return out
 
     async def send_eof(self) -> None:
-        self._channel.close()
+        self._close_tunnel()
 
     async def aclose(self) -> None:
-        self._channel.close()
+        self._close_tunnel()
+
+    def _close_tunnel(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._gateway._channelfactory.unregister_raw_receiver(self.channelid)
+        with suppress(OSError):
+            self._gateway._send(Message.CHANNEL_CLOSE, self.channelid)
 
 
 async def adopt_socket(socket_fd: int) -> trio.SocketStream:
@@ -689,24 +707,35 @@ def start_socketserver_via(
 async def _start_sub_and_relay(
     gateway: BaseGateway, channelid: int, request: dict[str, Any]
 ) -> None:
-    """Spawn a requested sub-worker and relay its Message protocol over the channel.
+    """Spawn a requested sub-worker and relay its Message protocol frames.
 
-    Runs on the master's Trio host: bytes from the channel go to the sub's
-    stdin, and the sub's stdout goes back on the channel (the ``via`` transport).
+    Runs on the master's Trio host (the ``via`` transport).  The tunnel is
+    frame-native both ways: coordinator payloads arrive verbatim through the
+    raw-receiver registry and go to the sub's stdin unchanged (each payload
+    one whole frame), while the sub's stdout runs through a FrameDecoder so
+    every CHANNEL_DATA sent back carries exactly one frame -- except the
+    initial ready byte, which is forwarded on its own for the handshake.
     A stdin preamble (shipped wheel for a dev-version ssh sub) is streamed
     before the relayed protocol bytes.
     """
     from . import _provision
 
-    channel = gateway._channelfactory.new(channelid)
+    def send_close_error(text: str) -> None:
+        with suppress(OSError):
+            gateway._send(Message.CHANNEL_CLOSE_ERROR, channelid, dumps_internal(text))
+
     try:
         args, preamble = _provision.sub_spawn_argv(request)
         process = await open_popen_process(args)
     except Exception as exc:
-        channel.close(f"could not spawn via sub-gateway: {exc}")
+        send_close_error(f"could not spawn via sub-gateway: {exc}")
         return
     send_ch, recv_ch = trio.open_memory_channel[Any](math.inf)
-    channel.setcallback(send_ch.send_nowait, endmarker=_CHANNEL_EOF)
+    gateway._channelfactory.register_raw_receiver(
+        channelid,
+        send_ch.send_nowait,
+        lambda error: send_ch.send_nowait(_CHANNEL_EOF),
+    )
 
     async def coordinator_to_sub() -> None:
         assert process.stdin is not None
@@ -721,12 +750,18 @@ async def _start_sub_and_relay(
 
     async def sub_to_coordinator() -> None:
         assert process.stdout is not None
-        while True:
-            data = await process.stdout.receive_some(65536)
-            if not data:
-                break
-            channel.send(data)
-        channel.close()
+        ack = bytes(await process.stdout.receive_some(1))
+        if ack:
+            gateway._send(Message.CHANNEL_DATA, channelid, ack)
+            decoder = FrameDecoder()
+            while True:
+                data = bytes(await process.stdout.receive_some(RECEIVE_CHUNK))
+                if not data:
+                    break
+                for message in decoder.feed(data):
+                    gateway._send(Message.CHANNEL_DATA, channelid, message.pack())
+        with suppress(OSError):
+            gateway._send(Message.CHANNEL_CLOSE, channelid)
 
     try:
         async with trio.open_nursery() as nursery:
@@ -736,9 +771,9 @@ async def _start_sub_and_relay(
         # Do not let a relay failure crash the host nursery; surface it on
         # the channel so the coordinator does not hang on the handshake.
         gateway._trace("via sub relay failed:", exc)
-        with suppress(Exception):
-            channel.close(f"via sub-gateway relay failed: {exc}")
+        send_close_error(f"via sub-gateway relay failed: {exc}")
     finally:
+        gateway._channelfactory.unregister_raw_receiver(channelid)
         with trio.move_on_after(5):
             await process.wait()
 
@@ -759,14 +794,16 @@ def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
 
     master = group[spec.via]
     host: TrioHost = group._ensure_trio_host()
-    channel = master.newchannel()
+    channelid = master._channelfactory.allocate_id()
     request = _provision.spawn_request(spec)
-    master._send(Message.GATEWAY_START_SUB, channel.id, dumps_internal(request))
     remote = spec.ssh or spec.vagrant_ssh
     remoteaddress = f"{remote}[via {spec.via}]" if remote else None
 
     async def _create_and_attach() -> Gateway:
-        io = ChannelByteStream(channel)
+        # Register the raw receiver before the request goes out so no
+        # relayed frame can arrive unrouted.
+        io = RawTunnelStream(master, channelid)
+        master._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
         await read_handshake_ack(io, "via")
         gw = execnet.Gateway(_TempIO(group.execmodel), spec)
         session = await host.start_session(gw, io)
