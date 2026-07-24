@@ -17,6 +17,7 @@ import trio.testing
 
 from execnet import gateway_base
 from execnet._trio_gateway import AsyncGateway
+from execnet._trio_gateway import AsyncGroup
 from execnet._trio_gateway import open_popen_gateway
 from execnet.gateway_base import Message
 from execnet.gateway_base import RemoteError
@@ -336,6 +337,49 @@ class TestPopenAsyncGateway:
                     for value in range(5):
                         nursery.start_soon(run_one, value)
                 assert sorted(results) == [0, 10, 20, 30, 40]
+
+        trio.run(main)
+
+
+class TestAsyncGroup:
+    def test_multiple_gateways_with_auto_ids(self) -> None:
+        async def main() -> None:
+            async with AsyncGroup() as group:
+                first = await group.makegateway()
+                second = await group.makegateway()
+                assert {first.id, second.id} == {"gw0", "gw1"}
+                for gateway in (first, second):
+                    channel = await gateway.remote_exec("channel.send(42)")
+                    assert await channel.receive() == 42
+
+        trio.run(main)
+
+    def test_group_exit_terminates_and_reaps_workers(self) -> None:
+        async def main() -> None:
+            async with AsyncGroup() as group:
+                await group.makegateway()
+                await group.makegateway()
+                processes = list(group._processes.values())
+            # workers exited on GATEWAY_TERMINATE, nobody had to kill them
+            assert [process.returncode for process in processes] == [0, 0]
+
+        trio.run(main)
+
+    def test_terminate_kills_hung_worker_within_bound(self) -> None:
+        async def main() -> None:
+            async with AsyncGroup(termination_timeout=1.0) as group:
+                gateway = await group.makegateway()
+                await gateway.remote_exec("import time\nwhile True: time.sleep(1)")
+                processes = list(group._processes.values())
+            assert all(process.returncode is not None for process in processes)
+
+        trio.run(main)
+
+    def test_unsupported_spec_is_rejected(self) -> None:
+        async def main() -> None:
+            async with AsyncGroup() as group:
+                with pytest.raises(ValueError, match="unsupported spec"):
+                    await group.makegateway("ssh=nowhere.example.invalid")
 
         trio.run(main)
 

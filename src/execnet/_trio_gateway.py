@@ -28,10 +28,14 @@ from collections.abc import AsyncIterator
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from contextlib import suppress
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
 
 import trio
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 from ._exec_source import normalize_exec_source
 from .gateway_base import FrameDecoder
@@ -613,21 +617,8 @@ async def serve_gateway(
             await gateway.aclose()
 
 
-@asynccontextmanager
-async def open_popen_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGateway]:
-    """Spawn a popen worker and serve an AsyncGateway over its stdio.
-
-    Runs inside the caller's own trio run -- no host thread involved.  On
-    exit the worker is asked to terminate (GATEWAY_TERMINATE), and killed
-    if it has not exited within a bounded grace period.
-    """
-    from .xspec import XSpec
-
-    if not isinstance(spec, XSpec):
-        spec = XSpec(spec)
-    if spec.execmodel is None:
-        # the sync Group normally stamps this before spawning
-        spec.execmodel = "thread"
+async def _connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
+    """Spawn a popen worker for ``spec`` and complete the ready handshake."""
     process = await open_popen_process(popen_worker_argv(spec))
     try:
         stream = staple_process_stream(process)
@@ -637,16 +628,113 @@ async def open_popen_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGa
             process.kill()
             await process.wait()
         raise
-    try:
-        async with serve_gateway(stream, id=spec.id or "popen-async") as gateway:
-            try:
-                yield gateway
-            finally:
-                await gateway.terminate()
-    finally:
-        with trio.CancelScope(shield=True):
-            with trio.move_on_after(5):
+    return stream, process
+
+
+class AsyncGroup:
+    """Trio-native group: an async context manager owning the gateway nursery.
+
+    Gateways created with :meth:`makegateway` are served as child tasks of
+    the group's nursery.  Leaving the ``async with`` block terminates every
+    gateway with the safe_terminate contract: GATEWAY_TERMINATE plus a
+    ``timeout`` grace, then kill -- bounded at roughly twice the timeout
+    even when a kill gets stuck (see issues #43 / #221).
+    """
+
+    def __init__(self, termination_timeout: float = 10.0) -> None:
+        self._termination_timeout = termination_timeout
+        self._nursery: trio.Nursery | None = None
+        self._gateways: list[AsyncGateway] = []
+        self._processes: dict[AsyncGateway, trio.Process] = {}
+
+    def __repr__(self) -> str:
+        ids = [gateway.id for gateway in self._gateways]
+        return f"<AsyncGroup {ids}>"
+
+    async def __aenter__(self) -> Self:
+        self._nursery_manager = trio.open_nursery()
+        self._nursery = await self._nursery_manager.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: types.TracebackType | None,
+    ) -> bool | None:
+        # The serve tasks only end once their gateways shut down, so
+        # terminate before letting the nursery join its children.
+        # Shielded: cleanup stays bounded even under cancellation.
+        terminate_error: BaseException | None = None
+        try:
+            with trio.CancelScope(shield=True):
+                await self.terminate(self._termination_timeout)
+        except BaseException as error:
+            terminate_error = error
+        self._nursery = None
+        suppress_body_exc = await self._nursery_manager.__aexit__(
+            exc_type, exc_value, traceback
+        )
+        if terminate_error is not None:
+            raise terminate_error
+        return suppress_body_exc
+
+    async def makegateway(self, spec: str | Any = "popen") -> AsyncGateway:
+        """Create a gateway for ``spec`` served on the group's nursery.
+
+        Only popen-style specs (including uv-provisioned ``python=``) are
+        supported on the async path for now.
+        """
+        from .xspec import XSpec
+
+        if self._nursery is None:
+            raise RuntimeError(f"{self!r} is not entered")
+        if not isinstance(spec, XSpec):
+            spec = XSpec(spec)
+        if not (spec.popen or spec.python):
+            raise ValueError(f"unsupported spec for AsyncGroup: {spec!r}")
+        if spec.execmodel is None:
+            # the sync Group normally stamps this before spawning
+            spec.execmodel = "thread"
+        if spec.id is None:
+            spec.id = "gw%d" % len(self._gateways)
+        stream, process = await _connect_popen_worker(spec)
+        gateway = AsyncGateway(stream, id=spec.id, _startcount=1)
+        await self._nursery.start(gateway._serve)
+        self._gateways.append(gateway)
+        self._processes[gateway] = process
+        return gateway
+
+    async def terminate(self, timeout: float | None = None) -> None:
+        """Terminate all gateways; never hangs (kill after ``timeout``)."""
+        gateways = list(self._gateways)
+        self._gateways.clear()
+        async with trio.open_nursery() as nursery:
+            for gateway in gateways:
+                nursery.start_soon(self._terminate_one, gateway, timeout)
+
+    async def _terminate_one(
+        self, gateway: AsyncGateway, timeout: float | None
+    ) -> None:
+        grace = math.inf if timeout is None else timeout
+        await gateway.terminate()
+        process = self._processes.pop(gateway, None)
+        if process is None:
+            return
+        with trio.move_on_after(grace):
+            await process.wait()
+        if process.returncode is None:
+            process.kill()
+            with trio.move_on_after(grace):
                 await process.wait()
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
+
+
+@asynccontextmanager
+async def open_popen_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGateway]:
+    """Spawn one popen worker and serve an AsyncGateway over its stdio.
+
+    Runs inside the caller's own trio run -- no host thread involved.
+    Convenience for a single-gateway :class:`AsyncGroup`.
+    """
+    async with AsyncGroup() as group:
+        yield await group.makegateway(spec)
