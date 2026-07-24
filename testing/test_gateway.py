@@ -531,9 +531,9 @@ class TestTracing:
     ],
 )
 def test_popen_args(spec: str, expected_args: list[str]) -> None:
-    from execnet import _trio_host
+    from execnet import _trio_gateway
 
-    args = _trio_host.popen_module_args(execnet.XSpec(spec + "//id=gw0"))
+    args = _trio_gateway.popen_module_args(execnet.XSpec(spec + "//id=gw0"))
     assert args[: len(expected_args)] == expected_args
     assert args[len(expected_args) :][:3] == ["-u", "-m", "execnet._trio_worker"]
 

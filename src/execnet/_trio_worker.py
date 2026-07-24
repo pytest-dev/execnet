@@ -246,9 +246,9 @@ def _run_worker(host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel) -
 
 
 async def _make_fd_io(read_fd: int, write_fd: int) -> Any:
-    from . import _trio_host
+    from . import _trio_gateway
 
-    return _trio_host.staple_fd_stream(read_fd, write_fd)
+    return _trio_gateway.staple_fd_stream(read_fd, write_fd)
 
 
 def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
