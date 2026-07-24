@@ -725,6 +725,32 @@ def makegateway_ssh_trio(group: Any, spec: Any) -> Gateway:
     )
 
 
+def should_use_trio_vagrant(spec: Any) -> bool:
+    """Trio path for ``vagrant_ssh=<machine>`` gateways (uv-provisioned worker)."""
+    if not trio_host_enabled():
+        return False
+    if not getattr(spec, "vagrant_ssh", None):
+        return False
+    if getattr(spec, "via", None):
+        return False
+    execmodel = getattr(spec, "execmodel", None)
+    return execmodel in (None, "thread", "main_thread_only")
+
+
+def makegateway_vagrant_trio(group: Any, spec: Any) -> Gateway:
+    """Create a ``vagrant ssh``-wrapped Gateway on the Trio IO path."""
+    from . import _provision
+
+    remote_command, preamble = _provision.ssh_remote_command(spec)
+    assert spec.vagrant_ssh is not None
+    args = _provision.vagrant_ssh_argv(
+        spec.vagrant_ssh, spec.ssh_config, remote_command
+    )
+    return _open_trio_gateway(
+        group, spec, args, remoteaddress=spec.vagrant_ssh, preamble=preamble
+    )
+
+
 def should_use_trio_ssh(spec: Any) -> bool:
     """Trio path for ssh gateways (worker provisioned on the remote via uv).
 
@@ -942,17 +968,16 @@ def handle_start_sub(gateway: BaseGateway, channelid: int, data: bytes) -> None:
 
 
 def should_use_trio_via(spec: Any) -> bool:
-    """Trio path for ``via=<gw>`` sub-gateways (popen, foreign python, or ssh).
+    """Trio path for ``via=<gw>`` sub-gateways (popen, python, ssh, vagrant).
 
     The master spawns the sub-worker from a ``GATEWAY_START_SUB`` request and
-    relays its Message protocol.  Socket subs go through ``installvia``
-    instead; vagrant stays on the legacy path.
+    relays its Message protocol.  Socket subs go through ``installvia`` instead.
     """
     if not trio_host_enabled():
         return False
     if not getattr(spec, "via", None):
         return False
-    if getattr(spec, "socket", None) or getattr(spec, "vagrant_ssh", None):
+    if getattr(spec, "socket", None):
         return False
     execmodel = getattr(spec, "execmodel", None)
     return execmodel in (None, "thread", "main_thread_only")
@@ -969,7 +994,8 @@ def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
     channel = master.newchannel()
     request = _provision.spawn_request(spec)
     master._send(Message.GATEWAY_START_SUB, channel.id, dumps_internal(request))
-    remoteaddress = f"{spec.ssh}[via {spec.via}]" if spec.ssh else None
+    remote = spec.ssh or spec.vagrant_ssh
+    remoteaddress = f"{remote}[via {spec.via}]" if remote else None
 
     async def _create_and_attach() -> Gateway:
         io = ChannelByteIO(channel)

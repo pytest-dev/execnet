@@ -158,6 +158,8 @@ class Group:
             gw = _trio_host.makegateway_popen_trio(self, spec)
         elif _trio_host.should_use_trio_ssh(spec):
             gw = _trio_host.makegateway_ssh_trio(self, spec)
+        elif _trio_host.should_use_trio_vagrant(spec):
+            gw = _trio_host.makegateway_vagrant_trio(self, spec)
         elif _trio_host.should_use_trio_socket(spec):
             gw = _trio_host.makegateway_socket_trio(self, spec)
         elif _trio_host.should_use_trio_via(spec):

@@ -256,6 +256,21 @@ def ssh_argv(ssh: str, ssh_config: str | None, remote_command: str) -> list[str]
     return args
 
 
+def vagrant_ssh_argv(
+    machine: str, ssh_config: str | None, remote_command: str
+) -> list[str]:
+    """``vagrant ssh`` argv running ``remote_command`` on the named VM.
+
+    Everything after ``--`` is passed through to the underlying ssh client,
+    mirroring ``ssh_argv``.
+    """
+    args = ["vagrant", "ssh", machine, "--", "-C"]
+    if ssh_config:
+        args += ["-F", ssh_config]
+    args.append(remote_command)
+    return args
+
+
 def spawn_request(spec: Any) -> dict[str, Any]:
     """Payload for ``GATEWAY_START_SUB``: ask a via master to spawn a sub-worker.
 
@@ -274,9 +289,10 @@ def spawn_request(spec: Any) -> dict[str, Any]:
         "config": worker_cli_arg(spec),
         "python": spec.python or None,
         "ssh": spec.ssh or None,
+        "vagrant_ssh": spec.vagrant_ssh or None,
         "ssh_config": spec.ssh_config or None,
     }
-    if spec.ssh or spec.python:
+    if spec.ssh or spec.vagrant_ssh or spec.python:
         version = execnet.__version__
         if _RELEASED_RE.match(version):
             request["requirement"] = f"execnet=={version}"
@@ -324,15 +340,20 @@ def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
     assert isinstance(config, str)
     python = request.get("python")
     ssh = request.get("ssh")
-    if ssh:
-        assert isinstance(ssh, str)
+    vagrant = request.get("vagrant_ssh")
+    if ssh or vagrant:
         requirement, wheel = _requested_requirement(request)
         if requirement is None:
-            raise RuntimeError("ssh spawn request without provisioning material")
+            raise RuntimeError("remote spawn request without provisioning material")
         command, preamble = _remote_shell_command(
             python, config, requirement=requirement, wheel=wheel
         )
-        return ssh_argv(ssh, request.get("ssh_config"), command), preamble
+        ssh_config = request.get("ssh_config")
+        if ssh:
+            assert isinstance(ssh, str)
+            return ssh_argv(ssh, ssh_config, command), preamble
+        assert isinstance(vagrant, str)
+        return vagrant_ssh_argv(vagrant, ssh_config, command), preamble
     if python:
         assert isinstance(python, str)
         if target_has_execnet(python):
