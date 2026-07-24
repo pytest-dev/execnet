@@ -149,3 +149,23 @@ def test_ssh_roundtrip(
         assert channel.receive() == 42
     finally:
         group.terminate(timeout=5.0)
+
+
+def test_ssh_via_roundtrip(ssh_config: str) -> None:
+    """An ssh sub-gateway spawned by a popen master (GATEWAY_START_SUB relay).
+
+    The master runs the ssh client; for a dev coordinator the wheel travels
+    coordinator -> master (in the spawn request) -> remote (ssh stdin preamble).
+    """
+    group = execnet.Group()
+    try:
+        group.makegateway("popen//id=master")
+        gw = group.makegateway(
+            f"ssh=testhost//ssh_config={ssh_config}//python={sys.executable}"
+            "//via=master//id=sshvia"
+        )
+        channel = gw.remote_exec("channel.send(channel.receive() + 1)")
+        channel.send(41)
+        assert channel.receive() == 42
+    finally:
+        group.terminate(timeout=5.0)

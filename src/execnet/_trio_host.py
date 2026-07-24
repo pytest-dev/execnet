@@ -17,6 +17,7 @@ import sys
 import threading
 from collections.abc import Awaitable
 from collections.abc import Callable
+from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
@@ -712,13 +713,8 @@ def ssh_trio_args(spec: Any) -> tuple[list[str], bytes]:
     from . import _provision
 
     remote_command, preamble = _provision.ssh_remote_command(spec)
-    args = ["ssh", "-C"]
-    if getattr(spec, "ssh_config", None):
-        args += ["-F", spec.ssh_config]
     assert spec.ssh is not None
-    args += spec.ssh.split()
-    args.append(remote_command)
-    return args, preamble
+    return _provision.ssh_argv(spec.ssh, spec.ssh_config, remote_command), preamble
 
 
 def makegateway_ssh_trio(group: Any, spec: Any) -> Gateway:
@@ -730,10 +726,16 @@ def makegateway_ssh_trio(group: Any, spec: Any) -> Gateway:
 
 
 def should_use_trio_ssh(spec: Any) -> bool:
-    """Trio path for ssh gateways (worker provisioned on the remote via uv)."""
+    """Trio path for ssh gateways (worker provisioned on the remote via uv).
+
+    ``ssh=…//via=…`` is not a direct ssh connection but a sub-gateway spawned
+    by the master; that goes through the via path instead.
+    """
     if not trio_host_enabled():
         return False
     if not getattr(spec, "ssh", None):
+        return False
+    if getattr(spec, "via", None):
         return False
     execmodel = getattr(spec, "execmodel", None)
     return execmodel in (None, "thread", "main_thread_only")
@@ -874,22 +876,32 @@ def start_socketserver_via(
     return realhost, int(realport)
 
 
-async def _start_popen_and_relay(
-    gateway: BaseGateway, channelid: int, worker_config: str
+async def _start_sub_and_relay(
+    gateway: BaseGateway, channelid: int, request: dict[str, Any]
 ) -> None:
-    """Spawn a popen sub-worker and relay its Message protocol over the channel.
+    """Spawn a requested sub-worker and relay its Message protocol over the channel.
 
     Runs on the master's Trio host: bytes from the channel go to the sub's
     stdin, and the sub's stdout goes back on the channel (the ``via`` transport).
+    A stdin preamble (shipped wheel for a dev-version ssh sub) is streamed
+    before the relayed protocol bytes.
     """
-    args = [sys.executable, "-u", "-m", "execnet._trio_worker", worker_config]
-    process = await open_popen_process(args)
+    from . import _provision
+
     channel = gateway._channelfactory.new(channelid)
+    try:
+        args, preamble = _provision.sub_spawn_argv(request)
+        process = await open_popen_process(args)
+    except Exception as exc:
+        channel.close(f"could not spawn via sub-gateway: {exc}")
+        return
     send_ch, recv_ch = trio.open_memory_channel[Any](math.inf)
     channel.setcallback(send_ch.send_nowait, endmarker=_CHANNEL_EOF)
 
     async def coordinator_to_sub() -> None:
         assert process.stdin is not None
+        if preamble:
+            await process.stdin.send_all(preamble)
         async for data in recv_ch:
             if data is _CHANNEL_EOF:
                 break
@@ -910,38 +922,44 @@ async def _start_popen_and_relay(
         async with trio.open_nursery() as nursery:
             nursery.start_soon(coordinator_to_sub)
             nursery.start_soon(sub_to_coordinator)
+    except Exception as exc:
+        # Do not let a relay failure crash the host nursery; surface it on
+        # the channel so the coordinator does not hang on the handshake.
+        gateway._trace("via sub relay failed:", exc)
+        with suppress(Exception):
+            channel.close(f"via sub-gateway relay failed: {exc}")
     finally:
         with trio.move_on_after(5):
             await process.wait()
 
 
-def handle_start_popen(gateway: BaseGateway, channelid: int, data: bytes) -> None:
-    """Worker handler for ``Message.GATEWAY_START_POPEN`` (on the host thread)."""
-    worker_config = loads_internal(data)
-    assert isinstance(worker_config, str)
+def handle_start_sub(gateway: BaseGateway, channelid: int, data: bytes) -> None:
+    """Worker handler for ``Message.GATEWAY_START_SUB`` (on the host thread)."""
+    request = loads_internal(data)
+    assert isinstance(request, dict)
     host: TrioHost = gateway._trio_exec.host  # type: ignore[attr-defined]
-    host.start_soon(_start_popen_and_relay, gateway, channelid, worker_config)
+    host.start_soon(_start_sub_and_relay, gateway, channelid, request)
 
 
 def should_use_trio_via(spec: Any) -> bool:
-    """Trio path for ``popen//via=<gw>`` (a popen sub-gateway on the master).
+    """Trio path for ``via=<gw>`` sub-gateways (popen, foreign python, or ssh).
 
-    Only a same-interpreter popen sub is supported for now (no ssh/foreign sub).
+    The master spawns the sub-worker from a ``GATEWAY_START_SUB`` request and
+    relays its Message protocol.  Socket subs go through ``installvia``
+    instead; vagrant stays on the legacy path.
     """
     if not trio_host_enabled():
         return False
     if not getattr(spec, "via", None):
         return False
-    if getattr(spec, "socket", None) or getattr(spec, "ssh", None):
-        return False
-    if getattr(spec, "python", None):
+    if getattr(spec, "socket", None) or getattr(spec, "vagrant_ssh", None):
         return False
     execmodel = getattr(spec, "execmodel", None)
     return execmodel in (None, "thread", "main_thread_only")
 
 
 def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
-    """Create a ``via`` gateway: a popen sub relayed through the master gateway."""
+    """Create a ``via`` gateway: a sub-worker spawned by and relayed through the master."""
     import execnet
 
     from . import _provision
@@ -949,8 +967,9 @@ def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
     master = group[spec.via]
     host: TrioHost = group._ensure_trio_host()
     channel = master.newchannel()
-    worker_config = _provision.worker_cli_arg(spec)
-    master._send(Message.GATEWAY_START_POPEN, channel.id, dumps_internal(worker_config))
+    request = _provision.spawn_request(spec)
+    master._send(Message.GATEWAY_START_SUB, channel.id, dumps_internal(request))
+    remoteaddress = f"{spec.ssh}[via {spec.via}]" if spec.ssh else None
 
     async def _create_and_attach() -> Gateway:
         io = ChannelByteIO(channel)
@@ -960,7 +979,7 @@ def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
         gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
         session = await host.start_session(gw, io)
         gw._attach_trio_session(session)
-        gw._io = SyncIOHandle(group.execmodel, session)
+        gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
         return gw
 
     return host.call(_create_and_attach)
