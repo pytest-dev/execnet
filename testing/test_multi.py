@@ -231,6 +231,24 @@ class TestGroup:
         group.makegateway("popen//via=master//id=worker")
         group.terminate(1.0)
 
+    def test_via_foreign_python(self) -> None:
+        # A python= sub-spec through a via master: the master resolves the
+        # interpreter locally (this interpreter has execnet, so the sub runs
+        # the worker module directly, no uv provisioning).
+        import sys
+
+        group = Group()
+        try:
+            group.makegateway("popen//id=master")
+            gw = group.makegateway(
+                f"popen//python={sys.executable}//via=master//id=sub"
+            )
+            channel = gw.remote_exec("channel.send(channel.receive() + 1)")
+            channel.send(41)
+            assert channel.receive() == 42
+        finally:
+            group.terminate(1.0)
+
 
 @pytest.mark.xfail(reason="active_count() has been broken for some time")
 def test_safe_terminate(execmodel: ExecModel) -> None:
