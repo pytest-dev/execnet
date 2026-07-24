@@ -38,3 +38,39 @@ def test_ssh_remote_command_dev_ships_wheel() -> None:
     assert "mktemp -d" in command
     assert f"head -c {len(preamble)}" in command
     assert preamble[:2] == b"PK"  # a wheel is a zip archive
+
+
+def test_vagrant_ssh_argv() -> None:
+    argv = _provision.vagrant_ssh_argv("default", None, "run-worker")
+    assert argv == ["vagrant", "ssh", "default", "--", "-C", "run-worker"]
+    argv = _provision.vagrant_ssh_argv("default", "/tmp/cfg", "run-worker")
+    assert argv == [
+        "vagrant",
+        "ssh",
+        "default",
+        "--",
+        "-C",
+        "-F",
+        "/tmp/cfg",
+        "run-worker",
+    ]
+
+
+def test_sub_spawn_argv_plain_popen() -> None:
+    import sys
+
+    argv, preamble = _provision.sub_spawn_argv({"config": "{}"})
+    assert argv == [sys.executable, "-u", "-m", "execnet._trio_worker", "{}"]
+    assert preamble == b""
+
+
+def test_sub_spawn_argv_vagrant_released() -> None:
+    request = {
+        "config": "{}",
+        "vagrant_ssh": "default",
+        "requirement": "execnet==9.9.9",
+    }
+    argv, preamble = _provision.sub_spawn_argv(request)
+    assert argv[:5] == ["vagrant", "ssh", "default", "--", "-C"]
+    assert "execnet==9.9.9" in argv[-1]
+    assert preamble == b""
