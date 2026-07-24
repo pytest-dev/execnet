@@ -21,11 +21,11 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
 from typing import TypeVar
-from typing import cast
 
 import trio
 
 from .gateway_base import ExecModel
+from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
 from .gateway_base import Message
 from .gateway_base import dumps_internal
@@ -41,144 +41,95 @@ T = TypeVar("T")
 _CLOSE_WRITE = object()
 
 
-class AsyncByteIO(Protocol):
-    async def read_exact(self, n: int) -> bytes: ...
-
-    async def write_all(self, data: bytes) -> None: ...
-
-    async def aclose_read(self) -> None: ...
-
-    async def aclose_write(self) -> None: ...
+RECEIVE_CHUNK = 65536
 
 
-async def read_exact_receive_stream(stream: trio.abc.ReceiveStream, n: int) -> bytes:
-    buf = bytearray()
-    while len(buf) < n:
-        chunk = await stream.receive_some(n - len(buf))
-        if not chunk:
-            raise EOFError("expected %d bytes, got %d" % (n, len(buf)))
-        buf += chunk
-    return bytes(buf)
+class ByteStream(Protocol):
+    """Neutral bidirectional byte-stream protocol for gateway transports.
 
-
-async def read_message(io: AsyncByteIO) -> Message:
-    header = await io.read_exact(9)
-    msgtype, channel, payload = Message.from_header(header)
-    data = await io.read_exact(payload) if payload else b""
-    return Message.from_parts(msgtype, channel, data)
-
-
-class ProcessStreamsIO:
-    """Async IO over a Trio Process stdin/stdout pair."""
-
-    def __init__(self, process: trio.Process) -> None:
-        assert process.stdin is not None
-        assert process.stdout is not None
-        self.process = process
-        self._stdin = process.stdin
-        self._stdout = process.stdout
-
-    async def read_exact(self, n: int) -> bytes:
-        return await read_exact_receive_stream(self._stdout, n)
-
-    async def write_all(self, data: bytes) -> None:
-        await self._stdin.send_all(data)
-
-    async def aclose_read(self) -> None:
-        await self._stdout.aclose()
-
-    async def aclose_write(self) -> None:
-        await self._stdin.aclose()
-
-
-class FdStreamsIO:
-    """Async IO over OS file descriptors (worker stdio pipes)."""
-
-    def __init__(self, read_fd: int, write_fd: int) -> None:
-        self._read = trio.lowlevel.FdStream(read_fd)
-        self._write = trio.lowlevel.FdStream(write_fd)
-
-    async def read_exact(self, n: int) -> bytes:
-        return await read_exact_receive_stream(self._read, n)
-
-    async def write_all(self, data: bytes) -> None:
-        await self._write.send_all(data)
-
-    async def aclose_read(self) -> None:
-        await self._read.aclose()
-
-    async def aclose_write(self) -> None:
-        await self._write.aclose()
-
-
-class SocketStreamIO:
-    """Async IO over a single bidirectional Trio stream (a socket).
-
-    ``read_exact`` never over-reads (``receive_some(k)`` returns at most ``k``
-    bytes), so no cross-call buffering is needed.  ``aclose`` on a Trio stream is
-    idempotent, so close-read and close-write both just close the socket.
+    ``trio.StapledStream`` (process/fd pipe pairs) and ``trio.SocketStream``
+    satisfy this structurally; a future anyio backend's byte streams use the
+    same four names.  ``send_eof`` signals write-EOF to the peer (half-close
+    for sockets; for pipe pairs trio falls back to closing the send half).
     """
 
-    def __init__(self, stream: trio.abc.Stream) -> None:
-        self._stream = stream
+    async def send_all(self, data: bytes) -> None: ...
 
-    async def read_exact(self, n: int) -> bytes:
-        return await read_exact_receive_stream(self._stream, n)
+    async def receive_some(self, max_bytes: int | None = None) -> bytes: ...
 
-    async def write_all(self, data: bytes) -> None:
-        await self._stream.send_all(data)
+    async def send_eof(self) -> None: ...
 
-    async def aclose_read(self) -> None:
-        await self._stream.aclose()
+    async def aclose(self) -> None: ...
 
-    async def aclose_write(self) -> None:
-        await self._stream.aclose()
+
+def staple_process_stream(process: trio.Process) -> ByteStream:
+    """One bidirectional stream over a Trio Process stdin/stdout pair."""
+    assert process.stdin is not None
+    assert process.stdout is not None
+    return trio.StapledStream(process.stdin, process.stdout)
+
+
+def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
+    """One bidirectional stream over OS pipe fds (worker stdio pipes)."""
+    return trio.StapledStream(
+        trio.lowlevel.FdStream(write_fd), trio.lowlevel.FdStream(read_fd)
+    )
+
+
+async def read_handshake_ack(stream: ByteStream, what: str) -> None:
+    """Wait for the worker's single ``b"1"`` ready byte."""
+    ack = await stream.receive_some(1)
+    if ack != b"1":
+        raise EOFError(f"bad {what} handshake: {ack!r}")
 
 
 _CHANNEL_EOF = object()
 
 
-class ChannelByteIO:
-    """Async byte IO tunnelled over a sync execnet ``Channel``.
+class ChannelByteStream:
+    """``ByteStream`` tunnelled over a sync execnet ``Channel``.
 
     INTERIM HACK: the ``via`` transport currently runs the sub-gateway protocol
     as raw bytes over a channel to the master, which double-frames it (sub frame
     -> CHANNEL_DATA -> master frame).  This bridges the sync ``Channel`` to the
-    async protocol; it should be replaced by a proper relayed transport rather
-    than tunnelling bytes through the channel layer.
+    async protocol; it dissolves once low-level raw channels exist (Phase B.4).
 
     The channel callback (on the host loop) feeds an unbounded memory channel
-    that ``read_exact`` drains; writes ``channel.send`` raw frames.
+    that ``receive_some`` drains; writes ``channel.send`` raw bytes.
     """
 
     def __init__(self, channel: Any) -> None:
         self._channel = channel
         self._send, self._recv = trio.open_memory_channel[Any](math.inf)
         self._buf = bytearray()
+        self._eof = False
         channel.setcallback(self._send.send_nowait, endmarker=_CHANNEL_EOF)
 
-    async def read_exact(self, n: int) -> bytes:
-        while len(self._buf) < n:
-            data = await self._recv.receive()
-            if data is _CHANNEL_EOF:
-                raise EOFError("channel closed")
-            assert isinstance(data, bytes)
-            self._buf += data
-        out = bytes(self._buf[:n])
-        del self._buf[:n]
-        return out
-
-    async def write_all(self, data: bytes) -> None:
+    async def send_all(self, data: bytes) -> None:
         self._channel.send(data)
 
-    async def aclose_read(self) -> None:
-        return
+    async def receive_some(self, max_bytes: int | None = None) -> bytes:
+        if not self._buf and not self._eof:
+            data = await self._recv.receive()
+            if data is _CHANNEL_EOF:
+                self._eof = True
+            else:
+                assert isinstance(data, bytes)
+                self._buf += data
+        if max_bytes is None:
+            max_bytes = len(self._buf)
+        out = bytes(self._buf[:max_bytes])
+        del self._buf[:max_bytes]
+        return out
 
-    async def aclose_write(self) -> None:
+    async def send_eof(self) -> None:
+        self._channel.close()
+
+    async def aclose(self) -> None:
         self._channel.close()
 
 
-async def adopt_socket(socket_fd: int) -> SocketStreamIO:
+async def adopt_socket(socket_fd: int) -> trio.SocketStream:
     """Worker side: wrap an inherited socket fd and send the handshake.
 
     Runs on the Trio host loop.  The coordinator waits for ``b"1"`` before
@@ -188,9 +139,8 @@ async def adopt_socket(socket_fd: int) -> SocketStreamIO:
 
     sock = _socket.socket(fileno=socket_fd)
     stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
-    io = SocketStreamIO(stream)
-    await io.write_all(b"1")
-    return io
+    await stream.send_all(b"1")
+    return stream
 
 
 class SyncIOHandle:
@@ -235,7 +185,7 @@ class ProtocolSession:
     def __init__(
         self,
         gateway: BaseGateway,
-        io: AsyncByteIO,
+        io: ByteStream,
         *,
         process: trio.Process | None = None,
         host: TrioHost,
@@ -361,13 +311,17 @@ class ProtocolSession:
             gateway._trace("[trio-receiver]", *msg)
 
         log("RECEIVER: starting")
+        decoder = FrameDecoder()
         try:
             while True:
-                msg = await read_message(self.io)
-                log("received", msg)
-                with gateway._receivelock:
-                    msg.received(gateway)
-                    del msg
+                data = await self.io.receive_some(RECEIVE_CHUNK)
+                if not data:
+                    decoder.close()  # raises EOFError on a mid-frame EOF
+                    raise EOFError("clean EOF")
+                for msg in decoder.feed(data):
+                    log("received", msg)
+                    with gateway._receivelock:
+                        msg.received(gateway)
         except GatewayReceivedTerminate:
             log("GATEWAY_TERMINATE")
         except EOFError as exc:
@@ -401,15 +355,15 @@ class ProtocolSession:
         """Handle one outbound queue item. Return False when writer should stop."""
         if item is _CLOSE_WRITE:
             try:
-                await self.io.aclose_write()
+                await self.io.send_eof()
             except Exception as exc:
-                self.gateway._trace("aclose_write failed", exc)
+                self.gateway._trace("send_eof failed", exc)
             return False
         assert isinstance(item, tuple)
         blob, done, errors = item
         assert isinstance(blob, bytes)
         try:
-            await self.io.write_all(blob)
+            await self.io.send_all(blob)
         except Exception as exc:
             self.gateway._trace("write failed", exc)
             errors.append(exc)
@@ -445,11 +399,7 @@ class ProtocolSession:
             gateway._terminate_execution, abandon_on_cancel=True
         )
         try:
-            await self.io.aclose_read()
-        except Exception:
-            pass
-        try:
-            await self.io.aclose_write()
+            await self.io.aclose()
         except Exception:
             pass
 
@@ -496,14 +446,12 @@ class TrioHost:
     def call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
         if self._token is None:
             raise RuntimeError("TrioHost is not running")
-        return cast("T", trio.from_thread.run(async_fn, *args, trio_token=self._token))
+        return trio.from_thread.run(async_fn, *args, trio_token=self._token)
 
     def call_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
         if self._token is None:
             raise RuntimeError("TrioHost is not running")
-        return cast(
-            "T", trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
-        )
+        return trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
 
     def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
         """Schedule a task on the root nursery (must be called on the host thread)."""
@@ -516,7 +464,7 @@ class TrioHost:
     async def start_session(
         self,
         gateway: BaseGateway,
-        io: AsyncByteIO,
+        io: ByteStream,
         *,
         process: trio.Process | None = None,
     ) -> ProtocolSession:
@@ -621,12 +569,10 @@ def _open_trio_gateway(
     async def _create_and_attach() -> Gateway:
         process = await open_popen_process(args)
         try:
-            async_io = ProcessStreamsIO(process)
+            async_io = staple_process_stream(process)
             if preamble:
-                await async_io.write_all(preamble)
-            ack = await async_io.read_exact(1)
-            if ack != b"1":
-                raise EOFError(f"bad bootstrap handshake: {ack!r}")
+                await async_io.send_all(preamble)
+            await read_handshake_ack(async_io, "bootstrap")
         except EOFError:
             with trio.move_on_after(5):
                 code = await process.wait()
@@ -732,18 +678,15 @@ def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
             stream = await trio.open_tcp_stream(*address)
         except OSError as exc:
             raise HostNotFound(remoteaddress) from exc
-        io = SocketStreamIO(stream)
         try:
-            ack = await io.read_exact(1)
-            if ack != b"1":
-                raise EOFError(f"bad socket handshake: {ack!r}")
+            await read_handshake_ack(stream, "socket")
         except BaseException:
             with trio.move_on_after(5):
                 await stream.aclose()
             raise
 
         gw = execnet.Gateway(_TempIO(group.execmodel), spec)
-        session = await host.start_session(gw, io)
+        session = await host.start_session(gw, stream)
         gw._attach_trio_session(session)
         gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
         return gw
@@ -910,10 +853,8 @@ def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
     remoteaddress = f"{remote}[via {spec.via}]" if remote else None
 
     async def _create_and_attach() -> Gateway:
-        io = ChannelByteIO(channel)
-        ack = await io.read_exact(1)
-        if ack != b"1":
-            raise EOFError(f"bad via handshake: {ack!r}")
+        io = ChannelByteStream(channel)
+        await read_handshake_ack(io, "via")
         gw = execnet.Gateway(_TempIO(group.execmodel), spec)
         session = await host.start_session(gw, io)
         gw._attach_trio_session(session)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import queue
 import sys
@@ -51,9 +52,14 @@ class TrioWorkerExec:
             tuple[Channel, ExecItem, threading.Event] | None
         ] = queue.SimpleQueue()
         self._primary_wake = threading.Event()
-        # Serialize main_thread_only admission (wait+clear) so two tasks cannot
-        # both observe the idle Event before either clears it.
-        self._admit_lock = trio.Lock()
+        # Exec requests flow through a single pump task so admission happens
+        # strictly in message-arrival order (trio task scheduling order is
+        # deliberately unordered, so per-request tasks would race for the
+        # main_thread_only slot).
+        self._pending_send: trio.MemorySendChannel[tuple[Channel, ExecItem]]
+        self._pending_recv: trio.MemoryReceiveChannel[tuple[Channel, ExecItem]]
+        self._pending_send, self._pending_recv = trio.open_memory_channel(float("inf"))
+        self._pump_started = False
 
     def active_count(self) -> int:
         with self._lock:
@@ -82,24 +88,25 @@ class TrioWorkerExec:
                 channel.close("execution disallowed")
                 return
         # Already on the Trio host thread (Message handler).
-        self.host.start_soon(self._run_exec, channel, item)
+        if not self._pump_started:
+            self._pump_started = True
+            self.host.start_soon(self._pump)
+        self._pending_send.send_nowait((channel, item))
+
+    async def _pump(self) -> None:
+        """Admit queued exec requests in FIFO order, then run each as a task."""
+        async for channel, item in self._pending_recv:
+            if self.main_thread_only:
+                complete = self.gateway._executetask_complete
+                assert complete is not None
+                wait_slot = functools.partial(complete.wait, timeout=1)
+                if not await trio.to_thread.run_sync(wait_slot, abandon_on_cancel=True):
+                    channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
+                    continue
+                complete.clear()
+            self.host.start_soon(self._run_exec, channel, item)
 
     async def _run_exec(self, channel: Channel, item: ExecItem) -> None:
-        if self.main_thread_only:
-            complete = self.gateway._executetask_complete
-            assert complete is not None
-
-            def _wait_slot() -> bool:
-                return complete.wait(timeout=1)
-
-            async with self._admit_lock:
-                if not await trio.to_thread.run_sync(
-                    _wait_slot, abandon_on_cancel=True
-                ):
-                    channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
-                    return
-                complete.clear()
-
         self._track_start()
         try:
             if self.main_thread_only:
@@ -252,7 +259,7 @@ def _run_worker(host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel) -
 async def _make_fd_io(read_fd: int, write_fd: int) -> Any:
     from . import _trio_host
 
-    return _trio_host.FdStreamsIO(read_fd, write_fd)
+    return _trio_host.staple_fd_stream(read_fd, write_fd)
 
 
 def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
