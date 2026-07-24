@@ -36,6 +36,17 @@ def uv_available() -> bool:
     return shutil.which("uv") is not None
 
 
+def shell_split_path(path: str) -> list[str]:
+    """Split a ``python=`` value into argv tokens with shell lexing.
+
+    Takes care to handle Windows' ``\\`` correctly.
+    """
+    if sys.platform.startswith("win"):
+        # replace \\ by / otherwise shlex will strip them out
+        path = path.replace("\\", "/")
+    return shlex.split(path)
+
+
 @cache
 def target_has_execnet(python: str) -> bool:
     """Whether interpreter ``python`` can already import execnet + trio.
@@ -43,8 +54,6 @@ def target_has_execnet(python: str) -> bool:
     When true the worker can be launched directly on that interpreter
     (preserving ``sys.executable``); otherwise it must be uv-provisioned.
     """
-    from .gateway_io import shell_split_path
-
     argv = [*shell_split_path(python), "-c", "import execnet, trio"]
     try:
         completed = subprocess.run(argv, capture_output=True, timeout=30, check=False)
@@ -334,8 +343,6 @@ def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
     the remote uv command (streaming a shipped wheel as the preamble for dev
     versions).
     """
-    from .gateway_io import shell_split_path
-
     config = request["config"]
     assert isinstance(config, str)
     python = request.get("python")

@@ -16,7 +16,6 @@ import pytest
 
 import execnet
 from execnet import gateway_base
-from execnet import gateway_io
 from execnet.gateway import Gateway
 
 TESTTIMEOUT = 10.0  # seconds
@@ -381,23 +380,6 @@ def test_socket_gw_host_not_found(makegateway: Callable[[str], Gateway]) -> None
 class TestSshPopenGateway:
     gwtype = "ssh"
 
-    def test_sshconfig_config_parsing(
-        self, monkeypatch: pytest.MonkeyPatch, makegateway: Callable[[str], Gateway]
-    ) -> None:
-        # white-box test of the legacy Popen2IOMaster arg construction
-        monkeypatch.setenv("EXECNET_TRIO_HOST", "0")
-        l = []
-        monkeypatch.setattr(
-            gateway_io, "Popen2IOMaster", lambda *args, **kwargs: l.append(args[0])
-        )
-        with pytest.raises(AttributeError):
-            makegateway("ssh=xyz//ssh_config=qwe")
-
-        assert len(l) == 1
-        popen_args = l[0]
-        i = popen_args.index("-F")
-        assert popen_args[i + 1] == "qwe"
-
     def test_ssh_trio_args_include_config(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -549,9 +531,11 @@ class TestTracing:
     ],
 )
 def test_popen_args(spec: str, expected_args: list[str]) -> None:
-    expected_args = [*expected_args, "-u", "-c", gateway_io.popen_bootstrapline]
-    args = gateway_io.popen_args(execnet.XSpec(spec))
-    assert args == expected_args
+    from execnet import _trio_host
+
+    args = _trio_host.popen_module_args(execnet.XSpec(spec + "//id=gw0"))
+    assert args[: len(expected_args)] == expected_args
+    assert args[len(expected_args) :][:3] == ["-u", "-m", "execnet._trio_worker"]
 
 
 def test_assert_main_thread_only(

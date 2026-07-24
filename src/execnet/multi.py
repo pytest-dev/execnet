@@ -20,8 +20,6 @@ from typing import Literal
 from typing import TypeAlias
 from typing import overload
 
-from . import gateway_bootstrap
-from . import gateway_io
 from .gateway_base import Channel
 from .gateway_base import ExecModel
 from .gateway_base import WorkerPool
@@ -154,26 +152,16 @@ class Group:
             spec.execmodel = self.remote_execmodel.backend
         from . import _trio_host
 
-        if _trio_host.should_use_trio_popen(spec):
-            gw = _trio_host.makegateway_popen_trio(self, spec)
-        elif _trio_host.should_use_trio_ssh(spec):
-            gw = _trio_host.makegateway_ssh_trio(self, spec)
-        elif _trio_host.should_use_trio_vagrant(spec):
-            gw = _trio_host.makegateway_vagrant_trio(self, spec)
-        elif _trio_host.should_use_trio_socket(spec):
+        if spec.socket:
             gw = _trio_host.makegateway_socket_trio(self, spec)
-        elif _trio_host.should_use_trio_via(spec):
-            gw = _trio_host.makegateway_via_trio(self, spec)
         elif spec.via:
-            assert not spec.socket
-            master = self[spec.via]
-            proxy_channel = master.remote_exec(gateway_io)
-            proxy_channel.send(vars(spec))
-            proxy_io_master = gateway_io.ProxyIO(proxy_channel, self.execmodel)
-            gw = gateway_bootstrap.bootstrap(proxy_io_master, spec)
-        elif spec.popen or spec.ssh or spec.vagrant_ssh:
-            io = gateway_io.create_io(spec, execmodel=self.execmodel)
-            gw = gateway_bootstrap.bootstrap(io, spec)
+            gw = _trio_host.makegateway_via_trio(self, spec)
+        elif spec.ssh:
+            gw = _trio_host.makegateway_ssh_trio(self, spec)
+        elif spec.vagrant_ssh:
+            gw = _trio_host.makegateway_vagrant_trio(self, spec)
+        elif spec.popen:
+            gw = _trio_host.makegateway_popen_trio(self, spec)
         else:
             raise ValueError(f"no gateway type found for {spec._spec!r}")
         gw.spec = spec

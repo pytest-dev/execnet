@@ -1,4 +1,4 @@
-"""Base execnet gateway code send to the other side for bootstrapping.
+"""Core gateway, channel and serialization code shared by coordinator and worker.
 
 :copyright: 2004-2015
 :authors:
@@ -389,48 +389,6 @@ else:
     notrace = trace = lambda *msg: None
 
 
-class Popen2IO:
-    error = (IOError, OSError, EOFError)
-
-    def __init__(self, outfile, infile, execmodel: ExecModel) -> None:
-        # we need raw byte streams
-        self.outfile, self.infile = outfile, infile
-        if sys.platform == "win32":
-            import msvcrt
-
-            try:
-                msvcrt.setmode(infile.fileno(), os.O_BINARY)
-                msvcrt.setmode(outfile.fileno(), os.O_BINARY)
-            except (AttributeError, OSError):
-                pass
-        self._read = getattr(infile, "buffer", infile).read
-        self._write = getattr(outfile, "buffer", outfile).write
-        self.execmodel = execmodel
-
-    def read(self, numbytes: int) -> bytes:
-        """Read exactly 'numbytes' bytes from the pipe."""
-        # a file in non-blocking mode may return less bytes, so we loop
-        buf = b""
-        while numbytes > len(buf):
-            data = self._read(numbytes - len(buf))
-            if not data:
-                raise EOFError("expected %d bytes, got %d" % (numbytes, len(buf)))
-            buf += data
-        return buf
-
-    def write(self, data: bytes) -> None:
-        """Write out all data bytes."""
-        assert isinstance(data, bytes)
-        self._write(data)
-        self.outfile.flush()
-
-    def close_read(self) -> None:
-        self.infile.close()
-
-    def close_write(self) -> None:
-        self.outfile.close()
-
-
 class Message:
     """Encapsulates Messages and their wire protocol."""
 
@@ -572,7 +530,11 @@ class Message:
 
 
 class GatewayReceivedTerminate(Exception):
-    """Receiverthread got termination message."""
+    """Receiver got a gateway termination message."""
+
+
+class HostNotFound(ConnectionError):
+    """The remote side of a gateway could not be reached."""
 
 
 def geterrortext(
@@ -1043,6 +1005,8 @@ class BaseGateway:
     _sysex = sysex
     id = "<worker>"
     _trio_session: Any = None
+    # Set by the receiver on EOF without a prior termination message.
+    _error: BaseException | None = None
 
     def __init__(self, io: IO, id, _startcount: int = 2) -> None:
         self.execmodel = io.execmodel
@@ -1054,7 +1018,6 @@ class BaseGateway:
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
-        self._receivepool = WorkerPool(self.execmodel)
         self._trio_session = None
 
     def _trace(self, *msg: object) -> None:
@@ -1063,43 +1026,6 @@ class BaseGateway:
     def _attach_trio_session(self, session: Any) -> None:
         """Attach a Trio ProtocolSession for Message IO (no receiver thread)."""
         self._trio_session = session
-
-    def _initreceive(self) -> None:
-        if self._trio_session is not None:
-            return
-        self._receivepool.spawn(self._thread_receiver)
-
-    def _thread_receiver(self) -> None:
-        def log(*msg: object) -> None:
-            self._trace("[receiver-thread]", *msg)
-
-        log("RECEIVERTHREAD: starting to run")
-        io = self._io
-        try:
-            while 1:
-                msg = Message.from_io(io)
-                log("received", msg)
-                with self._receivelock:
-                    msg.received(self)
-                    del msg
-        except (KeyboardInterrupt, GatewayReceivedTerminate):
-            pass
-        except EOFError as exc:
-            log("EOF without prior gateway termination message")
-            self._error = exc
-        except Exception as exc:
-            log(self._geterrortext(exc))
-        log("finishing receiving thread")
-        # wake up and terminate any execution waiting to receive
-        self._channelfactory._finished_receiving()
-        log("terminating execution")
-        self._terminate_execution()
-        log("closing read")
-        self._io.close_read()
-        log("closing write")
-        self._io.close_write()
-        log("terminating our receive pseudo pool")
-        self._receivepool.trigger_shutdown()
 
     def _terminate_execution(self) -> None:
         pass
@@ -1136,41 +1062,25 @@ class BaseGateway:
         return self._channelfactory.new()
 
     def join(self, timeout: float | None = None) -> None:
-        """Wait for receiverthread to terminate."""
-        self._trace("waiting for receiver thread to finish")
+        """Wait for the receiver (Trio session) to terminate."""
+        self._trace("waiting for receiver to finish")
         session = self._trio_session
         if session is not None:
             session.wait_done(timeout)
-            return
-        self._receivepool.waitall(timeout)
 
 
 class WorkerGateway(BaseGateway):
     _trio_exec: Any = None
+    # The exec pool (a TrioWorkerExec duck-typed as WorkerPool for STATUS).
+    _execpool: Any = None
+    _executetask_complete: Event | None = None
 
     def _local_schedulexec(self, channel: Channel, sourcetask: bytes) -> None:
-        trio_exec = getattr(self, "_trio_exec", None)
-        if trio_exec is not None:
-            trio_exec.schedule(channel, sourcetask)
+        trio_exec = self._trio_exec
+        if trio_exec is None:
+            channel.close("execution disallowed")
             return
-
-        if self._execpool.execmodel.backend == "main_thread_only":
-            assert self._executetask_complete is not None
-            # It's necessary to wait for a short time in order to ensure
-            # that we do not report a false-positive deadlock error, since
-            # channel close does not elicit a response that would provide
-            # a guarantee to remote_exec callers that the previous task
-            # has released the main thread. If the timeout expires then it
-            # should be practically impossible to report a false-positive.
-            if not self._executetask_complete.wait(timeout=1):
-                channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
-                return
-            # It's only safe to clear here because the above wait proves
-            # that there is not a previous task about to set it again.
-            self._executetask_complete.clear()
-
-        sourcetask_ = loads_internal(sourcetask)
-        self._execpool.spawn(self.executetask, (channel, sourcetask_))
+        trio_exec.schedule(channel, sourcetask)
 
     def _terminate_execution(self) -> None:
         # called from receiverthread
@@ -1191,31 +1101,6 @@ class WorkerGateway(BaseGateway):
                     "execution did not finish in another 10 secs, calling os._exit()"
                 )
                 os._exit(1)
-
-    def serve(self) -> None:
-        def trace(msg: str) -> None:
-            self._trace("[serve] " + msg)
-
-        hasprimary = self.execmodel.backend in ("thread", "main_thread_only")
-        self._execpool = WorkerPool(self.execmodel, hasprimary=hasprimary)
-        self._executetask_complete = None
-        if self.execmodel.backend == "main_thread_only":
-            self._executetask_complete = self.execmodel.Event()
-            # Initialize state to indicate that there is no previous task
-            # executing so that we don't need a separate flag to track this.
-            self._executetask_complete.set()
-        trace("spawning receiver thread")
-        self._initreceive()
-        try:
-            if hasprimary:
-                # this will return when we are in shutdown
-                trace("integrating as primary thread")
-                self._execpool.integrate_as_primary_thread()
-            trace("joining receiver thread")
-            self.join()
-        except KeyboardInterrupt:
-            # in the worker we can't really do anything sensible
-            trace("swallowing keyboardinterrupt, serve finished")
 
     def executetask(
         self,
@@ -1701,44 +1586,3 @@ class _Serializer:
     def save_Channel(self, channel: Channel) -> None:
         self._write(opcode.CHANNEL)
         self._write_int4(channel.id)
-
-
-def init_popen_io(execmodel: ExecModel) -> Popen2IO:
-    if not hasattr(os, "dup"):  # jython
-        io = Popen2IO(sys.stdout, sys.stdin, execmodel)
-        import tempfile
-
-        sys.stdin = tempfile.TemporaryFile("r")
-        sys.stdout = tempfile.TemporaryFile("w")
-    else:
-        try:
-            devnull = os.devnull
-        except AttributeError:
-            devnull = "NUL" if os.name == "nt" else "/dev/null"
-        # stdin
-        stdin = execmodel.fdopen(os.dup(0), "r", 1)
-        fd = os.open(devnull, os.O_RDONLY)
-        os.dup2(fd, 0)
-        os.close(fd)
-
-        # stdout
-        stdout = execmodel.fdopen(os.dup(1), "w", 1)
-        fd = os.open(devnull, os.O_WRONLY)
-        os.dup2(fd, 1)
-
-        # stderr for win32
-        if os.name == "nt":
-            sys.stderr = execmodel.fdopen(os.dup(2), "w", 1)
-            os.dup2(fd, 2)
-        os.close(fd)
-        io = Popen2IO(stdout, stdin, execmodel)
-        # Use closefd=False since 0 and 1 are shared with
-        # sys.__stdin__ and sys.__stdout__.
-        sys.stdin = execmodel.fdopen(0, "r", 1, closefd=False)
-        sys.stdout = execmodel.fdopen(1, "w", 1, closefd=False)
-    return io
-
-
-def serve(io: IO, id) -> None:
-    trace(f"creating workergateway on {io!r}")
-    WorkerGateway(io=io, id=id, _startcount=2).serve()

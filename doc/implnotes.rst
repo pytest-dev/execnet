@@ -64,26 +64,11 @@ listener spawning ``python -m execnet._trio_worker --socket-fd`` subprocess
 workers).  Infrastructure that used to be driven by ``remote_exec``-ing
 source is now expressed as native protocol messages handled on the target's
 Trio host: ``GATEWAY_START_SOCKET`` (installvia -> bind a one-shot listener,
-reply with its address) and ``GATEWAY_START_POPEN`` (``via`` -> spawn a popen
-sub-worker and relay its protocol over the request channel).
+reply with its address) and ``GATEWAY_START_SUB`` (``via`` -> spawn a
+sub-worker — popen, foreign python, ssh, or vagrant — and relay its protocol
+over the request channel).
 
-Disable with ``EXECNET_TRIO_HOST=0``.  ssh/foreign-python ``via`` sub-gateways
-and greenlet execmodels still use the legacy thread receiver and sync
-``Popen`` path.
-
-Legacy thread model
--------------------
-
-After bootstrapping, ``BaseGateway`` opens a receiver thread which
-accepts encoded messages and triggers actions to interpret them.
-Sending of channel data items happens directly through
-write operations to InputOutput objects so there is no
-separate send thread.
-
-Code execution messages are scheduled on a WorkerPool.
-On the worker, ``serve()`` integrates the main thread as the
-primary executor when using the ``thread`` / ``main_thread_only``
-models.
-
-The receiver thread terminates if the remote side sends
-a gateway termination message or if the IO-connection drops.
+The Trio host is the only IO path; the legacy thread receiver and the
+source-shipping bootstrap have been removed.  The receiver task terminates
+when the remote side sends a gateway termination message or the
+IO-connection drops.

@@ -133,12 +133,8 @@ def ssh_config(ssh_server: SSHServerThread, tmp_path) -> str:
     return path
 
 
-@pytest.mark.parametrize("trio_host", ["1", "0"], ids=["trio", "legacy"])
-def test_ssh_roundtrip(
-    ssh_config: str, monkeypatch: pytest.MonkeyPatch, trio_host: str
-) -> None:
-    # trio=1 provisions the worker over ssh with uv; legacy=0 source-copies it.
-    monkeypatch.setenv("EXECNET_TRIO_HOST", trio_host)
+def test_ssh_roundtrip(ssh_config: str) -> None:
+    # The worker is provisioned over ssh with uv.
     group = execnet.Group()
     try:
         gw = group.makegateway(

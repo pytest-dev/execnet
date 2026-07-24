@@ -26,21 +26,14 @@ class Gateway(gateway_base.BaseGateway):
 
     _group: Group
 
-    def __init__(
-        self,
-        io: IO,
-        spec: XSpec,
-        *,
-        trio_session: object | None = None,
-        defer_receive: bool = False,
-    ) -> None:
-        """:private:"""
+    def __init__(self, io: IO, spec: XSpec) -> None:
+        """:private:
+
+        The Trio session doing the Message IO is attached separately via
+        ``_attach_trio_session`` once the connection is established.
+        """
         super().__init__(io=io, id=spec.id, _startcount=1)
         self.spec = spec
-        if trio_session is not None:
-            self._attach_trio_session(trio_session)
-        elif not defer_receive:
-            self._initreceive()
 
     @property
     def remoteaddress(self) -> str:
@@ -102,9 +95,7 @@ class Gateway(gateway_base.BaseGateway):
     def hasreceiver(self) -> bool:
         """Whether gateway is able to receive data."""
         session = self._trio_session
-        if session is not None:
-            return bool(session.is_alive())
-        return self._receivepool.active_count() > 0
+        return session is not None and bool(session.is_alive())
 
     def remote_status(self) -> RemoteStatus:
         """Obtain information about the remote execution status."""

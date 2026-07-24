@@ -11,10 +11,8 @@ import pytest
 
 import execnet
 from execnet import XSpec
+from execnet import _provision
 from execnet.gateway import Gateway
-from execnet.gateway_io import popen_args
-from execnet.gateway_io import ssh_args
-from execnet.gateway_io import vagrant_ssh_args
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
@@ -69,22 +67,20 @@ class TestXSpec:
 
     def test_ssh_options_and_config(self) -> None:
         spec = XSpec("ssh=-p 22100 user@host//python=python3")
-        spec.ssh_config = "/home/user/ssh_config"
-        assert ssh_args(spec)[:6] == ["ssh", "-C", "-F", spec.ssh_config, "-p", "22100"]
+        args = _provision.ssh_argv("-p 22100 user@host", "/home/user/ssh_config", "cmd")
+        assert args[:6] == ["ssh", "-C", "-F", "/home/user/ssh_config", "-p", "22100"]
+        assert spec.ssh is not None
 
     def test_vagrant_options(self) -> None:
-        spec = XSpec("vagrant_ssh=default//python=python3")
-        assert vagrant_ssh_args(spec)[:-1] == ["vagrant", "ssh", "default", "--", "-C"]
+        args = _provision.vagrant_ssh_argv("default", None, "cmd")
+        assert args[:-1] == ["vagrant", "ssh", "default", "--", "-C"]
 
     def test_popen_with_sudo_python(self) -> None:
-        spec = XSpec("popen//python=sudo python3")
-        assert popen_args(spec) == [
-            "sudo",
-            "python3",
-            "-u",
-            "-c",
-            "import sys;exec(eval(sys.stdin.readline()))",
-        ]
+        from execnet import _trio_host
+
+        spec = XSpec("popen//python=sudo python3//id=gw0")
+        args = _trio_host.popen_module_args(spec)
+        assert args[:5] == ["sudo", "python3", "-u", "-m", "execnet._trio_worker"]
 
     def test_env(self) -> None:
         xspec = XSpec("popen//env:NAME=value1")

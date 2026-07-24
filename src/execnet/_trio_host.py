@@ -10,7 +10,6 @@ from __future__ import annotations
 import itertools
 import json
 import math
-import os
 import queue
 import subprocess
 import sys
@@ -40,37 +39,6 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 _CLOSE_WRITE = object()
-_ENABLED_ENV = "EXECNET_TRIO_HOST"
-
-
-def trio_host_enabled() -> bool:
-    """Return whether the Trio IO path should be used when applicable."""
-    value = os.environ.get(_ENABLED_ENV, "1").strip().lower()
-    return value not in ("0", "false", "no", "off")
-
-
-def should_use_trio_popen(spec: Any) -> bool:
-    """Trio path for local popen.
-
-    Same-interpreter popen launches the worker module directly; a foreign
-    interpreter (``python=``) is provisioned via ``uv`` and only taken when
-    ``uv`` is available (otherwise the legacy source-copy path handles it).
-    """
-    if not trio_host_enabled():
-        return False
-    if not getattr(spec, "popen", False):
-        return False
-    if getattr(spec, "via", None):
-        return False
-    execmodel = getattr(spec, "execmodel", None)
-    if execmodel not in (None, "thread", "main_thread_only"):
-        return False
-    if getattr(spec, "python", None):
-        from . import _provision
-
-        # Direct launch if the interpreter already has execnet; else uv-provision.
-        return _provision.target_has_execnet(spec.python) or _provision.uv_available()
-    return True
 
 
 class AsyncByteIO(Protocol):
@@ -467,7 +435,7 @@ class ProtocolSession:
         self._wake_writer()
         gateway._trace("[trio-receiver] finishing channels")
         gateway._channelfactory._finished_receiving()
-        # Unblock WorkerGateway.serve()/join before heavy exec-pool shutdown
+        # Unblock the worker's join() before heavy exec-pool shutdown
         # so the primary thread is not waiting on _done while terminate waits
         # on the primary thread draining work.
         self._done.set()
@@ -593,9 +561,7 @@ def popen_module_args(spec: Any) -> list[str]:
     from . import _provision
 
     if getattr(spec, "python", None):
-        from .gateway_io import shell_split_path
-
-        interpreter = shell_split_path(spec.python)
+        interpreter = _provision.shell_split_path(spec.python)
     else:
         interpreter = [sys.executable]
 
@@ -648,7 +614,7 @@ def _open_trio_gateway(
     """
     import execnet
 
-    from .gateway_bootstrap import HostNotFound
+    from .gateway_base import HostNotFound
 
     host: TrioHost = group._ensure_trio_host()
 
@@ -677,7 +643,7 @@ def _open_trio_gateway(
                 await process.wait()
             raise
 
-        gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
+        gw = execnet.Gateway(_TempIO(group.execmodel), spec)
         session = await host.start_session(gw, async_io, process=process)
         gw._attach_trio_session(session)
         gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
@@ -725,18 +691,6 @@ def makegateway_ssh_trio(group: Any, spec: Any) -> Gateway:
     )
 
 
-def should_use_trio_vagrant(spec: Any) -> bool:
-    """Trio path for ``vagrant_ssh=<machine>`` gateways (uv-provisioned worker)."""
-    if not trio_host_enabled():
-        return False
-    if not getattr(spec, "vagrant_ssh", None):
-        return False
-    if getattr(spec, "via", None):
-        return False
-    execmodel = getattr(spec, "execmodel", None)
-    return execmodel in (None, "thread", "main_thread_only")
-
-
 def makegateway_vagrant_trio(group: Any, spec: Any) -> Gateway:
     """Create a ``vagrant ssh``-wrapped Gateway on the Trio IO path."""
     from . import _provision
@@ -751,22 +705,6 @@ def makegateway_vagrant_trio(group: Any, spec: Any) -> Gateway:
     )
 
 
-def should_use_trio_ssh(spec: Any) -> bool:
-    """Trio path for ssh gateways (worker provisioned on the remote via uv).
-
-    ``ssh=…//via=…`` is not a direct ssh connection but a sub-gateway spawned
-    by the master; that goes through the via path instead.
-    """
-    if not trio_host_enabled():
-        return False
-    if not getattr(spec, "ssh", None):
-        return False
-    if getattr(spec, "via", None):
-        return False
-    execmodel = getattr(spec, "execmodel", None)
-    return execmodel in (None, "thread", "main_thread_only")
-
-
 def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
     """Connect a Trio TCP stream to a running ``execnet-socketserver``.
 
@@ -776,7 +714,7 @@ def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
     """
     import execnet
 
-    from .gateway_bootstrap import HostNotFound
+    from .gateway_base import HostNotFound
 
     host: TrioHost = group._ensure_trio_host()
     if getattr(spec, "installvia", None):
@@ -804,23 +742,13 @@ def makegateway_socket_trio(group: Any, spec: Any) -> Gateway:
                 await stream.aclose()
             raise
 
-        gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
+        gw = execnet.Gateway(_TempIO(group.execmodel), spec)
         session = await host.start_session(gw, io)
         gw._attach_trio_session(session)
         gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)
         return gw
 
     return host.call(_create_and_attach)
-
-
-def should_use_trio_socket(spec: Any) -> bool:
-    """Trio path for ``socket=host:port`` gateways, including ``installvia``."""
-    if not trio_host_enabled():
-        return False
-    if not getattr(spec, "socket", None):
-        return False
-    execmodel = getattr(spec, "execmodel", None)
-    return execmodel in (None, "thread", "main_thread_only")
 
 
 _socket_worker_counter = itertools.count()
@@ -967,22 +895,6 @@ def handle_start_sub(gateway: BaseGateway, channelid: int, data: bytes) -> None:
     host.start_soon(_start_sub_and_relay, gateway, channelid, request)
 
 
-def should_use_trio_via(spec: Any) -> bool:
-    """Trio path for ``via=<gw>`` sub-gateways (popen, python, ssh, vagrant).
-
-    The master spawns the sub-worker from a ``GATEWAY_START_SUB`` request and
-    relays its Message protocol.  Socket subs go through ``installvia`` instead.
-    """
-    if not trio_host_enabled():
-        return False
-    if not getattr(spec, "via", None):
-        return False
-    if getattr(spec, "socket", None):
-        return False
-    execmodel = getattr(spec, "execmodel", None)
-    return execmodel in (None, "thread", "main_thread_only")
-
-
 def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
     """Create a ``via`` gateway: a sub-worker spawned by and relayed through the master."""
     import execnet
@@ -1002,7 +914,7 @@ def makegateway_via_trio(group: Any, spec: Any) -> Gateway:
         ack = await io.read_exact(1)
         if ack != b"1":
             raise EOFError(f"bad via handshake: {ack!r}")
-        gw = execnet.Gateway(_TempIO(group.execmodel), spec, defer_receive=True)
+        gw = execnet.Gateway(_TempIO(group.execmodel), spec)
         session = await host.start_session(gw, io)
         gw._attach_trio_session(session)
         gw._io = SyncIOHandle(group.execmodel, session, remoteaddress=remoteaddress)

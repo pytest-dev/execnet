@@ -215,7 +215,7 @@ def _build_worker_gateway(
     main_thread_only = model.backend == "main_thread_only"
     trio_exec = TrioWorkerExec(host, gateway, main_thread_only=main_thread_only)
     # Duck-type as WorkerPool for STATUS / _terminate_execution.
-    gateway._execpool = trio_exec  # type: ignore[assignment]
+    gateway._execpool = trio_exec
     gateway._trio_exec = trio_exec
     gateway._executetask_complete = None
     if main_thread_only:
