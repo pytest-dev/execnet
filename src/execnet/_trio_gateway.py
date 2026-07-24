@@ -246,6 +246,46 @@ class RawChannel:
         self._payload_send.close()
 
 
+class RawChannelStream:
+    """``ByteStream`` over a :class:`RawChannel` -- the frame-native via tunnel.
+
+    The gateway writer performs one ``send_all`` per frame, so every raw
+    payload carries exactly one whole sub-protocol frame (the master relay
+    keeps that invariant in the other direction).  ``receive_some`` buffers
+    payloads and honours ``max_bytes`` for the handshake read.
+    """
+
+    def __init__(self, raw: RawChannel) -> None:
+        self._raw = raw
+        self._buf = bytearray()
+        self._eof = False
+
+    async def send_all(self, data: bytes) -> None:
+        await self._raw.send_bytes(data)
+
+    async def receive_some(self, max_bytes: int | None = None) -> bytes:
+        if not self._buf and not self._eof:
+            try:
+                self._buf += await self._raw.receive_bytes()
+            except EOFError:
+                self._eof = True
+            except RemoteError as exc:
+                self._eof = True
+                raise EOFError(f"via tunnel closed: {exc}") from None
+        if max_bytes is None:
+            max_bytes = len(self._buf)
+        out = bytes(self._buf[:max_bytes])
+        del self._buf[:max_bytes]
+        return out
+
+    async def send_eof(self) -> None:
+        with suppress(OSError):
+            await self._raw.send_eof()
+
+    async def aclose(self) -> None:
+        await self._raw.aclose()
+
+
 class AsyncChannel:
     """Serialized object API over a :class:`RawChannel`.
 
@@ -517,7 +557,7 @@ class AsyncGateway:
         try:
             async for frame in self._outbound:
                 await self._stream.send_all(frame)
-        except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
+        except (trio.BrokenResourceError, trio.ClosedResourceError, OSError) as exc:
             self._trace("writer failed", exc)
             if self._error is None:
                 self._error = exc
@@ -682,8 +722,9 @@ class AsyncGroup:
     async def makegateway(self, spec: str | Any = "popen") -> AsyncGateway:
         """Create a gateway for ``spec`` served on the group's nursery.
 
-        Only popen-style specs (including uv-provisioned ``python=``) are
-        supported on the async path for now.
+        Popen-style specs (including uv-provisioned ``python=``) and
+        ``via=`` sub-gateways relayed through a group member are supported
+        on the async path for now.
         """
         from .xspec import XSpec
 
@@ -698,20 +739,53 @@ class AsyncGroup:
             spec.execmodel = "thread"
         if spec.id is None:
             spec.id = "gw%d" % len(self._gateways)
-        stream, process = await _connect_popen_worker(spec)
+        process: trio.Process | None = None
+        if spec.via:
+            stream: ByteStream = await self._open_via_stream(spec)
+        else:
+            stream, process = await _connect_popen_worker(spec)
         gateway = AsyncGateway(stream, id=spec.id, _startcount=1)
         await self._nursery.start(gateway._serve)
         self._gateways.append(gateway)
-        self._processes[gateway] = process
+        if process is not None:
+            self._processes[gateway] = process
         return gateway
 
+    async def _open_via_stream(self, spec: Any) -> ByteStream:
+        """Ask the ``spec.via`` master to spawn a sub-worker; tunnel over a
+        raw channel (each payload one whole sub-protocol frame)."""
+        from . import _provision
+
+        master = self._gateway_by_id(spec.via)
+        raw = master.open_raw_channel()
+        request = _provision.spawn_request(spec)
+        await master._send(Message.GATEWAY_START_SUB, raw.id, dumps_internal(request))
+        stream = RawChannelStream(raw)
+        await read_handshake_ack(stream, "via")
+        return stream
+
+    def _gateway_by_id(self, id: str) -> AsyncGateway:
+        for gateway in self._gateways:
+            if gateway.id == id:
+                return gateway
+        raise KeyError(f"no gateway {id!r} in {self!r}")
+
     async def terminate(self, timeout: float | None = None) -> None:
-        """Terminate all gateways; never hangs (kill after ``timeout``)."""
+        """Terminate all gateways; never hangs (kill after ``timeout``).
+
+        Tunneled (``via``) gateways go first so their termination frames
+        still travel through a live master.
+        """
         gateways = list(self._gateways)
         self._gateways.clear()
-        async with trio.open_nursery() as nursery:
-            for gateway in gateways:
-                nursery.start_soon(self._terminate_one, gateway, timeout)
+        tunneled = [gw for gw in gateways if gw not in self._processes]
+        spawned = [gw for gw in gateways if gw in self._processes]
+        for batch in (tunneled, spawned):
+            if not batch:
+                continue
+            async with trio.open_nursery() as nursery:
+                for gateway in batch:
+                    nursery.start_soon(self._terminate_one, gateway, timeout)
 
     async def _terminate_one(
         self, gateway: AsyncGateway, timeout: float | None
