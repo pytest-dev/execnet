@@ -10,7 +10,6 @@ from __future__ import annotations
 import itertools
 import json
 import math
-import queue
 import subprocess
 import sys
 import threading
@@ -31,6 +30,7 @@ from .gateway_base import Message
 from .gateway_base import dumps_internal
 from .gateway_base import loads_internal
 from .gateway_base import trace
+from .portal import LoopPortal
 
 if TYPE_CHECKING:
     from .gateway import Gateway
@@ -194,13 +194,23 @@ class ProtocolSession:
         self.io = io
         self.process = process
         self.host = host
-        self._outbound: queue.SimpleQueue[object] = queue.SimpleQueue()
-        self._wake: trio.Event | None = None
+        self._outbound_send: trio.MemorySendChannel[object]
+        self._outbound_recv: trio.MemoryReceiveChannel[object]
+        self._outbound_send, self._outbound_recv = trio.open_memory_channel(math.inf)
         self._done = threading.Event()
         self._process_exitcode: int | None = None
         self._process_done = threading.Event()
         self._send_closed = False
         self._lock = threading.Lock()
+
+    def _post_outbound(self, item: object) -> None:
+        """Schedule ``item`` onto the outbound channel.
+
+        Goes through the portal even from the host thread so every send —
+        loop callbacks and foreign threads alike — lands in one global FIFO
+        order.  Raises ``trio.RunFinishedError`` after loop shutdown.
+        """
+        self.host.portal.post(self._outbound_send.send_nowait, item)
 
     def enqueue_message(self, message: Message) -> None:
         """Enqueue a frame; wait until written when safe to block.
@@ -211,14 +221,16 @@ class ProtocolSession:
         The Trio host thread (receiver callbacks) must not wait — that would
         deadlock the writer task on the same event loop.
         """
-        wait = not self.host.is_host_thread()
+        wait = not self.host.portal.is_loop_thread()
         done = threading.Event() if wait else None
         errors: list[BaseException] = []
         with self._lock:
             if self._send_closed or self._done.is_set():
                 raise OSError("cannot send (already closed?)")
-            self._outbound.put((message.pack(), done, errors))
-        self._wake_writer()
+            try:
+                self._post_outbound((message.pack(), done, errors))
+            except trio.RunFinishedError:
+                raise OSError("cannot send (already closed?)") from None
         if done is None:
             return
         if not done.wait(timeout=120.0):
@@ -226,25 +238,13 @@ class ProtocolSession:
         if errors:
             raise OSError("cannot send (already closed?)") from errors[0]
 
-    def _wake_writer(self) -> None:
-        wake = self._wake
-        if wake is None:
-            return
-        if self.host.is_host_thread():
-            wake.set()
-        else:
-            try:
-                self.host.call_sync(wake.set)
-            except Exception:
-                pass
-
     def request_close_write(self) -> None:
         with self._lock:
             if self._send_closed:
                 return
             self._send_closed = True
-            self._outbound.put(_CLOSE_WRITE)
-        self._wake_writer()
+            with suppress(trio.RunFinishedError):
+                self._post_outbound(_CLOSE_WRITE)
 
     def request_close_read(self) -> None:
         # Reader observes EOF / cancel; nothing required from callers.
@@ -332,22 +332,7 @@ class ProtocolSession:
         log("finishing receiver")
 
     async def _writer(self) -> None:
-        self._wake = trio.Event()
-        while True:
-            while True:
-                try:
-                    item = self._outbound.get_nowait()
-                except queue.Empty:
-                    break
-                if not await self._writer_handle_item(item):
-                    return
-            # Reset wake before re-check to avoid losing a notification.
-            self._wake = trio.Event()
-            try:
-                item = self._outbound.get_nowait()
-            except queue.Empty:
-                await self._wake.wait()
-                continue
+        async for item in self._outbound_recv:
             if not await self._writer_handle_item(item):
                 return
 
@@ -385,8 +370,8 @@ class ProtocolSession:
         gateway = self.gateway
         with self._lock:
             self._send_closed = True
-            self._outbound.put(_CLOSE_WRITE)
-        self._wake_writer()
+            with suppress(trio.RunFinishedError):
+                self._post_outbound(_CLOSE_WRITE)
         gateway._trace("[trio-receiver] finishing channels")
         gateway._channelfactory._finished_receiving()
         # Unblock the worker's join() before heavy exec-pool shutdown
@@ -410,7 +395,7 @@ class TrioHost:
     def __init__(self, name: str = "execnet-trio-host") -> None:
         self._name = name
         self._thread: threading.Thread | None = None
-        self._token: trio.lowlevel.TrioToken | None = None
+        self._portal: LoopPortal | None = None
         self._nursery: trio.Nursery | None = None
         self._ready = threading.Event()
         self._shutdown: trio.Event | None = None
@@ -425,14 +410,20 @@ class TrioHost:
             raise RuntimeError("TrioHost failed to start")
         self._started = True
 
+    @property
+    def portal(self) -> LoopPortal:
+        if self._portal is None:
+            raise RuntimeError("TrioHost is not running")
+        return self._portal
+
     def is_host_thread(self) -> bool:
-        return self._thread is not None and threading.current_thread() is self._thread
+        return self._portal is not None and self._portal.is_loop_thread()
 
     def _run(self) -> None:
         trio.run(self._main)
 
     async def _main(self) -> None:
-        self._token = trio.lowlevel.current_trio_token()
+        self._portal = LoopPortal()
         self._shutdown = trio.Event()
         try:
             async with trio.open_nursery() as nursery:
@@ -444,14 +435,10 @@ class TrioHost:
             self._nursery = None
 
     def call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
-        if self._token is None:
-            raise RuntimeError("TrioHost is not running")
-        return trio.from_thread.run(async_fn, *args, trio_token=self._token)
+        return self.portal.run(async_fn, *args)
 
     def call_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
-        if self._token is None:
-            raise RuntimeError("TrioHost is not running")
-        return trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
+        return self.portal.run_sync(sync_fn, *args)
 
     def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
         """Schedule a task on the root nursery (must be called on the host thread)."""
@@ -475,7 +462,7 @@ class TrioHost:
         return session
 
     def stop(self, timeout: float | None = 5.0) -> None:
-        if not self._started or self._token is None or self._shutdown is None:
+        if not self._started or self._portal is None or self._shutdown is None:
             return
 
         def _set() -> None:
@@ -483,7 +470,7 @@ class TrioHost:
             self._shutdown.set()
 
         try:
-            trio.from_thread.run_sync(_set, trio_token=self._token)
+            self._portal.run_sync(_set)
         except Exception:
             pass
         if self._thread is not None:
