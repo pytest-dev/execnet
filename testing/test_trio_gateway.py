@@ -15,6 +15,7 @@ import pytest
 import trio
 import trio.testing
 
+from execnet import gateway_base
 from execnet._trio_gateway import AsyncGateway
 from execnet.gateway_base import Message
 from execnet.gateway_base import RemoteError
@@ -129,7 +130,7 @@ def test_terminate_closes_peer_cleanly() -> None:
 
 def test_status_reply_travels_on_raw_channel() -> None:
     async def main() -> None:
-        async with gateway_pair() as (left, right):
+        async with gateway_pair() as (left, _right):
             channel = left.open_raw_channel()
             await left._send(Message.STATUS, channel.id)
             status = loads_internal(await channel.receive_bytes())
@@ -144,7 +145,7 @@ def test_status_reply_travels_on_raw_channel() -> None:
 
 def test_unsupported_message_is_rejected_with_remote_error() -> None:
     async def main() -> None:
-        async with gateway_pair() as (left, right):
+        async with gateway_pair() as (left, _right):
             channel = left.open_raw_channel()
             await left._send(
                 Message.CHANNEL_EXEC,
@@ -159,7 +160,7 @@ def test_unsupported_message_is_rejected_with_remote_error() -> None:
 
 def test_send_after_gateway_close_raises() -> None:
     async def main() -> None:
-        async with gateway_pair() as (left, right):
+        async with gateway_pair() as (left, _right):
             channel = left.open_raw_channel()
             await left.aclose()
             with pytest.raises(OSError, match="cannot send"):
@@ -198,5 +199,87 @@ def test_mid_frame_eof_is_an_error() -> None:
             await right.wait_closed()
             assert isinstance(right._error, EOFError)
             assert "mid-frame" in str(right._error)
+
+    trio.run(main)
+
+
+def test_channel_serializes_builtin_items() -> None:
+    items = [42, "text", b"bytes", [1, 2], ("a", 1), {"key": [True, None]}, {1, 2}]
+
+    async def main() -> None:
+        async with gateway_pair() as (left, right):
+            sender = left.open_channel()
+            receiver = right.open_channel(sender.id)
+            for item in items:
+                await sender.send(item)
+            await sender.send_eof()
+            assert [item async for item in receiver] == items
+
+    trio.run(main)
+
+
+def test_channel_receive_timeout() -> None:
+    async def main() -> None:
+        async with gateway_pair() as (left, _right):
+            channel = left.open_channel()
+            with pytest.raises(gateway_base.TimeoutError):
+                await channel.receive(timeout=0.05)
+
+    trio.run(main)
+
+
+def test_channel_close_with_error_and_wait_closed() -> None:
+    async def main() -> None:
+        async with gateway_pair() as (left, right):
+            sender = left.open_channel()
+            receiver = right.open_channel(sender.id)
+            await sender.aclose(error="exec exploded")
+            with pytest.raises(RemoteError, match="exec exploded"):
+                await receiver.receive()
+            with pytest.raises(RemoteError, match="exec exploded"):
+                await receiver.wait_closed()
+
+    trio.run(main)
+
+
+def test_channel_wait_closed_on_clean_eof() -> None:
+    async def main() -> None:
+        async with gateway_pair() as (left, right):
+            sender = left.open_channel()
+            receiver = right.open_channel(sender.id)
+            await sender.send(1)
+            await sender.send_eof()
+            await receiver.wait_closed()
+            # items sent before the EOF still drain after waitclose
+            assert await receiver.receive() == 1
+
+    trio.run(main)
+
+
+def test_channel_objects_travel_over_the_wire() -> None:
+    async def main() -> None:
+        async with gateway_pair() as (left, right):
+            carrier = left.open_channel()
+            right_carrier = right.open_channel(carrier.id)
+            extra = left.open_channel()
+            await carrier.send({"reply-to": extra})
+            received = await right_carrier.receive()
+            remote_extra = received["reply-to"]
+            assert remote_extra.id == extra.id
+            await remote_extra.send("over the transferred channel")
+            assert await extra.receive() == "over the transferred channel"
+
+    trio.run(main)
+
+
+def test_channel_reconfigure_string_coercion() -> None:
+    async def main() -> None:
+        async with gateway_pair() as (left, right):
+            sender = left.open_channel()
+            receiver = right.open_channel(sender.id)
+            await sender.reconfigure(py3str_as_py2str=True)
+            await receiver.send("text")
+            # our side now loads py3 strings as bytes
+            assert await sender.receive() == b"text"
 
     trio.run(main)
