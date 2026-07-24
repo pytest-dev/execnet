@@ -12,6 +12,7 @@ from .gateway import Gateway
 from .gateway_base import Channel
 from .gateway_base import DataFormatError
 from .gateway_base import DumpError
+from .gateway_base import HostNotFound
 from .gateway_base import LoadError
 from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
@@ -19,7 +20,6 @@ from .gateway_base import dump
 from .gateway_base import dumps
 from .gateway_base import load
 from .gateway_base import loads
-from .gateway_bootstrap import HostNotFound
 from .multi import Group
 from .multi import MultiChannel
 from .multi import default_group

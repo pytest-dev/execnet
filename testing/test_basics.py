@@ -17,11 +17,9 @@ import pytest
 import execnet
 from execnet import gateway
 from execnet import gateway_base
-from execnet import gateway_io
 from execnet.gateway_base import ChannelFactory
 from execnet.gateway_base import ExecModel
 from execnet.gateway_base import Message
-from execnet.gateway_base import Popen2IO
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
@@ -68,81 +66,29 @@ def test_errors_on_execnet() -> None:
     assert hasattr(execnet, "DataFormatError")
 
 
-def test_subprocess_interaction(anypython: str) -> None:
-    line = gateway_io.popen_bootstrapline
-    compile(line, "xyz", "exec")
-    args = [str(anypython), "-c", line]
-    popen = subprocess.Popen(
-        args,
-        bufsize=0,
-        universal_newlines=True,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-    )
-
-    assert popen.stdin is not None
-    assert popen.stdout is not None
-
-    def send(line: str) -> None:
-        assert popen.stdin is not None
-        popen.stdin.write(line)
-        popen.stdin.flush()
-
-    def receive() -> str:
-        assert popen.stdout is not None
-        return popen.stdout.readline()
-
-    try:
-        source = inspect.getsource(read_write_loop) + "read_write_loop()"
-        send(repr(source) + "\n")
-        s = receive()
-        assert s == "ok\n"
-        send("hello\n")
-        s = receive()
-        assert s == "received: hello\n"
-        send("world\n")
-        s = receive()
-        assert s == "received: world\n"
-        send("\n")  # terminate loop
-    finally:
-        popen.stdin.close()
-        popen.stdout.close()
-        popen.wait()
-
-
-def read_write_loop() -> None:
-    sys.stdout.write("ok\n")
-    sys.stdout.flush()
-    while 1:
-        try:
-            line = sys.stdin.readline()
-            if not line.strip():
-                break
-            sys.stdout.write("received: %s" % line)
-            sys.stdout.flush()
-        except (OSError, EOFError):
-            break
-
-
 IO_MESSAGE_EXTRA_SOURCE = """
-import sys
-backend = sys.argv[1]
 from io import BytesIO
-import tempfile
-temp_out = BytesIO()
-temp_in = BytesIO()
-io = Popen2IO(temp_out, temp_in, get_execmodel(backend))
+
+class BufIO:
+    def __init__(self):
+        self.buf = BytesIO()
+
+    def write(self, data):
+        self.buf.write(data)
+
+    def read(self, numbytes):
+        data = self.buf.read(numbytes)
+        if len(data) < numbytes:
+            raise EOFError("expected %d bytes" % numbytes)
+        return data
+
 for i, handler in enumerate(Message._types):
     print ("checking", i, handler)
     for data in "hello", "hello".encode('ascii'):
+        io = BufIO()
         msg1 = Message(i, i, dumps(data))
         msg1.to_io(io)
-        x = io.outfile.getvalue()
-        io.outfile.truncate(0)
-        io.outfile.seek(0)
-        io.infile.seek(0)
-        io.infile.write(x)
-        io.infile.seek(0)
+        io.buf.seek(0)
         msg2 = Message.from_io(io)
         assert msg1.channelid == msg2.channelid, (msg1, msg2)
         assert msg1.data == msg2.data, (msg1.data, msg2.data)
@@ -177,42 +123,10 @@ def checker(anypython: str, tmp_path: Path) -> Checker:
     return Checker(python=anypython, path=tmp_path)
 
 
-def test_io_message(checker: Checker, execmodel: ExecModel) -> None:
-    out = checker.run_check(
-        inspect.getsource(gateway_base) + IO_MESSAGE_EXTRA_SOURCE, execmodel.backend
-    )
+def test_io_message(checker: Checker) -> None:
+    out = checker.run_check(inspect.getsource(gateway_base) + IO_MESSAGE_EXTRA_SOURCE)
     print(out.stdout)
     assert "all passed" in out.stdout
-
-
-def test_popen_io(checker: Checker, execmodel: ExecModel) -> None:
-    out = checker.run_check(
-        inspect.getsource(gateway_base)
-        + f"""
-io = init_popen_io(get_execmodel({execmodel.backend!r}))
-io.write(b"hello")
-s = io.read(1)
-assert s == b"x"
-""",
-        input="x",
-    )
-    print(out.stderr)
-    assert "hello" in out.stdout
-
-
-def test_popen_io_readloop(execmodel: ExecModel) -> None:
-    sio = BytesIO(b"test")
-    io = Popen2IO(sio, sio, execmodel)
-    real_read = io._read
-
-    def newread(numbytes: int) -> bytes:
-        if numbytes > 1:
-            numbytes = numbytes - 1
-        return real_read(numbytes)  # type: ignore[no-any-return]
-
-    io._read = newread
-    result = io.read(3)
-    assert result == b"tes"
 
 
 def test_rinfo_source(checker: Checker) -> None:
@@ -252,19 +166,20 @@ except ValueError as exc:
 
 
 @pytest.mark.skipif("not hasattr(os, 'dup')")
-def test_stdouterrin_setnull(
-    execmodel: ExecModel, capfd: pytest.CaptureFixture[str]
-) -> None:
-    # Backup and restore stdin state, and rely on capfd to handle
-    # this for stdout and stderr.
+def test_stdouterrin_setnull(capfd: pytest.CaptureFixture[str]) -> None:
+    # _prepare_protocol_fds dups the stdio fds for the Message protocol and
+    # points fd 0/1 at devnull; writes/reads on the original fds must go
+    # nowhere.  Back up and restore the real fds around the call.
+    from execnet import _trio_worker
+
     orig_stdin = sys.stdin
-    orig_stdin_fd = os.dup(0)
+    orig_stdout = sys.stdout
+    orig_fd0 = os.dup(0)
+    orig_fd1 = os.dup(1)
     try:
-        # The returned Popen2IO instance can be garbage collected
-        # prematurely since we don't hold a reference here, but we
-        # tolerate this because it is intended to leave behind a
-        # sane state afterwards.
-        gateway_base.init_popen_io(execmodel)
+        read_fd, write_fd = _trio_worker._prepare_protocol_fds()
+        os.close(read_fd)
+        os.close(write_fd)
         os.write(1, b"hello")
         os.read(0, 1)
         out, err = capfd.readouterr()
@@ -272,8 +187,11 @@ def test_stdouterrin_setnull(
         assert not err
     finally:
         sys.stdin = orig_stdin
-        os.dup2(orig_stdin_fd, 0)
-        os.close(orig_stdin_fd)
+        sys.stdout = orig_stdout
+        os.dup2(orig_fd0, 0)
+        os.dup2(orig_fd1, 1)
+        os.close(orig_fd0)
+        os.close(orig_fd1)
 
 
 class PseudoChannel:
