@@ -24,6 +24,7 @@ import math
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextlib import suppress
+from typing import Any
 from typing import Protocol
 
 import trio
@@ -32,6 +33,7 @@ from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
 from .gateway_base import Message
 from .gateway_base import RemoteError
+from .gateway_base import TimeoutError
 from .gateway_base import Unserializer
 from .gateway_base import dumps_internal
 from .gateway_base import loads_internal
@@ -81,6 +83,7 @@ class RawChannel:
         self._closed = False  # no more sends (local aclose or remote close)
         self._sent_eof = False
         self._remote_closed = False
+        self._receive_closed = trio.Event()  # no more payloads will arrive
         self._remote_error: RemoteError | None = None
         self._payload_send, self._payloads = trio.open_memory_channel[bytes](math.inf)
 
@@ -123,6 +126,7 @@ class RawChannel:
             return
         self._closed = True
         self._payload_send.close()
+        self._receive_closed.set()
         self.gateway._forget_channel(self.id)
         if not self._remote_closed:
             # A peer-initiated close needs no reply; a dead gateway is
@@ -159,16 +163,127 @@ class RawChannel:
         except (trio.BrokenResourceError, trio.ClosedResourceError):
             pass  # locally closed: drop, like the sync channel
 
-    def _close_from_remote(
-        self, error: RemoteError | None, *, sendonly: bool
-    ) -> None:
+    def _close_from_remote(self, error: RemoteError | None, *, sendonly: bool) -> None:
         if error is not None:
             self._remote_error = error
         self._remote_closed = True
+        self._receive_closed.set()
         if not sendonly:
             self._closed = True
             self.gateway._forget_channel(self.id)
         self._payload_send.close()
+
+
+class AsyncChannel:
+    """Serialized object API over a :class:`RawChannel`.
+
+    Every payload is one dumps/loads-serialized item; close/EOF semantics
+    and error propagation come from the raw layer.  Channels are
+    async-iterable, and :meth:`receive` supports the familiar execnet
+    timeout (raising ``TimeoutError``).
+
+    Channel objects themselves serialize: sending an AsyncChannel inside an
+    item transfers a reference the peer receives as its own AsyncChannel
+    for the same id (the wire CHANNEL opcode, as with sync channels).
+    """
+
+    RemoteError = RemoteError
+    TimeoutError = TimeoutError
+
+    def __init__(self, raw: RawChannel) -> None:
+        self._raw = raw
+        self.gateway = raw.gateway
+        self.id = raw.id
+
+    def __repr__(self) -> str:
+        flag = "closed" if self.isclosed() else "open"
+        return f"<AsyncChannel id={self.id} {flag}>"
+
+    def isclosed(self) -> bool:
+        """Return True if the channel is closed for sending."""
+        return self._raw._closed
+
+    async def send(self, item: object) -> None:
+        """Serialize ``item`` and send it to the other side.
+
+        The item must be a simple Python type; OSError is raised when the
+        channel or gateway is closed.
+        """
+        if self.isclosed():
+            raise OSError(f"cannot send to {self!r}")
+        await self._raw.send_bytes(dumps_internal(item))
+
+    async def receive(self, timeout: float | None = None) -> Any:
+        """Receive the next item sent from the other side.
+
+        Raises EOFError once the peer closed or sent EOF, a RemoteError for
+        a peer close-with-error, and TimeoutError if no item arrived within
+        ``timeout`` seconds.
+        """
+        if timeout is None:
+            data = await self._raw.receive_bytes()
+        else:
+            try:
+                with trio.fail_after(timeout):
+                    data = await self._raw.receive_bytes()
+            except trio.TooSlowError:
+                raise TimeoutError("no item after %r seconds" % timeout) from None
+        return loads_internal(data, self)
+
+    async def send_eof(self) -> None:
+        """Signal that no more items follow (peer keeps its send side)."""
+        await self._raw.send_eof()
+
+    async def aclose(self, error: str | None = None) -> None:
+        """Close the channel; ``error`` reaches the peer as a RemoteError."""
+        await self._raw.aclose(error)
+
+    async def wait_closed(self) -> None:
+        """Wait until the peer closed or sent EOF; reraise remote errors."""
+        await self._raw._receive_closed.wait()
+        error = self._raw._remote_error or self.gateway._error
+        if error is not None:
+            raise error
+
+    async def reconfigure(
+        self, py2str_as_py3str: bool = True, py3str_as_py2str: bool = False
+    ) -> None:
+        """Set the string coercion for both ends of this channel."""
+        strconfig = (py2str_as_py3str, py3str_as_py2str)
+        self._raw._strconfig = strconfig
+        await self.gateway._send(
+            Message.RECONFIGURE, self.id, dumps_internal(strconfig)
+        )
+
+    def __aiter__(self) -> AsyncChannel:
+        return self
+
+    async def __anext__(self) -> Any:
+        try:
+            return await self.receive()
+        except EOFError:
+            raise StopAsyncIteration from None
+
+    # Unserializer duck-type: loads_internal(data, self) reads _strconfig
+    # and _channelfactory off the object to resolve CHANNEL opcodes.
+
+    @property
+    def _strconfig(self) -> tuple[bool, bool]:
+        return self._raw._strconfig or self.gateway._strconfig
+
+    @property
+    def _channelfactory(self) -> _AsyncChannelFactory:
+        return self.gateway._channelfactory
+
+
+class _AsyncChannelFactory:
+    """Duck-typed factory for the Unserializer CHANNEL opcode (``.new(id)``)."""
+
+    def __init__(self, gateway: AsyncGateway) -> None:
+        self.gateway = gateway
+
+    def new(self, id: int) -> AsyncChannel:
+        return self.gateway.open_channel(id)
 
 
 class AsyncGateway:
@@ -189,6 +304,8 @@ class AsyncGateway:
         self._stream = stream
         self.id = id
         self._channels: dict[int, RawChannel] = {}
+        self._async_channels: dict[int, AsyncChannel] = {}
+        self._channelfactory = _AsyncChannelFactory(self)
         self._count = _startcount
         self._strconfig = (Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str)
         self._outbound_send, self._outbound = trio.open_memory_channel[bytes](math.inf)
@@ -226,6 +343,15 @@ class AsyncGateway:
             self._count += 2
         return self._channel_for(id)
 
+    def open_channel(self, id: int | None = None) -> AsyncChannel:
+        """Return the serialized channel for ``id``, allocating one if None."""
+        raw = self.open_raw_channel(id)
+        try:
+            return self._async_channels[raw.id]
+        except KeyError:
+            channel = self._async_channels[raw.id] = AsyncChannel(raw)
+            return channel
+
     async def terminate(self) -> None:
         """Send GATEWAY_TERMINATE to the peer, then close this side."""
         if not self._closed:
@@ -240,9 +366,8 @@ class AsyncGateway:
             self._outbound_send.close()
             with trio.move_on_after(5):
                 await self._writer_done.wait()
-        with trio.CancelScope(shield=True):
-            with suppress(Exception):
-                await self._stream.aclose()
+        with trio.CancelScope(shield=True), suppress(Exception):
+            await self._stream.aclose()
         if self._serve_started:
             await self._done.wait()
         else:
@@ -269,9 +394,8 @@ class AsyncGateway:
             self._closed = True
             self._outbound_send.close()
             self._finish_channels()
-            with trio.CancelScope(shield=True):
-                with suppress(Exception):
-                    await self._stream.aclose()
+            with trio.CancelScope(shield=True), suppress(Exception):
+                await self._stream.aclose()
             self._done.set()
 
     async def _reader(self) -> None:
@@ -364,6 +488,7 @@ class AsyncGateway:
 
     def _forget_channel(self, id: int) -> None:
         self._channels.pop(id, None)
+        self._async_channels.pop(id, None)
 
     async def _send(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
         # The queue is unbounded, so this never waits on the peer -- but it
@@ -382,6 +507,7 @@ class AsyncGateway:
         for channel in list(self._channels.values()):
             channel._close_from_remote(None, sendonly=True)
         self._channels.clear()
+        self._async_channels.clear()
 
 
 @asynccontextmanager

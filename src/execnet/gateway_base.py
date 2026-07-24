@@ -1622,3 +1622,9 @@ class _Serializer:
     def save_Channel(self, channel: Channel) -> None:
         self._write(opcode.CHANNEL)
         self._write_int4(channel.id)
+
+    def save_AsyncChannel(self, channel: Any) -> None:
+        # trio-native channel (execnet._trio_gateway); same wire opcode,
+        # duck-typed here to avoid importing the async core.
+        self._write(opcode.CHANNEL)
+        self._write_int4(channel.id)
