@@ -400,7 +400,7 @@ class TestAsyncGroup:
         async def main() -> None:
             async with AsyncGroup() as group:
                 with pytest.raises(ValueError, match="unsupported spec"):
-                    await group.makegateway("ssh=nowhere.example.invalid")
+                    await group.makegateway("id=notype")
 
         trio.run(main)
 

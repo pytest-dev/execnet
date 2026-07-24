@@ -706,7 +706,11 @@ class Channel:
                 else:
                     msgcode = Message.CHANNEL_CLOSE
                 with suppress(OSError, ValueError):  # ignore problems with sending
-                    self.gateway._send(msgcode, self.id)
+                    # Never wait during GC: post the close best-effort.
+                    send = getattr(
+                        self.gateway, "_send_nonblocking", self.gateway._send
+                    )
+                    send(msgcode, self.id)
 
     def _getremoteerror(self):
         try:
@@ -1129,6 +1133,19 @@ class BaseGateway:
             self._trace("failed to send", message, e)
             # ValueError might be because the IO is already closed
             raise OSError("cannot send (already closed?)") from e
+
+    def _send_nonblocking(self, msgcode: int, channelid: int = 0) -> None:
+        """Best-effort send that never waits (used during GC).
+
+        Safe to call from any thread, including while the interpreter or
+        the IO loop is shutting down.
+        """
+        message = Message(msgcode, channelid)
+        session = self._trio_session
+        if session is not None:
+            session.post_message(message)
+            return
+        message.to_io(self._io)
 
     def _local_schedulexec(self, channel: Channel, sourcetask: bytes) -> None:
         channel.close("execution disallowed")

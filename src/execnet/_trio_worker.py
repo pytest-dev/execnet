@@ -224,7 +224,7 @@ def _run_worker(host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel) -
     """Attach ``io`` as the gateway session and serve until shutdown."""
     gateway, trio_exec, main_thread_only = _build_worker_gateway(host, id, model)
 
-    async def _start() -> _trio_host.ProtocolSession:
+    async def _start() -> _trio_host.SyncBridgeGateway:
         return await host.start_session(gateway, io)
 
     session = host.call(_start)
