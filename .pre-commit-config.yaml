@@ -31,4 +31,5 @@ repos:
     -   id: mypy
         additional_dependencies:
           - pytest
+          - trio
           - types-pywin32

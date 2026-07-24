@@ -529,6 +529,42 @@ class Message:
     _types[GATEWAY_START_SUB] = ("GATEWAY_START_SUB", _gateway_start_sub)
 
 
+class FrameDecoder:
+    """Incremental decoder for the 9-byte-header Message framing.
+
+    ``feed(data)`` accepts arbitrary byte chunks and yields every complete
+    Message; partial frames buffer internally until more bytes arrive.
+    Pure computation — no IO, no awaits, no knowledge of streams — so
+    receivers only ever stream bytes in (``receive_some`` loops) and the
+    decoder owns framing.
+    """
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+
+    def feed(self, data: bytes) -> Iterator[Message]:
+        self._buffer += data
+        return self._parse()
+
+    def _parse(self) -> Iterator[Message]:
+        while len(self._buffer) >= 9:
+            msgtype, channelid, payload_len = Message.from_header(
+                bytes(self._buffer[:9])
+            )
+            if len(self._buffer) < 9 + payload_len:
+                return
+            payload = bytes(self._buffer[9 : 9 + payload_len])
+            del self._buffer[: 9 + payload_len]
+            yield Message(msgtype, channelid, payload)
+
+    def close(self) -> None:
+        """Signal EOF; raises EOFError if the stream ended mid-frame."""
+        if self._buffer:
+            raise EOFError(
+                "connection closed mid-frame (%d buffered bytes)" % len(self._buffer)
+            )
+
+
 class GatewayReceivedTerminate(Exception):
     """Receiver got a gateway termination message."""
 

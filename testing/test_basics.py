@@ -236,6 +236,90 @@ class TestMessage:
             assert isinstance(repr(msg), str)
 
 
+class TestFrameDecoder:
+    def _messages(self) -> list[Message]:
+        return [
+            Message(Message.CHANNEL_DATA, 1, b"x" * 20),
+            Message(Message.STATUS, 42, b""),
+            Message(Message.CHANNEL_DATA, 7, b"y"),
+        ]
+
+    def test_single_feed_yields_all(self) -> None:
+        decoder = gateway_base.FrameDecoder()
+        blob = b"".join(m.pack() for m in self._messages())
+        got = list(decoder.feed(blob))
+        assert [(m.msgcode, m.channelid, m.data) for m in got] == [
+            (m.msgcode, m.channelid, m.data) for m in self._messages()
+        ]
+        decoder.close()
+
+    @pytest.mark.parametrize("chunksize", [1, 2, 3, 8, 9, 10, 13])
+    def test_adversarial_chunk_splits(self, chunksize: int) -> None:
+        decoder = gateway_base.FrameDecoder()
+        blob = b"".join(m.pack() for m in self._messages())
+        got: list[Message] = []
+        for start in range(0, len(blob), chunksize):
+            got.extend(decoder.feed(blob[start : start + chunksize]))
+        assert [(m.msgcode, m.channelid, m.data) for m in got] == [
+            (m.msgcode, m.channelid, m.data) for m in self._messages()
+        ]
+        decoder.close()
+
+    def test_close_mid_frame_raises(self) -> None:
+        decoder = gateway_base.FrameDecoder()
+        blob = Message(Message.CHANNEL_DATA, 1, b"hello").pack()
+        assert list(decoder.feed(blob[:-2])) == []
+        with pytest.raises(EOFError, match="mid-frame"):
+            decoder.close()
+
+    def test_feed_buffers_even_when_not_iterated(self) -> None:
+        decoder = gateway_base.FrameDecoder()
+        blob = Message(Message.CHANNEL_DATA, 5, b"data").pack()
+        decoder.feed(blob[:4])  # result deliberately not iterated
+        (msg,) = decoder.feed(blob[4:])
+        assert (msg.msgcode, msg.channelid, msg.data) == (
+            Message.CHANNEL_DATA,
+            5,
+            b"data",
+        )
+
+    def test_memory_stream_roundtrip(self) -> None:
+        """Protocol-level: frames sent over a trio memory stream pair arrive
+        intact through the receive_some + FrameDecoder loop."""
+        import trio
+        import trio.testing
+
+        messages = self._messages()
+
+        async def main() -> list[Message]:
+            ours, theirs = trio.testing.memory_stream_pair()
+            received: list[Message] = []
+
+            async def sender() -> None:
+                for m in messages:
+                    await theirs.send_all(m.pack())
+                await theirs.send_eof()
+
+            async def receiver() -> None:
+                decoder = gateway_base.FrameDecoder()
+                while True:
+                    data = await ours.receive_some(4096)
+                    if not data:
+                        decoder.close()
+                        break
+                    received.extend(decoder.feed(data))
+
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(sender)
+                nursery.start_soon(receiver)
+            return received
+
+        received = trio.run(main)
+        assert [(m.msgcode, m.channelid, m.data) for m in received] == [
+            (m.msgcode, m.channelid, m.data) for m in messages
+        ]
+
+
 class TestPureChannel:
     @pytest.fixture
     def fac(self, execmodel: ExecModel) -> ChannelFactory:
