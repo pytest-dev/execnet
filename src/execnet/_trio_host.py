@@ -18,11 +18,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Protocol
 from typing import TypeVar
 
 import trio
 
+from ._trio_gateway import RECEIVE_CHUNK
+from ._trio_gateway import ByteStream
 from .gateway_base import ExecModel
 from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
@@ -39,27 +40,6 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 
 _CLOSE_WRITE = object()
-
-
-RECEIVE_CHUNK = 65536
-
-
-class ByteStream(Protocol):
-    """Neutral bidirectional byte-stream protocol for gateway transports.
-
-    ``trio.StapledStream`` (process/fd pipe pairs) and ``trio.SocketStream``
-    satisfy this structurally; a future anyio backend's byte streams use the
-    same four names.  ``send_eof`` signals write-EOF to the peer (half-close
-    for sockets; for pipe pairs trio falls back to closing the send half).
-    """
-
-    async def send_all(self, data: bytes) -> None: ...
-
-    async def receive_some(self, max_bytes: int | None = None) -> bytes: ...
-
-    async def send_eof(self) -> None: ...
-
-    async def aclose(self) -> None: ...
 
 
 def staple_process_stream(process: trio.Process) -> ByteStream:
