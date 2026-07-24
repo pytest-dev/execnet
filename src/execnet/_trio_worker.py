@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import functools
 import os
-import queue
 import sys
 import threading
 from typing import TYPE_CHECKING
@@ -17,6 +16,7 @@ from .gateway_base import WorkerGateway
 from .gateway_base import get_execmodel
 from .gateway_base import loads_internal
 from .gateway_base import trace
+from .portal import SyncReceiver
 
 if TYPE_CHECKING:
     from . import _trio_host
@@ -48,10 +48,9 @@ class TrioWorkerExec:
         self._shutting_down = False
         self._idle = threading.Event()
         self._idle.set()
-        self._primary_q: queue.SimpleQueue[
+        self._primary: SyncReceiver[
             tuple[Channel, ExecItem, threading.Event] | None
-        ] = queue.SimpleQueue()
-        self._primary_wake = threading.Event()
+        ] = SyncReceiver()
         # Exec requests flow through a single pump task so admission happens
         # strictly in message-arrival order (trio task scheduling order is
         # deliberately unordered, so per-request tasks would race for the
@@ -111,8 +110,7 @@ class TrioWorkerExec:
         try:
             if self.main_thread_only:
                 done = threading.Event()
-                self._primary_q.put((channel, item, done))
-                self._primary_wake.set()
+                self._primary.put((channel, item, done))
                 await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
             else:
                 await trio.to_thread.run_sync(
@@ -126,15 +124,7 @@ class TrioWorkerExec:
     def integrate_as_primary_thread(self) -> None:
         """Block the main thread running main_thread_only exec tasks."""
         while True:
-            self._primary_wake.wait()
-            try:
-                task = self._primary_q.get_nowait()
-            except queue.Empty:
-                self._primary_wake.clear()
-                try:
-                    task = self._primary_q.get_nowait()
-                except queue.Empty:
-                    continue
+            task = self._primary.get()
             if task is None:
                 break
             channel, item, done = task
@@ -146,8 +136,7 @@ class TrioWorkerExec:
     def trigger_shutdown(self) -> None:
         with self._lock:
             self._shutting_down = True
-        self._primary_q.put(None)
-        self._primary_wake.set()
+        self._primary.put(None)
 
     def waitall(self, timeout: float | None = None) -> bool:
         return self._idle.wait(timeout)
