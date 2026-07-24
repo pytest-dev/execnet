@@ -1,7 +1,7 @@
 # Handoff: Phase B — invert execnet onto an async-native Trio core
 
-For a fresh session on branch `feat/trio-host-thread-io`. B.1–B.4 are done;
-work continues at **B.5**. Plan context lives in session memory
+For a fresh session on branch `feat/trio-host-thread-io`. B.1–B.5 are done;
+work continues at **B.6**. Plan context lives in session memory
 (`trio-port-plan`), but everything needed is restated here.
 
 Run checks with `uv run pytest testing/` and `uv run pre-commit run -a`
@@ -9,28 +9,38 @@ Run checks with `uv run pytest testing/` and `uv run pre-commit run -a`
 in `testing/test_ssh_local.py` (asyncssh server; system ssh client needed).
 Known flake: `test_socket_installvia` EOFs rarely under load.
 
-## Where the repo stands (2026-07-24, after commit `8286b77`)
+## Where the repo stands (2026-07-24, after B.5)
 
 Trio is the only IO path; no source is shipped over the wire (workers run
 `python -m execnet._trio_worker <config-json>`, foreign/remote interpreters
 are uv-provisioned via `_provision.py`, dev coordinators ship a wheel). All
 transports work: popen, `python=`, ssh, vagrant_ssh, socket, and `via`
 sub-gateways (`GATEWAY_START_SUB` spawn-request + byte relay on the master).
-The architecture is still sync-first: Trio hides behind the sync
-`Channel`/`Gateway`/`Group`. Phase B inverts this.
+
+**The inversion landed (B.5)**: there is one protocol engine —
+`AsyncGateway` — and the sync API is a facade over it.  `ProtocolSession`
+is gone.  Coordinator and worker sessions are `SyncBridgeGateway`
+(an `AsyncGateway` subclass) whose `_dispatch` runs the classic sync
+`Message.received` handlers under `_receivelock`; the sync
+`Channel`/`ChannelFactory` state machine in `gateway_base` is unchanged
+and remains the semantic layer for blocking users (and the worker's
+exec'd code).  `multi.Group` owns a `FacadeAsyncGroup` task on its
+`TrioHost`; `makegateway` and the bounded process shutdown delegate to
+`AsyncGroup`, while `terminate` still calls each member's
+`exit()`/`join()` (pinned by `test_basic_group`).
 
 File map (src/execnet/):
 
 | file | role |
 |---|---|
-| `gateway_base.py` | `Message` wire protocol + **`FrameDecoder`** (sans-IO), serializer (incl. duck-typed `save_AsyncChannel` → CHANNEL opcode), sync `Channel`/`ChannelFactory` (now with **raw-receiver registry**: `register_raw_receiver`/`allocate_id`, verbatim CHANNEL_DATA routing), `BaseGateway`/`WorkerGateway`, `ExecModel`, `WorkerPool`, `HostNotFound` |
-| `_trio_gateway.py` | **the async-native core (B.4)**: `ByteStream` Protocol, `RawChannel` (id-routed verbatim byte payloads, sync-Channel close semantics: OSError on closed sends, EOFError/RemoteError on receive, `send_eof` = LAST_MESSAGE/sendonly), `AsyncChannel` (dumps/loads per item, strconfig/RECONFIGURE, timeout via `fail_after`, `wait_closed`, channel-passing), `AsyncGateway` (single serve task: reader dispatches inline — no locks; writer drains unbounded queue, one `send_all` per frame), `AsyncGroup` (async CM owning the nursery; `makegateway` popen/`python=`/`via=`; terminate = tunneled first, then GATEWAY_TERMINATE + timeout + kill, ~2×timeout bound), `RawChannelStream` (RawChannel→ByteStream adapter), `open_popen_gateway`, transport helpers (`staple_*`, `read_handshake_ack`, `popen_worker_argv`) |
+| `gateway_base.py` | `Message` wire protocol + **`FrameDecoder`** (sans-IO), serializer (incl. duck-typed `save_AsyncChannel` → CHANNEL opcode), sync `Channel`/`ChannelFactory` (raw-receiver registry: `register_raw_receiver`/`allocate_id`, verbatim CHANNEL_DATA routing), `BaseGateway`/`WorkerGateway` (`_send` via bridge session, `_send_nonblocking` for GC), `ExecModel`, `WorkerPool`, `HostNotFound` |
+| `_trio_gateway.py` | **the async-native core**: `ByteStream` Protocol, `RawChannel`, `AsyncChannel`, `AsyncGateway` (single serve task; outbound queue items are `(frame, on_written)` so sync senders can wait for the OS write; writer fails pending frames on shutdown; `_finalize` hook for subclass shutdown), `AsyncGroup` (async CM owning the nursery; **all transports**: popen/`python=`/ssh/vagrant_ssh/socket(+installvia)/`via=`; overridable `_make_gateway`/`_open_via_stream`/`_resolve_socket_address`; per-process reaper tasks; terminate = tunneled first, GATEWAY_TERMINATE + timeout + kill, ~2×timeout bound), `RawChannelStream`, `open_popen_gateway`, transport helpers (`connect_command_worker` incl. ssh-255→HostNotFound, `connect_socket_worker`, `start_socketserver_via` (async), `ssh_transport_args`, `popen_worker_argv`) |
 | `portal.py` | **`LoopPortal`** (trio-token holder) and **`SyncReceiver`** (loop→plain-thread queue, KI-interruptible `get()`) |
-| `_trio_host.py` | sync-facade host: `TrioHost` (loop thread), `ProtocolSession`, `RawTunnelStream` (via tunnel over sync master, raw registry based), gateway factories, `GATEWAY_START_*` handlers (`_start_sub_and_relay` is frame-native: ready byte alone, then one whole frame per CHANNEL_DATA) |
-| `_trio_worker.py` | worker entry, `TrioWorkerExec` (FIFO `_pump` admission), `_prepare_protocol_fds` |
+| `_trio_host.py` | sync-facade host: `TrioHost` (loop thread; `start_session` returns a bridge), **`SyncBridgeGateway`** (sync dispatch + portal-FIFO `enqueue_message`/`post_message`/`request_close_write`, threading-`Event` `wait_done`), **`FacadeAsyncGroup`** (bridge-building AsyncGroup; via/installvia through the sync master), `makegateway_trio`, `SyncIOHandle` (remoteaddress/wait/kill/close_write), `RawTunnelStream` (via tunnel; `aclose` feeds own reader EOF), `GATEWAY_START_*` handlers (`_start_sub_and_relay` frame-native) |
+| `_trio_worker.py` | worker entry, `TrioWorkerExec` (FIFO `_pump` admission), `_prepare_protocol_fds`; serves on a `SyncBridgeGateway` |
 | `gateway.py` | sync coordinator `Gateway` (remote_exec, exit, rinfo) |
 | `_exec_source.py` | remote_exec source normalization shared by sync + async coordinators |
-| `multi.py` | sync `Group`, `MultiChannel`, `safe_terminate` (WorkerPool-based) |
+| `multi.py` | sync `Group` facade (`_ensure_async_group`, terminate via `AsyncGroup`), `MultiChannel`, `safe_terminate` (WorkerPool-based, kept for tests) |
 | `_provision.py` | uv provisioning, wheel build/ship/materialize, argv builders |
 
 Async-core tests live in `testing/test_trio_gateway.py` (memory_stream_pair
@@ -87,32 +97,38 @@ Leftovers deliberately deferred:
   RemoteError ("unsupported message") — async exec is Phase C
   (`exec=task`).
 
-### B.5 Rebuild the sync API as a facade
+### B.5 Rebuild the sync API as a facade — DONE (commit `f932084`)
 
-Public surface stays byte-for-byte: `Group`, `makegateway` spec strings,
-`Gateway.remote_exec/exit/reconfigure/remote_status/hasreceiver`, `Channel`
-send/receive/setcallback/makefile/waitclose/reconfigure, `MultiChannel`,
-`RSync`, `execnet.dumps/loads/dump/load`, `HostNotFound`, `TimeoutError`,
-`RemoteError`, `DataFormatError`. Existing tests keep running against the
-facade unchanged — that is the acceptance bar.
+Public surface stayed byte-for-byte; the whole sync suite passes
+unchanged (508 passed).  What landed, and the decisions taken:
 
-Known tricky spots:
-
-- `Channel.__del__` sends CHANNEL_CLOSE/LAST_MESSAGE during GC — must go
-  through the portal as a non-waiting post, and tolerate interpreter
-  shutdown (today: `suppress(OSError, ValueError)` + `Message is not None`
-  guard).
-- KeyboardInterrupt lands on the main thread while blocked inside a portal
-  call — decide propagation (today the sync side blocks in
-  `threading.Event.wait`, which KI can interrupt).
-- `group.execmodel` / `set_execmodel` / `spec.execmodel` stay as deprecated
-  shims. `main_thread_only` must keep working throughout (pytest-xdist runs
-  GUI-bound code on the worker main thread via
-  `TrioWorkerExec.integrate_as_primary_thread`).
-- Retire `ExecModel` internals and `WorkerPool` at the END of the phase
-  (WorkerPool is still the worker exec duck-type target for STATUS and is
-  used by `multi.safe_terminate` + `testing/test_threadpool.py` +
-  `testing/conftest.py`'s `pool` fixture).
+- One engine: `SyncBridgeGateway(AsyncGateway)` serves both coordinator
+  and worker; `ProtocolSession` deleted.  Sync dispatch still runs the
+  `gateway_base` Message handlers, so the sync `Channel`/`ChannelFactory`
+  semantics (queues, callbacks, ENDMARKER, weakref drop) are untouched —
+  and remain what the worker's exec'd code sees.
+- Send invariant kept: `enqueue_message` posts every frame through the
+  portal (one global FIFO); non-loop threads wait on the frame's
+  `on_written` ack (120s → OSError), the loop thread only enqueues.
+- `Channel.__del__` now goes through `_send_nonblocking` →
+  `SyncBridgeGateway.post_message` (portal post, never waits; falls back
+  to `_send` for duck-typed test gateways).
+- KI decision: blocking data paths (send-ack, receive, waitclose, join)
+  wait on `threading.Event`/`queue.Queue` — KI-interruptible as before.
+  Management ops (makegateway, terminate) run inside `portal.run`
+  (`trio.from_thread.run`) where KI is deferred; accepted for now.
+- `Group.terminate` still calls member `exit()`/`join()` (contract pinned
+  by `test_basic_group`), with process wait/kill delegated to
+  `AsyncGroup.terminate` (tunneled-first, ~2×timeout bound).
+- Gotcha fixed on the way: a stream-closing `aclose` on the via tunnel
+  (`RawTunnelStream`) must feed EOF to its own reader, else the bridge's
+  serve task never finishes and terminate hangs.
+- `ChannelFile`/`makefile`: kept the existing str-based `gateway_base`
+  classes as-is for backward compat (they only use channel send/receive).
+- NOT yet retired: `ExecModel` internals and `WorkerPool` (still the
+  worker STATUS duck-type shape and used by `multi.safe_terminate`,
+  `testing/test_threadpool.py`, conftest's `pool` fixture).  Do this at
+  the end of the phase (B.6 or later) if the tests pinning them move.
 
 ### B.6 Namespace split
 
