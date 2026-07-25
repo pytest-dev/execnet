@@ -220,6 +220,10 @@ class SyncBridgeGateway(AsyncGateway):
         self._done_sync = threading.Event()
         self._send_closed = False
         self._send_lock = threading.Lock()
+        # Attach before any serving can happen: the first inbound message
+        # may need to reply through gateway._send, which must already
+        # route to this session (not the sync IO stub).
+        sync_gateway._attach_trio_session(self)
 
     # -- engine hooks (run on the host loop) --
 
@@ -455,11 +459,9 @@ class FacadeAsyncGroup(AsyncGroup):
         import execnet
 
         sync_gw = execnet.Gateway(_TempIO(self.group.execmodel), spec)
-        bridge = SyncBridgeGateway(
+        return SyncBridgeGateway(
             stream, id=spec.id, sync_gateway=sync_gw, host=self.host
         )
-        sync_gw._attach_trio_session(bridge)
-        return bridge
 
     async def _open_via_stream(self, spec: Any) -> ByteStream:
         from . import _provision

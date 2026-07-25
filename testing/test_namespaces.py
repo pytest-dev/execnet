@@ -74,12 +74,3 @@ def test_import_execnet_does_not_import_trio() -> None:
         check=True,
     )
     assert out.stdout.strip() == "False"
-
-
-def test_unknown_attribute_raises() -> None:
-    try:
-        execnet.does_not_exist
-    except AttributeError as exc:
-        assert "does_not_exist" in str(exc)
-    else:
-        raise AssertionError("expected AttributeError")

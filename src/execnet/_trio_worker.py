@@ -225,10 +225,11 @@ def _run_worker(host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel) -
     gateway, trio_exec, main_thread_only = _build_worker_gateway(host, id, model)
 
     async def _start() -> _trio_host.SyncBridgeGateway:
+        # The bridge attaches itself to the gateway before serving starts,
+        # so inbound messages can reply through gateway._send right away.
         return await host.start_session(gateway, io)
 
-    session = host.call(_start)
-    gateway._attach_trio_session(session)
+    host.call(_start)
 
     try:
         if main_thread_only:
