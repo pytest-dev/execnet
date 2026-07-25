@@ -20,14 +20,9 @@ import pytest
 
 import execnet
 
-pytestmark = [
-    pytest.mark.skipif(
-        shutil.which("ssh") is None, reason="system ssh client required"
-    ),
-    # asyncssh leaves an un-awaited internal Queue.join coroutine on shutdown,
-    # surfaced by pytest's unraisable-exception hook during GC; harmless here.
-    pytest.mark.filterwarnings("ignore:coroutine 'Queue.join' was never awaited"),
-]
+pytestmark = pytest.mark.skipif(
+    shutil.which("ssh") is None, reason="system ssh client required"
+)
 
 # Committed, intentionally-insecure test keys (see sshkeys/README.md).
 SSHKEYS = Path(__file__).parent / "sshkeys"
@@ -58,6 +53,10 @@ class SSHServerThread:
         )
         await process.redirect(stdin=proc.stdin, stdout=proc.stdout, stderr=proc.stderr)
         process.exit(await proc.wait())
+        # Drain asyncssh's redirect cleanup coroutines (Queue.join et al):
+        # they are stored un-awaited and only run inside wait_closed();
+        # skipping this leaks them and GC prints RuntimeWarnings.
+        await process.wait_closed()
 
     async def _serve(self) -> None:
         self._server = await asyncssh.listen(
