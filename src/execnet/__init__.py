@@ -4,29 +4,40 @@ execnet
 
 pure python lib for connecting to local and remote Python Interpreters.
 
+Three public namespaces:
+
+* :mod:`execnet.sync` — the blocking API; the top-level ``execnet.*``
+  names below are aliases into it.
+* :mod:`execnet.trio` — the trio-native API, awaited inside your own
+  ``trio.run``.
+* :mod:`execnet.portal` — cross-thread / cross-loop communication
+  primitives shared by both.
+
 (c) 2012, Holger Krekel and others
 """
 
+from typing import Any
+
 from ._version import version as __version__
-from .gateway import Gateway
-from .gateway_base import Channel
-from .gateway_base import DataFormatError
-from .gateway_base import DumpError
-from .gateway_base import HostNotFound
-from .gateway_base import LoadError
-from .gateway_base import RemoteError
-from .gateway_base import TimeoutError
-from .gateway_base import dump
-from .gateway_base import dumps
-from .gateway_base import load
-from .gateway_base import loads
-from .multi import Group
-from .multi import MultiChannel
-from .multi import default_group
-from .multi import makegateway
-from .multi import set_execmodel
-from .rsync import RSync
-from .xspec import XSpec
+from .sync import Channel
+from .sync import DataFormatError
+from .sync import DumpError
+from .sync import Gateway
+from .sync import Group
+from .sync import HostNotFound
+from .sync import LoadError
+from .sync import MultiChannel
+from .sync import RemoteError
+from .sync import RSync
+from .sync import TimeoutError
+from .sync import XSpec
+from .sync import default_group
+from .sync import dump
+from .sync import dumps
+from .sync import load
+from .sync import loads
+from .sync import makegateway
+from .sync import set_execmodel
 
 __all__ = [
     "Channel",
@@ -50,3 +61,13 @@ __all__ = [
     "makegateway",
     "set_execmodel",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    # Lazy namespace modules: keep ``import execnet`` from loading the
+    # trio event loop machinery until it is actually used.
+    if name in ("trio", "portal"):
+        import importlib
+
+        return importlib.import_module(f".{name}", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
