@@ -1,8 +1,8 @@
 # Handoff: Phase B — invert execnet onto an async-native Trio core
 
-For a fresh session on branch `feat/trio-host-thread-io`. B.1–B.5 are done;
-work continues at **B.6**. Plan context lives in session memory
-(`trio-port-plan`), but everything needed is restated here.
+For a fresh session on branch `feat/trio-host-thread-io`. **Phase B is
+complete (B.1–B.6)**; work continues at **Phase C**. Plan context lives in
+session memory (`trio-port-plan`), but everything needed is restated here.
 
 Run checks with `uv run pytest testing/` and `uv run pre-commit run -a`
 (never grep-filter pre-commit output). ssh paths have a real local harness
@@ -130,12 +130,28 @@ unchanged (508 passed).  What landed, and the decisions taken:
   `testing/test_threadpool.py`, conftest's `pool` fixture).  Do this at
   the end of the phase (B.6 or later) if the tests pinning them move.
 
-### B.6 Namespace split
+### B.6 Namespace split — DONE (commit `4f84335`)
 
-Introduce `execnet.sync` / `execnet.trio` / `execnet.portal`; top-level
-`execnet.*` aliases into `execnet.sync`. Existing suite pinned to the
-facade; add trio-native tests (memory_stream_pair + FrameDecoder for
-protocol-level, real popen gateways inside `trio.run` for integration).
+`execnet.sync` (blocking facade re-exports; top-level `execnet.*` aliases
+into it), `execnet.trio` (AsyncGroup/AsyncGateway/AsyncChannel, raw
+channels, stream helpers, shared serialization + errors), and
+`execnet.portal` (LoopPortal/SyncReceiver).  `trio`/`portal` load lazily
+via module `__getattr__`, so `import execnet` still does not import the
+trio event loop (pinned by `testing/test_namespaces.py`).  Trio-native
+protocol/integration tests already live in `testing/test_trio_gateway.py`
+(memory_stream_pair + real popen gateways inside `trio.run`).
+
+### End-of-phase leftovers (deferred into C/D)
+
+- Retire `ExecModel` internals and `WorkerPool`: still pinned by
+  `multi.safe_terminate`, `testing/test_threadpool.py`, and conftest's
+  `pool` fixture, and `get_execmodel`/backend names feed Phase C's
+  `execmodel=` compat mapping — retire once C lands the new worker
+  config axes.
+- ChannelFile / makefile over RawChannel (async makefile) — untouched;
+  the sync str-based wrappers stay for backward compat.
+- rsync data plane / wheel shipping over raw channels — later.
+- Async remote_exec on the worker (`exec=task`) — Phase C.
 
 ## Invariants (do not regress)
 
