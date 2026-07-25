@@ -24,6 +24,8 @@ from typing import TypeVar
 
 import trio
 
+__all__ = ["LoopPortal", "SyncReceiver"]
+
 T = TypeVar("T")
 
 
