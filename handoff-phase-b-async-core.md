@@ -1,8 +1,8 @@
 # Handoff: Phase B — invert execnet onto an async-native Trio core
 
-For a fresh session on branch `feat/trio-host-thread-io`. **Phase B is
-complete (B.1–B.6)**; work continues at **Phase C**. Plan context lives in
-session memory (`trio-port-plan`), but everything needed is restated here.
+**SUPERSEDED by `handoff-phase-c-worker-axes.md`** — kept as the Phase B
+record.  **Phase B is complete (B.1–B.6)** on branch
+`feat/trio-host-thread-io`; work continues at **Phase C**.
 
 Run checks with `uv run pytest testing/` and `uv run pre-commit run -a`
 (never grep-filter pre-commit output). ssh paths have a real local harness
@@ -123,6 +123,11 @@ unchanged (508 passed).  What landed, and the decisions taken:
 - Gotcha fixed on the way: a stream-closing `aclose` on the via tunnel
   (`RawTunnelStream`) must feed EOF to its own reader, else the bridge's
   serve task never finishes and terminate hangs.
+- Post-B fix (`51b9053`): the session-attach startup race — the bridge
+  must attach itself to the sync gateway in `__init__`, before serving
+  starts, or a first-message reply goes through the IO stub and kills
+  the fresh gateway (predated B.5; surfaced by `pytest -n 12`).  The
+  suite now runs xdist-clean.
 - `ChannelFile`/`makefile`: kept the existing str-based `gateway_base`
   classes as-is for backward compat (they only use channel send/receive).
 - NOT yet retired: `ExecModel` internals and `WorkerPool` (still the
