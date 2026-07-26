@@ -55,6 +55,9 @@ testing = [
 dev = [
     "pytest-xdist>=3.8.0",
 ]
+gevent = [
+    "gevent>=26.7.0",
+]
 testing = [
     "execnet[testing]",
 ]

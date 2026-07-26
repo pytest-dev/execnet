@@ -205,9 +205,13 @@ class Flag:
 
 # wait= axis: named wakener factories; each call returns a fresh instance
 # (carriers own their wakener exclusively, see Flag).  Backends register
-# here ("gevent", "asyncio") next to the built-in "thread".
+# here next to the built-in "thread"; entries in the lazy table import
+# their module (which registers itself) on first use.
 _WAKENER_FACTORIES: dict[str, Callable[[], Wakener]] = {
     "thread": ThreadWakener,
+}
+_LAZY_WAKENER_MODULES: dict[str, str] = {
+    "gevent": "execnet._gevent_support",
 }
 
 
@@ -217,11 +221,15 @@ def register_wakener(name: str, factory: Callable[[], Wakener]) -> None:
 
 
 def wakener_names() -> list[str]:
-    return list(_WAKENER_FACTORIES)
+    return sorted(set(_WAKENER_FACTORIES) | set(_LAZY_WAKENER_MODULES))
 
 
 def make_wakener(name: str) -> Wakener:
     """Create a fresh wakener for the named wait backend."""
+    if name not in _WAKENER_FACTORIES and name in _LAZY_WAKENER_MODULES:
+        import importlib
+
+        importlib.import_module(_LAZY_WAKENER_MODULES[name])
     try:
         factory = _WAKENER_FACTORIES[name]
     except KeyError:
