@@ -71,7 +71,46 @@ File map (src/execnet/):
   `threading.Event`/`queue.Queue` so KeyboardInterrupt can interrupt
   them; `portal.run` (KI-deferred) is only for management ops.
 
-## Phase C — what is missing (nothing of C exists yet)
+## Phase C — DECIDED PLAN (Ronny, 2026-07-26, after the boundary rethink)
+
+Predates below gap analysis; where they conflict, this section wins.
+Context: the boundary rethink (`handoff-boundary-protocol-rethink.md`)
+landed first — `wait=` axis exists, ExecModel is a preset, the sync
+Channel is a facade over the async core.
+
+**Worker matrix** (`loop=` = main-thread role, `exec=` = placement).
+The main thread is the scarce resource (signals, interrupt_main, GUI,
+tests calling asyncio.run/trio.run themselves):
+
+| loop= | exec= | main thread | exec'd code | channel | consumer |
+|---|---|---|---|---|---|
+| main | thread | host loop | worker threads | sync | default preset for execmodel=thread; no parked thread |
+| main | task | host loop | tasks on the loop | AsyncChannel | async-native sources (C4) |
+| thread | main | exec'd code (serialized) | true main thread | sync | pytest/xdist (forces main_thread_only today), GUI, signals |
+| thread | thread | parked | worker threads | sync | valid, non-default (today's shape) |
+| thread | task | parked | tasks on side loop | AsyncChannel | valid, niche |
+| main | main | — | — | — | invalid |
+
+Interaction rule: exec'd code may start its own event loop only when it
+does not share a thread with ours (exec=thread / exec=main); exec=task
+sources are ``async def`` and join our loop — a sync source under
+exec=task is a hard error.  ``wait=`` composes orthogonally.
+
+**Backend decisions**: the core STAYS trio-only and trio stays the
+default and a hard dependency (pure-python wheels; deployment cost
+accepted).  The anyio/asyncio-core port ("C0") is REJECTED for now;
+asyncio apps use the ``execnet.aio`` bridge.  ``backend=`` still lands
+as a per-gateway spec axis, but reserved: only ``trio`` validates
+(exactly how ``wait=`` landed with only ``thread``), keeping an
+asyncio-core door open without paying for it.  Consequence: exec=task
+sources are trio-typed.
+
+Sequencing: C1 axes (`backend=`/`loop=`/`exec=` + validity matrix +
+presets) → C2 `loop=main` worker restructure → C3 `exec=main` re-home →
+C4 `exec=task`.  Presets: `execmodel=thread` → `loop=main, exec=thread`;
+`execmodel=main_thread_only` → `loop=thread, exec=main`.
+
+## Phase C — original gap analysis (pre-decision record)
 
 Target axes: `loop=thread|main` × `exec=thread|main|task`.
 Compat mapping: `execmodel=thread` → `loop=main` + `exec=thread`;
