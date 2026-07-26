@@ -71,44 +71,48 @@ File map (src/execnet/):
   `threading.Event`/`queue.Queue` so KeyboardInterrupt can interrupt
   them; `portal.run` (KI-deferred) is only for management ops.
 
-## Phase C — DECIDED PLAN (Ronny, 2026-07-26, after the boundary rethink)
+## Phase C — LANDED: use-case worker profiles on `execmodel=` (2026-07-26)
 
-Predates below gap analysis; where they conflict, this section wins.
-Context: the boundary rethink (`handoff-boundary-protocol-rethink.md`)
-landed first — `wait=` axis exists, ExecModel is a preset, the sync
-Channel is a facade over the async core.
+Where this conflicts with anything below or elsewhere, this section
+wins.  The axes framing (`loop=`/`exec=` as spec keys, a reserved
+`backend=` axis) was **dropped** in the final rethink with Ronny:
+different use-cases get named profiles, `execmodel=` is the public mode
+key (xdist already passes it), and `wait=` is the only other public
+knob.  Implemented in commits `b2f43c3..cbce183`:
 
-**Worker matrix** (`loop=` = main-thread role, `exec=` = placement).
-The main thread is the scarce resource (signals, interrupt_main, GUI,
-tests calling asyncio.run/trio.run themselves):
-
-| loop= | exec= | main thread | exec'd code | channel | consumer |
+| `execmodel=` | loop thread | exec'd code runs | channel | worker wait | extra deps |
 |---|---|---|---|---|---|
-| main | thread | host loop | worker threads | sync | default preset for execmodel=thread; no parked thread |
-| main | task | host loop | tasks on the loop | AsyncChannel | async-native sources (C4) |
-| thread | main | exec'd code (serialized) | true main thread | sync | pytest/xdist (forces main_thread_only today), GUI, signals |
-| thread | thread | parked | worker threads | sync | valid, non-default (today's shape) |
-| thread | task | parked | tasks on side loop | AsyncChannel | valid, niche |
-| main | main | — | — | — | invalid |
+| `thread` (default) | side thread | **classic hybrid restored**: primary on the main thread, overflow on pool threads (claim decided during FIFO admission) | sync | thread | — |
+| `main_thread_only` | side thread | main thread, serialized (deadlock guard) | sync | thread | — |
+| `trio` (new) | **main thread** | async sources as tasks — one single thread total; top-level await or async def; sync sources rejected; termination cancels tasks | AsyncChannel | (loop) | — |
+| `gevent` (revived) | side thread | greenlets on a main-thread hub, one per remote_exec | sync | gevent (derived) | `execnet[gevent]`, auto-added by uv provisioning |
 
-Interaction rule: exec'd code may start its own event loop only when it
-does not share a thread with ours (exec=thread / exec=main); exec=task
-sources are ``async def`` and join our loop — a sync source under
-exec=task is a hard error.  ``wait=`` composes orthogonally.
+Architecture: `TrioWorkerExec` is a pure FIFO admission pump delegating
+to strategy objects (`WORKER_EXEC_STRATEGIES` in `_trio_worker.py`:
+PoolExec building block, MainExec, HybridExec, GreenletExec; TaskExec
+serves a plain AsyncGateway via its pluggable `_exec_handler` — no sync
+bridge at all in the trio profile).  Subinterpreters: future strategy
+slot, not built.  `EXECMODEL_PROFILES` (gateway_base) validates
+coordinator-side in makegateway.
 
-**Backend decisions**: the core STAYS trio-only and trio stays the
-default and a hard dependency (pure-python wheels; deployment cost
-accepted).  The anyio/asyncio-core port ("C0") is REJECTED for now;
-asyncio apps use the ``execnet.aio`` bridge.  ``backend=`` still lands
-as a per-gateway spec axis, but reserved: only ``trio`` validates
-(exactly how ``wait=`` landed with only ``thread``), keeping an
-asyncio-core door open without paying for it.  Consequence: exec=task
-sources are trio-typed.
+**Native info/setup** (the pytest fix): `Message.GATEWAY_INFO` (code 10)
+answers `_rinfo()` from the dispatch loop; chdir/nice/env ship in the
+worker config JSON and apply at startup.  Coordinator bookkeeping can no
+longer claim an exec slot (previously an info call could occupy the main
+thread so pytest landed on a worker thread) — `rinfo_source` and the
+post-start remote_exec setup block are gone.
 
-Sequencing: C1 axes (`backend=`/`loop=`/`exec=` + validity matrix +
-presets) → C2 `loop=main` worker restructure → C3 `exec=main` re-home →
-C4 `exec=task`.  Presets: `execmodel=thread` → `loop=main, exec=thread`;
-`execmodel=main_thread_only` → `loop=thread, exec=main`.
+Coordinator-gevent integration: `TrioHost.call_pending` (OneShot from a
+host task) backs makegateway / `SyncIOHandle.wait/kill` /
+`Group.terminate` whenever the wait backend is not `thread`, so a gevent
+app's management ops park only the calling greenlet.  `wait=thread`
+keeps the KI-deferred `portal.run` path.
+
+Still decided/standing: core stays trio-only (anyio/asyncio-core port
+rejected; asyncio apps use `execnet.aio`); eventlet stays dead; exec'd
+code may start its own loop in every profile except `trio`.
+
+## Phase C — original gap analysis (pre-decision record, superseded)
 
 ## Phase C — original gap analysis (pre-decision record)
 
