@@ -164,14 +164,21 @@ def worker_cli_arg(spec: Any) -> str:
     """
     import execnet
 
-    return json.dumps(
-        {
-            "id": f"{spec.id}-worker",
-            "execmodel": spec.execmodel,
-            "wait": spec.wait or "thread",
-            "coordinator_version": execnet.__version__,
-        }
-    )
+    config: dict[str, Any] = {
+        "id": f"{spec.id}-worker",
+        "execmodel": spec.execmodel,
+        "wait": spec.wait or "thread",
+        "coordinator_version": execnet.__version__,
+    }
+    # Startup setup applied by the worker before serving (never through
+    # remote_exec: an exec slot must not be claimed by bookkeeping).
+    if spec.chdir:
+        config["chdir"] = spec.chdir
+    if spec.nice:
+        config["nice"] = int(spec.nice)
+    if spec.env:
+        config["env"] = spec.env
+    return json.dumps(config)
 
 
 def _worker_tokens(config: str) -> list[str]:

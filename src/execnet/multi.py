@@ -183,25 +183,8 @@ class Group:
         gw = _trio_host.makegateway_trio(self, spec)
         gw.spec = spec
         self._register(gw)
-        if spec.chdir or spec.nice or spec.env:
-            channel = gw.remote_exec(
-                """
-                import os
-                path, nice, env = channel.receive()
-                if path:
-                    if not os.path.exists(path):
-                        os.mkdir(path)
-                    os.chdir(path)
-                if nice and hasattr(os, 'nice'):
-                    os.nice(nice)
-                if env:
-                    for name, value in env.items():
-                        os.environ[name] = value
-            """
-            )
-            nice = (spec.nice and int(spec.nice)) or 0
-            channel.send((spec.chdir, nice, spec.env))
-            channel.waitclose()
+        # chdir/nice/env travel in the worker config and are applied at
+        # worker startup -- no remote_exec, so no exec slot is claimed.
         return gw
 
     def allocate_id(self, spec: XSpec) -> None:

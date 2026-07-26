@@ -26,7 +26,6 @@ __all__ = [
     "RemoteStatus",
     "_find_non_builtin_globals",
     "_source_of_function",
-    "rinfo_source",
 ]
 
 
@@ -94,13 +93,19 @@ class Gateway(gateway_base.BaseGateway):
         self._send(Message.RECONFIGURE, data=data)
 
     def _rinfo(self, update: bool = False) -> RInfo:
-        """Return some sys/env information from remote."""
+        """Return some sys/env information from remote.
+
+        A native protocol request (like ``remote_status``): it never
+        touches the exec machinery, so it cannot claim an exec slot on
+        main-thread-shaped workers.
+        """
         if update or not hasattr(self, "_cache_rinfo"):
-            ch = self.remote_exec(rinfo_source)
-            try:
-                self._cache_rinfo = RInfo(ch.receive())
-            finally:
-                ch.waitclose()
+            channel = self.newchannel()
+            self._send(Message.GATEWAY_INFO, channel.id)
+            self._cache_rinfo = RInfo(channel.receive())
+            # the other side didn't actually instantiate a channel
+            # so we just delete the internal id/channel mapping
+            self._channelfactory._local_close(channel.id)
         return self._cache_rinfo
 
     def hasreceiver(self) -> bool:
@@ -166,18 +171,3 @@ class RInfo:
 
 
 RemoteStatus = RInfo
-
-
-def rinfo_source(channel) -> None:
-    import os
-    import sys
-
-    channel.send(
-        dict(
-            executable=sys.executable,
-            version_info=sys.version_info[:5],
-            platform=sys.platform,
-            cwd=os.getcwd(),
-            pid=os.getpid(),
-        )
-    )

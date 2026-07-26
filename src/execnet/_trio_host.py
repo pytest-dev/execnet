@@ -37,6 +37,7 @@ from .gateway_base import GatewayReceivedTerminate
 from .gateway_base import Message
 from .gateway_base import RemoteError
 from .gateway_base import dumps_internal
+from .gateway_base import gateway_info
 from .gateway_base import loads_internal
 from .gateway_base import trace
 from .portal import LoopPortal
@@ -177,6 +178,13 @@ class SyncBridgeGateway(AsyncGateway):
         try:
             if code == Message.STATUS:
                 self._answer_status(message)
+            elif code == Message.GATEWAY_INFO:
+                gateway._send(
+                    Message.CHANNEL_DATA,
+                    message.channelid,
+                    dumps_internal(gateway_info()),
+                )
+                gateway._send(Message.CHANNEL_CLOSE, message.channelid)
             elif code == Message.CHANNEL_EXEC:
                 channel = gateway._channelfactory.new(message.channelid)
                 gateway._local_schedulexec(channel=channel, sourcetask=message.data)
