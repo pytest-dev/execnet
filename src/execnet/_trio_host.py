@@ -37,6 +37,7 @@ from .gateway_base import dumps_internal
 from .gateway_base import loads_internal
 from .gateway_base import trace
 from .portal import LoopPortal
+from .portal import OneShot
 
 if TYPE_CHECKING:
     from .gateway import Gateway
@@ -217,7 +218,7 @@ class SyncBridgeGateway(AsyncGateway):
         super().__init__(stream, id=id)
         self.sync_gateway = sync_gateway
         self.host = host
-        self._done_sync = threading.Event()
+        self._done_sync: OneShot[None] = OneShot()
         self._send_closed = False
         self._send_lock = threading.Lock()
         # Attach before any serving can happen: the first inbound message
@@ -249,7 +250,7 @@ class SyncBridgeGateway(AsyncGateway):
         # Unblock the worker's join() before heavy exec-pool shutdown
         # so the primary thread is not waiting on _done while terminate waits
         # on the primary thread draining work.
-        self._done_sync.set()
+        self._done_sync.set(None)
         gateway._trace("[trio-bridge] terminating execution")
         # May sleep/SIGINT; keep it off the Trio scheduling thread.
         await trio.to_thread.run_sync(
@@ -266,20 +267,17 @@ class SyncBridgeGateway(AsyncGateway):
         """
         frame = message.pack()
         wait = not self.host.portal.is_loop_thread()
-        done = threading.Event() if wait else None
-        errors: list[BaseException] = []
-
-        def on_written(error: BaseException | None) -> None:
-            if error is not None:
-                errors.append(error)
-            if done is not None:
-                done.set()
+        # The ack carries the write failure as a value (never raised into
+        # the OneShot) so a KeyboardInterrupt in wait() stays distinguishable
+        # from a stream error.
+        ack: OneShot[BaseException | None] | None = OneShot() if wait else None
 
         def post() -> None:
             try:
-                self.enqueue_frame(frame, on_written)
+                self.enqueue_frame(frame, ack.set if ack is not None else None)
             except OSError as exc:
-                on_written(exc)
+                if ack is not None:
+                    ack.set(exc)
 
         with self._send_lock:
             if self._send_closed:
@@ -290,12 +288,14 @@ class SyncBridgeGateway(AsyncGateway):
                 self.host.portal.post(post)
             except trio.RunFinishedError:
                 raise OSError("cannot send (already closed?)") from None
-        if done is None:
+        if ack is None:
             return
-        if not done.wait(timeout=120.0):
-            raise OSError("cannot send (write timed out)")
-        if errors:
-            raise OSError("cannot send (already closed?)") from errors[0]
+        try:
+            error = ack.wait(timeout=120.0)
+        except TimeoutError:
+            raise OSError("cannot send (write timed out)") from None
+        if error is not None:
+            raise OSError("cannot send (already closed?)") from error
 
     def post_message(self, message: Message) -> None:
         """Best-effort non-waiting send (Channel.__del__ during GC)."""
@@ -320,7 +320,11 @@ class SyncBridgeGateway(AsyncGateway):
                 self.host.portal.post(self._outbound_send.close)
 
     def wait_done(self, timeout: float | None = None) -> bool:
-        return self._done_sync.wait(timeout)
+        try:
+            self._done_sync.wait(timeout)
+        except TimeoutError:
+            return False
+        return True
 
     def is_alive(self) -> bool:
         return not self._done_sync.is_set()

@@ -38,7 +38,13 @@ def test_trio_namespace_exposes_async_core() -> None:
 
 
 def test_portal_namespace() -> None:
-    assert execnet.portal.__all__ == ["LoopPortal", "SyncReceiver"]
+    assert execnet.portal.__all__ == [
+        "LoopPortal",
+        "Mailbox",
+        "OneShot",
+        "ThreadWakener",
+        "Wakener",
+    ]
     assert execnet.portal.LoopPortal is not None
 
 
