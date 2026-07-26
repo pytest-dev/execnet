@@ -159,6 +159,12 @@ class RawChannel:
         self._receive_closed = trio.Event()  # no more payloads will arrive
         self._remote_error: RemoteError | None = None
         self._payload_send, self._payloads = trio.open_memory_channel[bytes](math.inf)
+        # Diversion hooks for a bound facade (sync channel): when set,
+        # inbound payloads/closes route out of the loop instead of
+        # buffering for receive_bytes.
+        self._consumer_payload: Callable[[bytes], None] | None = None
+        self._consumer_close: Callable[[RemoteError | None, bool], None] | None = None
+        self._pending_close: tuple[RemoteError | None, bool] | None = None
 
     def __repr__(self) -> str:
         state = "closed" if self._closed else "open"
@@ -228,9 +234,40 @@ class RawChannel:
             or EOFError(f"raw channel {self.id} closed")
         )
 
+    def set_consumer(
+        self,
+        on_payload: Callable[[bytes], None],
+        on_close: Callable[[RemoteError | None, bool], None],
+    ) -> None:
+        """Divert inbound payloads and the close to callbacks (loop thread).
+
+        Already-buffered payloads flush to ``on_payload`` first, and a close
+        that arrived before binding is replayed to ``on_close`` -- so a
+        consumer bound late (facade channels bind via a portal post) sees
+        the exact inbound order.
+        """
+        self._consumer_payload = on_payload
+        self._consumer_close = on_close
+        while True:
+            try:
+                data = self._payloads.receive_nowait()
+            except (trio.WouldBlock, trio.EndOfChannel, trio.ClosedResourceError):
+                break
+            on_payload(data)
+        if self._pending_close is not None:
+            error, sendonly = self._pending_close
+            self._pending_close = None
+            on_close(error, sendonly)
+            if not sendonly:
+                # the late binder has now claimed the buffered close
+                self.gateway._forget_channel(self.id)
+
     # dispatch-loop internals (inline on the gateway's serve task)
 
     def _feed(self, data: bytes) -> None:
+        if self._consumer_payload is not None:
+            self._consumer_payload(data)
+            return
         try:
             self._payload_send.send_nowait(data)
         except (trio.BrokenResourceError, trio.ClosedResourceError):
@@ -243,8 +280,17 @@ class RawChannel:
         self._receive_closed.set()
         if not sendonly:
             self._closed = True
-            self.gateway._forget_channel(self.id)
+            if self._consumer_close is not None:
+                # Without a consumer the closed channel stays registered:
+                # a passed-channel reference may still bind late and must
+                # find the buffered payloads and this close, not a fresh
+                # empty channel under the same id.
+                self.gateway._forget_channel(self.id)
         self._payload_send.close()
+        if self._consumer_close is not None:
+            self._consumer_close(error, sendonly)
+        else:
+            self._pending_close = (error, sendonly)
 
 
 class RawChannelStream:
