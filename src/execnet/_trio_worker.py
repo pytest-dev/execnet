@@ -107,13 +107,50 @@ class MainExec:
         self._primary.put(None)
 
 
+class HybridExec(MainExec):
+    """Exec strategy: primary on the main thread, overflow on pool threads.
+
+    The classic ``thread`` execmodel shape: a request arriving while the
+    main thread is idle claims it (pytest and friends get a true main
+    thread); requests arriving while it is busy run on worker threads
+    instead of queueing.  The claim is decided during FIFO admission so
+    the *first* request always gets the main thread.
+    """
+
+    def __init__(self, gateway: WorkerGateway) -> None:
+        super().__init__(gateway)
+        self._pool = PoolExec(gateway)
+        self._claim_lock = threading.Lock()
+        self._primary_busy = False
+        self._claimed: set[int] = set()
+
+    async def admit(self, channel: Channel, item: ExecItem) -> bool:
+        with self._claim_lock:
+            if not self._primary_busy:
+                self._primary_busy = True
+                self._claimed.add(channel.id)
+        return True
+
+    async def run(self, channel: Channel, item: ExecItem) -> None:
+        with self._claim_lock:
+            claimed = channel.id in self._claimed
+            self._claimed.discard(channel.id)
+        if not claimed:
+            await self._pool.run(channel, item)
+            return
+        try:
+            await super().run(channel, item)
+        finally:
+            with self._claim_lock:
+                self._primary_busy = False
+
+
 # execmodel profile -> exec strategy for the sync-facade worker; the
 # "trio" profile serves a plain AsyncGateway instead (TaskExec below).
-# Placement strategies to come: classic hybrid for "thread" (primary
-# main + pool overflow), "gevent" (greenlets on a main-thread hub), and
-# eventually subinterpreters.
+# Placement strategies to come: "gevent" (greenlets on a main-thread
+# hub), and eventually subinterpreters.
 WORKER_EXEC_STRATEGIES: dict[str, Callable[[WorkerGateway], Any]] = {
-    "thread": PoolExec,
+    "thread": HybridExec,
     "main_thread_only": MainExec,
 }
 
