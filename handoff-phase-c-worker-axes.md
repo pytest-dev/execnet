@@ -6,6 +6,10 @@ supersedes `handoff-phase-b-async-core.md` (kept for the B record).
 Plan context lives in session memory (`trio-port-plan`), but everything
 needed is restated here.
 
+The rework is up as **draft PR pytest-dev/execnet#422** (branch pushed
+to the `origin` fork).  Keep it updated as C/D land; undraft once the
+docs overhaul (D.1) at least covers migration notes.
+
 Run checks with `uv run pytest testing/` and `uv run pre-commit run -a`
 (never grep-filter pre-commit output).  The suite is xdist-clean: `uv run
 pytest testing/ -n 12` passes (~7s) since the session-attach race fix
@@ -122,6 +126,16 @@ Compat mapping: `execmodel=thread` → `loop=main` + `exec=thread`;
    necessary but not sufficient.
 4. **Close the open decision**: channel callbacks on the loop thread —
    keep or move.
+5. **xfail markers audit (done 2026-07-26, keep as-is)**: the 11
+   consistent XPASSes were investigated — trio's single-loop dispatch +
+   FIFO admission makes them pass reliably when idle, but under
+   sustained load `test_gateway_status_busy` (numexecuting race:
+   `_track_start` runs in a separately scheduled task) and
+   `test_popen_stderr_tracing` (capfd race) still fail, so the
+   `flakytest` marks stay.  `test_safe_terminate2`'s xpass is CPython
+   dummy-thread accounting, unrelated to trio.  To retire the status
+   marks for real: retry-poll for `numexecuting == 2` like the tests
+   already do for `== 0`.
 
 Recommended order: C.1+C.2 first (spec axes + loop placement) since the
 compat mapping unblocks the ExecModel retirement, then `exec=task`; run
