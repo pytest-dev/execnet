@@ -187,6 +187,7 @@ class Message:
     CHANNEL_LAST_MESSAGE = 7
     GATEWAY_START_SOCKET = 8
     GATEWAY_START_SUB = 9
+    GATEWAY_INFO = 10
 
     # message code -> name
     _types: dict[int, str] = {
@@ -200,6 +201,7 @@ class Message:
         CHANNEL_LAST_MESSAGE: "CHANNEL_LAST_MESSAGE",
         GATEWAY_START_SOCKET: "GATEWAY_START_SOCKET",
         GATEWAY_START_SUB: "GATEWAY_START_SUB",
+        GATEWAY_INFO: "GATEWAY_INFO",
     }
 
     def __init__(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
@@ -241,6 +243,23 @@ class Message:
     def __repr__(self) -> str:
         name = self._types[self.msgcode]
         return f"<Message {name} channel={self.channelid} lendata={len(self.data)}>"
+
+
+def gateway_info() -> dict[str, object]:
+    """Payload for ``Message.GATEWAY_INFO``: sys/env facts about this side.
+
+    Answered natively by the dispatch loop -- an info request never
+    touches the exec machinery, so it cannot claim an exec slot (with
+    main-thread profiles, an info call stealing the primary slot used to
+    push the real workload onto a worker thread).
+    """
+    return {
+        "executable": sys.executable,
+        "version_info": tuple(sys.version_info[:5]),
+        "platform": sys.platform,
+        "cwd": os.getcwd(),
+        "pid": os.getpid(),
+    }
 
 
 class FrameDecoder:

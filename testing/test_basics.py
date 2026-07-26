@@ -153,22 +153,6 @@ def test_io_message(checker: Checker) -> None:
     assert "all passed" in out.stdout
 
 
-def test_rinfo_source(checker: Checker) -> None:
-    out = checker.run_check(
-        f"""
-class Channel:
-    def send(self, data):
-        assert eval(repr(data), {{}}) == data
-channel = Channel()
-{inspect.getsource(gateway.rinfo_source)}
-print ('all passed')
-"""
-    )
-
-    print(out.stdout)
-    assert "all passed" in out.stdout
-
-
 def test_geterrortext(checker: Checker) -> None:
     out = checker.run_check(
         standalone_gateway_base_source()

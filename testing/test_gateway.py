@@ -285,6 +285,19 @@ class TestBasicGateway:
             gw._cache_rinfo = rinfo
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
 
+    def test__rinfo_while_exec_busy(self, gw: Gateway) -> None:
+        # info is a native protocol request: it must work (and not claim
+        # an exec slot) while an exec occupies the worker -- under
+        # main_thread_only an info-by-remote_exec used to either steal
+        # the main thread or trip the concurrency deadlock guard.
+        channel = gw.remote_exec("channel.send(channel.receive())")
+        try:
+            rinfo = gw._rinfo(update=True)
+            assert rinfo.pid != os.getpid()
+        finally:
+            channel.send("done")
+        assert channel.receive(TESTTIMEOUT) == "done"
+
 
 class TestPopenGateway:
     gwtype = "popen"

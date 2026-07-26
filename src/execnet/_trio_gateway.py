@@ -46,6 +46,7 @@ from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
 from .gateway_base import Unserializer
 from .gateway_base import dumps_internal
+from .gateway_base import gateway_info
 from .gateway_base import loads_internal
 from .gateway_base import trace
 
@@ -677,6 +678,11 @@ class AsyncGateway:
                 "execmodel": "trio",
             }
             self._send_nowait(Message.CHANNEL_DATA, channelid, dumps_internal(status))
+            self._send_nowait(Message.CHANNEL_CLOSE, channelid)
+        elif code == Message.GATEWAY_INFO:
+            self._send_nowait(
+                Message.CHANNEL_DATA, channelid, dumps_internal(gateway_info())
+            )
             self._send_nowait(Message.CHANNEL_CLOSE, channelid)
         elif code == Message.RECONFIGURE:
             data = loads_internal(message.data)

@@ -377,6 +377,25 @@ def _rough_version(version: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+def _apply_worker_setup(config: dict[str, Any]) -> None:
+    """Apply chdir/nice/env from the worker config, before serving starts.
+
+    This replaces the classic post-start ``remote_exec`` setup: valid for
+    every profile (a trio worker cannot run sync sources) and never
+    claims an exec slot.
+    """
+    path = config.get("chdir")
+    if path:
+        if not os.path.exists(path):
+            os.mkdir(path)
+        os.chdir(path)
+    nice = config.get("nice")
+    if nice and hasattr(os, "nice"):
+        os.nice(nice)
+    for name, value in config.get("env", {}).items():
+        os.environ[name] = value
+
+
 def _check_version(coordinator_version: str) -> None:
     """Warn on a real (major/minor) execnet version mismatch across the wire.
 
@@ -416,6 +435,7 @@ def _main() -> None:
 
     config = json.loads(ns.config)
     _check_version(config["coordinator_version"])
+    _apply_worker_setup(config)
     if ns.socket_fd is not None:
         serve_socket_trio(
             config["id"],
