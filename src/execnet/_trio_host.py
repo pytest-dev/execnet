@@ -7,12 +7,13 @@ Sync Channel/Gateway APIs talk to this host via thread-safe queues and
 
 from __future__ import annotations
 
+import functools
 import itertools
 import json
-import math
 import subprocess
 import sys
 import threading
+import weakref
 from collections.abc import Awaitable
 from collections.abc import Callable
 from contextlib import suppress
@@ -26,6 +27,7 @@ from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
 from ._trio_gateway import ByteStream
+from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_process
 from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
@@ -33,6 +35,7 @@ from .gateway_base import ExecModel
 from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
 from .gateway_base import Message
+from .gateway_base import RemoteError
 from .gateway_base import dumps_internal
 from .gateway_base import loads_internal
 from .gateway_base import trace
@@ -49,72 +52,6 @@ T = TypeVar("T")
 
 # Kept name: the ssh argv/preamble builder moved to the async core.
 ssh_trio_args = ssh_transport_args
-
-
-_CHANNEL_EOF = object()
-
-
-class RawTunnelStream:
-    """``ByteStream`` over a raw channel id on a sync master ``Gateway``.
-
-    The frame-native via tunnel: the master relays whole sub-protocol
-    frames as verbatim CHANNEL_DATA payloads (no serialization, no
-    double-framing), so this stream only buffers payloads; the
-    sub-session's FrameDecoder sees exact frame boundaries.
-    """
-
-    def __init__(self, gateway: BaseGateway, channelid: int) -> None:
-        self._gateway = gateway
-        self.channelid = channelid
-        self._send, self._recv = trio.open_memory_channel[Any](math.inf)
-        self._buf = bytearray()
-        self._eof = False
-        self._closed = False
-        gateway._channelfactory.register_raw_receiver(
-            channelid, self._on_data, self._on_close
-        )
-
-    def _on_data(self, data: bytes) -> None:
-        self._send.send_nowait(data)
-
-    def _on_close(self, error: Any) -> None:
-        self._send.send_nowait(_CHANNEL_EOF if error is None else error)
-
-    async def send_all(self, data: bytes) -> None:
-        self._gateway._send(Message.CHANNEL_DATA, self.channelid, data)
-
-    async def receive_some(self, max_bytes: int | None = None) -> bytes:
-        if not self._buf and not self._eof:
-            item = await self._recv.receive()
-            if item is _CHANNEL_EOF:
-                self._eof = True
-            elif isinstance(item, Exception):
-                self._eof = True
-                raise EOFError(f"via tunnel closed: {item}") from None
-            else:
-                assert isinstance(item, bytes)
-                self._buf += item
-        if max_bytes is None:
-            max_bytes = len(self._buf)
-        out = bytes(self._buf[:max_bytes])
-        del self._buf[:max_bytes]
-        return out
-
-    async def send_eof(self) -> None:
-        self._close_tunnel()
-
-    async def aclose(self) -> None:
-        self._close_tunnel()
-
-    def _close_tunnel(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        self._gateway._channelfactory.unregister_raw_receiver(self.channelid)
-        # Unblock our own reader: no more payloads will be routed here.
-        self._send.send_nowait(_CHANNEL_EOF)
-        with suppress(OSError):
-            self._gateway._send(Message.CHANNEL_CLOSE, self.channelid)
 
 
 async def adopt_socket(socket_fd: int) -> trio.SocketStream:
@@ -229,15 +166,51 @@ class SyncBridgeGateway(AsyncGateway):
     # -- engine hooks (run on the host loop) --
 
     def _dispatch(self, message: Message) -> None:
+        """Route one message: sync-facade concerns here, the rest to the core.
+
+        CHANNEL_DATA/CLOSE/CLOSE_ERROR/LAST_MESSAGE fall through to the
+        async core, which routes them to the RawChannel whose consumer is
+        the bound sync ``Channel``.
+        """
         gateway = self.sync_gateway
+        code = message.msgcode
         try:
-            with gateway._receivelock:
-                message.received(gateway)
+            if code == Message.STATUS:
+                self._answer_status(message)
+            elif code == Message.CHANNEL_EXEC:
+                channel = gateway._channelfactory.new(message.channelid)
+                gateway._local_schedulexec(channel=channel, sourcetask=message.data)
+            elif code == Message.RECONFIGURE:
+                data = loads_internal(message.data, gateway)
+                assert isinstance(data, tuple)
+                if message.channelid == 0:
+                    gateway._strconfig = data
+                else:
+                    gateway._channelfactory.new(message.channelid)._strconfig = data
+            elif code == Message.GATEWAY_START_SOCKET:
+                handle_start_socket(gateway, message.channelid, message.data)
+            elif code == Message.GATEWAY_START_SUB:
+                handle_start_sub(gateway, message.channelid, message.data)
+            else:
+                super()._dispatch(message)
         except (GatewayReceivedTerminate, EOFError):
             raise
         except Exception as exc:
             gateway._trace("dispatch failed:", gateway._geterrortext(exc))
             raise EOFError("error dispatching message") from exc
+
+    def _answer_status(self, message: Message) -> None:
+        # we use the channelid to send back information
+        # but don't instantiate a channel object
+        gateway = self.sync_gateway
+        execpool = getattr(gateway, "_execpool", None)
+        d = {
+            "numchannels": len(gateway._channelfactory._channels),
+            "numexecuting": execpool.active_count() if execpool is not None else 0,
+            "execmodel": gateway.execmodel.backend,
+        }
+        gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
+        gateway._send(Message.CHANNEL_CLOSE, message.channelid)
 
     async def _finalize(self) -> None:
         gateway = self.sync_gateway
@@ -247,6 +220,9 @@ class SyncBridgeGateway(AsyncGateway):
             gateway._error = self._error
         gateway._trace("[trio-bridge] finishing channels")
         gateway._channelfactory._finished_receiving()
+        # EOF the loop-side raw channels that have no sync consumer
+        # (via-tunnel relays and readers blocked in receive_bytes).
+        self._finish_channels()
         # Unblock the worker's join() before heavy exec-pool shutdown
         # so the primary thread is not waiting on _done while terminate waits
         # on the primary thread draining work.
@@ -258,6 +234,70 @@ class SyncBridgeGateway(AsyncGateway):
         )
 
     # -- sync session interface (any thread) --
+
+    def bind_sync_channel(self, channel: Any) -> None:
+        """Route inbound data for ``channel.id`` to the sync channel.
+
+        Callable from any thread: binding happens on the loop via the
+        portal so it cannot interleave with dispatch, and the raw channel
+        replays anything (payloads, a close) that arrived first.  The loop
+        side only holds a weakref, preserving the factory's weak-registry
+        semantics (GC of the last user reference sends the close message);
+        channels with callbacks are kept alive by the factory instead.
+        """
+        ref = weakref.ref(channel)
+        channelid = channel.id
+
+        def bind() -> None:
+            raw = self._channel_for(channelid)
+            raw.set_consumer(
+                functools.partial(self._sync_payload, ref),
+                functools.partial(self._sync_close, ref, channelid),
+            )
+
+        with suppress(trio.RunFinishedError):
+            self.host.portal.post(bind)
+
+    def _sync_payload(self, ref: weakref.ref[Any], data: bytes) -> None:
+        channel = ref()
+        if channel is not None:
+            channel._deliver_payload(data)
+        # dead ref: data for a deleted channel is dropped, like before
+
+    def _sync_close(
+        self,
+        ref: weakref.ref[Any],
+        channelid: int,
+        error: RemoteError | None,
+        sendonly: bool,
+    ) -> None:
+        channel = ref()
+        if channel is None:
+            # channel already in "deleted" state
+            if error is not None:
+                error.warn()
+            self.sync_gateway._channelfactory._no_longer_opened(channelid)
+            return
+        channel._close_from_remote(error, sendonly=sendonly)
+
+    def release_channel(self, channelid: int) -> None:
+        """Drop the loop-side raw channel for ``channelid`` (best-effort)."""
+        with suppress(trio.RunFinishedError):
+            self.host.portal.post(self._forget_channel, channelid)
+
+    def run_on_loop(self, sync_fn: Callable[[], T]) -> T:
+        """Run ``sync_fn`` on the host loop, excluding dispatch interleaving.
+
+        Falls back to running inline once the loop is gone (no more
+        deliveries can interleave then anyway).
+        """
+        portal = self.host.portal
+        if portal.is_loop_thread():
+            return sync_fn()
+        try:
+            return portal.run_sync(sync_fn)
+        except trio.RunFinishedError:
+            return sync_fn()
 
     def enqueue_message(self, message: Message) -> None:
         """Enqueue a frame; wait until written when safe to block.
@@ -471,11 +511,13 @@ class FacadeAsyncGroup(AsyncGroup):
         from . import _provision
 
         master = self.group[spec.via]
+        session = master._trio_session
+        assert isinstance(session, SyncBridgeGateway)
         channelid = master._channelfactory.allocate_id()
+        # Create the raw channel before the request goes out so no relayed
+        # frame can arrive unrouted (we are on the loop: no dispatch races).
+        io = RawChannelStream(session._channel_for(channelid))
         request = _provision.spawn_request(spec)
-        # Register the raw receiver before the request goes out so no
-        # relayed frame can arrive unrouted.
-        io = RawTunnelStream(master, channelid)
         master._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
         await read_handshake_ack(io, "via")
         return io
@@ -602,7 +644,7 @@ async def _start_sub_and_relay(
 
     Runs on the master's Trio host (the ``via`` transport).  The tunnel is
     frame-native both ways: coordinator payloads arrive verbatim through the
-    raw-receiver registry and go to the sub's stdin unchanged (each payload
+    session's raw channel and go to the sub's stdin unchanged (each payload
     one whole frame), while the sub's stdout runs through a FrameDecoder so
     every CHANNEL_DATA sent back carries exactly one frame -- except the
     initial ready byte, which is forwarded on its own for the handshake.
@@ -621,21 +663,17 @@ async def _start_sub_and_relay(
     except Exception as exc:
         send_close_error(f"could not spawn via sub-gateway: {exc}")
         return
-    send_ch, recv_ch = trio.open_memory_channel[Any](math.inf)
-    gateway._channelfactory.register_raw_receiver(
-        channelid,
-        send_ch.send_nowait,
-        lambda error: send_ch.send_nowait(_CHANNEL_EOF),
-    )
+    session = gateway._trio_session
+    assert isinstance(session, SyncBridgeGateway)
+    raw = session._channel_for(channelid)
 
     async def coordinator_to_sub() -> None:
         assert process.stdin is not None
         if preamble:
             await process.stdin.send_all(preamble)
-        async for data in recv_ch:
-            if data is _CHANNEL_EOF:
-                break
-            await process.stdin.send_all(data)
+        with suppress(RemoteError):
+            async for data in raw:
+                await process.stdin.send_all(data)
         with trio.move_on_after(5):
             await process.stdin.aclose()
 
@@ -664,7 +702,7 @@ async def _start_sub_and_relay(
         gateway._trace("via sub relay failed:", exc)
         send_close_error(f"via sub-gateway relay failed: {exc}")
     finally:
-        gateway._channelfactory.unregister_raw_receiver(channelid)
+        session._forget_channel(channelid)
         with trio.move_on_after(5):
             await process.wait()
 

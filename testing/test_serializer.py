@@ -9,8 +9,9 @@ import pytest
 
 import execnet
 
-# We use the execnet folder in order to avoid triggering a missing apipkg.
-pyimportdir = os.fspath(Path(execnet.__file__).parent)
+# The package parent: the serializer is imported as execnet.gateway_base
+# (it needs its trio-free sibling execnet._boundary; only stdlib beyond that).
+pyimportdir = os.fspath(Path(execnet.__file__).parent.parent)
 
 
 class PythonWrapper:
@@ -24,7 +25,7 @@ class PythonWrapper:
             f"""
 import sys
 sys.path.insert(0, {pyimportdir!r})
-import gateway_base as serializer
+import execnet.gateway_base as serializer
 sys.stdout = sys.stdout.detach()
 sys.stdout.write(serializer.dumps_internal({obj_rep}))
 """
@@ -40,7 +41,7 @@ sys.stdout.write(serializer.dumps_internal({obj_rep}))
             rf"""
 import sys
 sys.path.insert(0, {pyimportdir!r})
-import gateway_base as serializer
+import execnet.gateway_base as serializer
 from io import BytesIO
 data = {data!r}
 io = BytesIO(data)

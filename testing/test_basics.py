@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 import execnet
+from execnet import _boundary
 from execnet import gateway
 from execnet import gateway_base
 from execnet.gateway_base import ChannelFactory
@@ -64,6 +65,21 @@ def test_errors_on_execnet() -> None:
     assert hasattr(execnet, "RemoteError")
     assert hasattr(execnet, "TimeoutError")
     assert hasattr(execnet, "DataFormatError")
+
+
+def standalone_gateway_base_source() -> str:
+    """gateway_base's source as a self-contained script.
+
+    The module imports the trio-free boundary kit relatively; for the
+    run-on-any-python checks the kit source is inlined at the import site
+    (minus its own future import, which must stay file-leading).
+    """
+    boundary_source = inspect.getsource(_boundary).replace(
+        "from __future__ import annotations\n", ""
+    )
+    return inspect.getsource(gateway_base).replace(
+        "from ._boundary import Mailbox\n", boundary_source
+    )
 
 
 IO_MESSAGE_EXTRA_SOURCE = """
@@ -124,7 +140,7 @@ def checker(anypython: str, tmp_path: Path) -> Checker:
 
 
 def test_io_message(checker: Checker) -> None:
-    out = checker.run_check(inspect.getsource(gateway_base) + IO_MESSAGE_EXTRA_SOURCE)
+    out = checker.run_check(standalone_gateway_base_source() + IO_MESSAGE_EXTRA_SOURCE)
     print(out.stdout)
     assert "all passed" in out.stdout
 
@@ -147,7 +163,7 @@ print ('all passed')
 
 def test_geterrortext(checker: Checker) -> None:
     out = checker.run_check(
-        inspect.getsource(gateway_base)
+        standalone_gateway_base_source()
         + """
 class Arg(Exception):
     pass
@@ -324,10 +340,18 @@ class TestPureChannel:
     @pytest.fixture
     def fac(self, execmodel: ExecModel) -> ChannelFactory:
         class FakeGateway:
+            _trio_session = None
+
             def _trace(self, *args) -> None:
                 pass
 
             def _send(self, *k) -> None:
+                pass
+
+            def _bind_channel(self, channel) -> None:
+                pass
+
+            def _release_channel(self, id) -> None:
                 pass
 
         FakeGateway.execmodel = execmodel  # type: ignore[attr-defined]

@@ -12,9 +12,12 @@
 from __future__ import annotations
 
 import abc
+import builtins
 import os
+import queue as _queue
 import struct
 import sys
+import threading
 import traceback
 import weakref
 from _thread import interrupt_main
@@ -27,6 +30,8 @@ from typing import Literal
 from typing import Protocol
 from typing import cast
 from typing import overload
+
+from ._boundary import Mailbox
 
 
 class WriteIO(Protocol):
@@ -390,10 +395,37 @@ else:
 
 
 class Message:
-    """Encapsulates Messages and their wire protocol."""
+    """Encapsulates Messages and their wire protocol.
 
-    # message code -> name, handler
-    _types: dict[int, tuple[str, Callable[[Message, BaseGateway], None]]] = {}
+    Dispatch lives in the async core and the sync bridge session
+    (``AsyncGateway._dispatch`` / ``SyncBridgeGateway._dispatch``); this
+    class only carries the framing and the code constants.
+    """
+
+    STATUS = 0
+    RECONFIGURE = 1
+    GATEWAY_TERMINATE = 2
+    CHANNEL_EXEC = 3
+    CHANNEL_DATA = 4
+    CHANNEL_CLOSE = 5
+    CHANNEL_CLOSE_ERROR = 6
+    CHANNEL_LAST_MESSAGE = 7
+    GATEWAY_START_SOCKET = 8
+    GATEWAY_START_SUB = 9
+
+    # message code -> name
+    _types: dict[int, str] = {
+        STATUS: "STATUS",
+        RECONFIGURE: "RECONFIGURE",
+        GATEWAY_TERMINATE: "GATEWAY_TERMINATE",
+        CHANNEL_EXEC: "CHANNEL_EXEC",
+        CHANNEL_DATA: "CHANNEL_DATA",
+        CHANNEL_CLOSE: "CHANNEL_CLOSE",
+        CHANNEL_CLOSE_ERROR: "CHANNEL_CLOSE_ERROR",
+        CHANNEL_LAST_MESSAGE: "CHANNEL_LAST_MESSAGE",
+        GATEWAY_START_SOCKET: "GATEWAY_START_SOCKET",
+        GATEWAY_START_SUB: "GATEWAY_START_SUB",
+    }
 
     def __init__(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
         self.msgcode = msgcode
@@ -431,102 +463,9 @@ class Message:
     def to_io(self, io: WriteIO) -> None:
         io.write(self.pack())
 
-    def received(self, gateway: BaseGateway) -> None:
-        handler = self._types[self.msgcode][1]
-        handler(self, gateway)
-
     def __repr__(self) -> str:
-        name = self._types[self.msgcode][0]
+        name = self._types[self.msgcode]
         return f"<Message {name} channel={self.channelid} lendata={len(self.data)}>"
-
-    def _status(message: Message, gateway: BaseGateway) -> None:
-        # we use the channelid to send back information
-        # but don't instantiate a channel object
-        d = {
-            "numchannels": len(gateway._channelfactory._channels),
-            # TODO(typing): Attribute `_execpool` is only on WorkerGateway.
-            "numexecuting": gateway._execpool.active_count(),  # type: ignore[attr-defined]
-            "execmodel": gateway.execmodel.backend,
-        }
-        gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
-        gateway._send(Message.CHANNEL_CLOSE, message.channelid)
-
-    STATUS = 0
-    _types[STATUS] = ("STATUS", _status)
-
-    def _reconfigure(message: Message, gateway: BaseGateway) -> None:
-        data = loads_internal(message.data, gateway)
-        assert isinstance(data, tuple)
-        strconfig: tuple[bool, bool] = data
-        if message.channelid == 0:
-            gateway._strconfig = strconfig
-        else:
-            gateway._channelfactory.new(message.channelid)._strconfig = strconfig
-
-    RECONFIGURE = 1
-    _types[RECONFIGURE] = ("RECONFIGURE", _reconfigure)
-
-    def _gateway_terminate(message: Message, gateway: BaseGateway) -> None:
-        raise GatewayReceivedTerminate(gateway)
-
-    GATEWAY_TERMINATE = 2
-    _types[GATEWAY_TERMINATE] = ("GATEWAY_TERMINATE", _gateway_terminate)
-
-    def _channel_exec(message: Message, gateway: BaseGateway) -> None:
-        channel = gateway._channelfactory.new(message.channelid)
-        gateway._local_schedulexec(channel=channel, sourcetask=message.data)
-
-    CHANNEL_EXEC = 3
-    _types[CHANNEL_EXEC] = ("CHANNEL_EXEC", _channel_exec)
-
-    def _channel_data(message: Message, gateway: BaseGateway) -> None:
-        gateway._channelfactory._local_receive(message.channelid, message.data)
-
-    CHANNEL_DATA = 4
-    _types[CHANNEL_DATA] = ("CHANNEL_DATA", _channel_data)
-
-    def _channel_close(message: Message, gateway: BaseGateway) -> None:
-        gateway._channelfactory._local_close(message.channelid)
-
-    CHANNEL_CLOSE = 5
-    _types[CHANNEL_CLOSE] = ("CHANNEL_CLOSE", _channel_close)
-
-    def _channel_close_error(message: Message, gateway: BaseGateway) -> None:
-        error_message = loads_internal(message.data)
-        assert isinstance(error_message, str)
-        remote_error = RemoteError(error_message)
-        gateway._channelfactory._local_close(message.channelid, remote_error)
-
-    CHANNEL_CLOSE_ERROR = 6
-    _types[CHANNEL_CLOSE_ERROR] = ("CHANNEL_CLOSE_ERROR", _channel_close_error)
-
-    def _channel_last_message(message: Message, gateway: BaseGateway) -> None:
-        gateway._channelfactory._local_close(message.channelid, sendonly=True)
-
-    CHANNEL_LAST_MESSAGE = 7
-    _types[CHANNEL_LAST_MESSAGE] = ("CHANNEL_LAST_MESSAGE", _channel_last_message)
-
-    def _gateway_start_socket(message: Message, gateway: BaseGateway) -> None:
-        # Start a one-shot socketserver on this (Trio) gateway's host and reply
-        # with the bound (host, port) on the request channel.  Handled natively
-        # instead of shipping source via remote_exec.
-        from . import _trio_host
-
-        _trio_host.handle_start_socket(gateway, message.channelid, message.data)
-
-    GATEWAY_START_SOCKET = 8
-    _types[GATEWAY_START_SOCKET] = ("GATEWAY_START_SOCKET", _gateway_start_socket)
-
-    def _gateway_start_sub(message: Message, gateway: BaseGateway) -> None:
-        # Spawn a sub-gateway worker (popen, foreign python, or ssh) on this
-        # (Trio) gateway's host and relay its Message protocol over the request
-        # channel (the ``via`` transport).
-        from . import _trio_host
-
-        _trio_host.handle_start_sub(gateway, message.channelid, message.data)
-
-    GATEWAY_START_SUB = 9
-    _types[GATEWAY_START_SUB] = ("GATEWAY_START_SUB", _gateway_start_sub)
 
 
 class FrameDecoder:
@@ -617,7 +556,13 @@ NO_ENDMARKER_WANTED = object()
 
 
 class Channel:
-    """Communication channel between two Python Interpreter execution points."""
+    """Communication channel between two Python Interpreter execution points.
+
+    A facade over the async core: the gateway's Trio session diverts
+    inbound payloads for this id into a :class:`Mailbox` (or a registered
+    callback, invoked on the loop thread); ``receive()`` deserializes at
+    the call site.  Sends go through ``gateway._send``.
+    """
 
     RemoteError = RemoteError
     TimeoutError = TimeoutError
@@ -632,9 +577,12 @@ class Channel:
         # XXX: defaults copied from Unserializer
         self._strconfig = getattr(gateway, "_strconfig", (True, False))
         self.id = id
-        self._items = self.gateway.execmodel.queue.Queue()
+        # serialized payloads (or ENDMARKER); None once a callback is set
+        self._mailbox: Mailbox[Any] | None = Mailbox()
+        self._callback: Callable[[Any], Any] | None = None
+        self._endmarker: object = NO_ENDMARKER_WANTED
         self._closed = False
-        self._receiveclosed = self.gateway.execmodel.Event()
+        self._receiveclosed = threading.Event()
         self._remoteerrors: list[RemoteError] = []
 
     def _trace(self, *msg: object) -> None:
@@ -648,33 +596,36 @@ class Channel:
         """Set a callback function for receiving items.
 
         All already-queued items will immediately trigger the callback.
-        Afterwards the callback will execute in the receiver thread
+        Afterwards the callback will execute in the receiver (loop) thread
         for each received data item and calls to ``receive()`` will
         raise an error.
         If an endmarker is specified the callback will eventually
         be called with the endmarker when the channel closes.
         """
-        _callbacks = self.gateway._channelfactory._callbacks
-        with self.gateway._receivelock:
-            if self._items is None:
+
+        def switch() -> None:
+            # Runs on the loop thread (inline without a session), so the
+            # switch-over cannot interleave with payload delivery.
+            mailbox = self._mailbox
+            if mailbox is None:
                 raise OSError(f"{self!r} has callback already registered")
-            items = self._items
-            self._items = None
+            self._mailbox = None
             while 1:
                 try:
-                    olditem = items.get(block=False)
-                except self.gateway.execmodel.queue.Empty:
+                    olditem = mailbox.get_nowait()
+                except _queue.Empty:
                     if not (self._closed or self._receiveclosed.is_set()):
-                        _callbacks[self.id] = (callback, endmarker, self._strconfig)
+                        self._callback = callback
+                        self._endmarker = endmarker
+                        self.gateway._channelfactory._register_callback_channel(self)
                     break
-                else:
-                    if olditem is ENDMARKER:
-                        items.put(olditem)  # for other receivers
-                        if endmarker is not NO_ENDMARKER_WANTED:
-                            callback(endmarker)
-                        break
-                    else:
-                        callback(olditem)
+                if olditem is ENDMARKER:
+                    if endmarker is not NO_ENDMARKER_WANTED:
+                        callback(endmarker)
+                    break
+                callback(loads_internal(olditem, self))
+
+        self.gateway._run_on_loop(switch)
 
     def __repr__(self) -> str:
         flag = (self.isclosed() and "closed") or "open"
@@ -701,7 +652,7 @@ class Channel:
             # don't need to try to send a closing or last message
             # (and often it won't work anymore to send things out)
             if Message is not None:
-                if self._items is None:  # has_callback
+                if self._mailbox is None:  # has_callback
                     msgcode = Message.CHANNEL_LAST_MESSAGE
                 else:
                     msgcode = Message.CHANNEL_CLOSE
@@ -711,6 +662,8 @@ class Channel:
                         self.gateway, "_send_nonblocking", self.gateway._send
                     )
                     send(msgcode, self.id)
+        with suppress(Exception):
+            self.gateway._release_channel(self.id)
 
     def _getremoteerror(self):
         try:
@@ -721,6 +674,50 @@ class Channel:
             except AttributeError:
                 pass
             return None
+
+    #
+    # loop-side delivery (called by the session's raw-channel consumer)
+    #
+    def _deliver_payload(self, data: bytes) -> None:
+        """Route one inbound serialized payload (loop thread)."""
+        if self._closed:
+            return  # late data for a locally closed channel: drop
+        callback = self._callback
+        if callback is None:
+            mailbox = self._mailbox
+            if mailbox is not None:
+                mailbox.put(data)
+            # no mailbox and no callback: closed for receiving -- drop
+        else:
+            try:
+                callback(loads_internal(data, self))
+            except Exception as exc:
+                self.gateway._trace("exception during callback: %s" % exc)
+                errortext = self.gateway._geterrortext(exc)
+                self.gateway._send(
+                    Message.CHANNEL_CLOSE_ERROR, self.id, dumps_internal(errortext)
+                )
+                self._close_from_remote(RemoteError(errortext))
+
+    def _close_from_remote(self, remoteerror=None, *, sendonly: bool = False) -> None:
+        """Close initiated by the peer or session shutdown (loop thread)."""
+        if remoteerror:
+            self._remoteerrors.append(remoteerror)
+        mailbox = self._mailbox
+        if mailbox is not None:
+            mailbox.put(ENDMARKER)
+        self._fire_endmarker()
+        self.gateway._channelfactory._no_longer_opened(self.id)
+        if not sendonly:  # otherwise #--> "sendonly"
+            self._closed = True  # --> "closed"
+        self._receiveclosed.set()
+
+    def _fire_endmarker(self) -> None:
+        callback = self._callback
+        if callback is not None:
+            self._callback = None
+            if self._endmarker is not NO_ENDMARKER_WANTED:
+                callback(self._endmarker)
 
     #
     # public API for channel objects
@@ -788,10 +785,12 @@ class Channel:
                 self._remoteerrors.append(error)
             self._closed = True  # --> "closed"
             self._receiveclosed.set()
-            queue = self._items
-            if queue is not None:
-                queue.put(ENDMARKER)
+            mailbox = self._mailbox
+            if mailbox is not None:
+                mailbox.put(ENDMARKER)
+            self._fire_endmarker()
             self.gateway._channelfactory._no_longer_opened(self.id)
+            self.gateway._release_channel(self.id)
 
     def waitclose(self, timeout: float | None = None) -> None:
         """Wait until this channel is closed (or the remote side
@@ -841,18 +840,18 @@ class Channel:
         reraised as channel.RemoteError exceptions containing
         a textual representation of the remote traceback.
         """
-        itemqueue = self._items
-        if itemqueue is None:
+        mailbox = self._mailbox
+        if mailbox is None:
             raise OSError("cannot receive(), channel has receiver callback")
         try:
-            x = itemqueue.get(timeout=timeout)
-        except self.gateway.execmodel.queue.Empty:
+            x = mailbox.get(timeout)
+        except builtins.TimeoutError:
             raise self.TimeoutError("no item after %r seconds" % timeout) from None
         if x is ENDMARKER:
-            itemqueue.put(x)  # for other receivers
+            mailbox.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()
         else:
-            return x
+            return loads_internal(x, self)
 
     def __iter__(self) -> Iterator[Any]:
         return self
@@ -886,21 +885,22 @@ MAIN_THREAD_ONLY_DEADLOCK_TEXT = (
 
 
 class ChannelFactory:
+    """Registry and id allocator for a gateway's sync channels.
+
+    Message routing lives in the Trio session (the sync channel binds a
+    consumer on the session's raw channel); the factory only tracks live
+    channels -- weakly, so dropping the last user reference triggers
+    ``Channel.__del__``'s close message -- and keeps channels with a
+    registered callback strongly alive until they close.
+    """
+
     def __init__(self, gateway: BaseGateway, startcount: int = 1) -> None:
         self._channels: weakref.WeakValueDictionary[int, Channel] = (
             weakref.WeakValueDictionary()
         )
-        # Channel ID => (callback, end marker, strconfig)
-        self._callbacks: dict[
-            int, tuple[Callable[[Any], Any], object, tuple[bool, bool]]
-        ] = {}
-        # Channel ID => (feed, on_close) receiving CHANNEL_DATA verbatim
-        # (no serialization) -- the low-level raw channel routing used by
-        # byte-shaped consumers such as the via tunnel.
-        self._raw_receivers: dict[
-            int, tuple[Callable[[bytes], None], Callable[[RemoteError | None], None]]
-        ] = {}
-        self._writelock = gateway.execmodel.Lock()
+        # channels kept strongly alive while their callback is registered
+        self._callback_channels: dict[int, Channel] = {}
+        self._writelock = threading.Lock()
         self.gateway = gateway
         self.count = startcount
         self.finished = False
@@ -918,6 +918,7 @@ class ChannelFactory:
                 channel = self._channels[id]
             except KeyError:
                 channel = self._channels[id] = Channel(self.gateway, id)
+                self.gateway._bind_channel(channel)
             return channel
 
     def allocate_id(self) -> int:
@@ -929,42 +930,21 @@ class ChannelFactory:
             self.count += 2
             return id
 
-    def register_raw_receiver(
-        self,
-        id: int,
-        feed: Callable[[bytes], None],
-        on_close: Callable[[RemoteError | None], None],
-    ) -> None:
-        """Route CHANNEL_DATA payloads for ``id`` verbatim to ``feed``.
-
-        ``on_close`` fires once when the channel closes (with the peer's
-        RemoteError, if any) or when receiving finishes.
-        """
-        self._raw_receivers[id] = (feed, on_close)
-
-    def unregister_raw_receiver(self, id: int) -> None:
-        self._raw_receivers.pop(id, None)
-
     def channels(self) -> list[Channel]:
         return self._list(self._channels.values())
 
     #
-    # internal methods, called from the receiver thread
+    # internal methods, called from the loop thread (or local close paths)
     #
+    def _register_callback_channel(self, channel: Channel) -> None:
+        self._callback_channels[channel.id] = channel
+
     def _no_longer_opened(self, id: int) -> None:
         self._channels.pop(id, None)
-        item = self._callbacks.pop(id, None)
-        if item is not None:
-            callback, endmarker, _strconfig = item
-            if endmarker is not NO_ENDMARKER_WANTED:
-                callback(endmarker)
+        self._callback_channels.pop(id, None)
 
     def _local_close(self, id: int, remoteerror=None, sendonly: bool = False) -> None:
-        raw = self._raw_receivers.pop(id, None)
-        if raw is not None:
-            _feed, on_close = raw
-            on_close(remoteerror)
-            return
+        """Close ``id`` as if the peer had closed it (no message is sent)."""
         channel = self._channels.get(id)
         if channel is None:
             # channel already in "deleted" state
@@ -972,57 +952,13 @@ class ChannelFactory:
                 remoteerror.warn()
             self._no_longer_opened(id)
         else:
-            # state transition to "closed" state
-            if remoteerror:
-                channel._remoteerrors.append(remoteerror)
-            queue = channel._items
-            if queue is not None:
-                queue.put(ENDMARKER)
-            self._no_longer_opened(id)
-            if not sendonly:  # otherwise #--> "sendonly"
-                channel._closed = True  # --> "closed"
-            channel._receiveclosed.set()
-
-    def _local_receive(self, id: int, data) -> None:
-        # executes in receiver thread
-        raw = self._raw_receivers.get(id)
-        if raw is not None:
-            feed, _on_close = raw
-            feed(data)
-            return
-        channel = self._channels.get(id)
-        try:
-            callback, _endmarker, strconfig = self._callbacks[id]
-        except KeyError:
-            queue = channel._items if channel is not None else None
-            if queue is None:
-                pass  # drop data
-            else:
-                item = loads_internal(data, channel)
-                queue.put(item)
-        else:
-            try:
-                data = loads_internal(data, channel, strconfig)
-                callback(data)  # even if channel may be already closed
-            except Exception as exc:
-                self.gateway._trace("exception during callback: %s" % exc)
-                errortext = self.gateway._geterrortext(exc)
-                self.gateway._send(
-                    Message.CHANNEL_CLOSE_ERROR, id, dumps_internal(errortext)
-                )
-                self._local_close(id, errortext)
+            channel._close_from_remote(remoteerror, sendonly=sendonly)
 
     def _finished_receiving(self) -> None:
         with self._writelock:
             self.finished = True
         for id in self._list(self._channels):
             self._local_close(id, sendonly=True)
-        for id in self._list(self._callbacks):
-            self._no_longer_opened(id)
-        for id in self._list(self._raw_receivers):
-            item = self._raw_receivers.pop(id, None)
-            if item is not None:
-                item[1](None)
 
 
 class ChannelFile:
@@ -1099,7 +1035,6 @@ class BaseGateway:
         self.id = id
         self._strconfig = (Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str)
         self._channelfactory = ChannelFactory(self, _startcount)
-        self._receivelock = self.execmodel.RLock()
         # globals may be NONE at process-termination
         self.__trace = trace
         self._geterrortext = geterrortext
@@ -1109,8 +1044,36 @@ class BaseGateway:
         self.__trace(self.id, *msg)
 
     def _attach_trio_session(self, session: Any) -> None:
-        """Attach a Trio ProtocolSession for Message IO (no receiver thread)."""
+        """Attach the Trio bridge session doing the Message IO."""
         self._trio_session = session
+        # Defensive: channels created before the session existed still
+        # need their inbound routing diverted to them.
+        for channel in self._channelfactory.channels():
+            session.bind_sync_channel(channel)
+
+    def _bind_channel(self, channel: Channel) -> None:
+        """Divert the session's inbound routing for ``channel.id`` to it."""
+        session = self._trio_session
+        if session is not None:
+            session.bind_sync_channel(channel)
+
+    def _release_channel(self, id: int) -> None:
+        """Drop the session's loop-side state for ``id`` (best-effort)."""
+        session = self._trio_session
+        if session is not None:
+            with suppress(Exception):
+                session.release_channel(id)
+
+    def _run_on_loop(self, sync_fn: Callable[[], Any]) -> Any:
+        """Run ``sync_fn`` on the session's loop thread (inline without one).
+
+        Payload dispatch happens on the loop thread, so state switches run
+        there to exclude interleaving with deliveries.
+        """
+        session = self._trio_session
+        if session is None:
+            return sync_fn()
+        return session.run_on_loop(sync_fn)
 
     def _terminate_execution(self) -> None:
         pass

@@ -76,7 +76,7 @@ class TrioWorkerExec:
                 self._idle.set()
 
     def schedule(self, channel: Channel, sourcetask: bytes) -> None:
-        """Called from the Trio receiver while holding ``_receivelock``.
+        """Called from the session dispatch on the Trio host thread.
 
         Must not block: deadlock checks and exec run in a nursery task.
         """
