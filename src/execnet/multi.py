@@ -154,7 +154,10 @@ class Group:
 
             id=<string>     specifies the gateway id
             python=<path>   specifies which python interpreter to execute
-            execmodel=model 'thread' or 'main_thread_only' execution model
+            execmodel=name  worker profile: where exec'd code runs relative
+                            to the worker's protocol loop.  'thread' (pool
+                            threads) or 'main_thread_only' (serialized on
+                            the worker main thread, GUI/signal-safe).
             wait=backend    wakener for blocking waits ('thread' default)
             chdir=<path>    specifies to which directory to change
             nice=<path>     specifies process priority of new process
