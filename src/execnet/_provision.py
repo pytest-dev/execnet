@@ -164,10 +164,12 @@ def worker_cli_arg(spec: Any) -> str:
     """
     import execnet
 
+    # the gevent profile parks its greenlets on gevent wakeners
+    default_wait = "gevent" if spec.execmodel == "gevent" else "thread"
     config: dict[str, Any] = {
         "id": f"{spec.id}-worker",
         "execmodel": spec.execmodel,
-        "wait": spec.wait or "thread",
+        "wait": spec.wait or default_wait,
         "coordinator_version": execnet.__version__,
     }
     # Startup setup applied by the worker before serving (never through
@@ -203,13 +205,28 @@ def _uv_tokens(python: str | None) -> list[str]:
     return prefix
 
 
+def _extra_with_tokens(config: str) -> list[str]:
+    """Additional ``--with`` requirements the worker env needs.
+
+    Derived from the worker config itself so every uv launcher (popen,
+    ssh, via sub-spawn) provisions the same: the gevent profile / wait
+    backend needs gevent importable in the worker.
+    """
+    parsed = json.loads(config)
+    if parsed.get("execmodel") == "gevent" or parsed.get("wait") == "gevent":
+        return ["--with", "gevent"]
+    return []
+
+
 def uv_worker_argv(spec: Any) -> list[str]:
     """``uv run`` argv to launch the Trio worker locally (wheel path is local)."""
+    config = worker_cli_arg(spec)
     return [
         *_uv_tokens(spec.python),
         "--with",
         coordinator_requirement(),
-        *worker_module_tokens(spec),
+        *_extra_with_tokens(config),
+        *_worker_tokens(config),
     ]
 
 
@@ -228,7 +245,7 @@ def _remote_shell_command(
     wheel bytes are returned as the preamble to stream before the protocol.
     """
     worker = _worker_tokens(config)
-    uv = _uv_tokens(python)
+    uv = [*_uv_tokens(python), *_extra_with_tokens(config)]
     if wheel is None:
         assert requirement is not None
         return shlex.join([*uv, "--with", requirement, *worker]), b""

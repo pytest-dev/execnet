@@ -248,12 +248,34 @@ class Group:
                 # each with a GATEWAY_TERMINATE + timeout grace, then kill;
                 # bounded at roughly twice the timeout (issues #43 / #221).
                 try:
-                    self._trio_host.call(self._async_group.terminate, timeout)
+                    self._host_terminate(timeout)
                 except Exception as exc:
                     trace("group terminate error:", exc)
             for gw in self._gateways_to_join:
                 gw.join()
             self._gateways_to_join[:] = []
+
+    def _host_terminate(self, timeout: float | None) -> None:
+        """Terminate the async group, parking correctly for wait backends.
+
+        A member gateway created with a non-thread ``wait=`` implies the
+        caller may be a greenlet: wait on a OneShot instead of blocking
+        the OS thread (which would stall the hub for the whole grace).
+        """
+        backends = {gw._wait_backend for gw in self._gateways_to_join} | {
+            gw._wait_backend for gw in self
+        }
+        backends.discard("thread")
+        if backends:
+            from ._boundary import make_wakener
+
+            self._trio_host.call_pending(
+                self._async_group.terminate,
+                timeout,
+                wakener=make_wakener(backends.pop()),
+            ).wait()
+        else:
+            self._trio_host.call(self._async_group.terminate, timeout)
 
     def remote_exec(
         self,

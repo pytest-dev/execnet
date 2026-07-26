@@ -125,9 +125,10 @@ class ExecModel:
 
 #: worker profiles: where exec'd code runs relative to the protocol loop
 EXECMODEL_PROFILES = (
-    "thread",  # exec on pool threads, loop on a side thread
+    "thread",  # hybrid: primary on the main thread, overflow on pool threads
     "main_thread_only",  # exec serialized on the main thread (GUI/pytest)
     "trio",  # pure async: loop owns the main thread, async sources as tasks
+    "gevent",  # greenlets on a main-thread hub, one per remote_exec
 )
 
 

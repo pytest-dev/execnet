@@ -111,7 +111,7 @@ class SyncIOHandle:
             return code
 
         try:
-            return self._session.host.call(_wait)
+            return self._session.host_call(_wait)
         except Exception:
             return process.returncode
 
@@ -126,7 +126,7 @@ class SyncIOHandle:
                 await process.wait()
 
         try:
-            self._session.host.call(_kill)
+            self._session.host_call(_kill)
         except Exception as exc:
             trace("ERROR killing trio process:", exc)
 
@@ -293,6 +293,21 @@ class SyncBridgeGateway(AsyncGateway):
         with suppress(trio.RunFinishedError):
             self.host.portal.post(self._forget_channel, channelid)
 
+    def host_call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
+        """Blocking host call that parks correctly for the wait backend.
+
+        ``wait=thread`` keeps the KI-deferred ``portal.run`` path; other
+        backends (gevent) wait on a OneShot with the gateway's wakener so
+        only the calling greenlet parks, not the whole hub.
+        """
+        gateway = self.sync_gateway
+        if gateway._wait_backend == "thread":
+            return self.host.call(async_fn, *args)
+        pending = self.host.call_pending(
+            async_fn, *args, wakener=gateway._new_wakener()
+        )
+        return pending.wait()
+
     def run_on_loop(self, sync_fn: Callable[[], T]) -> T:
         """Run ``sync_fn`` on the host loop, excluding dispatch interleaving.
 
@@ -428,6 +443,39 @@ class TrioHost:
     def call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
         return self.portal.run(async_fn, *args)
 
+    def call_pending(
+        self,
+        async_fn: Callable[..., Awaitable[T]],
+        *args: Any,
+        wakener: Any = None,
+    ) -> OneShot[T]:
+        """Run ``async_fn`` as a host task, resolving a :class:`OneShot`.
+
+        The non-blocking counterpart of :meth:`call` for consumers that
+        must not block their OS thread (a gevent hub: waiting on the
+        OneShot with a gevent wakener parks only the calling greenlet).
+        Unlike ``portal.run`` the wait is KeyboardInterrupt-interruptible.
+        """
+        result: OneShot[T] = OneShot(wakener)
+
+        async def runner() -> None:
+            try:
+                value = await async_fn(*args)
+            except trio.Cancelled:
+                if not result.is_set():
+                    result.set_error(RuntimeError("trio host was shut down"))
+                raise
+            except BaseException as exc:
+                result.set_error(exc)
+            else:
+                result.set(value)
+
+        def spawn() -> None:
+            self.start_soon(runner)
+
+        self.portal.post(spawn)
+        return result
+
     def call_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
         return self.portal.run_sync(sync_fn, *args)
 
@@ -556,7 +604,16 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
     """Create a sync-facade Gateway for ``spec`` on the group's Trio host."""
     host: TrioHost = group._ensure_trio_host()
     async_group: FacadeAsyncGroup = group._ensure_async_group()
-    bridge = host.call(async_group.makegateway, spec)
+    if spec.wait and spec.wait != "thread":
+        # e.g. a gevent app: wait on a OneShot so only the calling
+        # greenlet parks while the gateway comes up, not the whole hub.
+        from ._boundary import make_wakener
+
+        bridge = host.call_pending(
+            async_group.makegateway, spec, wakener=make_wakener(spec.wait)
+        ).wait()
+    else:
+        bridge = host.call(async_group.makegateway, spec)
     assert isinstance(bridge, SyncBridgeGateway)
     gw: Gateway = bridge.sync_gateway  # type: ignore[assignment]
     gw._io = SyncIOHandle(
