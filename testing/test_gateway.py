@@ -9,6 +9,7 @@ import pathlib
 import shutil
 import signal
 import sys
+import time
 from collections.abc import Callable
 from textwrap import dedent
 
@@ -284,6 +285,37 @@ class TestBasicGateway:
         finally:
             gw._cache_rinfo = rinfo
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
+
+    def test_hybrid_primary_then_overflow(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        # classic thread-model shape: the first exec claims the true main
+        # thread; while it is busy, further execs overflow to worker
+        # threads; once released the main thread is claimable again.
+        gw = makegateway("popen//execmodel=thread")
+        report = """
+            import threading
+            channel.send(threading.current_thread() is threading.main_thread())
+            channel.receive()
+        """
+        first = gw.remote_exec(report)
+        assert first.receive(TESTTIMEOUT) is True
+        second = gw.remote_exec(report)
+        assert second.receive(TESTTIMEOUT) is False
+        second.send(None)
+        second.waitclose(TESTTIMEOUT)
+        first.send(None)
+        first.waitclose(TESTTIMEOUT)
+        # the primary slot frees shortly after the exec finishes
+        for _ in range(50):
+            probe = gw.remote_exec(report)
+            on_main = probe.receive(TESTTIMEOUT)
+            probe.send(None)
+            probe.waitclose(TESTTIMEOUT)
+            if on_main:
+                break
+            time.sleep(0.05)
+        assert on_main
 
     def test__rinfo_while_exec_busy(self, gw: Gateway) -> None:
         # info is a native protocol request: it must work (and not claim

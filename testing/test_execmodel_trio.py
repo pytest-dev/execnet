@@ -26,9 +26,7 @@ def trio_gw(makegateway: Callable[[str], Gateway]) -> Gateway:
 
 class TestSyncCoordinator:
     def test_top_level_await_roundtrip(self, trio_gw: Gateway) -> None:
-        channel = trio_gw.remote_exec(
-            "await channel.send(await channel.receive() + 1)"
-        )
+        channel = trio_gw.remote_exec("await channel.send(await channel.receive() + 1)")
         channel.send(41)
         assert channel.receive(TESTTIMEOUT) == 42
 
@@ -69,9 +67,7 @@ class TestSyncCoordinator:
     def test_concurrent_execs_cooperate(self, trio_gw: Gateway) -> None:
         # two execs run as tasks on one loop: the first parks in receive
         # while the second completes -- no threads involved.
-        blocked = trio_gw.remote_exec(
-            "await channel.send(await channel.receive())"
-        )
+        blocked = trio_gw.remote_exec("await channel.send(await channel.receive())")
         side = trio_gw.remote_exec("await channel.send('side')")
         assert side.receive(TESTTIMEOUT) == "side"
         blocked.send("go")
