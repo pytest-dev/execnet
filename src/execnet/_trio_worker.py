@@ -16,7 +16,7 @@ from .gateway_base import WorkerGateway
 from .gateway_base import get_execmodel
 from .gateway_base import loads_internal
 from .gateway_base import trace
-from .portal import SyncReceiver
+from .portal import Mailbox
 
 if TYPE_CHECKING:
     from . import _trio_host
@@ -48,9 +48,9 @@ class TrioWorkerExec:
         self._shutting_down = False
         self._idle = threading.Event()
         self._idle.set()
-        self._primary: SyncReceiver[
-            tuple[Channel, ExecItem, threading.Event] | None
-        ] = SyncReceiver()
+        self._primary: Mailbox[tuple[Channel, ExecItem, threading.Event] | None] = (
+            Mailbox()
+        )
         # Exec requests flow through a single pump task so admission happens
         # strictly in message-arrival order (trio task scheduling order is
         # deliberately unordered, so per-request tasks would race for the
