@@ -71,15 +71,23 @@ def standalone_gateway_base_source() -> str:
     """gateway_base's source as a self-contained script.
 
     The module imports the trio-free boundary kit relatively; for the
-    run-on-any-python checks the kit source is inlined at the import site
-    (minus its own future import, which must stay file-leading).
+    run-on-any-python checks the kit source is inlined in place of those
+    imports (minus its own future import, which must stay file-leading).
     """
     boundary_source = inspect.getsource(_boundary).replace(
         "from __future__ import annotations\n", ""
     )
-    return inspect.getsource(gateway_base).replace(
-        "from ._boundary import Mailbox\n", boundary_source
-    )
+    lines = []
+    inlined = False
+    for line in inspect.getsource(gateway_base).splitlines(keepends=True):
+        if line.startswith("from ._boundary import"):
+            if not inlined:
+                inlined = True
+                lines.append(boundary_source)
+        else:
+            lines.append(line)
+    assert inlined
+    return "".join(lines)
 
 
 IO_MESSAGE_EXTRA_SOURCE = """
@@ -341,6 +349,7 @@ class TestPureChannel:
     def fac(self, execmodel: ExecModel) -> ChannelFactory:
         class FakeGateway:
             _trio_session = None
+            _new_wakener = staticmethod(_boundary.ThreadWakener)
 
             def _trace(self, *args) -> None:
                 pass

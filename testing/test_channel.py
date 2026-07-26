@@ -4,6 +4,7 @@ mostly functional tests of gateways.
 
 from __future__ import annotations
 
+import queue
 import time
 
 import pytest
@@ -270,14 +271,14 @@ class TestChannelBasicBehaviour:
         assert l[3] == 999
 
     def test_channel_endmarker_callback_error(self, gw: Gateway) -> None:
-        q = gw.execmodel.queue.Queue()
+        q: queue.Queue[object] = queue.Queue()
         channel = gw.remote_exec(
             source="""
             raise ValueError()
         """
         )
         channel.setcallback(q.put, endmarker=999)
-        val = q.get(TESTTIMEOUT)
+        val = q.get(timeout=TESTTIMEOUT)
         assert val == 999
         err = channel._getremoteerror()
         assert err

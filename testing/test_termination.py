@@ -1,10 +1,12 @@
 import os
 import pathlib
+import queue
 import shutil
 import signal
 import subprocess
 import sys
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from test_gateway import TESTTIMEOUT
@@ -12,7 +14,6 @@ from test_gateway import TESTTIMEOUT
 import execnet
 from execnet.gateway import Gateway
 from execnet.gateway_base import ExecModel
-from execnet.gateway_base import WorkerPool
 
 execnetdir = pathlib.Path(execnet.__file__).parent.parent
 
@@ -23,7 +24,7 @@ skip_win_pypy = pytest.mark.xfail(
 
 
 def test_exit_blocked_worker_execution_gateway(
-    anypython: str, makegateway: Callable[[str], Gateway], pool: WorkerPool
+    anypython: str, makegateway: Callable[[str], Gateway], executor: ThreadPoolExecutor
 ) -> None:
     gateway = makegateway("popen//python=%s" % anypython)
     gateway.remote_exec(
@@ -37,8 +38,7 @@ def test_exit_blocked_worker_execution_gateway(
         gateway.exit()
         return 17
 
-    reply = pool.spawn(doit)
-    x = reply.get(timeout=5.0)
+    x = executor.submit(doit).result(timeout=5.0)
     assert x == 17
 
 
@@ -48,7 +48,7 @@ def test_endmarker_delivery_on_remote_killterm(
     if execmodel.backend not in ("thread", "main_thread_only"):
         pytest.xfail("test and execnet not compatible to greenlets yet")
     gw = makegateway("popen")
-    q = execmodel.queue.Queue()
+    q: queue.Queue[object] = queue.Queue()
     channel = gw.remote_exec(
         source="""
         import os, time
@@ -60,7 +60,7 @@ def test_endmarker_delivery_on_remote_killterm(
     assert isinstance(pid, int)
     os.kill(pid, signal.SIGTERM)
     channel.setcallback(q.put, endmarker=999)
-    val = q.get(TESTTIMEOUT)
+    val = q.get(timeout=TESTTIMEOUT)
     assert val == 999
     err = channel._getremoteerror()
     assert isinstance(err, EOFError)
@@ -113,10 +113,8 @@ def test_terminate_implicit_does_trykill(
     pytester: pytest.Pytester,
     anypython: str,
     capfd: pytest.CaptureFixture[str],
-    pool: WorkerPool,
+    executor: ThreadPoolExecutor,
 ) -> None:
-    if pool.execmodel.backend not in ("thread", "main_thread_only"):
-        pytest.xfail("only os threading model supported")
     if sys.version_info >= (3, 12):
         pytest.xfail(
             "since python3.12 this test triggers RuntimeError: can't create new thread at interpreter shutdown"
@@ -149,8 +147,7 @@ def test_terminate_implicit_does_trykill(
     # sync with start-up
     assert popen.stdout is not None
     popen.stdout.readline()
-    reply = pool.spawn(popen.communicate)
-    reply.get(timeout=50)
+    executor.submit(popen.communicate).result(timeout=50)
     _out, err = capfd.readouterr()
     lines = [x for x in err.splitlines() if "*sys-package" not in x]
     assert not lines or "Killed" in err

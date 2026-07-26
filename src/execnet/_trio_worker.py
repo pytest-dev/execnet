@@ -201,12 +201,13 @@ class _WorkerIOStub:
 
 
 def _build_worker_gateway(
-    host: _trio_host.TrioHost, id: str, model: ExecModel
+    host: _trio_host.TrioHost, id: str, model: ExecModel, wait: str = "thread"
 ) -> tuple[WorkerGateway, TrioWorkerExec, bool]:
     """Construct the WorkerGateway + Trio exec pool (no IO yet)."""
     trace(f"creating workergateway on trio id={id!r}")
     io_stub = _WorkerIOStub(model)
     gateway = WorkerGateway(io=io_stub, id=id, _startcount=2)
+    gateway._wait_backend = wait
 
     main_thread_only = model.backend == "main_thread_only"
     trio_exec = TrioWorkerExec(host, gateway, main_thread_only=main_thread_only)
@@ -215,14 +216,16 @@ def _build_worker_gateway(
     gateway._trio_exec = trio_exec
     gateway._executetask_complete = None
     if main_thread_only:
-        gateway._executetask_complete = model.Event()
+        gateway._executetask_complete = threading.Event()
         gateway._executetask_complete.set()
     return gateway, trio_exec, main_thread_only
 
 
-def _run_worker(host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel) -> None:
+def _run_worker(
+    host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel, wait: str = "thread"
+) -> None:
     """Attach ``io`` as the gateway session and serve until shutdown."""
-    gateway, trio_exec, main_thread_only = _build_worker_gateway(host, id, model)
+    gateway, trio_exec, main_thread_only = _build_worker_gateway(host, id, model, wait)
 
     async def _start() -> _trio_host.SyncBridgeGateway:
         # The bridge attaches itself to the gateway before serving starts,
@@ -252,7 +255,7 @@ async def _make_fd_io(read_fd: int, write_fd: int) -> Any:
     return _trio_gateway.staple_fd_stream(read_fd, write_fd)
 
 
-def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
+def serve_popen_trio(id: str, execmodel: str = "thread", wait: str = "thread") -> None:
     """Serve a WorkerGateway over the stdio pipes (popen / ssh worker)."""
     from . import _trio_host
 
@@ -266,10 +269,12 @@ def serve_popen_trio(id: str, execmodel: str = "thread") -> None:
     host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
     host.start()
     io = host.call(_make_fd_io, read_fd, write_fd)
-    _run_worker(host, io, id, model)
+    _run_worker(host, io, id, model, wait)
 
 
-def serve_socket_trio(id: str, execmodel: str, socket_fd: int) -> None:
+def serve_socket_trio(
+    id: str, execmodel: str, socket_fd: int, wait: str = "thread"
+) -> None:
     """Serve a WorkerGateway over an inherited socket fd.
 
     Used for the socketserver (an accepted TCP connection) and, in future, a
@@ -282,7 +287,7 @@ def serve_socket_trio(id: str, execmodel: str, socket_fd: int) -> None:
     host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
     host.start()
     io = host.call(_trio_host.adopt_socket, socket_fd)
-    _run_worker(host, io, id, model)
+    _run_worker(host, io, id, model, wait)
 
 
 def _rough_version(version: str) -> tuple[int, ...]:
@@ -341,9 +346,18 @@ def _main() -> None:
     config = json.loads(ns.config)
     _check_version(config["coordinator_version"])
     if ns.socket_fd is not None:
-        serve_socket_trio(config["id"], config["execmodel"], ns.socket_fd)
+        serve_socket_trio(
+            config["id"],
+            config["execmodel"],
+            ns.socket_fd,
+            wait=config.get("wait", "thread"),
+        )
     else:
-        serve_popen_trio(id=config["id"], execmodel=config["execmodel"])
+        serve_popen_trio(
+            id=config["id"],
+            execmodel=config["execmodel"],
+            wait=config.get("wait", "thread"),
+        )
 
 
 if __name__ == "__main__":

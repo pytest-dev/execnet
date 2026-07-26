@@ -5,6 +5,7 @@ tests for multi channels and gateway Groups
 from __future__ import annotations
 
 import gc
+import threading
 from collections.abc import Callable
 from time import sleep
 
@@ -308,12 +309,12 @@ def test_safe_terminate_does_not_hang_when_kill_blocks(
     out, so a blocking killfunc made Group.terminate() hang indefinitely
     (seen via pytest-xdist teardown).
     """
-    kill_started = execmodel.Event()
-    release_kill = execmodel.Event()
+    kill_started = threading.Event()
+    release_kill = threading.Event()
     other_killed: list[int] = []
 
     def term_slow() -> None:
-        execmodel.sleep(10)
+        sleep(10)
 
     def kill_hang() -> None:
         kill_started.set()

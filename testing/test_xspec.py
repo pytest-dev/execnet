@@ -119,6 +119,14 @@ class TestMakegateway:
     def test_no_type(self, makegateway: Callable[[str], Gateway]) -> None:
         pytest.raises(ValueError, lambda: makegateway("hello"))
 
+    def test_wait_axis(self, makegateway: Callable[[str], Gateway]) -> None:
+        with pytest.raises(ValueError, match="unknown wait backend"):
+            makegateway("popen//wait=nope")
+        gw = makegateway("popen//wait=thread")
+        assert gw._wait_backend == "thread"
+        channel = gw.remote_exec("channel.send(channel.gateway._wait_backend)")
+        assert channel.receive() == "thread"
+
     @skip_win_pypy
     def test_popen_default(self, makegateway: Callable[[str], Gateway]) -> None:
         gw = makegateway("")

@@ -5,6 +5,7 @@ import sys
 from collections.abc import Callable
 from collections.abc import Generator
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
 import pytest
@@ -12,7 +13,6 @@ import pytest
 import execnet
 from execnet.gateway import Gateway
 from execnet.gateway_base import ExecModel
-from execnet.gateway_base import WorkerPool
 from execnet.gateway_base import get_execmodel
 
 collect_ignore = ["build", "doc/_build"]
@@ -184,5 +184,6 @@ def execmodel(request: pytest.FixtureRequest) -> ExecModel:
 
 
 @pytest.fixture
-def pool(execmodel: ExecModel) -> WorkerPool:
-    return WorkerPool(execmodel=execmodel)
+def executor() -> Iterator[ThreadPoolExecutor]:
+    with ThreadPoolExecutor() as tpe:
+        yield tpe

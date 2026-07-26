@@ -7,6 +7,9 @@ Managing Gateway Groups and interactions with multiple channels.
 from __future__ import annotations
 
 import atexit
+import queue
+import threading
+import time
 import types
 from collections.abc import Callable
 from collections.abc import Iterable
@@ -20,9 +23,9 @@ from typing import Literal
 from typing import TypeAlias
 from typing import overload
 
+from ._boundary import wakener_names
 from .gateway_base import Channel
 from .gateway_base import ExecModel
-from .gateway_base import WorkerPool
 from .gateway_base import get_execmodel
 from .gateway_base import trace
 from .xspec import XSpec
@@ -152,6 +155,7 @@ class Group:
             id=<string>     specifies the gateway id
             python=<path>   specifies which python interpreter to execute
             execmodel=model 'thread' or 'main_thread_only' execution model
+            wait=backend    wakener for blocking waits ('thread' default)
             chdir=<path>    specifies to which directory to change
             nice=<path>     specifies process priority of new process
             env:NAME=value  specifies a remote environment variable setting.
@@ -165,6 +169,10 @@ class Group:
         self.allocate_id(spec)
         if spec.execmodel is None:
             spec.execmodel = self.remote_execmodel.backend
+        if spec.wait is not None and spec.wait not in wakener_names():
+            raise ValueError(
+                f"unknown wait backend {spec.wait!r} (known: {wakener_names()})"
+            )
         from . import _trio_host
 
         if not (spec.socket or spec.via or spec.ssh or spec.vagrant_ssh or spec.popen):
@@ -313,10 +321,10 @@ class MultiChannel:
         try:
             return self._queue  # type: ignore[has-type]
         except AttributeError:
-            self._queue = None
+            self._queue: queue.Queue[tuple[Channel, Any]] | None = None
             for ch in self._channels:
                 if self._queue is None:
-                    self._queue = ch.gateway.execmodel.queue.Queue()
+                    self._queue = queue.Queue()
 
                 def putreceived(obj, channel: Channel = ch) -> None:
                     self._queue.put((channel, obj))  # type: ignore[union-attr]
@@ -351,32 +359,45 @@ def safe_terminate(
     """Run terminate/kill pairs in parallel with a hard wait bound.
 
     Each termfunc is given ``timeout``.  If it does not finish, killfunc runs.
-    Waiting for the worker pool is also bounded so a stuck kill cannot hang
-    the caller forever (see issues #43 / #221).
+    The final wait is also bounded so a stuck kill cannot hang the caller
+    forever (see issues #43 / #221).  ``execmodel`` is accepted for
+    backward compatibility and unused (daemon threads do the waiting).
     """
-    workerpool = WorkerPool(execmodel)
+    errors: list[BaseException] = []
 
     def termkill(termfunc: TermKillFunc, killfunc: TermKillFunc) -> None:
-        termreply = workerpool.spawn(termfunc)
-        try:
-            termreply.get(timeout=timeout)
-        except OSError:
-            killfunc()
+        term_done = threading.Event()
+        term_errors: list[BaseException] = []
 
-    replylist = [
-        workerpool.spawn(termkill, termfunc, killfunc)
-        for termfunc, killfunc in list_of_paired_functions
+        def run_term() -> None:
+            try:
+                termfunc()
+            except BaseException as exc:
+                term_errors.append(exc)
+            finally:
+                term_done.set()
+
+        threading.Thread(target=run_term, daemon=True).start()
+        if not term_done.wait(timeout):
+            killfunc()
+            return
+        if term_errors:
+            errors.append(term_errors[0])
+
+    threads = [
+        threading.Thread(target=termkill, args=pair, daemon=True)
+        for pair in list_of_paired_functions
     ]
+    for thread in threads:
+        thread.start()
     # Allow term timeout plus a kill attempt; never block indefinitely.
     wait_timeout = None if timeout is None else timeout * 2
-    for reply in replylist:
-        try:
-            reply.waitfinish(timeout=wait_timeout)
-        except OSError:
-            # termkill still running (typically stuck in killfunc).
-            continue
-        reply.get()  # propagate worker exceptions, if any
-    workerpool.waitall(timeout=wait_timeout)
+    deadline = None if wait_timeout is None else time.monotonic() + wait_timeout
+    for thread in threads:
+        remaining = None if deadline is None else max(0, deadline - time.monotonic())
+        thread.join(remaining)
+    if errors:
+        raise errors[0]
 
 
 default_group = Group()

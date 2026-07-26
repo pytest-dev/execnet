@@ -155,7 +155,7 @@ class SyncBridgeGateway(AsyncGateway):
         super().__init__(stream, id=id)
         self.sync_gateway = sync_gateway
         self.host = host
-        self._done_sync: OneShot[None] = OneShot()
+        self._done_sync: OneShot[None] = OneShot(sync_gateway._new_wakener())
         self._send_closed = False
         self._send_lock = threading.Lock()
         # Attach before any serving can happen: the first inbound message
@@ -310,7 +310,9 @@ class SyncBridgeGateway(AsyncGateway):
         # The ack carries the write failure as a value (never raised into
         # the OneShot) so a KeyboardInterrupt in wait() stays distinguishable
         # from a stream error.
-        ack: OneShot[BaseException | None] | None = OneShot() if wait else None
+        ack: OneShot[BaseException | None] | None = (
+            OneShot(self.sync_gateway._new_wakener()) if wait else None
+        )
 
         def post() -> None:
             try:

@@ -43,6 +43,8 @@ class Gateway(gateway_base.BaseGateway):
         """
         super().__init__(io=io, id=spec.id, _startcount=1)
         self.spec = spec
+        if spec.wait:
+            self._wait_backend = spec.wait
 
     @property
     def remoteaddress(self) -> str:
