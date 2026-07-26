@@ -63,7 +63,7 @@ class GeventWakener:
             # a notify may have fired before the watcher existed
             if self._notified and not event.is_set():
                 event.set()
-        return event.wait(timeout)
+        return bool(event.wait(timeout))
 
     def clear(self) -> None:
         with self._lock:

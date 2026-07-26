@@ -6,6 +6,7 @@ import functools
 import os
 import sys
 import threading
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -26,39 +27,127 @@ if TYPE_CHECKING:
 ExecItem = tuple[Any, ...]
 
 
-class TrioWorkerExec:
-    """Schedule ``remote_exec`` work from the Trio host nursery.
+class PoolExec:
+    """Exec strategy: run each request on a worker thread (trio's pool).
 
-    * ``thread``: run ``executetask`` via ``trio.to_thread`` (concurrent).
-    * ``main_thread_only``: hand off to the process main thread (GUI-safe).
+    The building block of the ``thread`` profile; exec'd code may freely
+    start its own event loops (it never shares a thread with ours).
+    """
+
+    #: whether _run_worker must hand this strategy the process main thread
+    needs_primary_thread = False
+
+    def __init__(self, gateway: WorkerGateway) -> None:
+        self.gateway = gateway
+
+    async def admit(self, channel: Channel, item: ExecItem) -> bool:
+        """FIFO admission gate; always open for pool placement."""
+        return True
+
+    async def run(self, channel: Channel, item: ExecItem) -> None:
+        await trio.to_thread.run_sync(
+            self.gateway.executetask,
+            (channel, item),
+            abandon_on_cancel=True,
+        )
+
+    def integrate_as_primary_thread(self) -> None:
+        raise RuntimeError("pool exec strategy does not use the main thread")
+
+    def trigger_shutdown(self) -> None:
+        pass
+
+
+class MainExec:
+    """Exec strategy: serialize each request onto the process main thread.
+
+    The ``main_thread_only`` profile (GUI/signal-safe: pytest under xdist
+    runs this way).  Admission waits for the previous request to finish and
+    closes the channel with the deadlock text when it cannot within a
+    second (a second concurrent remote_exec would deadlock the requester).
+    """
+
+    needs_primary_thread = True
+
+    def __init__(self, gateway: WorkerGateway) -> None:
+        self.gateway = gateway
+        self._primary: Mailbox[tuple[Channel, ExecItem, threading.Event] | None] = (
+            Mailbox()
+        )
+
+    async def admit(self, channel: Channel, item: ExecItem) -> bool:
+        complete = self.gateway._executetask_complete
+        assert complete is not None
+        wait_slot = functools.partial(complete.wait, timeout=1)
+        if not await trio.to_thread.run_sync(wait_slot, abandon_on_cancel=True):
+            channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
+            return False
+        complete.clear()
+        return True
+
+    async def run(self, channel: Channel, item: ExecItem) -> None:
+        done = threading.Event()
+        self._primary.put((channel, item, done))
+        await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
+
+    def integrate_as_primary_thread(self) -> None:
+        """Block the main thread running exec tasks until shutdown."""
+        while True:
+            task = self._primary.get()
+            if task is None:
+                break
+            channel, item, done = task
+            try:
+                self.gateway.executetask((channel, item))
+            finally:
+                done.set()
+
+    def trigger_shutdown(self) -> None:
+        self._primary.put(None)
+
+
+# execmodel profile -> exec strategy.  Placement strategies to come:
+# "trio" (tasks on a main-thread loop), classic hybrid for "thread"
+# (primary main + pool overflow), "gevent" (greenlets on a main-thread
+# hub), and eventually subinterpreters.
+WORKER_EXEC_STRATEGIES: dict[str, Callable[[WorkerGateway], Any]] = {
+    "thread": PoolExec,
+    "main_thread_only": MainExec,
+}
+
+
+class TrioWorkerExec:
+    """FIFO admission pump feeding an exec placement strategy.
+
+    Exec requests flow through a single pump task so admission happens
+    strictly in message-arrival order (trio task scheduling order is
+    deliberately unordered, so per-request tasks would race for e.g. the
+    main_thread_only slot).  Where an admitted request runs is the
+    strategy's business (:data:`WORKER_EXEC_STRATEGIES`).
     """
 
     def __init__(
         self,
         host: _trio_host.TrioHost,
         gateway: WorkerGateway,
-        *,
-        main_thread_only: bool,
+        strategy: Any,
     ) -> None:
         self.host = host
         self.gateway = gateway
-        self.main_thread_only = main_thread_only
+        self.strategy = strategy
         self._lock = threading.Lock()
         self._running = 0
         self._shutting_down = False
         self._idle = threading.Event()
         self._idle.set()
-        self._primary: Mailbox[tuple[Channel, ExecItem, threading.Event] | None] = (
-            Mailbox()
-        )
-        # Exec requests flow through a single pump task so admission happens
-        # strictly in message-arrival order (trio task scheduling order is
-        # deliberately unordered, so per-request tasks would race for the
-        # main_thread_only slot).
         self._pending_send: trio.MemorySendChannel[tuple[Channel, ExecItem]]
         self._pending_recv: trio.MemoryReceiveChannel[tuple[Channel, ExecItem]]
         self._pending_send, self._pending_recv = trio.open_memory_channel(float("inf"))
         self._pump_started = False
+
+    @property
+    def needs_primary_thread(self) -> bool:
+        return bool(self.strategy.needs_primary_thread)
 
     def active_count(self) -> int:
         with self._lock:
@@ -78,7 +167,7 @@ class TrioWorkerExec:
     def schedule(self, channel: Channel, sourcetask: bytes) -> None:
         """Called from the session dispatch on the Trio host thread.
 
-        Must not block: deadlock checks and exec run in a nursery task.
+        Must not block: admission checks and exec run in a nursery task.
         """
         item = loads_internal(sourcetask)
         assert isinstance(item, tuple)
@@ -95,48 +184,23 @@ class TrioWorkerExec:
     async def _pump(self) -> None:
         """Admit queued exec requests in FIFO order, then run each as a task."""
         async for channel, item in self._pending_recv:
-            if self.main_thread_only:
-                complete = self.gateway._executetask_complete
-                assert complete is not None
-                wait_slot = functools.partial(complete.wait, timeout=1)
-                if not await trio.to_thread.run_sync(wait_slot, abandon_on_cancel=True):
-                    channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
-                    continue
-                complete.clear()
-            self.host.start_soon(self._run_exec, channel, item)
+            if await self.strategy.admit(channel, item):
+                self.host.start_soon(self._run_exec, channel, item)
 
     async def _run_exec(self, channel: Channel, item: ExecItem) -> None:
         self._track_start()
         try:
-            if self.main_thread_only:
-                done = threading.Event()
-                self._primary.put((channel, item, done))
-                await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
-            else:
-                await trio.to_thread.run_sync(
-                    self.gateway.executetask,
-                    (channel, item),
-                    abandon_on_cancel=True,
-                )
+            await self.strategy.run(channel, item)
         finally:
             self._track_finish()
 
     def integrate_as_primary_thread(self) -> None:
-        """Block the main thread running main_thread_only exec tasks."""
-        while True:
-            task = self._primary.get()
-            if task is None:
-                break
-            channel, item, done = task
-            try:
-                self.gateway.executetask((channel, item))
-            finally:
-                done.set()
+        self.strategy.integrate_as_primary_thread()
 
     def trigger_shutdown(self) -> None:
         with self._lock:
             self._shutting_down = True
-        self._primary.put(None)
+        self.strategy.trigger_shutdown()
 
     def waitall(self, timeout: float | None = None) -> bool:
         return self._idle.wait(timeout)
@@ -202,30 +266,37 @@ class _WorkerIOStub:
 
 def _build_worker_gateway(
     host: _trio_host.TrioHost, id: str, model: ExecModel, wait: str = "thread"
-) -> tuple[WorkerGateway, TrioWorkerExec, bool]:
-    """Construct the WorkerGateway + Trio exec pool (no IO yet)."""
+) -> tuple[WorkerGateway, TrioWorkerExec]:
+    """Construct the WorkerGateway + exec pump/strategy (no IO yet)."""
     trace(f"creating workergateway on trio id={id!r}")
     io_stub = _WorkerIOStub(model)
     gateway = WorkerGateway(io=io_stub, id=id, _startcount=2)
     gateway._wait_backend = wait
 
-    main_thread_only = model.backend == "main_thread_only"
-    trio_exec = TrioWorkerExec(host, gateway, main_thread_only=main_thread_only)
-    # Duck-type as WorkerPool for STATUS / _terminate_execution.
+    try:
+        strategy_factory = WORKER_EXEC_STRATEGIES[model.backend]
+    except KeyError:
+        raise ValueError(
+            f"execmodel {model.backend!r} has no worker exec strategy "
+            f"(known: {sorted(WORKER_EXEC_STRATEGIES)})"
+        ) from None
+    strategy = strategy_factory(gateway)
+    trio_exec = TrioWorkerExec(host, gateway, strategy)
+    # Duck-type as the exec pool for STATUS / _terminate_execution.
     gateway._execpool = trio_exec
     gateway._trio_exec = trio_exec
     gateway._executetask_complete = None
-    if main_thread_only:
+    if strategy.needs_primary_thread:
         gateway._executetask_complete = threading.Event()
         gateway._executetask_complete.set()
-    return gateway, trio_exec, main_thread_only
+    return gateway, trio_exec
 
 
 def _run_worker(
     host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel, wait: str = "thread"
 ) -> None:
     """Attach ``io`` as the gateway session and serve until shutdown."""
-    gateway, trio_exec, main_thread_only = _build_worker_gateway(host, id, model, wait)
+    gateway, trio_exec = _build_worker_gateway(host, id, model, wait)
 
     async def _start() -> _trio_host.SyncBridgeGateway:
         # The bridge attaches itself to the gateway before serving starts,
@@ -235,7 +306,7 @@ def _run_worker(
     host.call(_start)
 
     try:
-        if main_thread_only:
+        if trio_exec.needs_primary_thread:
             trace("integrating as primary thread (trio worker)")
             trio_exec.integrate_as_primary_thread()
         gateway.join()
