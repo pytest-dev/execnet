@@ -15,6 +15,7 @@ import trio
 from .gateway_base import MAIN_THREAD_ONLY_DEADLOCK_TEXT
 from .gateway_base import WorkerGateway
 from .gateway_base import get_execmodel
+from .gateway_base import geterrortext
 from .gateway_base import loads_internal
 from .gateway_base import trace
 from .portal import Mailbox
@@ -106,14 +107,91 @@ class MainExec:
         self._primary.put(None)
 
 
-# execmodel profile -> exec strategy.  Placement strategies to come:
-# "trio" (tasks on a main-thread loop), classic hybrid for "thread"
-# (primary main + pool overflow), "gevent" (greenlets on a main-thread
-# hub), and eventually subinterpreters.
+# execmodel profile -> exec strategy for the sync-facade worker; the
+# "trio" profile serves a plain AsyncGateway instead (TaskExec below).
+# Placement strategies to come: classic hybrid for "thread" (primary
+# main + pool overflow), "gevent" (greenlets on a main-thread hub), and
+# eventually subinterpreters.
 WORKER_EXEC_STRATEGIES: dict[str, Callable[[WorkerGateway], Any]] = {
     "thread": PoolExec,
     "main_thread_only": MainExec,
 }
+
+
+class TaskExec:
+    """Exec strategy for the pure-async profile (``execmodel=trio``).
+
+    Sources run as tasks on the worker's own loop, in the one and only
+    thread of the process, and receive an ``AsyncChannel``.  Sources must
+    be async: a plain function or a source string without top-level
+    ``await`` is rejected before it can starve the loop.  Gateway
+    termination cancels running exec tasks (``trio.Cancelled`` inside the
+    source).
+    """
+
+    def __init__(self, gateway: Any, nursery: trio.Nursery) -> None:
+        self.gateway = gateway
+        self.nursery = nursery
+        self._running = 0
+
+    def active_count(self) -> int:
+        return self._running
+
+    def handle_exec(self, gateway: Any, channelid: int, data: bytes) -> None:
+        """CHANNEL_EXEC hook; runs inline on the dispatch task."""
+        item = loads_internal(data)
+        assert isinstance(item, tuple)
+        channel = gateway.open_channel(channelid)
+        self.nursery.start_soon(self._run_exec, channel, item)
+
+    async def _run_exec(self, channel: Any, item: ExecItem) -> None:
+        import ast
+        import inspect
+
+        source, file_name, call_name, kwargs = item
+        self._running += 1
+        try:
+            trace(f"async execution starts[{channel.id}]: {source[:50]!r}")
+            loc: dict[str, Any] = {"channel": channel, "__name__": "__channelexec__"}
+            co = compile(
+                source + "\n",
+                file_name or "<remote exec>",
+                "exec",
+                flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT,
+            )
+            toplevel_await = bool(co.co_flags & inspect.CO_COROUTINE)
+            if not toplevel_await and not call_name:
+                await channel.aclose(
+                    "sync source under execmodel=trio: the source must use"
+                    " top-level await (or pass an async function)"
+                )
+                return
+            if toplevel_await:
+                await eval(co, loc)
+            else:
+                exec(co, loc)  # define the function (no top-level awaits)
+            if call_name:
+                function = loc[call_name]
+                result = function(channel, **kwargs)
+                if not hasattr(result, "__await__"):
+                    await channel.aclose(
+                        f"sync function {call_name!r} under execmodel=trio:"
+                        " remote_exec functions must be async"
+                    )
+                    return
+                await result
+        except trio.Cancelled:
+            raise
+        except EOFError:
+            trace("ignoring EOFError from async exec")
+        except BaseException as exc:
+            trace(f"async exec got exception: {exc!r}")
+            await channel.aclose(geterrortext(exc))
+            return
+        finally:
+            self._running -= 1
+            trace("async execution finished")
+        await channel.aclose()
 
 
 class TrioWorkerExec:
@@ -326,6 +404,51 @@ async def _make_fd_io(read_fd: int, write_fd: int) -> Any:
     return _trio_gateway.staple_fd_stream(read_fd, write_fd)
 
 
+async def _serve_async_worker(stream: Any, id: str) -> None:
+    """Serve a plain AsyncGateway with task-based exec (execmodel=trio).
+
+    The whole worker is this one trio run on the process main thread: the
+    dispatch loop and every exec'd source share it.  Termination cancels
+    running exec tasks.
+    """
+    from ._trio_gateway import AsyncGateway
+
+    gateway = AsyncGateway(stream, id=id, _startcount=2)
+    async with trio.open_nursery() as nursery:
+        task_exec = TaskExec(gateway, nursery)
+        gateway._exec_handler = task_exec.handle_exec
+        gateway._task_exec = task_exec
+        await nursery.start(gateway._serve)
+        await gateway.wait_closed()
+        nursery.cancel_scope.cancel()
+
+
+def serve_popen_async(id: str) -> None:
+    """Serve the pure-async worker over the stdio pipes (execmodel=trio)."""
+    from ._trio_gateway import staple_fd_stream
+
+    read_fd, write_fd = _prepare_protocol_fds()
+    os.write(write_fd, b"1")
+
+    async def main() -> None:
+        await _serve_async_worker(staple_fd_stream(read_fd, write_fd), id)
+
+    trio.run(main)
+    os._exit(0)
+
+
+def serve_socket_async(id: str, socket_fd: int) -> None:
+    """Serve the pure-async worker over an inherited socket fd."""
+    from . import _trio_host
+
+    async def main() -> None:
+        stream = await _trio_host.adopt_socket(socket_fd)
+        await _serve_async_worker(stream, id)
+
+    trio.run(main)
+    os._exit(0)
+
+
 def serve_popen_trio(id: str, execmodel: str = "thread", wait: str = "thread") -> None:
     """Serve a WorkerGateway over the stdio pipes (popen / ssh worker)."""
     from . import _trio_host
@@ -436,7 +559,13 @@ def _main() -> None:
     config = json.loads(ns.config)
     _check_version(config["coordinator_version"])
     _apply_worker_setup(config)
-    if ns.socket_fd is not None:
+    if config["execmodel"] == "trio":
+        # pure-async profile: one thread, the loop owns the main thread
+        if ns.socket_fd is not None:
+            serve_socket_async(config["id"], ns.socket_fd)
+        else:
+            serve_popen_async(config["id"])
+    elif ns.socket_fd is not None:
         serve_socket_trio(
             config["id"],
             config["execmodel"],
