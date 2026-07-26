@@ -98,21 +98,39 @@ portal ingress + `OneShot`/`Mailbox` on an `AsyncioWakener`.  Full
 asyncio-native API over the trio host loop, all transports, no anyio
 port.  Phase E (anyio-native core) becomes optional purity/perf work.
 
-## Staging
+## Staging — ALL LANDED 2026-07-26 (commits 2c78416..b01d009)
 
-1. **P1 — boundary kit**: Wakener/Mailbox/OneShot + ThreadWakener; port
-   SyncReceiver, write-acks, `_done_sync` onto it.  Pure refactor.
-2. **P2 — channel unification** (big one): sync Channel onto
-   RawChannel+Mailbox, delete classic dispatch.  Straight to the rebase,
-   no intermediate primitive-swap (suite pins semantics either way).
-   Canary: `uv run pytest testing/ -n 12` + xdist suite mid-step.
-3. **P3 — retirement**: ExecModel/WorkerPool out, preset shims in,
-   `wait=` joins the C.1 spec axes + worker CLI config.
-4. **P4 — `execnet.aio`**.
-5. **P5 — gevent wakener** + opt-in CI job (gevent in a dev extra).
+1. **P1 — boundary kit** (`2c78416`): Wakener/Mailbox/OneShot +
+   ThreadWakener; SyncReceiver, write-acks, `_done_sync` ported.
+2. **P2 — channel unification** (`2a40a55`): sync Channel onto
+   RawChannel(+set_consumer)+Mailbox, classic dispatch deleted.  The kit
+   lives in trio-free `execnet._boundary` (portal re-exports) so
+   `import execnet` stays trio-free.  Fix worth knowing: an unconsumed
+   remotely-closed RawChannel stays registered until a consumer claims
+   it — call-site deserialization means a passed channel can bind after
+   its data AND close arrived (was a payload-loss race, latent in the
+   async core's `open_channel(id)` too).
+3. **P3 — retirement** (`811fd99`): ExecModel ABC/WorkerPool/Reply gone;
+   one deprecated ExecModel preset KEEPS the stdlib-delegate members
+   because pytest-xdist's remote worker calls
+   `channel.gateway.execmodel.RLock()/Event()`; `wait=` axis end to end
+   (spec validation, worker CLI config, `BaseGateway._new_wakener`,
+   `_boundary` registry + Flag); safe_terminate on daemon threads;
+   test_threadpool.py deleted.
+4. **P4 — `execnet.aio`** (`845510e`): implemented as a per-call
+   _HostBridge (host task + `loop.call_soon_threadsafe` future), NOT the
+   originally sketched AsyncioWakener/Mailbox — real awaitables over the
+   trio-native AsyncGroup/AsyncChannel, simpler and semantically exact.
+   The "asyncio" wait= registry entry is therefore unused/unregistered.
+   v1 limitation: cancelling a bridged await abandons it aio-side only.
+5. **P5 — gevent wakener** (`b01d009`): `execnet._gevent_support`,
+   lazily imported by `make_wakener("gevent")`; hub-bound pieces created
+   in the first waiter's hub (carriers may be constructed on the host
+   loop); tests behind the `gevent` dependency group.
 
-Then Phase C `loop=main` / `exec=task` on the smaller core, and Phase D
-docs cover the three namespaces + `execnet.aio` + the axes/presets.
+Next: Phase C `loop=main` / `exec=task` on the smaller core
+(handoff-phase-c-worker-axes.md), and Phase D docs cover the four
+namespaces + the axes/presets.
 
 ## Invariants (unchanged, re-mapped)
 
