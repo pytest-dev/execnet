@@ -387,6 +387,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+gevent = [
+    { name = "gevent" },
+]
 testing = [
     { name = "asyncssh" },
     { name = "hatch" },
@@ -411,6 +414,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "asyncssh", marker = "extra == 'testing'" },
+    { name = "gevent", marker = "extra == 'gevent'" },
     { name = "hatch", marker = "extra == 'testing'" },
     { name = "pre-commit", marker = "extra == 'testing'" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">8.0" },
@@ -419,7 +423,7 @@ requires-dist = [
     { name = "trio", specifier = ">=0.32" },
     { name = "uv", marker = "extra == 'testing'" },
 ]
-provides-extras = ["testing"]
+provides-extras = ["gevent", "testing"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest-xdist", specifier = ">=3.8.0" }]

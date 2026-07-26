@@ -41,6 +41,9 @@ classifiers = [
 execnet-socketserver = "execnet.script.socketserver:main"
 
 [project.optional-dependencies]
+gevent = [
+    "gevent",
+]
 testing = [
     "pre-commit",
     "pytest>8.0",

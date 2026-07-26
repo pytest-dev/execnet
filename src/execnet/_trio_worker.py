@@ -145,13 +145,63 @@ class HybridExec(MainExec):
                 self._primary_busy = False
 
 
+class GreenletExec:
+    """Exec strategy: greenlets on a gevent hub owning the main thread.
+
+    ``execmodel=gevent``: each request runs as a greenlet spawned by the
+    integrate loop; the worker's ``wait=gevent`` wakeners make channel
+    operations park the greenlet, so concurrent remote_execs cooperate on
+    the one main thread.  Requires gevent in the worker environment
+    (provisioning adds the ``gevent`` requirement automatically).
+    """
+
+    needs_primary_thread = True
+
+    def __init__(self, gateway: WorkerGateway) -> None:
+        from ._boundary import make_wakener
+
+        self.gateway = gateway
+        # The integrate loop blocks in get() on the hub thread: a gevent
+        # wakener parks only its root greenlet, letting exec greenlets run.
+        self._primary: Mailbox[tuple[Channel, ExecItem, threading.Event] | None] = (
+            Mailbox(make_wakener("gevent"))
+        )
+
+    async def admit(self, channel: Channel, item: ExecItem) -> bool:
+        return True
+
+    async def run(self, channel: Channel, item: ExecItem) -> None:
+        done = threading.Event()
+        self._primary.put((channel, item, done))
+        await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
+
+    def integrate_as_primary_thread(self) -> None:
+        """Run the hub on the main thread, spawning a greenlet per exec."""
+        import gevent
+
+        def run_exec(channel: Channel, item: ExecItem, done: threading.Event) -> None:
+            try:
+                self.gateway.executetask((channel, item))
+            finally:
+                done.set()
+
+        while True:
+            task = self._primary.get()
+            if task is None:
+                break
+            gevent.spawn(run_exec, *task)
+
+    def trigger_shutdown(self) -> None:
+        self._primary.put(None)
+
+
 # execmodel profile -> exec strategy for the sync-facade worker; the
 # "trio" profile serves a plain AsyncGateway instead (TaskExec below).
-# Placement strategies to come: "gevent" (greenlets on a main-thread
-# hub), and eventually subinterpreters.
+# Future placement strategies slot in here (e.g. subinterpreters).
 WORKER_EXEC_STRATEGIES: dict[str, Callable[[WorkerGateway], Any]] = {
     "thread": HybridExec,
     "main_thread_only": MainExec,
+    "gevent": GreenletExec,
 }
 
 

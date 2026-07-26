@@ -84,3 +84,84 @@ class TestGeventGateway:
         channel = gevent_gw.remote_exec("channel.send(1)")
         assert gevent.spawn(channel.receive, TESTTIMEOUT).get(timeout=TESTTIMEOUT) == 1
         gevent.spawn(channel.waitclose, TESTTIMEOUT).get(timeout=TESTTIMEOUT)
+
+    def test_makegateway_parks_greenlet_not_hub(self) -> None:
+        # management ops (makegateway/terminate) from a greenlet must not
+        # stall the hub: they wait on a OneShot with a gevent wakener.
+        group = execnet.Group()
+        progressed: list[int] = []
+
+        def other() -> None:
+            for i in range(5):
+                progressed.append(i)
+                gevent.sleep(0.01)
+
+        try:
+            ticker = gevent.spawn(other)
+            maker = gevent.spawn(group.makegateway, "popen//wait=gevent")
+            gw = maker.get(timeout=TESTTIMEOUT)
+            channel = gw.remote_exec("channel.send(42)")
+            assert gevent.spawn(channel.receive, TESTTIMEOUT).get(TESTTIMEOUT) == 42
+            ticker.get(timeout=TESTTIMEOUT)
+            assert progressed == [0, 1, 2, 3, 4]
+        finally:
+            gevent.spawn(group.terminate, 5.0).get(timeout=TESTTIMEOUT)
+
+
+class TestGeventWorkerProfile:
+    """execmodel=gevent: exec'd code runs as greenlets on the main-thread hub."""
+
+    @pytest.fixture
+    def worker_gw(self):
+        group = execnet.Group()
+        try:
+            yield group.makegateway("popen//execmodel=gevent")
+        finally:
+            group.terminate(timeout=5.0)
+
+    def test_execs_are_greenlets_on_main_thread(self, worker_gw) -> None:
+        report = """
+            import threading
+            channel.send(threading.current_thread() is threading.main_thread())
+            channel.receive()
+        """
+        first = worker_gw.remote_exec(report)
+        second = worker_gw.remote_exec(report)
+        # both run concurrently on the one main thread: greenlets
+        assert first.receive(TESTTIMEOUT) is True
+        assert second.receive(TESTTIMEOUT) is True
+        first.send(None)
+        second.send(None)
+        first.waitclose(TESTTIMEOUT)
+        second.waitclose(TESTTIMEOUT)
+
+    def test_execs_cooperate_via_gevent(self, worker_gw) -> None:
+        # the first exec parks in channel.receive() (gevent wakener) while
+        # the second completes -- with a blocked hub this would deadlock.
+        blocked = worker_gw.remote_exec("channel.send(channel.receive())")
+        side = worker_gw.remote_exec(
+            """
+            import gevent
+            gevent.sleep(0.01)
+            channel.send('side')
+            """
+        )
+        assert side.receive(TESTTIMEOUT) == "side"
+        blocked.send("go")
+        assert blocked.receive(TESTTIMEOUT) == "go"
+
+    def test_status_reports_gevent(self, worker_gw) -> None:
+        assert worker_gw.remote_status().execmodel == "gevent"
+
+
+def test_provisioning_adds_gevent_requirement() -> None:
+    from execnet._provision import _extra_with_tokens
+    from execnet._provision import worker_cli_arg
+    from execnet.xspec import XSpec
+
+    spec = XSpec("popen//id=g1//execmodel=gevent")
+    config = worker_cli_arg(spec)
+    assert '"wait": "gevent"' in config
+    assert _extra_with_tokens(config) == ["--with", "gevent"]
+    plain = worker_cli_arg(XSpec("popen//id=g2//execmodel=thread"))
+    assert _extra_with_tokens(plain) == []
