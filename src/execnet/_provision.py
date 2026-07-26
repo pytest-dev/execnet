@@ -168,6 +168,7 @@ def worker_cli_arg(spec: Any) -> str:
         {
             "id": f"{spec.id}-worker",
             "execmodel": spec.execmodel,
+            "wait": spec.wait or "thread",
             "coordinator_version": execnet.__version__,
         }
     )

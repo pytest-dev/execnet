@@ -9,13 +9,22 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 from typing import Generic
 from typing import Protocol
 from typing import TypeVar
 from typing import cast
 
-__all__ = ["Mailbox", "OneShot", "ThreadWakener", "Wakener"]
+__all__ = [
+    "Flag",
+    "Mailbox",
+    "OneShot",
+    "ThreadWakener",
+    "Wakener",
+    "make_wakener",
+    "register_wakener",
+]
 
 T = TypeVar("T")
 
@@ -159,3 +168,62 @@ class OneShot(Generic[T]):
         if self._error is not None:
             raise self._error
         return cast("T", self._value)
+
+
+class Flag:
+    """An idempotent event on a wakener: may be set any number of times.
+
+    Each Flag owns its wakener exclusively -- sharing one wakener between
+    carriers would lose wakeups (another carrier's ``clear`` can swallow
+    this one's ``notify``).
+    """
+
+    def __init__(self, wakener: Wakener | None = None) -> None:
+        self._wakener = ThreadWakener() if wakener is None else wakener
+        self._flag = False
+
+    def is_set(self) -> bool:
+        return self._flag
+
+    def set(self) -> None:
+        """Thread-safe; usable from a loop thread (never blocks)."""
+        self._flag = True
+        self._wakener.notify()
+
+    def wait(self, timeout: float | None = None) -> bool:
+        """Block until set; returns whether the flag is set."""
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while not self._flag:
+            if deadline is None:
+                self._wakener.wait()
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not self._wakener.wait(remaining):
+                    break
+        return self._flag
+
+
+# wait= axis: named wakener factories; each call returns a fresh instance
+# (carriers own their wakener exclusively, see Flag).  Backends register
+# here ("gevent", "asyncio") next to the built-in "thread".
+_WAKENER_FACTORIES: dict[str, Callable[[], Wakener]] = {
+    "thread": ThreadWakener,
+}
+
+
+def register_wakener(name: str, factory: Callable[[], Wakener]) -> None:
+    """Register a wakener factory for the ``wait=`` spec axis."""
+    _WAKENER_FACTORIES[name] = factory
+
+
+def wakener_names() -> list[str]:
+    return list(_WAKENER_FACTORIES)
+
+
+def make_wakener(name: str) -> Wakener:
+    """Create a fresh wakener for the named wait backend."""
+    try:
+        factory = _WAKENER_FACTORIES[name]
+    except KeyError:
+        raise ValueError(f"unknown wait backend {name!r}") from None
+    return factory()

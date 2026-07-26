@@ -599,7 +599,7 @@ def test_main_thread_only_concurrent_remote_exec_deadlock(
                     import threading
                     channel.send(threading.current_thread() is threading.main_thread())
                     # Wait forever, ensuring that the deadlock case triggers.
-                    channel.gateway.execmodel.Event().wait()
+                    threading.Event().wait()
             """
                 )
             )

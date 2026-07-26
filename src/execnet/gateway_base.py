@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import abc
 import builtins
 import os
 import queue as _queue
@@ -31,7 +30,10 @@ from typing import Protocol
 from typing import cast
 from typing import overload
 
+from ._boundary import Flag
 from ._boundary import Mailbox
+from ._boundary import Wakener
+from ._boundary import make_wakener
 
 
 class WriteIO(Protocol):
@@ -58,73 +60,22 @@ class IO(Protocol):
     def kill(self) -> None: ...
 
 
-class Event(Protocol):
-    """Protocol for types which look like threading.Event."""
+class ExecModel:
+    """Deprecated preset name for an execution model.
 
-    def is_set(self) -> bool: ...
+    The machinery behind execution models was retired: protocol IO always
+    runs on the Trio host and blocking waits go through the boundary kit's
+    wakeners (``execnet._boundary``); the name maps onto the worker config
+    axes (``loop=`` / ``exec=`` / ``wait=``).  The stdlib-delegating
+    members stay for API compatibility (pytest-xdist builds its test queue
+    on ``execmodel.RLock``/``Event``) -- every preset is thread-shaped.
+    """
 
-    def set(self) -> None: ...
-
-    def clear(self) -> None: ...
-
-    def wait(self, timeout: float | None = None) -> bool: ...
-
-
-class ExecModel(metaclass=abc.ABCMeta):
-    @property
-    @abc.abstractmethod
-    def backend(self) -> str:
-        raise NotImplementedError()
+    def __init__(self, backend: str) -> None:
+        self.backend = backend
 
     def __repr__(self) -> str:
         return "<ExecModel %r>" % self.backend
-
-    @property
-    @abc.abstractmethod
-    def queue(self):
-        raise NotImplementedError()
-
-    @property
-    @abc.abstractmethod
-    def subprocess(self):
-        raise NotImplementedError()
-
-    @property
-    @abc.abstractmethod
-    def socket(self):
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def start(self, func, args=()) -> None:
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def get_ident(self) -> int:
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def sleep(self, delay: float) -> None:
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def fdopen(self, fd, mode, bufsize=1, closefd=True):
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def Lock(self):
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def RLock(self):
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def Event(self) -> Event:
-        raise NotImplementedError()
-
-
-class ThreadExecModel(ExecModel):
-    backend = "thread"
 
     @property
     def queue(self):
@@ -160,200 +111,24 @@ class ThreadExecModel(ExecModel):
         _thread.start_new_thread(func, args)
 
     def fdopen(self, fd, mode, bufsize=1, closefd=True):
-        import os
-
         return os.fdopen(fd, mode, bufsize, encoding="utf-8", closefd=closefd)
 
     def Lock(self):
-        import threading
-
         return threading.RLock()
 
     def RLock(self):
-        import threading
-
         return threading.RLock()
 
-    def Event(self):
-        import threading
-
+    def Event(self) -> threading.Event:
         return threading.Event()
-
-
-class MainThreadOnlyExecModel(ThreadExecModel):
-    backend = "main_thread_only"
 
 
 def get_execmodel(backend: str | ExecModel) -> ExecModel:
     if isinstance(backend, ExecModel):
         return backend
-    if backend == "thread":
-        return ThreadExecModel()
-    elif backend == "main_thread_only":
-        return MainThreadOnlyExecModel()
-    else:
-        raise ValueError(f"unknown execmodel {backend!r}")
-
-
-class Reply:
-    """Provide access to the result of a function execution that got dispatched
-    through WorkerPool.spawn()."""
-
-    def __init__(self, task, threadmodel: ExecModel) -> None:
-        self.task = task
-        self._result_ready = threadmodel.Event()
-        self.running = True
-
-    def get(self, timeout: float | None = None):
-        """get the result object from an asynchronous function execution.
-        if the function execution raised an exception,
-        then calling get() will reraise that exception
-        including its traceback.
-        """
-        self.waitfinish(timeout)
-        try:
-            return self._result
-        except AttributeError:
-            raise self._exc from None
-
-    def waitfinish(self, timeout: float | None = None) -> None:
-        if not self._result_ready.wait(timeout):
-            raise OSError(f"timeout waiting for {self.task!r}")
-
-    def run(self) -> None:
-        func, args, kwargs = self.task
-        try:
-            try:
-                self._result = func(*args, **kwargs)
-            except BaseException as exc:
-                self._exc = exc
-        finally:
-            self._result_ready.set()
-            self.running = False
-
-
-class WorkerPool:
-    """A WorkerPool allows to spawn function executions
-    to threads, returning a reply object on which you
-    can ask for the result (and get exceptions reraised).
-
-    This implementation allows the main thread to integrate
-    itself into performing function execution through
-    calling integrate_as_primary_thread() which will return
-    when the pool received a trigger_shutdown().
-
-    By default allows unlimited number of spawns.
-    """
-
-    _primary_thread_task: Reply | None
-
-    def __init__(self, execmodel: ExecModel, hasprimary: bool = False) -> None:
-        self.execmodel = execmodel
-        self._running_lock = self.execmodel.Lock()
-        self._running: set[Reply] = set()
-        self._shuttingdown = False
-        self._waitall_events: list[Event] = []
-        if hasprimary:
-            if self.execmodel.backend not in ("thread", "main_thread_only"):
-                raise ValueError("hasprimary=True requires thread model")
-            self._primary_thread_task_ready: Event | None = self.execmodel.Event()
-        else:
-            self._primary_thread_task_ready = None
-
-    def integrate_as_primary_thread(self) -> None:
-        """Integrate the thread with which we are called as a primary
-        thread for executing functions triggered with spawn()."""
-        assert self.execmodel.backend in ("thread", "main_thread_only"), self.execmodel
-        primary_thread_task_ready = self._primary_thread_task_ready
-        assert primary_thread_task_ready is not None
-        # interacts with code at REF1
-        while 1:
-            primary_thread_task_ready.wait()
-            reply = self._primary_thread_task
-            if reply is None:  # trigger_shutdown() woke us up
-                break
-            self._perform_spawn(reply)
-            # we are concurrent with trigger_shutdown and spawn
-            with self._running_lock:
-                if self._shuttingdown:
-                    break
-                # Only clear if _try_send_to_primary_thread has not
-                # yet set the next self._primary_thread_task reply
-                # after waiting for this one to complete.
-                if reply is self._primary_thread_task:
-                    primary_thread_task_ready.clear()
-
-    def trigger_shutdown(self) -> None:
-        with self._running_lock:
-            self._shuttingdown = True
-            if self._primary_thread_task_ready is not None:
-                self._primary_thread_task = None
-                self._primary_thread_task_ready.set()
-
-    def active_count(self) -> int:
-        return len(self._running)
-
-    def _perform_spawn(self, reply: Reply) -> None:
-        reply.run()
-        with self._running_lock:
-            self._running.remove(reply)
-            if not self._running:
-                while self._waitall_events:
-                    waitall_event = self._waitall_events.pop()
-                    waitall_event.set()
-
-    def _try_send_to_primary_thread(self, reply: Reply) -> bool:
-        # REF1 in 'thread' model we give priority to running in main thread
-        # note that we should be called with _running_lock hold
-        primary_thread_task_ready = self._primary_thread_task_ready
-        if primary_thread_task_ready is not None:
-            if not primary_thread_task_ready.is_set():
-                self._primary_thread_task = reply
-                # wake up primary thread
-                primary_thread_task_ready.set()
-                return True
-            elif (
-                self.execmodel.backend == "main_thread_only"
-                and self._primary_thread_task is not None
-            ):
-                self._primary_thread_task.waitfinish()
-                self._primary_thread_task = reply
-                # wake up primary thread (it's okay if this is already set
-                # because we waited for the previous task to finish above
-                # and integrate_as_primary_thread will not clear it when
-                # it enters self._running_lock if it detects that a new
-                # task is available)
-                primary_thread_task_ready.set()
-                return True
-        return False
-
-    def spawn(self, func, *args, **kwargs) -> Reply:
-        """Asynchronously dispatch func(*args, **kwargs) and return a Reply."""
-        reply = Reply((func, args, kwargs), self.execmodel)
-        with self._running_lock:
-            if self._shuttingdown:
-                raise ValueError("pool is shutting down")
-            self._running.add(reply)
-            if not self._try_send_to_primary_thread(reply):
-                self.execmodel.start(self._perform_spawn, (reply,))
-        return reply
-
-    def terminate(self, timeout: float | None = None) -> bool:
-        """Trigger shutdown and wait for completion of all executions."""
-        self.trigger_shutdown()
-        return self.waitall(timeout=timeout)
-
-    def waitall(self, timeout: float | None = None) -> bool:
-        """Wait until all active spawns have finished executing."""
-        with self._running_lock:
-            if not self._running:
-                return True
-            # if a Reply still runs, we let run_and_release
-            # signal us -- note that we are still holding the
-            # _running_lock to avoid race conditions
-            my_waitall_event = self.execmodel.Event()
-            self._waitall_events.append(my_waitall_event)
-        return my_waitall_event.wait(timeout=timeout)
+    if backend in ("thread", "main_thread_only"):
+        return ExecModel(backend)
+    raise ValueError(f"unknown execmodel {backend!r}")
 
 
 sysex = (KeyboardInterrupt, SystemExit)
@@ -578,11 +353,11 @@ class Channel:
         self._strconfig = getattr(gateway, "_strconfig", (True, False))
         self.id = id
         # serialized payloads (or ENDMARKER); None once a callback is set
-        self._mailbox: Mailbox[Any] | None = Mailbox()
+        self._mailbox: Mailbox[Any] | None = Mailbox(gateway._new_wakener())
         self._callback: Callable[[Any], Any] | None = None
         self._endmarker: object = NO_ENDMARKER_WANTED
         self._closed = False
-        self._receiveclosed = threading.Event()
+        self._receiveclosed = Flag(gateway._new_wakener())
         self._remoteerrors: list[RemoteError] = []
 
     def _trace(self, *msg: object) -> None:
@@ -1028,6 +803,9 @@ class BaseGateway:
     _trio_session: Any = None
     # Set by the receiver on EOF without a prior termination message.
     _error: BaseException | None = None
+    #: wait= axis: which wakener backend this gateway's blocking waits
+    #: park on (channels, write-acks, join)
+    _wait_backend: str = "thread"
 
     def __init__(self, io: IO, id, _startcount: int = 2) -> None:
         self.execmodel = io.execmodel
@@ -1050,6 +828,10 @@ class BaseGateway:
         # need their inbound routing diverted to them.
         for channel in self._channelfactory.channels():
             session.bind_sync_channel(channel)
+
+    def _new_wakener(self) -> Wakener:
+        """A fresh wakener for one blocking-wait carrier (wait= axis)."""
+        return make_wakener(self._wait_backend)
 
     def _bind_channel(self, channel: Channel) -> None:
         """Divert the session's inbound routing for ``channel.id`` to it."""
@@ -1134,7 +916,7 @@ class WorkerGateway(BaseGateway):
     _trio_exec: Any = None
     # The exec pool (a TrioWorkerExec duck-typed as WorkerPool for STATUS).
     _execpool: Any = None
-    _executetask_complete: Event | None = None
+    _executetask_complete: threading.Event | None = None
 
     def _local_schedulexec(self, channel: Channel, sourcetask: bytes) -> None:
         trio_exec = self._trio_exec
