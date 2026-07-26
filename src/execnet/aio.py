@@ -275,6 +275,7 @@ class Group:
         async def start_group() -> _HostedGroup:
             # runs on the host loop
             group = _HostedGroup(self._termination_timeout)
+            assert host._nursery is not None
             started: _HostedGroup = await host._nursery.start(group.run)
             return started
 
