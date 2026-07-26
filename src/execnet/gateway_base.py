@@ -123,10 +123,18 @@ class ExecModel:
         return threading.Event()
 
 
+#: worker profiles: where exec'd code runs relative to the protocol loop
+EXECMODEL_PROFILES = (
+    "thread",  # exec on pool threads, loop on a side thread
+    "main_thread_only",  # exec serialized on the main thread (GUI/pytest)
+    "trio",  # pure async: loop owns the main thread, async sources as tasks
+)
+
+
 def get_execmodel(backend: str | ExecModel) -> ExecModel:
     if isinstance(backend, ExecModel):
         return backend
-    if backend in ("thread", "main_thread_only"):
+    if backend in EXECMODEL_PROFILES:
         return ExecModel(backend)
     raise ValueError(f"unknown execmodel {backend!r}")
 

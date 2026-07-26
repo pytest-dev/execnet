@@ -24,6 +24,7 @@ from typing import TypeAlias
 from typing import overload
 
 from ._boundary import wakener_names
+from .gateway_base import EXECMODEL_PROFILES
 from .gateway_base import Channel
 from .gateway_base import ExecModel
 from .gateway_base import get_execmodel
@@ -172,6 +173,11 @@ class Group:
         self.allocate_id(spec)
         if spec.execmodel is None:
             spec.execmodel = self.remote_execmodel.backend
+        elif spec.execmodel not in EXECMODEL_PROFILES:
+            raise ValueError(
+                f"unknown execmodel {spec.execmodel!r}"
+                f" (known profiles: {list(EXECMODEL_PROFILES)})"
+            )
         if spec.wait is not None and spec.wait not in wakener_names():
             raise ValueError(
                 f"unknown wait backend {spec.wait!r} (known: {wakener_names()})"

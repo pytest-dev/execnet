@@ -461,6 +461,12 @@ class AsyncGateway:
     _error: BaseException | None = None
     #: where the peer lives, when the transport knows (ssh host, socket addr)
     remoteaddress: str | None = None
+    #: CHANNEL_EXEC handler ``(gateway, channelid, data) -> None`` -- set by
+    #: an exec strategy (the pure-async worker's TaskExec); without one,
+    #: exec requests are rejected.
+    _exec_handler: Callable[[AsyncGateway, int, bytes], None] | None = None
+    #: the exec strategy (for STATUS numexecuting), when serving as a worker
+    _task_exec: Any = None
 
     def __init__(self, stream: ByteStream, *, id: str, _startcount: int = 1) -> None:
         self._stream = stream
@@ -671,10 +677,13 @@ class AsyncGateway:
             self._channel_for(channelid)._close_from_remote(None, sendonly=True)
         elif code == Message.GATEWAY_TERMINATE:
             raise GatewayReceivedTerminate(self)
+        elif code == Message.CHANNEL_EXEC and self._exec_handler is not None:
+            self._exec_handler(self, channelid, message.data)
         elif code == Message.STATUS:
+            task_exec = self._task_exec
             status = {
                 "numchannels": len(self._channels),
-                "numexecuting": 0,
+                "numexecuting": task_exec.active_count() if task_exec else 0,
                 "execmodel": "trio",
             }
             self._send_nowait(Message.CHANNEL_DATA, channelid, dumps_internal(status))
