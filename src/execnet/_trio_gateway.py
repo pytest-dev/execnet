@@ -8,7 +8,7 @@ on that task, so there is no receiver thread and no receive lock.
 Two-level channel model:
 
 * :class:`RawChannel` (this module) -- id-routed raw byte payload streams
-  over the gateway: no serialization, no strconfig, no callbacks.
+  over the gateway: no serialization and no callbacks.
   ``CHANNEL_DATA`` payloads route to the channel verbatim; the layer on top
   decides what the bytes mean.
 * ``AsyncChannel`` -- the serialized object API layered on a RawChannel.
@@ -44,7 +44,6 @@ from .gateway_base import HostNotFound
 from .gateway_base import Message
 from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
-from .gateway_base import Unserializer
 from .gateway_base import dumps_internal
 from .gateway_base import gateway_info
 from .gateway_base import loads_internal
@@ -148,8 +147,6 @@ class RawChannel:
     * :meth:`send_eof` only ends our payload stream (``CHANNEL_LAST_MESSAGE``);
       the peer drains, hits EOF, and may keep sending to us.
     """
-
-    _strconfig: tuple[bool, bool] | None = None
 
     def __init__(self, gateway: AsyncGateway, id: int) -> None:
         self.gateway = gateway
@@ -405,16 +402,6 @@ class AsyncChannel:
         if error is not None:
             raise error
 
-    async def reconfigure(
-        self, py2str_as_py3str: bool = True, py3str_as_py2str: bool = False
-    ) -> None:
-        """Set the string coercion for both ends of this channel."""
-        strconfig = (py2str_as_py3str, py3str_as_py2str)
-        self._raw._strconfig = strconfig
-        await self.gateway._send(
-            Message.RECONFIGURE, self.id, dumps_internal(strconfig)
-        )
-
     def __aiter__(self) -> AsyncChannel:
         return self
 
@@ -424,12 +411,8 @@ class AsyncChannel:
         except EOFError:
             raise StopAsyncIteration from None
 
-    # Unserializer duck-type: loads_internal(data, self) reads _strconfig
-    # and _channelfactory off the object to resolve CHANNEL opcodes.
-
-    @property
-    def _strconfig(self) -> tuple[bool, bool]:
-        return self._raw._strconfig or self.gateway._strconfig
+    # Unserializer duck-type: loads_internal(data, self) reads
+    # _channelfactory off the object to resolve CHANNEL opcodes.
 
     @property
     def _channelfactory(self) -> _AsyncChannelFactory:
@@ -475,7 +458,6 @@ class AsyncGateway:
         self._async_channels: dict[int, AsyncChannel] = {}
         self._channelfactory = _AsyncChannelFactory(self)
         self._count = _startcount
-        self._strconfig = (Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str)
         self._outbound_send, self._outbound = trio.open_memory_channel[
             tuple[bytes, Callable[[BaseException | None], None] | None]
         ](math.inf)
@@ -693,14 +675,6 @@ class AsyncGateway:
                 Message.CHANNEL_DATA, channelid, dumps_internal(gateway_info())
             )
             self._send_nowait(Message.CHANNEL_CLOSE, channelid)
-        elif code == Message.RECONFIGURE:
-            data = loads_internal(message.data)
-            assert isinstance(data, tuple)
-            if channelid == 0:
-                self._strconfig = data
-            else:
-                # picked up by the serialized channel layer
-                self._channel_for(channelid)._strconfig = data
         else:
             # CHANNEL_EXEC / GATEWAY_START_*: not served by the async core
             self._trace("rejecting unsupported message", message)

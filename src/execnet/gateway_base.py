@@ -186,6 +186,8 @@ class Message:
     """
 
     STATUS = 0
+    #: retired: the py2/py3 string coercion switch.  Nothing sends or
+    #: handles it anymore, the code stays reserved for reuse.
     RECONFIGURE = 1
     GATEWAY_TERMINATE = 2
     CHANNEL_EXEC = 3
@@ -393,8 +395,6 @@ class Channel:
         assert isinstance(id, int)
         assert not isinstance(gateway, type)
         self.gateway = gateway
-        # XXX: defaults copied from Unserializer
-        self._strconfig = getattr(gateway, "_strconfig", (True, False))
         self.id = id
         # serialized payloads (or ENDMARKER); None once a consumer is attached
         self._mailbox: Mailbox[Any] | None = Mailbox(gateway._new_wakener())
@@ -672,18 +672,6 @@ class Channel:
 
     __next__ = next
 
-    def reconfigure(
-        self, py2str_as_py3str: bool = True, py3str_as_py2str: bool = False
-    ) -> None:
-        """Set the string coercion for this channel.
-
-        The default is to try to convert py2 str as py3 str,
-        but not to try and convert py3 str to py2 str
-        """
-        self._strconfig = (py2str_as_py3str, py3str_as_py2str)
-        data = dumps_internal(self._strconfig)
-        self.gateway._send(Message.RECONFIGURE, self.id, data=data)
-
 
 ENDMARKER = object()
 INTERRUPT_TEXT = "keyboard-interrupted"
@@ -838,7 +826,6 @@ class BaseGateway:
         self.execmodel = io.execmodel
         self._io = io
         self.id = id
-        self._strconfig = (Unserializer.py2str_as_py3str, Unserializer.py3str_as_py2str)
         self._channelfactory = ChannelFactory(self, _startcount)
         # globals may be NONE at process-termination
         self.__trace = trace
@@ -1106,35 +1093,26 @@ class opcode:
     NEWDICT = b"J"
     NEWLIST = b"K"
     NONE = b"L"
-    PY2STRING = b"M"
-    PY3STRING = b"N"
+    STRING = b"N"
     SET = b"O"
     SETITEM = b"P"
     STOP = b"Q"
     TRUE = b"R"
-    UNICODE = b"S"
     COMPLEX = b"T"
 
 
 class Unserializer:
     num2func: dict[bytes, Callable[[Unserializer], None]] = {}
-    py2str_as_py3str = True  # True
-    py3str_as_py2str = False  # false means py2 will get unicode
 
     def __init__(
         self,
         stream: ReadIO,
         channel_or_gateway: Channel | BaseGateway | None = None,
-        strconfig: tuple[bool, bool] | None = None,
     ) -> None:
         if isinstance(channel_or_gateway, Channel):
             gw: BaseGateway | None = channel_or_gateway.gateway
         else:
             gw = channel_or_gateway
-        if channel_or_gateway is not None:
-            strconfig = channel_or_gateway._strconfig
-        if strconfig:
-            self.py2str_as_py3str, self.py3str_as_py2str = strconfig
         self.stream = stream
         if gw is None:
             self.channelfactory = None
@@ -1219,36 +1197,16 @@ class Unserializer:
         as_bytes = self.stream.read(length)
         return as_bytes
 
-    def load_py3string(self) -> None:
-        as_bytes = self._read_byte_string()
-        if self.py3str_as_py2str:
-            # XXX Should we try to decode into latin-1?
-            self.stack.append(as_bytes)
-        else:
-            self.stack.append(as_bytes.decode("utf-8"))
+    def load_string(self) -> None:
+        self.stack.append(self._read_byte_string().decode("utf-8"))
 
-    num2func[opcode.PY3STRING] = load_py3string
-
-    def load_py2string(self) -> None:
-        as_bytes = self._read_byte_string()
-        if self.py2str_as_py3str:
-            s: bytes | str = as_bytes.decode("latin-1")
-        else:
-            s = as_bytes
-        self.stack.append(s)
-
-    num2func[opcode.PY2STRING] = load_py2string
+    num2func[opcode.STRING] = load_string
 
     def load_bytes(self) -> None:
         s = self._read_byte_string()
         self.stack.append(s)
 
     num2func[opcode.BYTES] = load_bytes
-
-    def load_unicode(self) -> None:
-        self.stack.append(self._read_byte_string().decode("utf-8"))
-
-    num2func[opcode.UNICODE] = load_unicode
 
     def load_newlist(self) -> None:
         length = self._read_int4()
@@ -1323,46 +1281,27 @@ def dump(byteio, obj: object) -> None:
     _Serializer(write=byteio.write).save(obj, versioned=True)
 
 
-def loads(
-    bytestring: bytes, py2str_as_py3str: bool = False, py3str_as_py2str: bool = False
-) -> Any:
+def loads(bytestring: bytes) -> Any:
     """Deserialize the given bytestring to an object.
-
-    py2str_as_py3str: If true then string (str) objects previously
-                      dumped on Python2 will be loaded as Python3
-                      strings which really are text objects.
-    py3str_as_py2str: If true then string (str) objects previously
-                      dumped on Python3 will be loaded as Python2
-                      strings instead of unicode objects.
 
     If the bytestring was dumped with an incompatible protocol
     version or if the bytestring is corrupted, the
     ``execnet.DataFormatError`` will be raised.
     """
-    io = BytesIO(bytestring)
-    return load(
-        io, py2str_as_py3str=py2str_as_py3str, py3str_as_py2str=py3str_as_py2str
-    )
+    return load(BytesIO(bytestring))
 
 
-def load(
-    io: ReadIO, py2str_as_py3str: bool = False, py3str_as_py2str: bool = False
-) -> Any:
+def load(io: ReadIO) -> Any:
     """Derserialize an object form the specified stream.
 
-    Behaviour and parameters are otherwise the same as with ``loads``
+    Behaviour is otherwise the same as with ``loads``
     """
-    strconfig = (py2str_as_py3str, py3str_as_py2str)
-    return Unserializer(io, strconfig=strconfig).load(versioned=True)
+    return Unserializer(io).load(versioned=True)
 
 
-def loads_internal(
-    bytestring: bytes,
-    channelfactory=None,
-    strconfig: tuple[bool, bool] | None = None,
-) -> Any:
+def loads_internal(bytestring: bytes, channelfactory=None) -> Any:
     io = BytesIO(bytestring)
-    return Unserializer(io, channelfactory, strconfig).load()
+    return Unserializer(io, channelfactory).load()
 
 
 def dumps_internal(obj: object) -> bytes:
@@ -1420,7 +1359,7 @@ class _Serializer:
         self._write_byte_sequence(bytes_)
 
     def save_str(self, s: str) -> None:
-        self._write(opcode.PY3STRING)
+        self._write(opcode.STRING)
         self._write_unicode_string(s)
 
     def _write_unicode_string(self, s: str) -> None:

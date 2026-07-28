@@ -403,16 +403,3 @@ class TestAsyncGroup:
                     await group.makegateway("id=notype")
 
         trio.run(main)
-
-
-def test_channel_reconfigure_string_coercion() -> None:
-    async def main() -> None:
-        async with gateway_pair() as (left, right):
-            sender = left.open_channel()
-            receiver = right.open_channel(sender.id)
-            await sender.reconfigure(py3str_as_py2str=True)
-            await receiver.send("text")
-            # our side now loads py3 strings as bytes
-            assert await sender.receive() == b"text"
-
-    trio.run(main)

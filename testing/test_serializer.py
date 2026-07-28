@@ -187,6 +187,7 @@ def test_tuple_nested_with_empty_in_between(dump, load) -> None:
     assert s == "(1, (), 3)"
 
 
-def test_py2_string_loads() -> None:
-    """Regression test for #267."""
-    assert execnet.gateway_base.loads(b"\x02M\x00\x00\x00\x01aQ") == b"a"
+def test_py2_string_opcode_is_retired() -> None:
+    """The py2 ``str`` opcode ``M`` is gone; only Python2 ever emitted it."""
+    with pytest.raises(execnet.DataFormatError, match="unknown opcode"):
+        execnet.gateway_base.loads(b"\x02M\x00\x00\x00\x01aQ")
