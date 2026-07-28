@@ -59,13 +59,23 @@ class PoolExec:
         pass
 
 
+#: How long admission waits for the previous main-thread exec to finish
+#: before declaring a deadlock.  Kept small: a genuine second concurrent
+#: remote_exec never returns, so this only affects how fast that is
+#: reported.  (Under heavy CPU contention a merely slow predecessor can be
+#: misread as a deadlock, but main_thread_only is an xdist-only transitional
+#: profile slated for removal, so the whole guard goes away with it.)
+MAIN_THREAD_ONLY_ADMIT_TIMEOUT = 1.0
+
+
 class MainExec:
     """Exec strategy: serialize each request onto the process main thread.
 
     The ``main_thread_only`` profile (GUI/signal-safe: pytest under xdist
     runs this way).  Admission waits for the previous request to finish and
-    closes the channel with the deadlock text when it cannot within a
-    second (a second concurrent remote_exec would deadlock the requester).
+    closes the channel with the deadlock text when it cannot within
+    ``MAIN_THREAD_ONLY_ADMIT_TIMEOUT`` (a second concurrent remote_exec would
+    deadlock the requester).
     """
 
     needs_primary_thread = True
@@ -79,7 +89,9 @@ class MainExec:
     async def admit(self, channel: Channel, item: ExecItem) -> bool:
         complete = self.gateway._executetask_complete
         assert complete is not None
-        wait_slot = functools.partial(complete.wait, timeout=1)
+        wait_slot = functools.partial(
+            complete.wait, timeout=MAIN_THREAD_ONLY_ADMIT_TIMEOUT
+        )
         if not await trio.to_thread.run_sync(wait_slot, abandon_on_cancel=True):
             channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
             return False
