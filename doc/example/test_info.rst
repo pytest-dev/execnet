@@ -172,15 +172,23 @@ sends back the results.
 Instantiate gateways through sockets
 -----------------------------------------------------
 
-.. _`socketserver.py`: https://raw.githubusercontent.com/pytest-dev/execnet/main/src/execnet/script/socketserver.py
+In cases where you do not have SSH-access to a machine you need a
+bootstrapping-point that listens on a socket.  execnet ships one as the
+``execnet-socketserver`` console command; run it on the target machine::
 
-In cases where you do not have SSH-access to a machine
-you need to download a small version-independent standalone
-`socketserver.py`_ script to provide a remote bootstrapping-point.
-You do not need to install the execnet package remotely.
-Simply run the script like this::
+    execnet-socketserver :8888   # bind to all IPs, port 8888
 
-    python socketserver.py :8888   # bind to all IPs, port 8888
+If execnet is not installed there, uv_ can fetch and run it in one step
+without leaving anything behind::
+
+    uvx --from execnet execnet-socketserver :8888
+
+.. _uv: https://docs.astral.sh/uv/
+
+The server accepts connections in a loop and serves each one in its own
+worker subprocess; pass ``--once`` to serve a single connection and exit.
+Passing port ``0`` binds an ephemeral port -- the bound address is printed
+on the first line of output either way.
 
 You can then instruct execnet on your local machine to bootstrap
 itself into the remote socket endpoint::
@@ -190,5 +198,48 @@ itself into the remote socket endpoint::
 
 That's it, you can now use the gateway object just like
 a popen- or SSH-based one.
+
+.. warning::
+
+    The socket server performs no authentication and its traffic is not
+    encrypted -- anyone who can reach the port can execute code on that
+    machine.  Bind it to a trusted network only, or tunnel it over SSH.
+
+Keeping the socket server running
++++++++++++++++++++++++++++++++++
+
+``execnet-socketserver`` is an ordinary long-running process, so restarts and
+boot-time startup are the job of your platform's service manager.
+
+On Linux, a systemd unit does it::
+
+    # /etc/systemd/system/execnet-socketserver.service
+    [Unit]
+    Description=execnet socket server
+
+    [Service]
+    ExecStart=/usr/local/bin/execnet-socketserver :8888
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+
+On Windows, wrap the console command with a service host such as NSSM_ or
+WinSW_.  Use ``where execnet-socketserver`` to find the installed
+``execnet-socketserver.exe`` (it lives in the ``Scripts`` directory of the
+environment it was installed into), then::
+
+    nssm install ExecNetSocketServer C:\path\to\Scripts\execnet-socketserver.exe :8888
+    nssm set ExecNetSocketServer Start SERVICE_AUTO_START
+    net start ExecNetSocketServer
+
+NSSM restarts the process if it exits.  Note that ``sc.exe create`` on its own
+is not enough: it expects a binary that implements the Windows service control
+protocol, which a plain console program does not.  If you would rather not
+install a service host, a Task Scheduler task with an *At startup* trigger
+works too.
+
+.. _NSSM: https://nssm.cc/
+.. _WinSW: https://github.com/winsw/winsw
 
 .. include:: test_ssh_fileserver.rst
