@@ -126,6 +126,26 @@ def test_long(load, dump) -> None:
     assert v == really_big
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2147483647",  # int4 max: short path
+        "-2147483648",  # int4 min: short path
+        "2147483648",  # just over max: long path
+        "-2147483649",  # just under min: long path (used to crash in struct.pack)
+        "9223372036854775807324234",
+        "-9223372036854775807324234",
+    ],
+)
+def test_int_boundaries(value, dump, load) -> None:
+    # regression: negative ints below the signed int4 minimum must take the
+    # arbitrary-precision long path instead of overflowing the 4-byte pack.
+    p = dump(value)
+    tp, v = load(p)
+    assert tp == "int"
+    assert v == value
+
+
 def test_bytes(dump, load) -> None:
     p = dump("b'hi'")
     tp, v = load(p)
