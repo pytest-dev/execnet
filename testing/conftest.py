@@ -69,6 +69,43 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             "page on invalid addresses"
         ),
     )
+    group.addoption(
+        "--stress",
+        action="store",
+        dest="stress",
+        default=None,
+        metavar="N",
+        help=(
+            "how hard the Hypothesis stress tests try: number of examples "
+            "per test (e.g. --stress=500). Without it a quick profile runs."
+        ),
+    )
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    # Register Hypothesis profiles scaled by --stress.  The stress tests reuse
+    # a function-scoped gateway across examples on purpose (spawning one per
+    # example would dominate the runtime), and each round-trip can be slow, so
+    # the health checks for those are suppressed.
+    try:
+        from hypothesis import HealthCheck
+        from hypothesis import settings
+    except ImportError:
+        return
+    common = dict(
+        deadline=None,
+        suppress_health_check=[
+            HealthCheck.function_scoped_fixture,
+            HealthCheck.too_slow,
+        ],
+    )
+    settings.register_profile("execnet-quick", max_examples=15, **common)
+    stress = config.getoption("stress")
+    if stress is not None:
+        settings.register_profile("execnet-stress", max_examples=int(stress), **common)
+        settings.load_profile("execnet-stress")
+    else:
+        settings.load_profile("execnet-quick")
 
 
 @pytest.fixture

@@ -48,6 +48,7 @@ testing = [
     "pre-commit",
     "pytest>8.0",
     "pytest-timeout",
+    "hypothesis",
     "tox",
     "hatch",
     "uv",
