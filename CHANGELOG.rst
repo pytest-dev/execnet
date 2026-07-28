@@ -5,6 +5,9 @@
 * Trio host-thread Message IO for local ``popen`` + import bootstrap (coordinator and
   worker). Adds a hard ``trio`` dependency. Disable with ``EXECNET_TRIO_HOST=0``.
   Other gateway types and greenlet execmodels keep the legacy thread path.
+* Removed ``execnet.script.shell``, an interactive remote prompt that injected its own
+  source into the pre-Trio socket server. The Trio socket server never execs an incoming
+  source line, so the module could no longer work against it.
 
 
 2.1.2 (2025-11-11)
