@@ -1033,15 +1033,42 @@ class WorkerGateway(BaseGateway):
 
 
 class DataFormatError(Exception):
-    pass
+    """A value could not cross the channel in execnet's simple wire format.
+
+    execnet only moves *simple* builtin data over a channel -- ``None``,
+    ``bool``, ``int``, ``float``, ``complex``, ``bytes``, ``str``, and
+    (arbitrarily nested) ``list``/``tuple``/``set``/``frozenset``/``dict`` of
+    those -- plus channel references, which pass through as channels.  It does
+    **not** pickle: arbitrary instances, functions, ``datetime``, dataclasses,
+    pydantic models, numpy arrays, etc. have no wire representation.
+
+    A ``DataFormatError`` therefore signals a caller error to resolve, not a
+    transport failure: reduce the value to simple data before sending (and
+    reconstruct it after receiving) with an encoding mechanism of your own --
+    e.g. pydantic ``model_dump`` / ``model_validate`` or pytest's
+    ``pytest_report_to_serializable`` / ``pytest_report_from_serializable``
+    hooks.  See the docs, "Sending objects over a channel".
+    """
 
 
 class DumpError(DataFormatError):
-    """Error while serializing an object."""
+    """A value being **sent** is not simple wire data; convert it first.
+
+    Raised by ``channel.send`` (and the internal serializer) when an object is
+    not one of execnet's simple wire types.  Fix it at the call site by turning
+    the rich object into simple data -- e.g. ``dt.isoformat()``,
+    ``dataclasses.asdict(obj)``, ``model.model_dump(mode="json")`` -- rather
+    than expecting the channel to pickle it.  Channels are the one non-builtin
+    that *is* sendable, so nested channel references are fine.
+    """
 
 
 class LoadError(DataFormatError):
-    """Error while unserializing an object."""
+    """Received bytes could not be turned back into an object.
+
+    Raised while **receiving** (deserializing) -- a corrupted or
+    protocol-incompatible payload, or data produced by a mismatched peer.
+    """
 
 
 def bchr(n: int) -> bytes:

@@ -32,9 +32,10 @@ def test_trio_namespace_exposes_async_core() -> None:
     assert execnet.trio.AsyncGateway is _trio_gateway.AsyncGateway
     assert execnet.trio.AsyncChannel is _trio_gateway.AsyncChannel
     assert execnet.trio.open_popen_gateway is _trio_gateway.open_popen_gateway
-    # serialization + errors are shared with the sync surface
+    # error types are shared with the sync surface; the standalone serializer
+    # is intentionally not exposed on any public namespace
     assert execnet.trio.RemoteError is execnet.RemoteError
-    assert execnet.trio.dumps is execnet.dumps
+    assert not hasattr(execnet.trio, "dumps")
 
 
 def test_portal_namespace() -> None:
