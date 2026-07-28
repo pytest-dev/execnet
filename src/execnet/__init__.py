@@ -4,16 +4,18 @@ execnet
 
 pure python lib for connecting to local and remote Python Interpreters.
 
-Four public namespaces:
+One namespace per concurrency library you drive execnet from:
 
-* :mod:`execnet.sync` — the blocking API; the top-level ``execnet.*``
-  names below are aliases into it.
+* :mod:`execnet.sync` — the blocking API for plain threads; the top-level
+  ``execnet.*`` names below are aliases into it.
 * :mod:`execnet.trio` — the trio-native API, awaited inside your own
   ``trio.run``.
-* :mod:`execnet.aio` — the asyncio-native API, bridged over a Trio
-  host thread.
-* :mod:`execnet.portal` — cross-thread / cross-loop communication
-  primitives shared by all of them.
+* :mod:`execnet.aio` — the asyncio-native API.
+* :mod:`execnet.gevent` — the blocking API with greenlet-parking waits.
+
+:mod:`execnet.trio` is the only one that runs gateways *directly* as tasks
+in your own nursery.  The other three drive a shared Trio host thread, so
+their blocking calls must not be made from inside a running event loop.
 
 ``can_send`` sits here rather than on any one of them: the wire-format
 contract is the same whichever surface you drive a gateway from.
@@ -68,7 +70,7 @@ __all__ = [
 #: that still do ``execnet.gateway_base.X`` must reach the warning shim.
 _LAZY_MODULES = (
     "aio",
-    "portal",
+    "gevent",
     "trio",
     "gateway",
     "gateway_base",

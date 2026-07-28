@@ -7,8 +7,9 @@ import threading
 
 import pytest
 
-from execnet.portal import Mailbox
-from execnet.portal import OneShot
+from execnet import TimeoutError as ExecnetTimeoutError
+from execnet._boundary import Mailbox
+from execnet._boundary import OneShot
 
 
 class TestMailbox:
@@ -24,8 +25,10 @@ class TestMailbox:
             box.get_nowait()
 
     def test_get_timeout(self) -> None:
+        # the carriers speak execnet's TimeoutError, so Channel.receive
+        # does not have to translate the builtin one
         box: Mailbox[int] = Mailbox()
-        with pytest.raises(TimeoutError):
+        with pytest.raises(ExecnetTimeoutError):
             box.get(timeout=0.01)
 
     def test_get_blocks_until_put_from_other_thread(self) -> None:
@@ -54,7 +57,7 @@ class TestOneShot:
 
     def test_wait_timeout(self) -> None:
         shot: OneShot[int] = OneShot()
-        with pytest.raises(TimeoutError):
+        with pytest.raises(ExecnetTimeoutError):
             shot.wait(timeout=0.01)
         assert not shot.is_set()
 
@@ -69,8 +72,11 @@ class TestOneShot:
         threading.Timer(0.05, shot.set, args=["done"]).start()
         assert shot.wait(timeout=5.0) == "done"
 
-    def test_single_resolution_asserted(self) -> None:
+    def test_single_resolution_enforced(self) -> None:
+        # a real error, not an assert: it must survive python -O
         shot: OneShot[int] = OneShot()
         shot.set(1)
-        with pytest.raises(AssertionError):
+        with pytest.raises(RuntimeError, match="already resolved"):
             shot.set(2)
+        with pytest.raises(RuntimeError, match="already resolved"):
+            shot.set_error(RuntimeError("boom"))

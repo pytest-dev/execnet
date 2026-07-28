@@ -6,7 +6,7 @@ in private modules -- ``_trace``, ``_errors``, ``_execmodel``, ``_message``,
 to them with a :class:`DeprecationWarning`.
 
 Use :mod:`execnet` / :mod:`execnet.sync`, :mod:`execnet.trio`,
-:mod:`execnet.aio` or :mod:`execnet.portal` instead.  The standalone
+:mod:`execnet.aio` or :mod:`execnet.gevent` instead.  The standalone
 serializer stays internal; :func:`execnet.can_send` answers "can this value
 cross a channel?" without it.
 """

@@ -1,17 +1,17 @@
 """Cross-thread / cross-loop communication primitives — the boundary kit.
 
-A :class:`LoopPortal` is a handle to a running trio loop that foreign
-threads use to run functions on the loop or push work into it (the
+Internal.  A :class:`LoopPortal` is a handle to a running trio loop that
+foreign threads use to run functions on the loop or push work into it (the
 consumer -> loop direction).  Because each direction only needs the
-*receiving* loop's token, two trio loops in two threads can communicate
-by holding each other's portal.
+*receiving* loop's token, two trio loops in two threads can communicate by
+holding each other's portal.
 
 The loop -> consumer direction never blocks the loop and never knows who
 is listening: the loop fires a :class:`Wakener`, a single thread-safe
-``notify()`` supplied by the consumer.  Implementing that one method is
-the entire integration surface for an event loop backend (threads here;
-asyncio/gevent wakeners come with their facades).  On top of it sit the
-two carriers:
+``notify()`` supplied by the consumer.  There are exactly two wakeners --
+OS threads and gevent greenlets -- because every other concurrency library
+gets a facade of its own (:mod:`execnet.trio`, :mod:`execnet.aio`) instead.
+On top of the wakener sit the two carriers:
 
 * :class:`Mailbox` -- an item stream (channel payloads, exec requests),
 * :class:`OneShot` -- a single result (write acknowledgements, call

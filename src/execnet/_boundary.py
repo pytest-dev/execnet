@@ -1,7 +1,12 @@
 """Trio-free half of the boundary kit: Wakener, Mailbox, OneShot.
 
 Importable without loading any event loop (``import execnet`` must not
-import trio); ``execnet.portal`` re-exports these next to LoopPortal.
+import trio); :mod:`execnet._portal` re-exports these next to LoopPortal.
+
+All of this is internal.  There are exactly two wait backends -- OS
+threads and gevent greenlets -- and no plan to let third parties add
+more: every other concurrency library gets a facade of its own
+(:mod:`execnet.trio`, :mod:`execnet.aio`) rather than a wakener.
 """
 
 from __future__ import annotations
@@ -9,24 +14,29 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from collections.abc import Callable
 from typing import Any
 from typing import Generic
+from typing import Literal
 from typing import Protocol
 from typing import TypeVar
 from typing import cast
+
+from ._errors import TimeoutError
 
 __all__ = [
     "Flag",
     "Mailbox",
     "OneShot",
     "ThreadWakener",
+    "WaitBackend",
     "Wakener",
     "make_wakener",
-    "register_wakener",
 ]
 
 T = TypeVar("T")
+
+#: which primitive a facade's blocking waits park on
+WaitBackend = Literal["thread", "gevent"]
 
 
 class Wakener(Protocol):
@@ -36,8 +46,7 @@ class Wakener(Protocol):
     the only thing the loop side ever calls.  The blocking mailbox/oneshot
     waits additionally need :meth:`wait`/:meth:`clear` executed in the
     consumer's own context (a thread here, a greenlet for a gevent
-    wakener); loop-native consumers such as asyncio wait on their own
-    side of ``notify`` instead.
+    wakener).
     """
 
     def notify(self) -> None: ...
@@ -141,14 +150,16 @@ class OneShot(Generic[T]):
 
     def set(self, value: T) -> None:
         """Thread-safe; usable from a loop thread (never blocks)."""
-        assert not self._done, "OneShot already resolved"
+        if self._done:
+            raise RuntimeError("OneShot already resolved")
         self._value = value
         self._done = True
         self._wakener.notify()
 
     def set_error(self, error: BaseException) -> None:
         """Resolve with an error that :meth:`wait` will re-raise."""
-        assert not self._done, "OneShot already resolved"
+        if self._done:
+            raise RuntimeError("OneShot already resolved")
         self._error = error
         self._done = True
         self._wakener.notify()
@@ -203,35 +214,17 @@ class Flag:
         return self._flag
 
 
-# wait= axis: named wakener factories; each call returns a fresh instance
-# (carriers own their wakener exclusively, see Flag).  Backends register
-# here next to the built-in "thread"; entries in the lazy table import
-# their module (which registers itself) on first use.
-_WAKENER_FACTORIES: dict[str, Callable[[], Wakener]] = {
-    "thread": ThreadWakener,
-}
-_LAZY_WAKENER_MODULES: dict[str, str] = {
-    "gevent": "execnet._gevent_support",
-}
+def make_wakener(backend: WaitBackend) -> Wakener:
+    """Create a fresh wakener for a wait backend.
 
+    Each carrier owns its wakener exclusively (see :class:`Flag`), so this
+    always returns a new instance.  gevent is imported lazily -- it is an
+    optional dependency of the :mod:`execnet.gevent` facade.
+    """
+    if backend == "thread":
+        return ThreadWakener()
+    if backend == "gevent":
+        from ._gevent_support import GeventWakener
 
-def register_wakener(name: str, factory: Callable[[], Wakener]) -> None:
-    """Register a wakener factory for the ``wait=`` spec axis."""
-    _WAKENER_FACTORIES[name] = factory
-
-
-def wakener_names() -> list[str]:
-    return sorted(set(_WAKENER_FACTORIES) | set(_LAZY_WAKENER_MODULES))
-
-
-def make_wakener(name: str) -> Wakener:
-    """Create a fresh wakener for the named wait backend."""
-    if name not in _WAKENER_FACTORIES and name in _LAZY_WAKENER_MODULES:
-        import importlib
-
-        importlib.import_module(_LAZY_WAKENER_MODULES[name])
-    try:
-        factory = _WAKENER_FACTORIES[name]
-    except KeyError:
-        raise ValueError(f"unknown wait backend {name!r}") from None
-    return factory()
+        return GeventWakener()
+    raise ValueError(f"unknown wait backend {backend!r}")
