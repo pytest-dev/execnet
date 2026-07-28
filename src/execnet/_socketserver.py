@@ -1,9 +1,11 @@
-#! /usr/bin/env python
 """Trio socket server for execnet gateways.
 
 Listens on a TCP port and hands each accepted connection (by fd) to a fresh
 ``python -m execnet._trio_worker`` subprocess that serves the gateway over it.
-No code is executed inline.  Run directly, e.g. provisioned anywhere with
+No code is executed inline.
+
+This module implements the ``execnet-socketserver`` console command, which is
+the supported entry point -- run it on the target host, or install-free with
 ``uvx --from execnet execnet-socketserver``.
 """
 
