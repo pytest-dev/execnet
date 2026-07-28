@@ -14,8 +14,10 @@ host thread, no blocking calls::
 
     trio.run(main)
 
-The serialization helpers and error types are shared with the blocking
-API in :mod:`execnet.sync`.
+The error types are shared with the blocking API in :mod:`execnet.sync`.
+Items you send must already be simple builtin data (plus channels); the
+standalone serializer is intentionally not part of the public API -- see
+``DumpError``.
 """
 
 from ._trio_gateway import AsyncChannel
@@ -32,10 +34,6 @@ from .gateway_base import HostNotFound
 from .gateway_base import LoadError
 from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
-from .gateway_base import dump
-from .gateway_base import dumps
-from .gateway_base import load
-from .gateway_base import loads
 from .xspec import XSpec
 
 __all__ = [
@@ -52,10 +50,6 @@ __all__ = [
     "RemoteError",
     "TimeoutError",
     "XSpec",
-    "dump",
-    "dumps",
-    "load",
-    "loads",
     "open_popen_gateway",
     "serve_gateway",
 ]

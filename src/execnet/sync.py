@@ -14,10 +14,6 @@ from .gateway_base import HostNotFound
 from .gateway_base import LoadError
 from .gateway_base import RemoteError
 from .gateway_base import TimeoutError
-from .gateway_base import dump
-from .gateway_base import dumps
-from .gateway_base import load
-from .gateway_base import loads
 from .multi import Group
 from .multi import MultiChannel
 from .multi import default_group
@@ -40,10 +36,6 @@ __all__ = [
     "TimeoutError",
     "XSpec",
     "default_group",
-    "dump",
-    "dumps",
-    "load",
-    "loads",
     "makegateway",
     "set_execmodel",
 ]

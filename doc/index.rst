@@ -31,10 +31,10 @@ Features
 * Automatic bootstrapping: no manual remote installation.
 
 * Safe and simple serialization of Python builtin
-  types for sending/receiving structured data messages.
-  (New in 1.1) execnet offers a new :ref:`dumps/loads <dumps/loads>`
-  API which allows cross-interpreter compatible serialization
-  of Python builtin types.
+  types for sending/receiving structured data messages;
+  see :ref:`sending objects over a channel <serialization>`.
+  Encoding rich objects is the caller's job (execnet stays
+  builtin-types-only).
 
 * Flexible communication: synchronous send/receive as well as
   callback/queue mechanisms supported

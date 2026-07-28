@@ -28,37 +28,45 @@ skip_win_pypy = pytest.mark.xfail(
 )
 
 
+# The standalone serializer is an internal detail (execnet.gateway_base),
+# not part of the public API -- see the docs, "Sending objects over a channel".
 @pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])
 class TestSerializeAPI:
     def test_serializer_api(self, val: object) -> None:
-        dumped = execnet.dumps(val)
-        val2 = execnet.loads(dumped)
+        dumped = gateway_base.dumps(val)
+        val2 = gateway_base.loads(dumped)
         assert val == val2
 
     def test_mmap(self, tmp_path: Path, val: object) -> None:
         mmap = pytest.importorskip("mmap").mmap
         p = tmp_path / "data.bin"
 
-        p.write_bytes(execnet.dumps(val))
+        p.write_bytes(gateway_base.dumps(val))
         with p.open("r+b") as f:
             m = mmap(f.fileno(), 0)
-            val2 = execnet.load(m)
+            val2 = gateway_base.load(m)
         assert val == val2
 
     def test_bytesio(self, val: object) -> None:
         f = BytesIO()
-        execnet.dump(f, val)
+        gateway_base.dump(f, val)
         read = BytesIO(f.getvalue())
-        val2 = execnet.load(read)
+        val2 = gateway_base.load(read)
         assert val == val2
+
+
+def test_serializer_not_public() -> None:
+    # dumps/loads/dump/load are internal to gateway_base only.
+    for name in ("dumps", "loads", "dump", "load"):
+        assert not hasattr(execnet, name), name
 
 
 def test_serializer_api_version_error(monkeypatch: pytest.MonkeyPatch) -> None:
     bchr = gateway_base.bchr
     monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(1))
-    dumped = execnet.dumps(42)
+    dumped = gateway_base.dumps(42)
     monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(2))
-    pytest.raises(execnet.DataFormatError, lambda: execnet.loads(dumped))
+    pytest.raises(execnet.DataFormatError, lambda: gateway_base.loads(dumped))
 
 
 def test_errors_on_execnet() -> None:

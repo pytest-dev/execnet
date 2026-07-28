@@ -216,23 +216,53 @@ configure a tracing mechanism:
 
 .. _`dumps/loads`:
 .. _`dumps/loads API`:
+.. _`serialization`:
 
-Cross-interpreter serialization of Python objects
+Sending objects over a channel
 =======================================================
 
-.. versionadded:: 1.1
+A channel carries only **simple builtin data**: ``None``, ``bool``,
+``int``, ``float``, ``complex``, ``bytes``, ``str`` and arbitrarily nested
+``list`` / ``tuple`` / ``set`` / ``frozenset`` / ``dict`` of those -- plus
+**channel references**, which arrive as channels on the peer.  That is the
+entire contract.
 
-Execnet exposes a function pair which you can safely use to
-store and load values from different Python interpreters
-(e.g. Python2 and Python3, PyPy and Jython). Here is
-a basic example::
+execnet does **not** pickle and does **not** encode rich objects for you:
+arbitrary instances, functions, ``datetime``, dataclasses, pydantic models,
+numpy arrays, enums, etc. have no wire representation.  This is deliberate;
+encoded / rich-object channels are out of scope for execnet.
 
-    >>> import execnet
-    >>> dump = execnet.dumps([1,2,3])
-    >>> execnet.loads(dump)
-    [1,2,3]
+Sending an unsupported value raises ``DumpError`` (a subclass of
+``DataFormatError``); a corrupt or protocol-mismatched payload on receive
+raises ``LoadError``.  These signal a **caller error to resolve** -- reduce
+the value to simple data before sending -- not a transport failure.  The
+standalone serializer itself is an internal implementation detail
+(``execnet.gateway_base``) and is not part of the public API.
 
-For more examples see :ref:`dumps/loads examples`.
+Encode rich objects yourself
+-------------------------------------------------------
 
-.. autofunction:: execnet.dumps(spec)
-.. autofunction:: execnet.loads(spec)
+Turning a rich object into simple data (and back) is the caller's job.  Use
+an established encoding mechanism rather than expecting the channel to do it:
+
+- **pydantic**: ``model.model_dump(mode="json")`` reduces a model to simple
+  data (``datetime`` -> ISO string, ``UUID`` / ``Enum`` / ``Decimal`` ->
+  primitives); ``Model.model_validate(...)`` rebuilds it on the other side.
+  ``TypeAdapter`` covers non-model types.
+
+  ::
+
+      channel.send(model.model_dump(mode="json"))
+      # peer:
+      model = MyModel.model_validate(channel.receive())
+
+- **pytest** does exactly this above execnet: pytest-xdist ships
+  ``TestReport`` objects with the ``pytest_report_to_serializable`` /
+  ``pytest_report_from_serializable`` hooks (rich report <-> simple dict)
+  around ``channel.send`` / ``channel.receive``.
+
+- **stdlib**: ``dataclasses.asdict(obj)``, ``dt.isoformat()`` /
+  ``datetime.fromisoformat``, or ``json`` with a ``default=`` hook.
+
+Channels are the one non-builtin you *can* send: nested channel references
+pass through intact, so callbacks and sub-streams need no encoding.

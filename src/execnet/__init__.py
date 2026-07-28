@@ -34,10 +34,6 @@ from .sync import RSync
 from .sync import TimeoutError
 from .sync import XSpec
 from .sync import default_group
-from .sync import dump
-from .sync import dumps
-from .sync import load
-from .sync import loads
 from .sync import makegateway
 from .sync import set_execmodel
 
@@ -56,10 +52,6 @@ __all__ = [
     "XSpec",
     "__version__",
     "default_group",
-    "dump",
-    "dumps",
-    "load",
-    "loads",
     "makegateway",
     "set_execmodel",
 ]
