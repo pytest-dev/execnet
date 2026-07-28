@@ -26,6 +26,17 @@ from typing import TypeVar
 import trio
 
 from ._boundary import Flag
+from ._channel import ENDMARKER
+from ._channel import NO_ENDMARKER_WANTED
+from ._errors import GatewayReceivedTerminate
+from ._errors import RemoteError
+from ._execmodel import ExecModel
+from ._message import FrameDecoder
+from ._message import Message
+from ._message import gateway_info
+from ._serialize import dumps_internal
+from ._serialize import loads_internal
+from ._trace import trace
 from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
@@ -34,17 +45,6 @@ from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_process
 from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
-from .gateway_base import ENDMARKER
-from .gateway_base import NO_ENDMARKER_WANTED
-from .gateway_base import ExecModel
-from .gateway_base import FrameDecoder
-from .gateway_base import GatewayReceivedTerminate
-from .gateway_base import Message
-from .gateway_base import RemoteError
-from .gateway_base import dumps_internal
-from .gateway_base import gateway_info
-from .gateway_base import loads_internal
-from .gateway_base import trace
 from .portal import LoopPortal
 from .portal import OneShot
 
@@ -60,9 +60,9 @@ def _run_callback(callback: Callable[[Any], Any], data: bytes, channel: Any) -> 
 
 
 if TYPE_CHECKING:
-    from .gateway import Gateway
-    from .gateway_base import BaseGateway
-    from .multi import Group
+    from ._gateway import Gateway
+    from ._gateway_base import BaseGateway
+    from ._multi import Group
 
 T = TypeVar("T")
 

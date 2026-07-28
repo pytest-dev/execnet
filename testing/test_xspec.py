@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 
 import execnet
+from execnet import Gateway
 from execnet import XSpec
 from execnet import _provision
-from execnet.gateway import Gateway
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),

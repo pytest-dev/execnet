@@ -1,8 +1,8 @@
-from execnet import gateway_base
+from execnet import _serialize
 
 
 def test_opcodes() -> None:
-    data = vars(gateway_base.opcode)
+    data = vars(_serialize.opcode)
     computed = {k: v for k, v in data.items() if "__" not in k}
     assert computed == {
         "BUILDTUPLE": b"@",

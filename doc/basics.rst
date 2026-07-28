@@ -72,7 +72,7 @@ Examples for valid gateway specifications
 remote_exec: execute source code remotely
 ===================================================
 
-.. currentmodule:: execnet.gateway
+.. currentmodule:: execnet
 
 All gateways offer a simple method to execute source code
 in the instantiated subprocess-interpreter:
@@ -94,7 +94,7 @@ is available to the remotely executing source.
 Channels: exchanging data with remote code
 =======================================================
 
-.. currentmodule:: execnet.gateway_base
+.. currentmodule:: execnet
 
 A channel object allows to send and receive data between
 two asynchronously running programs.
@@ -114,7 +114,7 @@ two asynchronously running programs.
 Grouped Gateways and robust termination
 ===============================================
 
-.. currentmodule:: execnet.multi
+.. currentmodule:: execnet
 
 All created gateway instances are part of a group.  If you
 call ``execnet.makegateway`` it actually is forwarded to
@@ -169,7 +169,7 @@ executions concurrently, they will run in non-main threads.
 remote_status: get low-level execution info
 ===================================================
 
-.. currentmodule:: execnet.gateway
+.. currentmodule:: execnet
 
 All gateways offer a simple method to obtain some status
 information from the remote side.
@@ -232,8 +232,19 @@ Sending an unsupported value raises ``DumpError`` (a subclass of
 ``DataFormatError``); a corrupt or protocol-mismatched payload on receive
 raises ``LoadError``.  These signal a **caller error to resolve** -- reduce
 the value to simple data before sending -- not a transport failure.  The
-standalone serializer itself is an internal implementation detail
-(``execnet.gateway_base``) and is not part of the public API.
+standalone serializer itself is an internal implementation detail and is not
+part of the public API.
+
+To branch *before* sending rather than handling the error, ask:
+
+.. autofunction:: can_send
+
+::
+
+    channel.send(value if execnet.can_send(value) else repr(value))
+
+It lives on ``execnet`` itself rather than on any one namespace: the wire
+contract is the same whichever surface you drive a gateway from.
 
 Encode rich objects yourself
 -------------------------------------------------------

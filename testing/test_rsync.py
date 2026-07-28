@@ -7,8 +7,8 @@ import types
 import pytest
 
 import execnet
+from execnet import Gateway
 from execnet import RSync
-from execnet.gateway import Gateway
 
 
 @pytest.fixture(scope="module")

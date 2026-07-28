@@ -1,6 +1,7 @@
 """Trio-native gateway core: async dispatch loop and low-level raw channels.
 
-Async-first counterpart of the sync machinery in ``gateway_base``: an
+Async-first counterpart of the sync machinery in ``_channel`` /
+``_gateway_base``: an
 :class:`AsyncGateway` owns a :class:`ByteStream` and runs a single dispatch
 task (stream -> ``FrameDecoder`` -> route).  Message handlers execute inline
 on that task, so there is no receiver thread and no receive lock.
@@ -37,17 +38,17 @@ import trio
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+from ._errors import GatewayReceivedTerminate
+from ._errors import HostNotFound
+from ._errors import RemoteError
+from ._errors import TimeoutError
 from ._exec_source import normalize_exec_source
-from .gateway_base import FrameDecoder
-from .gateway_base import GatewayReceivedTerminate
-from .gateway_base import HostNotFound
-from .gateway_base import Message
-from .gateway_base import RemoteError
-from .gateway_base import TimeoutError
-from .gateway_base import dumps_internal
-from .gateway_base import gateway_info
-from .gateway_base import loads_internal
-from .gateway_base import trace
+from ._message import FrameDecoder
+from ._message import Message
+from ._message import gateway_info
+from ._serialize import dumps_internal
+from ._serialize import loads_internal
+from ._trace import trace
 
 RECEIVE_CHUNK = 65536
 
@@ -898,7 +899,7 @@ class AsyncGroup:
         ``installvia=``), and ``via=`` sub-gateways relayed through a group
         member.
         """
-        from .xspec import XSpec
+        from ._xspec import XSpec
 
         if self._nursery is None:
             raise RuntimeError(f"{self!r} is not entered")

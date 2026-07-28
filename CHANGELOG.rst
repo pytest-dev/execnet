@@ -29,6 +29,34 @@
 * The serializer dropped the retired ``PY2STRING`` and ``UNICODE`` opcodes and renamed
   ``PY3STRING`` to ``STRING``. Values dumped by execnet running on Python2 no longer
   load. Opcode bytes are unchanged for every type that survives.
+* The supported API is now exactly five namespaces: ``execnet`` (aliases of
+  ``execnet.sync``), ``execnet.sync``, ``execnet.trio``, ``execnet.aio`` and
+  ``execnet.portal``. The pre-Trio modules ``execnet.gateway_base``, ``execnet.gateway``,
+  ``execnet.multi``, ``execnet.rsync``, ``execnet.rsync_remote`` and ``execnet.xspec``
+  were only ever reachable because ``import execnet`` pulled them in transitively; they
+  are now deprecated forwarding shims that warn on attribute access and will be removed
+  in execnet 3.0. Both ``import execnet.gateway_base`` and ``execnet.gateway_base.X``
+  after a plain ``import execnet`` keep working for now. Every name they exposed is
+  available from a public namespace, except the internals listed below.
+* ``gateway_base`` was split into private modules grouped by concern: ``_trace``,
+  ``_errors``, ``_execmodel``, ``_message`` (IO protocols, ``Message``,
+  ``FrameDecoder``), ``_serialize``, ``_channel`` (``Channel``, ``ChannelFactory``,
+  the ``ChannelFile`` adapters) and ``_gateway_base`` (``BaseGateway``,
+  ``WorkerGateway``).
+* Removed ``execnet.loads``, ``execnet.dump`` and ``execnet.load``, and dropped
+  ``execnet.dumps`` from the public surface. The standalone serializer is internal.
+  Added ``execnet.can_send(obj)``, which answers whether a value can cross a channel,
+  for callers that previously probed with ``try: execnet.dumps(x) / except DumpError``.
+  It lives on ``execnet`` only -- the wire contract does not vary by namespace.
+
+  ``execnet.dumps`` itself stays *reachable* for now, warning on access, purely so
+  released ``pytest-xdist`` keeps working; it is absent from ``__all__`` and from
+  ``dir(execnet)``. It is scheduled for removal once xdist ports its probe to
+  ``can_send``.
+* ``execnet.trio`` no longer exports ``ByteStream``, ``RawChannel``,
+  ``RawChannelStream`` or ``serve_gateway``; the raw-channel layer is internal routing
+  detail. No names were added to ``execnet.sync``, ``execnet.aio`` or
+  ``execnet.portal``.
 
 
 2.1.2 (2025-11-11)

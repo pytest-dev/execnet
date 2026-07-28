@@ -26,7 +26,8 @@ side only -- the host-side task runs to completion (a cancelled
 The error types are shared with :mod:`execnet.sync` and
 :mod:`execnet.trio`.  Items you send must already be simple builtin data
 (plus channels); the standalone serializer is intentionally not part of
-the public API -- see ``DumpError``.
+the public API -- ``execnet.can_send`` checks a value before you send it;
+see ``DumpError``.
 """
 
 from __future__ import annotations
@@ -45,17 +46,17 @@ from typing import TypeVar
 
 import trio
 
+from ._errors import DataFormatError
+from ._errors import DumpError
+from ._errors import HostNotFound
+from ._errors import LoadError
+from ._errors import RemoteError
+from ._errors import TimeoutError
 from ._trio_gateway import AsyncChannel
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
 from ._trio_host import TrioHost
-from .gateway_base import DataFormatError
-from .gateway_base import DumpError
-from .gateway_base import HostNotFound
-from .gateway_base import LoadError
-from .gateway_base import RemoteError
-from .gateway_base import TimeoutError
-from .xspec import XSpec
+from ._xspec import XSpec
 
 if TYPE_CHECKING:
     from typing_extensions import Self
