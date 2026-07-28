@@ -1,9 +1,9 @@
-"""The gevent wait backend (``wait=gevent``).
+"""The gevent wait backend behind :mod:`execnet.gevent`.
 
-Importing this module registers the ``gevent`` wakener factory; the
-boundary kit imports it lazily when a spec asks for ``wait=gevent``.
+The boundary kit imports this lazily (``make_wakener("gevent")``) so
+gevent stays an optional dependency.
 
-A blocking wait then parks only the calling greenlet: the carrier's
+A blocking wait parks only the calling greenlet: the carrier's
 event lives in the waiting greenlet's hub, and the loop side's
 ``notify()`` crosses threads through a ``loop.async_`` watcher -- the
 one libev/libuv primitive gevent documents as safe to use from other
@@ -17,8 +17,6 @@ from typing import Any
 
 import gevent.event
 from gevent.hub import get_hub
-
-from ._boundary import register_wakener
 
 
 class GeventWakener:
@@ -71,6 +69,3 @@ class GeventWakener:
             event = self._event
         if event is not None:
             event.clear()
-
-
-register_wakener("gevent", GeventWakener)

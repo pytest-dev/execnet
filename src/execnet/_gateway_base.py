@@ -23,6 +23,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
+from ._boundary import WaitBackend
 from ._boundary import Wakener
 from ._boundary import make_wakener
 from ._channel import Channel
@@ -41,9 +42,10 @@ class BaseGateway:
     _trio_session: Any = None
     # Set by the receiver on EOF without a prior termination message.
     _error: BaseException | None = None
-    #: wait= axis: which wakener backend this gateway's blocking waits
-    #: park on (channels, write-acks, join)
-    _wait_backend: str = "thread"
+    #: which primitive this gateway's blocking waits park on (channels,
+    #: write-acks, join).  Inherited from the facade coordinator-side, and
+    #: derived from the worker profile worker-side.
+    _wait_backend: WaitBackend = "thread"
 
     def __init__(self, io: IO, id, _startcount: int = 2) -> None:
         self.execmodel = io.execmodel

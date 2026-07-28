@@ -1,4 +1,4 @@
-"""The gevent wait backend (wait=gevent): greenlet-parking blocking waits.
+"""The execnet.gevent facade: greenlet-parking blocking waits.
 
 Opt-in: requires the ``gevent`` dependency group (``uv sync --group
 gevent``); skipped when gevent is not installed.  No monkey-patching is
@@ -15,6 +15,7 @@ import pytest
 gevent = pytest.importorskip("gevent")
 
 import execnet  # noqa: E402
+import execnet.gevent  # noqa: E402
 from execnet._boundary import Flag  # noqa: E402
 from execnet._boundary import Mailbox  # noqa: E402
 from execnet._boundary import make_wakener  # noqa: E402
@@ -24,9 +25,9 @@ TESTTIMEOUT = 10.0
 
 @pytest.fixture
 def gevent_gw():
-    group = execnet.Group()
+    group = execnet.gevent.Group()
     try:
-        yield group.makegateway("popen//wait=gevent")
+        yield group.makegateway("popen")
     finally:
         group.terminate(timeout=5.0)
 
@@ -88,7 +89,7 @@ class TestGeventGateway:
     def test_makegateway_parks_greenlet_not_hub(self) -> None:
         # management ops (makegateway/terminate) from a greenlet must not
         # stall the hub: they wait on a OneShot with a gevent wakener.
-        group = execnet.Group()
+        group = execnet.gevent.Group()
         progressed: list[int] = []
 
         def other() -> None:
@@ -98,7 +99,7 @@ class TestGeventGateway:
 
         try:
             ticker = gevent.spawn(other)
-            maker = gevent.spawn(group.makegateway, "popen//wait=gevent")
+            maker = gevent.spawn(group.makegateway, "popen")
             gw = maker.get(timeout=TESTTIMEOUT)
             channel = gw.remote_exec("channel.send(42)")
             assert gevent.spawn(channel.receive, TESTTIMEOUT).get(TESTTIMEOUT) == 42

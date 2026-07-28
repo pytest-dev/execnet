@@ -23,7 +23,7 @@ from typing import Literal
 from typing import TypeAlias
 from typing import overload
 
-from ._boundary import wakener_names
+from ._boundary import WaitBackend
 from ._channel import Channel
 from ._execmodel import EXECMODEL_PROFILES
 from ._execmodel import ExecModel
@@ -42,6 +42,12 @@ class Group:
     """Gateway Group."""
 
     defaultspec = "popen"
+
+    #: which primitive this group's blocking waits park on.  Set by the
+    #: facade, not by a spec: it describes the *caller's* concurrency
+    #: library, which is exactly what picking a namespace already says.
+    #: ``execnet.gevent.Group`` overrides it.
+    _wait_backend: WaitBackend = "thread"
 
     def __init__(
         self, xspecs: Iterable[XSpec | str | None] = (), execmodel: str = "thread"
@@ -178,10 +184,6 @@ class Group:
                 f"unknown execmodel {spec.execmodel!r}"
                 f" (known profiles: {list(EXECMODEL_PROFILES)})"
             )
-        if spec.wait is not None and spec.wait not in wakener_names():
-            raise ValueError(
-                f"unknown wait backend {spec.wait!r} (known: {wakener_names()})"
-            )
         from . import _trio_host
 
         if not (spec.socket or spec.via or spec.ssh or spec.vagrant_ssh or spec.popen):
@@ -256,26 +258,22 @@ class Group:
             self._gateways_to_join[:] = []
 
     def _host_terminate(self, timeout: float | None) -> None:
-        """Terminate the async group, parking correctly for wait backends.
+        """Terminate the async group, parking correctly for the wait backend.
 
-        A member gateway created with a non-thread ``wait=`` implies the
-        caller may be a greenlet: wait on a OneShot instead of blocking
-        the OS thread (which would stall the hub for the whole grace).
+        A non-thread backend implies the caller may be a greenlet: wait on
+        a OneShot instead of blocking the OS thread (which would stall the
+        hub for the whole grace).
         """
-        backends = {gw._wait_backend for gw in self._gateways_to_join} | {
-            gw._wait_backend for gw in self
-        }
-        backends.discard("thread")
-        if backends:
-            from ._boundary import make_wakener
-
-            self._trio_host.call_pending(
-                self._async_group.terminate,
-                timeout,
-                wakener=make_wakener(backends.pop()),
-            ).wait()
-        else:
+        if self._wait_backend == "thread":
             self._trio_host.call(self._async_group.terminate, timeout)
+            return
+        from ._boundary import make_wakener
+
+        self._trio_host.call_pending(
+            self._async_group.terminate,
+            timeout,
+            wakener=make_wakener(self._wait_backend),
+        ).wait()
 
     def remote_exec(
         self,

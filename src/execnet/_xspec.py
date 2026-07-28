@@ -29,7 +29,6 @@ class XSpec:
     ssh_config: str | None = None
     vagrant_ssh: str | None = None
     via: str | None = None
-    wait: str | None = None
 
     def __init__(self, string: str) -> None:
         self._spec = string

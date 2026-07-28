@@ -1,9 +1,11 @@
 """The public namespaces, and the deprecation shims for the private modules.
 
-Top-level ``execnet.*`` is an alias surface over ``execnet.sync``; the trio
-and aio namespaces expose the async-native core and its asyncio bridge; the
-portal namespace the cross-thread primitives.  Everything else in the package
-is private -- the pre-Trio module names survive only as warning shims.
+There is one namespace per concurrency library the caller drives execnet
+from: top-level ``execnet.*`` is an alias surface over ``execnet.sync``
+(threads), ``execnet.trio`` and ``execnet.aio`` expose the async-native core
+and its asyncio bridge, and ``execnet.gevent`` the greenlet-parking blocking
+surface.  Everything else in the package is private -- the pre-Trio module
+names survive only as warning shims.
 """
 
 from __future__ import annotations
@@ -18,12 +20,14 @@ import pytest
 
 import execnet
 import execnet.aio
-import execnet.portal
 import execnet.sync
 import execnet.trio
 
 #: the only modules that may be reachable without a leading underscore
-PUBLIC_NAMESPACES = ("aio", "portal", "sync", "trio")
+PUBLIC_NAMESPACES = ("aio", "gevent", "sync", "trio")
+
+#: those importable without an optional dependency (execnet.gevent needs gevent)
+ALWAYS_IMPORTABLE = tuple(n for n in PUBLIC_NAMESPACES if n != "gevent")
 
 #: pre-Trio module names kept as deprecated forwarding shims
 SHIMS = ("gateway", "gateway_base", "multi", "rsync", "rsync_remote", "xspec")
@@ -45,11 +49,20 @@ def test_top_level_all_matches_sync_surface() -> None:
 
 @pytest.mark.parametrize(
     "namespace",
-    [execnet, *[importlib.import_module(f"execnet.{n}") for n in PUBLIC_NAMESPACES]],
+    [execnet, *[importlib.import_module(f"execnet.{n}") for n in ALWAYS_IMPORTABLE]],
 )
 def test_namespace_all_resolves(namespace: object) -> None:
     missing = [n for n in namespace.__all__ if not hasattr(namespace, n)]  # type: ignore[attr-defined]
     assert not missing
+
+
+def test_gevent_namespace_all_resolves() -> None:
+    pytest.importorskip("gevent")
+    namespace = importlib.import_module("execnet.gevent")
+    assert not [n for n in namespace.__all__ if not hasattr(namespace, n)]
+    # the facade is the sync surface with greenlet parking wired in
+    assert namespace.Group._wait_backend == "gevent"
+    assert issubclass(namespace.Group, execnet.Group)
 
 
 def test_no_unexpected_public_modules() -> None:
@@ -85,7 +98,7 @@ def test_can_send_lives_only_on_the_top_level() -> None:
     assert execnet.can_send({"a": [1, 2.0, b"x", None, (True, frozenset({3}))]})
     assert not execnet.can_send(object())
     # the wire contract does not vary by surface, so it is not mirrored
-    for namespace in (execnet.sync, execnet.trio, execnet.aio, execnet.portal):
+    for namespace in (execnet.sync, execnet.trio, execnet.aio):
         assert "can_send" not in namespace.__all__, namespace.__name__
 
 
@@ -103,32 +116,35 @@ def test_dumps_is_a_temporary_xdist_shim() -> None:
     assert "dumps" not in dir(execnet)
 
 
-def test_portal_namespace() -> None:
-    assert execnet.portal.__all__ == [
-        "LoopPortal",
-        "Mailbox",
-        "OneShot",
-        "ThreadWakener",
-        "Wakener",
-    ]
-    assert execnet.portal.LoopPortal is not None
+def test_boundary_kit_is_private() -> None:
+    # There is no third-party event-loop extension point: the two wait
+    # backends are threads and gevent, and every other concurrency library
+    # gets a facade instead of a wakener.
+    assert not hasattr(execnet, "portal")
+    for name in ("Wakener", "Mailbox", "OneShot", "LoopPortal"):
+        assert not hasattr(execnet, name), name
+    from execnet import _boundary
+
+    assert not hasattr(_boundary, "register_wakener")
+    assert _boundary.make_wakener("thread") is not None
+    with pytest.raises(ValueError, match="unknown wait backend"):
+        _boundary.make_wakener("nope")  # type: ignore[arg-type]
 
 
 def test_lazy_submodule_attribute_access() -> None:
-    # After ``import execnet`` alone, execnet.trio / execnet.portal are
-    # reachable as attributes (PEP 562) without having been imported.
+    # After ``import execnet`` alone, execnet.trio is reachable as an
+    # attribute (PEP 562) without having been imported.
     out = subprocess.run(
         [
             sys.executable,
             "-c",
-            "import execnet; print(execnet.trio.AsyncGroup.__name__);"
-            " print(execnet.portal.LoopPortal.__name__)",
+            "import execnet; print(execnet.trio.AsyncGroup.__name__)",
         ],
         capture_output=True,
         text=True,
         check=True,
     )
-    assert out.stdout.split() == ["AsyncGroup", "LoopPortal"]
+    assert out.stdout.strip() == "AsyncGroup"
 
 
 def test_import_execnet_does_not_import_trio() -> None:

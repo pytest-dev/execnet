@@ -18,7 +18,7 @@ from ._execmodel import get_execmodel
 from ._gateway_base import WorkerGateway
 from ._serialize import loads_internal
 from ._trace import trace
-from .portal import Mailbox
+from ._boundary import Mailbox
 
 if TYPE_CHECKING:
     from . import _trio_host

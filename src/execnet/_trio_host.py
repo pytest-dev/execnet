@@ -45,8 +45,8 @@ from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_process
 from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
-from .portal import LoopPortal
-from .portal import OneShot
+from ._portal import LoopPortal
+from ._portal import OneShot
 
 #: default cap on concurrent threadpool threads running receiver callbacks
 DEFAULT_CALLBACK_THREADS = 40
@@ -719,6 +719,8 @@ class FacadeAsyncGroup(AsyncGroup):
         import execnet
 
         sync_gw = execnet.Gateway(_TempIO(self.group.execmodel), spec)
+        # the caller's concurrency library, inherited from the facade
+        sync_gw._wait_backend = self.group._wait_backend
         return SyncBridgeGateway(
             stream, id=spec.id, sync_gateway=sync_gw, host=self.host
         )
@@ -762,16 +764,16 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
     """Create a sync-facade Gateway for ``spec`` on the group's Trio host."""
     host: TrioHost = group._ensure_trio_host()
     async_group: FacadeAsyncGroup = group._ensure_async_group()
-    if spec.wait and spec.wait != "thread":
+    if group._wait_backend == "thread":
+        bridge = host.call(async_group.makegateway, spec)
+    else:
         # e.g. a gevent app: wait on a OneShot so only the calling
         # greenlet parks while the gateway comes up, not the whole hub.
         from ._boundary import make_wakener
 
         bridge = host.call_pending(
-            async_group.makegateway, spec, wakener=make_wakener(spec.wait)
+            async_group.makegateway, spec, wakener=make_wakener(group._wait_backend)
         ).wait()
-    else:
-        bridge = host.call(async_group.makegateway, spec)
     assert isinstance(bridge, SyncBridgeGateway)
     gw: Gateway = bridge.sync_gateway  # type: ignore[assignment]
     gw._io = SyncIOHandle(

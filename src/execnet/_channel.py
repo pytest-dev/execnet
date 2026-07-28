@@ -8,7 +8,6 @@ off the loop thread.
 
 from __future__ import annotations
 
-import builtins
 import threading
 import weakref
 from collections.abc import Callable
@@ -326,10 +325,7 @@ class Channel:
         mailbox = self._mailbox
         if mailbox is None:
             raise OSError("cannot receive(), channel has receiver callback")
-        try:
-            x = mailbox.get(timeout)
-        except builtins.TimeoutError:
-            raise self.TimeoutError("no item after %r seconds" % timeout) from None
+        x = mailbox.get(timeout)
         if x is ENDMARKER:
             mailbox.put(x)  # for other receivers
             raise self._getremoteerror() or EOFError()

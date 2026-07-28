@@ -119,10 +119,12 @@ class TestMakegateway:
     def test_no_type(self, makegateway: Callable[[str], Gateway]) -> None:
         pytest.raises(ValueError, lambda: makegateway("hello"))
 
-    def test_wait_axis(self, makegateway: Callable[[str], Gateway]) -> None:
-        with pytest.raises(ValueError, match="unknown wait backend"):
-            makegateway("popen//wait=nope")
-        gw = makegateway("popen//wait=thread")
+    def test_wait_backend_comes_from_the_facade(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        # not a spec key: the blocking surface decides how *it* parks, and
+        # a thread-shaped worker profile parks on threads either way
+        gw = makegateway("popen")
         assert gw._wait_backend == "thread"
         channel = gw.remote_exec("channel.send(channel.gateway._wait_backend)")
         assert channel.receive() == "thread"

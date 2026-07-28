@@ -8,7 +8,7 @@ private modules grouped by concern; each old name survives as a thin module
 whose ``__getattr__`` warns and forwards.
 
 The supported surfaces are :mod:`execnet` / :mod:`execnet.sync`,
-:mod:`execnet.trio`, :mod:`execnet.aio` and :mod:`execnet.portal`.
+:mod:`execnet.trio`, :mod:`execnet.aio` and :mod:`execnet.gevent`.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ def forwarder(shim: str, moved: dict[str, str]) -> Any:
         warnings.warn(
             f"execnet.{shim} is private and will be removed in {REMOVED_IN}; "
             f"{name} now lives in execnet{module}. The supported surfaces are "
-            f"execnet, execnet.sync, execnet.trio, execnet.aio and execnet.portal.",
+            f"execnet, execnet.sync, execnet.trio, execnet.aio and execnet.gevent.",
             DeprecationWarning,
             stacklevel=2,
         )

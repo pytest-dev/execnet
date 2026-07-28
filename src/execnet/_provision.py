@@ -164,12 +164,12 @@ def worker_cli_arg(spec: Any) -> str:
     """
     import execnet
 
-    # the gevent profile parks its greenlets on gevent wakeners
-    default_wait = "gevent" if spec.execmodel == "gevent" else "thread"
     config: dict[str, Any] = {
         "id": f"{spec.id}-worker",
         "execmodel": spec.execmodel,
-        "wait": spec.wait or default_wait,
+        # derived, not configurable: the gevent profile parks its greenlets
+        # on gevent wakeners, every other profile is thread-shaped.
+        "wait": "gevent" if spec.execmodel == "gevent" else "thread",
         "coordinator_version": execnet.__version__,
     }
     # Startup setup applied by the worker before serving (never through
