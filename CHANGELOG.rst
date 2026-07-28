@@ -20,6 +20,15 @@
 * Moved the socket server to ``execnet._socketserver`` and removed the now empty
   ``execnet.script`` package. The ``execnet-socketserver`` console command is unchanged
   and remains the supported way to run it.
+* Removed ``Gateway.reconfigure`` and ``Channel.reconfigure`` along with the
+  ``py2str_as_py3str`` / ``py3str_as_py2str`` arguments of ``gateway_base.loads`` and
+  ``gateway_base.load``. They configured string coercion between Python2 and Python3
+  peers, which execnet can no longer have: ``py2str_as_py3str`` was already unreachable
+  because only a Python2 serializer emits the opcode it gates. The ``RECONFIGURE``
+  message code stays reserved but is no longer sent or handled.
+* The serializer dropped the retired ``PY2STRING`` and ``UNICODE`` opcodes and renamed
+  ``PY3STRING`` to ``STRING``. Values dumped by execnet running on Python2 no longer
+  load. Opcode bytes are unchanged for every type that survives.
 
 
 2.1.2 (2025-11-11)

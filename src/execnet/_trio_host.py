@@ -204,13 +204,6 @@ class SyncBridgeGateway(AsyncGateway):
             elif code == Message.CHANNEL_EXEC:
                 channel = gateway._channelfactory.new(message.channelid)
                 gateway._local_schedulexec(channel=channel, sourcetask=message.data)
-            elif code == Message.RECONFIGURE:
-                data = loads_internal(message.data, gateway)
-                assert isinstance(data, tuple)
-                if message.channelid == 0:
-                    gateway._strconfig = data
-                else:
-                    gateway._channelfactory.new(message.channelid)._strconfig = data
             elif code == Message.GATEWAY_START_SOCKET:
                 handle_start_socket(gateway, message.channelid, message.data)
             elif code == Message.GATEWAY_START_SUB:

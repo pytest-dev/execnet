@@ -14,7 +14,6 @@ Note: all examples with `>>>` prompts are automatically tested.
    example/test_group
    example/test_proxy
    example/test_multi
-   example/hybridpython
    example/test_debug
 
 .. toctree::

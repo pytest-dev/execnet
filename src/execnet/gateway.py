@@ -80,18 +80,6 @@ class Gateway(gateway_base.BaseGateway):
             self._trace("io-error: could not send termination sequence")
             self._trace(" exception: %r" % exc)
 
-    def reconfigure(
-        self, py2str_as_py3str: bool = True, py3str_as_py2str: bool = False
-    ) -> None:
-        """Set the string coercion for this gateway.
-
-        The default is to try to convert py2 str as py3 str, but not to try and
-        convert py3 str to py2 str.
-        """
-        self._strconfig = (py2str_as_py3str, py3str_as_py2str)
-        data = gateway_base.dumps_internal(self._strconfig)
-        self._send(Message.RECONFIGURE, data=data)
-
     def _rinfo(self, update: bool = False) -> RInfo:
         """Return some sys/env information from remote.
 

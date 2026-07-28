@@ -59,9 +59,6 @@ Known uses
   project to launch computation processes through ssh.  He also
   compares `disco and execnet`_ in a subsequent post.
 
-* Ronny Pfannschmidt uses it for his `anyvc`_ VCS-abstraction project
-  to bridge the Python2/Python3 version gap.
-
 * Sysadmins and developers are using it for ad-hoc custom scripting
 
 .. _`quora`: http://quora.com
@@ -71,7 +68,6 @@ Known uses
 .. _`distributed testing`: https://pypi.python.org/pypi/pytest-xdist
 .. _`Distributed NTLK with execnet`: http://streamhacker.com/2009/11/29/distributed-nltk-execnet/
 .. _`disco and execnet`: http://streamhacker.com/2009/12/14/execnet-disco-distributed-nltk/
-.. _`anyvc`: http://bitbucket.org/RonnyPfannschmidt/anyvc/
 
 Project status
 --------------------------

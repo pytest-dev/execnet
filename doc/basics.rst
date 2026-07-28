@@ -43,8 +43,8 @@ Examples for valid gateway specifications
   ``default`` via SSH through Vagrant's ``vagrant ssh`` command. It supports
   the same additional parameters as regular SSH connections.
 
-* ``popen//python=python2.7//nice=20`` specification of
-  a python subprocess using the ``python2.7`` executable which must be
+* ``popen//python=python3.13//nice=20`` specification of
+  a python subprocess using the ``python3.13`` executable which must be
   discoverable through the system ``PATH``; running with the lowest
   CPU priority ("nice" level).  By default current dir will be the
   current dir of the instantiator.
@@ -85,10 +85,6 @@ get sent for remote execution.  ``remote_exec`` returns
 a channel object whose symmetric counterpart channel
 is available to the remotely executing source.
 
-
-.. method:: Gateway.reconfigure([py2str_as_py3str=True, py3str_as_py2str=False])
-
-    Reconfigures the string-coercion behaviour of the gateway
 
 .. _`Channel`:
 .. _`channel-api`:
