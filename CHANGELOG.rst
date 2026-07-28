@@ -8,6 +8,8 @@
 * Removed ``execnet.script.shell``, an interactive remote prompt that injected its own
   source into the pre-Trio socket server. The Trio socket server never execs an incoming
   source line, so the module could no longer work against it.
+* Removed ``execnet.script.quitserver``, which shut a socket server down by sending it
+  ``"raise KeyboardInterrupt"`` to exec. It relied on the same removed handshake.
 
 
 2.1.2 (2025-11-11)
