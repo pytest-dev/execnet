@@ -14,7 +14,7 @@ import trio as trio_lib
 
 import execnet
 import execnet.trio
-from execnet.gateway import Gateway
+from execnet import Gateway
 
 TESTTIMEOUT = 10.0
 

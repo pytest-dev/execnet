@@ -9,8 +9,8 @@ import pytest
 
 import execnet
 
-# The package parent: the serializer is imported as execnet.gateway_base
-# (it needs its trio-free sibling execnet._boundary; only stdlib beyond that).
+# The package parent: the serializer is imported as execnet._serialize
+# (it needs its sibling execnet._errors; only stdlib beyond that).
 pyimportdir = os.fspath(Path(execnet.__file__).parent.parent)
 
 
@@ -25,7 +25,7 @@ class PythonWrapper:
             f"""
 import sys
 sys.path.insert(0, {pyimportdir!r})
-import execnet.gateway_base as serializer
+import execnet._serialize as serializer
 sys.stdout = sys.stdout.detach()
 sys.stdout.write(serializer.dumps_internal({obj_rep}))
 """
@@ -41,7 +41,7 @@ sys.stdout.write(serializer.dumps_internal({obj_rep}))
             rf"""
 import sys
 sys.path.insert(0, {pyimportdir!r})
-import execnet.gateway_base as serializer
+import execnet._serialize as serializer
 from io import BytesIO
 data = {data!r}
 io = BytesIO(data)
@@ -190,4 +190,4 @@ def test_tuple_nested_with_empty_in_between(dump, load) -> None:
 def test_py2_string_opcode_is_retired() -> None:
     """The py2 ``str`` opcode ``M`` is gone; only Python2 ever emitted it."""
     with pytest.raises(execnet.DataFormatError, match="unknown opcode"):
-        execnet.gateway_base.loads(b"\x02M\x00\x00\x00\x01aQ")
+        execnet._serialize.loads(b"\x02M\x00\x00\x00\x01aQ")

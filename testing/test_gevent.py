@@ -155,9 +155,9 @@ class TestGeventWorkerProfile:
 
 
 def test_provisioning_adds_gevent_requirement() -> None:
+    from execnet import XSpec
     from execnet._provision import _extra_with_tokens
     from execnet._provision import worker_cli_arg
-    from execnet.xspec import XSpec
 
     spec = XSpec("popen//id=g1//execmodel=gevent")
     config = worker_cli_arg(spec)

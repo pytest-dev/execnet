@@ -16,40 +16,32 @@ host thread, no blocking calls::
 
 The error types are shared with the blocking API in :mod:`execnet.sync`.
 Items you send must already be simple builtin data (plus channels); the
-standalone serializer is intentionally not part of the public API -- see
-``DumpError``.
+standalone serializer is intentionally not part of the public API --
+``execnet.can_send`` checks a value before you send it; see ``DumpError``.
 """
 
+from ._errors import DataFormatError
+from ._errors import DumpError
+from ._errors import HostNotFound
+from ._errors import LoadError
+from ._errors import RemoteError
+from ._errors import TimeoutError
 from ._trio_gateway import AsyncChannel
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
-from ._trio_gateway import ByteStream
-from ._trio_gateway import RawChannel
-from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_gateway
-from ._trio_gateway import serve_gateway
-from .gateway_base import DataFormatError
-from .gateway_base import DumpError
-from .gateway_base import HostNotFound
-from .gateway_base import LoadError
-from .gateway_base import RemoteError
-from .gateway_base import TimeoutError
-from .xspec import XSpec
+from ._xspec import XSpec
 
 __all__ = [
     "AsyncChannel",
     "AsyncGateway",
     "AsyncGroup",
-    "ByteStream",
     "DataFormatError",
     "DumpError",
     "HostNotFound",
     "LoadError",
-    "RawChannel",
-    "RawChannelStream",
     "RemoteError",
     "TimeoutError",
     "XSpec",
     "open_popen_gateway",
-    "serve_gateway",
 ]

@@ -16,11 +16,14 @@ import pytest
 
 import execnet
 from execnet import _boundary
-from execnet import gateway
-from execnet import gateway_base
-from execnet.gateway_base import ChannelFactory
-from execnet.gateway_base import ExecModel
-from execnet.gateway_base import Message
+from execnet import _errors
+from execnet import _exec_source
+from execnet import _gateway_base
+from execnet import _message
+from execnet import _serialize
+from execnet._channel import ChannelFactory
+from execnet._execmodel import ExecModel
+from execnet._message import Message
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
@@ -28,45 +31,49 @@ skip_win_pypy = pytest.mark.xfail(
 )
 
 
-# The standalone serializer is an internal detail (execnet.gateway_base),
+# The standalone serializer is an internal detail (execnet._serialize),
 # not part of the public API -- see the docs, "Sending objects over a channel".
 @pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])
 class TestSerializeAPI:
     def test_serializer_api(self, val: object) -> None:
-        dumped = gateway_base.dumps(val)
-        val2 = gateway_base.loads(dumped)
+        dumped = _serialize.dumps(val)
+        val2 = _serialize.loads(dumped)
         assert val == val2
 
     def test_mmap(self, tmp_path: Path, val: object) -> None:
         mmap = pytest.importorskip("mmap").mmap
         p = tmp_path / "data.bin"
 
-        p.write_bytes(gateway_base.dumps(val))
+        p.write_bytes(_serialize.dumps(val))
         with p.open("r+b") as f:
             m = mmap(f.fileno(), 0)
-            val2 = gateway_base.load(m)
+            val2 = _serialize.load(m)
         assert val == val2
 
     def test_bytesio(self, val: object) -> None:
         f = BytesIO()
-        gateway_base.dump(f, val)
+        _serialize.dump(f, val)
         read = BytesIO(f.getvalue())
-        val2 = gateway_base.load(read)
+        val2 = _serialize.load(read)
         assert val == val2
 
 
 def test_serializer_not_public() -> None:
-    # dumps/loads/dump/load are internal to gateway_base only.
-    for name in ("dumps", "loads", "dump", "load"):
+    # dumps/loads/dump/load stay internal to execnet._serialize.  ``dumps``
+    # is still *reachable* as a temporary pytest-xdist shim, but it is not
+    # part of the surface -- see test_namespaces.py.
+    for name in ("loads", "dump", "load"):
         assert not hasattr(execnet, name), name
+    for name in ("dumps", "loads", "dump", "load"):
+        assert name not in execnet.__all__, name
 
 
 def test_serializer_api_version_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    bchr = gateway_base.bchr
-    monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(1))
-    dumped = gateway_base.dumps(42)
-    monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(2))
-    pytest.raises(execnet.DataFormatError, lambda: gateway_base.loads(dumped))
+    bchr = _serialize.bchr
+    monkeypatch.setattr(_serialize, "DUMPFORMAT_VERSION", bchr(1))
+    dumped = _serialize.dumps(42)
+    monkeypatch.setattr(_serialize, "DUMPFORMAT_VERSION", bchr(2))
+    pytest.raises(execnet.DataFormatError, lambda: _serialize.loads(dumped))
 
 
 def test_errors_on_execnet() -> None:
@@ -75,26 +82,22 @@ def test_errors_on_execnet() -> None:
     assert hasattr(execnet, "DataFormatError")
 
 
-def standalone_gateway_base_source() -> str:
-    """gateway_base's source as a self-contained script.
+def standalone_protocol_source() -> str:
+    """The wire-protocol core as a self-contained script.
 
-    The module imports the trio-free boundary kit relatively; for the
-    run-on-any-python checks the kit source is inlined in place of those
-    imports (minus its own future import, which must stay file-leading).
+    ``_errors``, ``_message`` and ``_serialize`` are the layers a peer needs
+    to frame and serialize; between them the only runtime execnet imports are
+    of each other, so concatenating their sources -- dropping those imports
+    and keeping a single file-leading future import -- yields a script that
+    runs on any interpreter, which is what these checks verify.  The
+    ``if TYPE_CHECKING:`` imports are left in place; they never execute.
     """
-    boundary_source = inspect.getsource(_boundary).replace(
-        "from __future__ import annotations\n", ""
-    )
-    lines = []
-    inlined = False
-    for line in inspect.getsource(gateway_base).splitlines(keepends=True):
-        if line.startswith("from ._boundary import"):
-            if not inlined:
-                inlined = True
-                lines.append(boundary_source)
-        else:
+    lines = ["from __future__ import annotations\n"]
+    for module in (_errors, _message, _serialize):
+        for line in inspect.getsource(module).splitlines(keepends=True):
+            if line.startswith(("from __future__ import annotations", "from ._")):
+                continue
             lines.append(line)
-    assert inlined
     return "".join(lines)
 
 
@@ -156,14 +159,14 @@ def checker(anypython: str, tmp_path: Path) -> Checker:
 
 
 def test_io_message(checker: Checker) -> None:
-    out = checker.run_check(standalone_gateway_base_source() + IO_MESSAGE_EXTRA_SOURCE)
+    out = checker.run_check(standalone_protocol_source() + IO_MESSAGE_EXTRA_SOURCE)
     print(out.stdout)
     assert "all passed" in out.stdout
 
 
 def test_geterrortext(checker: Checker) -> None:
     out = checker.run_check(
-        standalone_gateway_base_source()
+        standalone_protocol_source()
         + """
 class Arg(Exception):
     pass
@@ -230,7 +233,7 @@ class PseudoChannel:
 def test_exectask(execmodel: ExecModel) -> None:
     io = BytesIO()
     io.execmodel = execmodel  # type: ignore[attr-defined]
-    gw = gateway_base.WorkerGateway(io, id="something")  # type: ignore[arg-type]
+    gw = _gateway_base.WorkerGateway(io, id="something")  # type: ignore[arg-type]
     ch = PseudoChannel()
     gw.executetask((ch, ("raise ValueError()", None, {})))  # type: ignore[arg-type]
     assert "ValueError" in str(ch._closed[0])
@@ -261,7 +264,7 @@ class TestFrameDecoder:
         ]
 
     def test_single_feed_yields_all(self) -> None:
-        decoder = gateway_base.FrameDecoder()
+        decoder = _message.FrameDecoder()
         blob = b"".join(m.pack() for m in self._messages())
         got = list(decoder.feed(blob))
         assert [(m.msgcode, m.channelid, m.data) for m in got] == [
@@ -271,7 +274,7 @@ class TestFrameDecoder:
 
     @pytest.mark.parametrize("chunksize", [1, 2, 3, 8, 9, 10, 13])
     def test_adversarial_chunk_splits(self, chunksize: int) -> None:
-        decoder = gateway_base.FrameDecoder()
+        decoder = _message.FrameDecoder()
         blob = b"".join(m.pack() for m in self._messages())
         got: list[Message] = []
         for start in range(0, len(blob), chunksize):
@@ -282,14 +285,14 @@ class TestFrameDecoder:
         decoder.close()
 
     def test_close_mid_frame_raises(self) -> None:
-        decoder = gateway_base.FrameDecoder()
+        decoder = _message.FrameDecoder()
         blob = Message(Message.CHANNEL_DATA, 1, b"hello").pack()
         assert list(decoder.feed(blob[:-2])) == []
         with pytest.raises(EOFError, match="mid-frame"):
             decoder.close()
 
     def test_feed_buffers_even_when_not_iterated(self) -> None:
-        decoder = gateway_base.FrameDecoder()
+        decoder = _message.FrameDecoder()
         blob = Message(Message.CHANNEL_DATA, 5, b"data").pack()
         decoder.feed(blob[:4])  # result deliberately not iterated
         (msg,) = decoder.feed(blob[4:])
@@ -317,7 +320,7 @@ class TestFrameDecoder:
                 await theirs.send_eof()
 
             async def receiver() -> None:
-                decoder = gateway_base.FrameDecoder()
+                decoder = _message.FrameDecoder()
                 while True:
                     data = await ours.receive_some(4096)
                     if not data:
@@ -382,13 +385,13 @@ class TestPureChannel:
 
 class TestSourceOfFunction:
     def test_lambda_unsupported(self) -> None:
-        pytest.raises(ValueError, gateway._source_of_function, lambda: 1)
+        pytest.raises(ValueError, _exec_source._source_of_function, lambda: 1)
 
     def test_wrong_prototype_fails(self) -> None:
         def prototype(wrong) -> None:
             pass
 
-        pytest.raises(ValueError, gateway._source_of_function, prototype)
+        pytest.raises(ValueError, _exec_source._source_of_function, prototype)
 
     def test_function_without_known_source_fails(self) -> None:
         # this one won't be able to find the source
@@ -396,7 +399,7 @@ class TestSourceOfFunction:
         exec("def fail(channel): pass", mess, mess)
         print(inspect.getsourcefile(mess["fail"]))
         with pytest.raises(ValueError):
-            gateway._source_of_function(mess["fail"])
+            _exec_source._source_of_function(mess["fail"])
 
     def test_function_with_closure_fails(self) -> None:
         mess: dict[str, Any] = {}
@@ -405,13 +408,13 @@ class TestSourceOfFunction:
             print(mess)
 
         with pytest.raises(ValueError):
-            gateway._source_of_function(closure)
+            _exec_source._source_of_function(closure)
 
     def test_source_of_nested_function(self) -> None:
         def working(channel: object) -> None:
             pass
 
-        send_source = gateway._source_of_function(working).lstrip("\r\n")
+        send_source = _exec_source._source_of_function(working).lstrip("\r\n")
         expected = "def working(channel: object) -> None:\n    pass\n"
         assert send_source == expected
 
@@ -420,7 +423,7 @@ class TestGlobalFinder:
     def check(self, func) -> list[str]:
         src = textwrap.dedent(inspect.getsource(func))
         code = func.__code__
-        return gateway._find_non_builtin_globals(src, code)
+        return _exec_source._find_non_builtin_globals(src, code)
 
     def test_local(self) -> None:
         def f(a, b, c):
@@ -447,7 +450,7 @@ class TestGlobalFinder:
         def func(channel) -> None:
             sys
 
-        pytest.raises(ValueError, gateway._source_of_function, func)
+        pytest.raises(ValueError, _exec_source._source_of_function, func)
 
     def test_method_call(self) -> None:
         # method names are reason
@@ -460,7 +463,7 @@ class TestGlobalFinder:
 
 @skip_win_pypy
 def test_remote_exec_function_with_kwargs(
-    anypython: str, makegateway: Callable[[str], gateway.Gateway]
+    anypython: str, makegateway: Callable[[str], execnet.Gateway]
 ) -> None:
     def func(channel, data) -> None:
         channel.send(data)
@@ -473,17 +476,17 @@ def test_remote_exec_function_with_kwargs(
     assert result == 1
 
 
-def test_remote_exc__no_kwargs(makegateway: Callable[[], gateway.Gateway]) -> None:
+def test_remote_exc__no_kwargs(makegateway: Callable[[], execnet.Gateway]) -> None:
     gw = makegateway()
     with pytest.raises(TypeError):
-        gw.remote_exec(gateway_base, kwarg=1)
+        gw.remote_exec(_message, kwarg=1)
     with pytest.raises(TypeError):
         gw.remote_exec("pass", kwarg=1)
 
 
 @skip_win_pypy
 def test_remote_exec_inspect_stack(
-    makegateway: Callable[[], gateway.Gateway],
+    makegateway: Callable[[], execnet.Gateway],
 ) -> None:
     gw = makegateway()
     ch = gw.remote_exec(

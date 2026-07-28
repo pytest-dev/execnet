@@ -12,18 +12,18 @@ from typing import Any
 
 import trio
 
-from .gateway_base import MAIN_THREAD_ONLY_DEADLOCK_TEXT
-from .gateway_base import WorkerGateway
-from .gateway_base import get_execmodel
-from .gateway_base import geterrortext
-from .gateway_base import loads_internal
-from .gateway_base import trace
+from ._errors import MAIN_THREAD_ONLY_DEADLOCK_TEXT
+from ._errors import geterrortext
+from ._execmodel import get_execmodel
+from ._gateway_base import WorkerGateway
+from ._serialize import loads_internal
+from ._trace import trace
 from .portal import Mailbox
 
 if TYPE_CHECKING:
     from . import _trio_host
-    from .gateway_base import Channel
-    from .gateway_base import ExecModel
+    from ._channel import Channel
+    from ._execmodel import ExecModel
 
 ExecItem = tuple[Any, ...]
 

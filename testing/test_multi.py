@@ -12,12 +12,12 @@ from time import sleep
 import pytest
 
 import execnet
+from execnet import Gateway
+from execnet import Group
 from execnet import XSpec
-from execnet.gateway import Gateway
-from execnet.gateway_base import Channel
-from execnet.gateway_base import ExecModel
-from execnet.multi import Group
-from execnet.multi import safe_terminate
+from execnet._channel import Channel
+from execnet._execmodel import ExecModel
+from execnet._multi import safe_terminate
 
 
 class TestMultiChannelAndGateway:

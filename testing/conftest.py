@@ -11,9 +11,9 @@ from functools import lru_cache
 import pytest
 
 import execnet
-from execnet.gateway import Gateway
-from execnet.gateway_base import ExecModel
-from execnet.gateway_base import get_execmodel
+from execnet import Gateway
+from execnet._execmodel import ExecModel
+from execnet._execmodel import get_execmodel
 
 collect_ignore = ["build", "doc/_build"]
 

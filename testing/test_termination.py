@@ -12,8 +12,8 @@ import pytest
 from test_gateway import TESTTIMEOUT
 
 import execnet
-from execnet.gateway import Gateway
-from execnet.gateway_base import ExecModel
+from execnet import Gateway
+from execnet._execmodel import ExecModel
 
 execnetdir = pathlib.Path(execnet.__file__).parent.parent
 

@@ -9,8 +9,8 @@ import time
 
 import pytest
 
-from execnet.gateway import Gateway
-from execnet.gateway_base import Channel
+from execnet import Gateway
+from execnet._channel import Channel
 
 needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")

@@ -24,7 +24,7 @@ hypothesis = pytest.importorskip("hypothesis")
 from hypothesis import given  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
-from execnet.gateway import Gateway  # noqa: E402
+from execnet import Gateway  # noqa: E402
 
 # High --stress levels replay one test many times; lift the per-test timeout
 # well above the default so that only a real hang (bounded by TESTTIMEOUT on

@@ -16,8 +16,9 @@ from textwrap import dedent
 import pytest
 
 import execnet
-from execnet import gateway_base
-from execnet.gateway import Gateway
+from execnet import Gateway
+from execnet import _execmodel
+from execnet import _trace
 
 TESTTIMEOUT = 10.0  # seconds
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
@@ -169,7 +170,7 @@ class TestBasicGateway:
         ch = gw.remote_exec(remotetest)
         try:
             ch.receive()
-        except execnet.gateway_base.RemoteError as e:
+        except execnet.RemoteError as e:
             assert 'remotetest.py", line 3, in run_me' in str(e)
             assert "ValueError: me" in str(e)
         finally:
@@ -178,7 +179,7 @@ class TestBasicGateway:
         ch = gw.remote_exec(remotetest.run_me)
         try:
             ch.receive()
-        except execnet.gateway_base.RemoteError as e:
+        except execnet.RemoteError as e:
             assert 'remotetest.py", line 3, in run_me' in str(e)
             assert "ValueError: me" in str(e)
         finally:
@@ -346,9 +347,9 @@ class TestPopenGateway:
         assert x.lower() == str(tmp_path).lower()
 
     def test_remoteerror_readable_traceback(self, gw: Gateway) -> None:
-        with pytest.raises(gateway_base.RemoteError) as e:
+        with pytest.raises(execnet.RemoteError) as e:
             gw.remote_exec("x y").waitclose()
-        assert "gateway_base" in e.value.formatted
+        assert "_gateway_base" in e.value.formatted
 
     def test_many_popen(self, makegateway: Callable[[str], Gateway]) -> None:
         num = 4
@@ -523,9 +524,7 @@ class TestTracing:
         monkeypatch.setenv("EXECNET_DEBUG", "1")
         gw = makegateway("popen")
         #  hack out the debuffilename
-        fn = gw.remote_exec(
-            "import execnet;channel.send(execnet.gateway_base.fn)"
-        ).receive()
+        fn = gw.remote_exec("import execnet;channel.send(execnet._trace.fn)").receive()
         assert isinstance(fn, str)
         workerfile = pathlib.Path(fn)
         assert workerfile.exists()
@@ -555,7 +554,7 @@ class TestTracing:
         gw.exit()
 
     def test_no_tracing_by_default(self):
-        assert gateway_base.trace == gateway_base.notrace, (
+        assert _trace.trace == _trace.notrace, (
             "trace does not to default to empty tracing"
         )
 
@@ -584,7 +583,7 @@ def test_popen_args(spec: str, expected_args: list[str]) -> None:
 
 
 def test_assert_main_thread_only(
-    execmodel: gateway_base.ExecModel, makegateway: Callable[[str], Gateway]
+    execmodel: _execmodel.ExecModel, makegateway: Callable[[str], Gateway]
 ) -> None:
     if execmodel.backend != "main_thread_only":
         pytest.skip("can only run with main_thread_only")
@@ -623,7 +622,7 @@ def test_assert_main_thread_only(
 
 
 def test_main_thread_only_concurrent_remote_exec_deadlock(
-    execmodel: gateway_base.ExecModel, makegateway: Callable[[str], Gateway]
+    execmodel: _execmodel.ExecModel, makegateway: Callable[[str], Gateway]
 ) -> None:
     if execmodel.backend != "main_thread_only":
         pytest.skip("can only run with main_thread_only")
@@ -651,7 +650,7 @@ def test_main_thread_only_concurrent_remote_exec_deadlock(
 
         expected_results = (
             True,
-            execnet.gateway_base.MAIN_THREAD_ONLY_DEADLOCK_TEXT,
+            execnet._errors.MAIN_THREAD_ONLY_DEADLOCK_TEXT,
         )
         for expected, ch in zip(expected_results, channels, strict=True):
             try:

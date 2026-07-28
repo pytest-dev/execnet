@@ -15,14 +15,14 @@ import pytest
 import trio
 import trio.testing
 
-from execnet import gateway_base
+from execnet import _errors
+from execnet._errors import RemoteError
+from execnet._message import Message
+from execnet._serialize import dumps_internal
+from execnet._serialize import loads_internal
 from execnet._trio_gateway import AsyncGateway
 from execnet._trio_gateway import AsyncGroup
 from execnet._trio_gateway import open_popen_gateway
-from execnet.gateway_base import Message
-from execnet.gateway_base import RemoteError
-from execnet.gateway_base import dumps_internal
-from execnet.gateway_base import loads_internal
 
 
 @asynccontextmanager
@@ -224,7 +224,7 @@ def test_channel_receive_timeout() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, _right):
             channel = left.open_channel()
-            with pytest.raises(gateway_base.TimeoutError):
+            with pytest.raises(_errors.TimeoutError):
                 await channel.receive(timeout=0.05)
 
     trio.run(main)

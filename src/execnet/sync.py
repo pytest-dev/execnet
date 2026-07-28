@@ -6,21 +6,21 @@ blocks the calling thread.  The top-level ``execnet.*`` names are aliases
 into this module.
 """
 
-from .gateway import Gateway
-from .gateway_base import Channel
-from .gateway_base import DataFormatError
-from .gateway_base import DumpError
-from .gateway_base import HostNotFound
-from .gateway_base import LoadError
-from .gateway_base import RemoteError
-from .gateway_base import TimeoutError
-from .multi import Group
-from .multi import MultiChannel
-from .multi import default_group
-from .multi import makegateway
-from .multi import set_execmodel
-from .rsync import RSync
-from .xspec import XSpec
+from ._channel import Channel
+from ._errors import DataFormatError
+from ._errors import DumpError
+from ._errors import HostNotFound
+from ._errors import LoadError
+from ._errors import RemoteError
+from ._errors import TimeoutError
+from ._gateway import Gateway
+from ._multi import Group
+from ._multi import MultiChannel
+from ._multi import default_group
+from ._multi import makegateway
+from ._multi import set_execmodel
+from ._rsync import RSync
+from ._xspec import XSpec
 
 __all__ = [
     "Channel",
