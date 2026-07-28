@@ -10,6 +10,10 @@
   source line, so the module could no longer work against it.
 * Removed ``execnet.script.quitserver``, which shut a socket server down by sending it
   ``"raise KeyboardInterrupt"`` to exec. It relied on the same removed handshake.
+* Removed ``execnet.script.loop_socketserver``, a restart loop around a sibling
+  ``socketserver.py`` file. The socket server serves connections in a loop itself
+  (``--once`` opts out), and the sibling-file path never resolved for an installed
+  execnet anyway.
 
 
 2.1.2 (2025-11-11)
