@@ -92,17 +92,18 @@ def pytest_configure(config: pytest.Config) -> None:
         from hypothesis import settings
     except ImportError:
         return
-    common = dict(
-        deadline=None,
-        suppress_health_check=[
-            HealthCheck.function_scoped_fixture,
-            HealthCheck.too_slow,
-        ],
+    suppress = [HealthCheck.function_scoped_fixture, HealthCheck.too_slow]
+    settings.register_profile(
+        "execnet-quick", max_examples=15, deadline=None, suppress_health_check=suppress
     )
-    settings.register_profile("execnet-quick", max_examples=15, **common)
     stress = config.getoption("stress")
     if stress is not None:
-        settings.register_profile("execnet-stress", max_examples=int(stress), **common)
+        settings.register_profile(
+            "execnet-stress",
+            max_examples=int(stress),
+            deadline=None,
+            suppress_health_check=suppress,
+        )
         settings.load_profile("execnet-stress")
     else:
         settings.load_profile("execnet-quick")

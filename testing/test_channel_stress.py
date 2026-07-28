@@ -55,9 +55,7 @@ class TestCallbackStress:
     gwtype = "popen"
 
     @given(data=items_strategy)
-    def test_callback_receives_all_in_order(
-        self, gw: Gateway, data: list[int]
-    ) -> None:
+    def test_callback_receives_all_in_order(self, gw: Gateway, data: list[int]) -> None:
         collected: list[int] = []
         channel = gw.remote_exec(_echo, items=data)
         channel.setcallback(collected.append)
