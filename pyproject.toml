@@ -38,7 +38,7 @@ classifiers = [
 ]
 
 [project.scripts]
-execnet-socketserver = "execnet.script.socketserver:main"
+execnet-socketserver = "execnet._socketserver:main"
 
 [project.optional-dependencies]
 gevent = [

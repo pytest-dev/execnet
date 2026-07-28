@@ -17,6 +17,9 @@
 * Removed ``execnet.script.socketserverservice``, the pywin32 Windows service wrapper.
   Wrap the ``execnet-socketserver`` console command with a service host such as NSSM
   instead; the socket gateway example documents how.
+* Moved the socket server to ``execnet._socketserver`` and removed the now empty
+  ``execnet.script`` package. The ``execnet-socketserver`` console command is unchanged
+  and remains the supported way to run it.
 
 
 2.1.2 (2025-11-11)
