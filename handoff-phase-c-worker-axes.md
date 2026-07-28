@@ -63,8 +63,12 @@ File map (src/execnet/):
 - exec admission order = message arrival order (`TrioWorkerExec._pump`;
   `test_main_thread_only_concurrent_remote_exec_deadlock` guards this —
   trio shuffles its run batch, so never rely on task-spawn order).
-- Channel callbacks run on the receiver (loop) thread — keep for now
-  (open decision: revisit in D).
+- Channel callbacks now run in a threadpool thread driven by a per-channel
+  consumer *task* on the loop (RESOLVED 2026-07-26, was the "revisit in D"
+  open decision — moved off the loop).  A slow callback no longer blocks the
+  reader; per-channel order is still strict, and `waitclose()` still returns
+  only after every callback (incl. the endmarker) has run.  See "Callback
+  consumer tasks" below.
 - `Group.terminate(timeout)` never hangs (~2×timeout bound, issues
   #43/#221).
 - Sync blocking waits (send-ack, receive, waitclose, join) stay on
@@ -167,8 +171,8 @@ Compat mapping: `execmodel=thread` → `loop=main` + `exec=thread`;
    this branch plus real `-n` smoke runs (crash/endmarker tests,
    `main_thread_only` GUI case).  Our own suite running `-n 12` green is
    necessary but not sufficient.
-4. **Close the open decision**: channel callbacks on the loop thread —
-   keep or move.
+4. **Open decision CLOSED (2026-07-26)**: channel callbacks moved off the
+   loop thread — see "Callback consumer tasks" below.
 5. **xfail markers audit (done 2026-07-26, keep as-is)**: the 11
    consistent XPASSes were investigated — trio's single-loop dispatch +
    FIFO admission makes them pass reliably when idle, but under
@@ -184,6 +188,48 @@ Recommended order: C.1+C.2 first (spec axes + loop placement) since the
 compat mapping unblocks the ExecModel retirement, then `exec=task`; run
 the xdist verification (D.3) mid-C as an early canary rather than only
 at the end.
+
+## Callback consumer tasks (`setcallback`, LANDED 2026-07-26)
+
+`setcallback` no longer delivers inline on the loop thread and no longer
+pins the channel in a `ChannelFactory._callback_channels` registry.  Instead
+`Channel.setcallback` → `BaseGateway._start_channel_consumer` →
+`SyncBridgeGateway.attach_consumer`, which on the loop:
+
+- moves any already-buffered mailbox items into a fresh per-channel inbox
+  (a `trio` memory channel), diverts future raw payloads there
+  (`raw.set_consumer(inbox.send_nowait, on_close)`), and nulls `_mailbox`;
+- starts a consumer *task* on the host root nursery (`_run_consumer`) that is
+  handed a **strong** reference to the sync `Channel` — so the channel's
+  lifecycle is now bound to the task (and to GC once the stream closes),
+  replacing the strong-ref registry.
+
+`_run_consumer` does `async for data in inbox:` and runs each callback via
+`trio.to_thread.run_sync(..., limiter=host.callback_limiter)` — off the loop,
+one thread of a bounded pool (`DEFAULT_CALLBACK_THREADS=40`), sequential per
+channel (order preserved), concurrent across channels.  A raising callback
+(or a `loads_internal` failure) → `CHANNEL_CLOSE_ERROR` + local close
+(`_consumer_failed`).  On EOF/close the endmarker fires (shielded, bounded by
+`CONSUMER_ENDMARKER_GRACE`) and the task sets `channel._consumer_done`.
+
+Key invariant preserved: `waitclose()` waits on `_consumer_done` (not
+`_receiveclosed`) for callback channels, so it still returns only after every
+callback — including the endmarker — has run (`test_waiting_for_callbacks`,
+`test_channel_endmarker_callback`).  Deleted along the way: `_callback`,
+`_endmarker`, `_fire_endmarker`, `_callback_channels`,
+`_register_callback_channel`, and the callback branch of `_deliver_payload`
+(now uniformly `mailbox.put`).  `__del__`'s `CHANNEL_LAST_MESSAGE` case folds
+away (a callback channel is never GC'd while open).
+
+Stress coverage: `testing/test_channel_stress.py` (Hypothesis) with a
+`--stress=N` pytest option (profiles registered in
+`testing/conftest.py::pytest_configure`; default quick profile).  Hypothesis
+also surfaced and we fixed a latent serializer bug: `_save_integral` only
+bounds-checked the upper int4 limit, so a negative int below `-2**31`
+overflowed `struct.pack('!i', …)` instead of taking the long path
+(`FOUR_BYTE_INT_MIN` added; regression `test_serializer.test_int_boundaries`).
+
+`hypothesis` was added to the `testing` extra in `pyproject.toml`.
 
 ## Invariants (do not regress)
 

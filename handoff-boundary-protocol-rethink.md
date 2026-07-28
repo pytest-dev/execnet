@@ -139,8 +139,10 @@ namespaces + the axes/presets.
   one portal FIFO.
 - After close: `OSError("cannot send (already closed?)")`.
 - exec admission order = message arrival order (TrioWorkerExec._pump).
-- Channel callbacks run on the loop thread (revisit-later stands; the
-  kit makes moving them cheap).
+- Channel callbacks run off the loop thread: a per-channel consumer task
+  drains into a threadpool call (moved 2026-07-26; the kit made it cheap,
+  as predicted).  See `handoff-phase-c-worker-axes.md` "Callback consumer
+  tasks".
 - `Group.terminate(timeout)` never hangs (~2×timeout).
 - Sync blocking waits stay KeyboardInterrupt-interruptible on the main
   thread (thread Wakener keeps the Event.wait + drain pattern).

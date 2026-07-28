@@ -10,6 +10,8 @@ from __future__ import annotations
 import functools
 import itertools
 import json
+import math
+import queue as _queue
 import subprocess
 import sys
 import threading
@@ -23,6 +25,7 @@ from typing import TypeVar
 
 import trio
 
+from ._boundary import Flag
 from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
@@ -31,6 +34,8 @@ from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_process
 from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
+from .gateway_base import ENDMARKER
+from .gateway_base import NO_ENDMARKER_WANTED
 from .gateway_base import ExecModel
 from .gateway_base import FrameDecoder
 from .gateway_base import GatewayReceivedTerminate
@@ -42,6 +47,17 @@ from .gateway_base import loads_internal
 from .gateway_base import trace
 from .portal import LoopPortal
 from .portal import OneShot
+
+#: default cap on concurrent threadpool threads running receiver callbacks
+DEFAULT_CALLBACK_THREADS = 40
+#: bound on how long the endmarker callback may run during host shutdown
+CONSUMER_ENDMARKER_GRACE = 10.0
+
+
+def _run_callback(callback: Callable[[Any], Any], data: bytes, channel: Any) -> None:
+    """Deserialize one payload and invoke the receiver callback (in a thread)."""
+    callback(loads_internal(data, channel))
+
 
 if TYPE_CHECKING:
     from .gateway import Gateway
@@ -255,16 +271,21 @@ class SyncBridgeGateway(AsyncGateway):
         """
         ref = weakref.ref(channel)
         channelid = channel.id
-
-        def bind() -> None:
-            raw = self._channel_for(channelid)
-            raw.set_consumer(
-                functools.partial(self._sync_payload, ref),
-                functools.partial(self._sync_close, ref, channelid),
-            )
-
         with suppress(trio.RunFinishedError):
-            self.host.portal.post(bind)
+            self.host.portal.post(self._install_sync_consumer, ref, channelid)
+
+    def _install_sync_consumer(self, ref: weakref.ref[Any], channelid: int) -> None:
+        """Route ``channelid``'s raw payloads/close to the sync channel (loop).
+
+        Idempotent: re-binding to the same hooks just re-flushes the (empty)
+        raw buffer, so ``attach_consumer`` can call this itself instead of
+        depending on the separately-posted bind having run first.
+        """
+        raw = self._channel_for(channelid)
+        raw.set_consumer(
+            functools.partial(self._sync_payload, ref),
+            functools.partial(self._sync_close, ref, channelid),
+        )
 
     def _sync_payload(self, ref: weakref.ref[Any], data: bytes) -> None:
         channel = ref()
@@ -292,6 +313,141 @@ class SyncBridgeGateway(AsyncGateway):
         """Drop the loop-side raw channel for ``channelid`` (best-effort)."""
         with suppress(trio.RunFinishedError):
             self.host.portal.post(self._forget_channel, channelid)
+
+    # -- receiver callbacks: a consumer task per channel --
+
+    def attach_consumer(
+        self,
+        channel: Any,
+        callback: Callable[[Any], Any],
+        endmarker: object,
+    ) -> None:
+        """Switch ``channel`` to callback mode: a loop task drains it.
+
+        The switch runs on the loop (so it cannot interleave with delivery):
+        it moves any already-buffered items into the task's inbox, points the
+        channel's delivery/close at that inbox, and starts the consumer task.
+        It deliberately does *not* touch the raw channel's consumer (the sync
+        payload/close hooks bound by :meth:`bind_sync_channel` stay in place);
+        delivery keeps flowing through ``Channel._deliver_payload`` /
+        ``_close_from_remote``, which divert to the inbox once ``_has_consumer``
+        is set.  Rebinding the raw channel here would race the still-queued
+        ``bind()`` post (``run_sync`` and ``run_sync_soon`` are not mutually
+        ordered) and could be clobbered back to the mailbox.
+
+        The task is handed a strong reference to ``channel`` and thus keeps it
+        alive for as long as it consumes -- the channel's lifecycle is bound to
+        the task (and to GC once the stream closes), not to a registry.
+        """
+
+        def switch() -> None:
+            mailbox = channel._mailbox
+            if mailbox is None:
+                raise OSError(f"{channel!r} has callback already registered")
+            inbox_send, inbox_recv = trio.open_memory_channel[bytes](math.inf)
+
+            def feed(data: bytes) -> None:
+                with suppress(trio.BrokenResourceError, trio.ClosedResourceError):
+                    inbox_send.send_nowait(data)
+
+            def close_inbox() -> None:
+                with suppress(trio.ClosedResourceError):
+                    inbox_send.close()
+
+            # Drain items buffered before the switch into the task's inbox,
+            # preserving order.  An ENDMARKER means the channel already closed.
+            saw_end = False
+            while True:
+                try:
+                    item = mailbox.get_nowait()
+                except _queue.Empty:
+                    break
+                if item is ENDMARKER:
+                    saw_end = True
+                    break
+                inbox_send.send_nowait(item)
+            channel._mailbox = None
+            done = Flag(channel.gateway._new_wakener())
+            channel._consumer_done = done
+            channel._consumer_feed = feed
+            channel._consumer_close_inbox = close_inbox
+
+            def stop() -> None:
+                # thread-safe: end the task's inbox from any thread (local close)
+                with suppress(trio.RunFinishedError, trio.ClosedResourceError):
+                    self.host.portal.post(inbox_send.close)
+
+            channel._consumer_stop = stop
+            channel._has_consumer = True
+
+            # Guarantee the raw channel routes to us right now (idempotent with
+            # the bind posted at newchannel()): otherwise, if that bind has not
+            # run yet, inbound payloads would buffer unread in the raw channel
+            # and the consumer task would wait forever.
+            self._install_sync_consumer(weakref.ref(channel), channel.id)
+
+            if saw_end:
+                close_inbox()
+            self.host.start_soon(
+                self._run_consumer, channel, inbox_recv, callback, endmarker, done
+            )
+
+        self.run_on_loop(switch)
+
+    async def _run_consumer(
+        self,
+        channel: Any,
+        inbox: trio.MemoryReceiveChannel[bytes],
+        callback: Callable[[Any], Any],
+        endmarker: object,
+        done: Flag,
+    ) -> None:
+        """Drain ``inbox`` into ``callback`` (each call off the loop thread).
+
+        Runs on the host loop; ``channel`` is held for the task's lifetime so
+        the channel stays alive while consuming.  Items are delivered in order
+        and each callback runs in a threadpool thread.  On completion (EOF,
+        local close, or a raising callback) the endmarker fires and ``done``
+        is set -- which is what ``waitclose()`` waits on.
+        """
+        limiter = self.host.callback_limiter
+        try:
+            async for data in inbox:
+                try:
+                    await trio.to_thread.run_sync(
+                        functools.partial(_run_callback, callback, data, channel),
+                        limiter=limiter,
+                    )
+                except Exception as exc:
+                    # trio.Cancelled is a BaseException and propagates past
+                    # here (host shutdown); only a real callback/deserialize
+                    # failure closes the channel with the error.
+                    self._consumer_failed(channel, exc)
+                    break
+        finally:
+            # Fire the endmarker and signal done even while the host is being
+            # torn down, but never let a stuck callback hang shutdown forever.
+            with trio.CancelScope(shield=True):
+                if endmarker is not NO_ENDMARKER_WANTED:
+                    with (
+                        trio.move_on_after(CONSUMER_ENDMARKER_GRACE),
+                        suppress(BaseException),
+                    ):
+                        await trio.to_thread.run_sync(
+                            functools.partial(callback, endmarker), limiter=limiter
+                        )
+                done.set()
+
+    def _consumer_failed(self, channel: Any, exc: BaseException) -> None:
+        """A callback (or its deserialization) raised: close with the error."""
+        gateway = self.sync_gateway
+        gateway._trace("exception during callback: %s" % exc)
+        errortext = gateway._geterrortext(exc)
+        with suppress(OSError):
+            gateway._send(
+                Message.CHANNEL_CLOSE_ERROR, channel.id, dumps_internal(errortext)
+            )
+        channel._close_from_remote(RemoteError(errortext), sendonly=False)
 
     def host_call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
         """Blocking host call that parks correctly for the wait backend.
@@ -406,6 +562,7 @@ class TrioHost:
         self._ready = threading.Event()
         self._shutdown: trio.Event | None = None
         self._started = False
+        self._callback_limiter: trio.CapacityLimiter | None = None
 
     def start(self) -> None:
         if self._started:
@@ -422,6 +579,13 @@ class TrioHost:
             raise RuntimeError("TrioHost is not running")
         return self._portal
 
+    @property
+    def callback_limiter(self) -> trio.CapacityLimiter:
+        """Bound on concurrent threadpool threads running receiver callbacks."""
+        if self._callback_limiter is None:
+            raise RuntimeError("TrioHost is not running")
+        return self._callback_limiter
+
     def is_host_thread(self) -> bool:
         return self._portal is not None and self._portal.is_loop_thread()
 
@@ -431,6 +595,7 @@ class TrioHost:
     async def _main(self) -> None:
         self._portal = LoopPortal()
         self._shutdown = trio.Event()
+        self._callback_limiter = trio.CapacityLimiter(DEFAULT_CALLBACK_THREADS)
         try:
             async with trio.open_nursery() as nursery:
                 self._nursery = nursery

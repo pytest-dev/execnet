@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import builtins
 import os
-import queue as _queue
 import struct
 import sys
 import threading
@@ -371,6 +370,23 @@ class Channel:
     TimeoutError = TimeoutError
     _INTERNALWAKEUP = 1000
     _executing = False
+    #: set once a receiver callback is attached.  A consumer *task* on the
+    #: loop drains this channel and runs the callback in a threadpool thread;
+    #: the task holds the channel alive, so a callback channel's lifecycle is
+    #: bound to consumption (and to GC once the stream closes) rather than to
+    #: a strong registry.
+    _has_consumer = False
+    #: loop-side hooks installed while a consumer is attached: divert one
+    #: payload into / close the consumer task's inbox (set by the Trio session,
+    #: so they encapsulate the trio memory channel; gateway_base stays trio-free).
+    _consumer_feed: Callable[[bytes], None] | None = None
+    _consumer_close_inbox: Callable[[], None] | None = None
+    #: thread-safe "stop the consumer" hook -- ends the task's inbox.
+    _consumer_stop: Callable[[], None] | None = None
+    #: set by the consumer task once it has drained every item and fired the
+    #: endmarker; ``waitclose()`` waits on this (instead of ``_receiveclosed``)
+    #: so it still guarantees "all callbacks have run" before returning.
+    _consumer_done: Flag | None = None
 
     def __init__(self, gateway: BaseGateway, id: int) -> None:
         """:private:"""
@@ -380,10 +396,8 @@ class Channel:
         # XXX: defaults copied from Unserializer
         self._strconfig = getattr(gateway, "_strconfig", (True, False))
         self.id = id
-        # serialized payloads (or ENDMARKER); None once a callback is set
+        # serialized payloads (or ENDMARKER); None once a consumer is attached
         self._mailbox: Mailbox[Any] | None = Mailbox(gateway._new_wakener())
-        self._callback: Callable[[Any], Any] | None = None
-        self._endmarker: object = NO_ENDMARKER_WANTED
         self._closed = False
         self._receiveclosed = Flag(gateway._new_wakener())
         self._remoteerrors: list[RemoteError] = []
@@ -398,37 +412,19 @@ class Channel:
     ) -> None:
         """Set a callback function for receiving items.
 
-        All already-queued items will immediately trigger the callback.
-        Afterwards the callback will execute in the receiver (loop) thread
-        for each received data item and calls to ``receive()`` will
-        raise an error.
-        If an endmarker is specified the callback will eventually
-        be called with the endmarker when the channel closes.
+        A consumer task on the gateway's loop drains this channel and runs
+        ``callback`` for each received item in a threadpool thread (so a slow
+        callback never blocks the loop); items for one channel are delivered
+        strictly in order.  Already-queued items are delivered first.  After
+        this call ``receive()`` raises an error.
+
+        The task keeps the channel alive for as long as it is consuming, so a
+        callback channel need not be referenced elsewhere.  If an endmarker is
+        specified the callback is eventually called with it when the channel
+        closes, and ``waitclose()`` does not return until every callback
+        (including the endmarker) has run.
         """
-
-        def switch() -> None:
-            # Runs on the loop thread (inline without a session), so the
-            # switch-over cannot interleave with payload delivery.
-            mailbox = self._mailbox
-            if mailbox is None:
-                raise OSError(f"{self!r} has callback already registered")
-            self._mailbox = None
-            while 1:
-                try:
-                    olditem = mailbox.get_nowait()
-                except _queue.Empty:
-                    if not (self._closed or self._receiveclosed.is_set()):
-                        self._callback = callback
-                        self._endmarker = endmarker
-                        self.gateway._channelfactory._register_callback_channel(self)
-                    break
-                if olditem is ENDMARKER:
-                    if endmarker is not NO_ENDMARKER_WANTED:
-                        callback(endmarker)
-                    break
-                callback(loads_internal(olditem, self))
-
-        self.gateway._run_on_loop(switch)
+        self.gateway._start_channel_consumer(self, callback, endmarker)
 
     def __repr__(self) -> str:
         flag = (self.isclosed() and "closed") or "open"
@@ -454,17 +450,16 @@ class Channel:
             # in which case the process will go away and we probably
             # don't need to try to send a closing or last message
             # (and often it won't work anymore to send things out)
+            # A callback channel is held by its consumer task until the stream
+            # closes, so by the time __del__ runs it is never in the "opened"
+            # state -- this branch only ever fires for a plain receive channel.
             if Message is not None:
-                if self._mailbox is None:  # has_callback
-                    msgcode = Message.CHANNEL_LAST_MESSAGE
-                else:
-                    msgcode = Message.CHANNEL_CLOSE
                 with suppress(OSError, ValueError):  # ignore problems with sending
                     # Never wait during GC: post the close best-effort.
                     send = getattr(
                         self.gateway, "_send_nonblocking", self.gateway._send
                     )
-                    send(msgcode, self.id)
+                    send(Message.CHANNEL_CLOSE, self.id)
         with suppress(Exception):
             self.gateway._release_channel(self.id)
 
@@ -482,45 +477,42 @@ class Channel:
     # loop-side delivery (called by the session's raw-channel consumer)
     #
     def _deliver_payload(self, data: bytes) -> None:
-        """Route one inbound serialized payload (loop thread)."""
+        """Route one inbound serialized payload (loop thread).
+
+        A callback channel diverts payloads into its consumer task's inbox; a
+        plain channel queues them for ``receive()``.
+        """
         if self._closed:
             return  # late data for a locally closed channel: drop
-        callback = self._callback
-        if callback is None:
-            mailbox = self._mailbox
-            if mailbox is not None:
-                mailbox.put(data)
-            # no mailbox and no callback: closed for receiving -- drop
-        else:
-            try:
-                callback(loads_internal(data, self))
-            except Exception as exc:
-                self.gateway._trace("exception during callback: %s" % exc)
-                errortext = self.gateway._geterrortext(exc)
-                self.gateway._send(
-                    Message.CHANNEL_CLOSE_ERROR, self.id, dumps_internal(errortext)
-                )
-                self._close_from_remote(RemoteError(errortext))
-
-    def _close_from_remote(self, remoteerror=None, *, sendonly: bool = False) -> None:
-        """Close initiated by the peer or session shutdown (loop thread)."""
-        if remoteerror:
-            self._remoteerrors.append(remoteerror)
+        feed = self._consumer_feed
+        if feed is not None:
+            feed(data)
+            return
         mailbox = self._mailbox
         if mailbox is not None:
-            mailbox.put(ENDMARKER)
-        self._fire_endmarker()
+            mailbox.put(data)
+        # no consumer and no mailbox: closed for receiving -- drop
+
+    def _close_from_remote(self, remoteerror=None, *, sendonly: bool = False) -> None:
+        """Close initiated by the peer or session shutdown (loop thread).
+
+        For a callback channel the consumer task ends separately (its inbox is
+        closed) and fires the endmarker; here we only record the state.
+        """
+        if remoteerror:
+            self._remoteerrors.append(remoteerror)
+        if self._has_consumer:
+            close_inbox = self._consumer_close_inbox
+            if close_inbox is not None:
+                close_inbox()  # ends the consumer task (it fires the endmarker)
+        else:
+            mailbox = self._mailbox
+            if mailbox is not None:
+                mailbox.put(ENDMARKER)
         self.gateway._channelfactory._no_longer_opened(self.id)
         if not sendonly:  # otherwise #--> "sendonly"
             self._closed = True  # --> "closed"
         self._receiveclosed.set()
-
-    def _fire_endmarker(self) -> None:
-        callback = self._callback
-        if callback is not None:
-            self._callback = None
-            if self._endmarker is not NO_ENDMARKER_WANTED:
-                callback(self._endmarker)
 
     #
     # public API for channel objects
@@ -588,10 +580,16 @@ class Channel:
                 self._remoteerrors.append(error)
             self._closed = True  # --> "closed"
             self._receiveclosed.set()
-            mailbox = self._mailbox
-            if mailbox is not None:
-                mailbox.put(ENDMARKER)
-            self._fire_endmarker()
+            if self._has_consumer:
+                # End the consumer task's inbox; it drains any buffered items,
+                # fires the endmarker, and sets _consumer_done.
+                stop = self._consumer_stop
+                if stop is not None:
+                    stop()
+            else:
+                mailbox = self._mailbox
+                if mailbox is not None:
+                    mailbox.put(ENDMARKER)
             self.gateway._channelfactory._no_longer_opened(self.id)
             self.gateway._release_channel(self.id)
 
@@ -611,9 +609,16 @@ class Channel:
         self.TimeoutError is raised after the specified number of seconds
         (default is None, i.e. wait indefinitely).
         """
-        # wait for non-"opened" state
-        self._receiveclosed.wait(timeout=timeout)
-        if not self._receiveclosed.is_set():
+        # For a callback channel wait on the consumer task finishing (so every
+        # callback, including the endmarker, has run); otherwise wait for the
+        # non-"opened" state directly.
+        signal = (
+            self._consumer_done
+            if self._consumer_done is not None
+            else (self._receiveclosed)
+        )
+        signal.wait(timeout=timeout)
+        if not signal.is_set():
             raise self.TimeoutError("Timeout after %r seconds" % timeout)
         error = self._getremoteerror()
         if error:
@@ -693,16 +698,14 @@ class ChannelFactory:
     Message routing lives in the Trio session (the sync channel binds a
     consumer on the session's raw channel); the factory only tracks live
     channels -- weakly, so dropping the last user reference triggers
-    ``Channel.__del__``'s close message -- and keeps channels with a
-    registered callback strongly alive until they close.
+    ``Channel.__del__``'s close message.  A callback channel is kept alive by
+    its consumer task rather than by any registry here.
     """
 
     def __init__(self, gateway: BaseGateway, startcount: int = 1) -> None:
         self._channels: weakref.WeakValueDictionary[int, Channel] = (
             weakref.WeakValueDictionary()
         )
-        # channels kept strongly alive while their callback is registered
-        self._callback_channels: dict[int, Channel] = {}
         self._writelock = threading.Lock()
         self.gateway = gateway
         self.count = startcount
@@ -739,12 +742,8 @@ class ChannelFactory:
     #
     # internal methods, called from the loop thread (or local close paths)
     #
-    def _register_callback_channel(self, channel: Channel) -> None:
-        self._callback_channels[channel.id] = channel
-
     def _no_longer_opened(self, id: int) -> None:
         self._channels.pop(id, None)
-        self._callback_channels.pop(id, None)
 
     def _local_close(self, id: int, remoteerror=None, sendonly: bool = False) -> None:
         """Close ``id`` as if the peer had closed it (no message is sent)."""
@@ -884,6 +883,22 @@ class BaseGateway:
         if session is None:
             return sync_fn()
         return session.run_on_loop(sync_fn)
+
+    def _start_channel_consumer(
+        self,
+        channel: Channel,
+        callback: Callable[[Any], Any],
+        endmarker: object,
+    ) -> None:
+        """Attach a receiver callback: hand the channel to a consumer task.
+
+        The task drains the channel on the loop and runs ``callback`` in a
+        threadpool thread, holding the channel alive while it consumes.
+        """
+        session = self._trio_session
+        if session is None:
+            raise OSError(f"cannot set callback on {channel!r}: no active session")
+        session.attach_consumer(channel, callback, endmarker)
 
     def _terminate_execution(self) -> None:
         pass
