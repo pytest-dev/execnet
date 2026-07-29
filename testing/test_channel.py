@@ -308,6 +308,11 @@ class TestChannelBasicBehaviour:
 
 
 class TestChannelFile:
+    def test_channel_file_encoding(self, gw: Gateway) -> None:
+        channel = gw.newchannel()
+        assert channel.makefile("r").encoding == "utf-8"
+        assert channel.makefile("w").encoding == "utf-8"
+
     def test_channel_file_write(self, gw: Gateway) -> None:
         channel = gw.remote_exec(
             """

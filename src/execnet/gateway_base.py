@@ -1062,6 +1062,8 @@ class ChannelFactory:
 
 
 class ChannelFile:
+    encoding = "utf-8"
+
     def __init__(self, channel: Channel, proxyclose: bool = True) -> None:
         self.channel = channel
         self._proxyclose = proxyclose
