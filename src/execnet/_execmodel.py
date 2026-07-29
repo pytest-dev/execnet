@@ -1,15 +1,19 @@
-"""Deprecated execution-model presets.
+"""Worker profiles, and the deprecated ExecModel shim.
 
-The machinery behind execution models was retired during the Trio port; what
-survives is the preset *name*, which maps onto the worker config axes
-(``loop=`` / ``exec=`` / ``wait=``).  Kept because pytest-xdist's remote worker
-still builds its test queue on ``channel.gateway.execmodel.RLock()``/``Event()``.
+The machinery behind "execution models" was retired during the Trio port.
+What the name actually selected -- where exec'd code runs relative to the
+worker's protocol loop -- survives as the ``profile=`` spec key and
+:data:`WORKER_PROFILES`.
+
+:class:`ExecModel` itself is kept only because pytest-xdist's remote worker
+builds its test queue on ``channel.gateway.execmodel.RLock()``/``Event()``.
 """
 
 from __future__ import annotations
 
 import os
 import threading
+import warnings
 
 
 class ExecModel:
@@ -76,17 +80,46 @@ class ExecModel:
 
 
 #: worker profiles: where exec'd code runs relative to the protocol loop
-EXECMODEL_PROFILES = (
+WORKER_PROFILES = (
     "thread",  # hybrid: primary on the main thread, overflow on pool threads
-    "main_thread_only",  # exec serialized on the main thread (GUI/pytest)
     "trio",  # pure async: loop owns the main thread, async sources as tasks
     "gevent",  # greenlets on a main-thread hub, one per remote_exec
 )
 
 
+#: profiles kept as accepted spellings, mapped to what they now select.
+#: ``main_thread_only`` predates the restored hybrid ``thread`` profile,
+#: which already hands the first remote_exec the real main thread -- the
+#: GUI/signal property it existed for.  What it additionally did was refuse
+#: a *second* concurrent remote_exec instead of overflowing to a pool
+#: thread; that guard is gone.
+DEPRECATED_PROFILES = {"main_thread_only": "thread"}
+
+
+def resolve_profile(name: str) -> str:
+    """Validate a ``profile=`` value, mapping deprecated spellings."""
+    replacement = DEPRECATED_PROFILES.get(name)
+    if replacement is not None:
+        warnings.warn(
+            f"the {name!r} worker profile is deprecated and now behaves like"
+            f" {replacement!r}, which already runs the first remote_exec on"
+            " the worker's main thread. A second concurrent remote_exec no"
+            " longer fails -- it runs on a pool thread.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return replacement
+    if name not in WORKER_PROFILES:
+        raise ValueError(
+            f"unknown profile {name!r} (known: {list(WORKER_PROFILES)})"
+        )
+    return name
+
+
 def get_execmodel(backend: str | ExecModel) -> ExecModel:
+    """Deprecated: build the xdist-facing shim for a profile name."""
     if isinstance(backend, ExecModel):
         return backend
-    if backend in EXECMODEL_PROFILES:
+    if backend in WORKER_PROFILES or backend in DEPRECATED_PROFILES:
         return ExecModel(backend)
-    raise ValueError(f"unknown execmodel {backend!r}")
+    raise ValueError(f"unknown profile {backend!r}")

@@ -17,9 +17,6 @@ import traceback
 sysex = (KeyboardInterrupt, SystemExit)
 
 INTERRUPT_TEXT = "keyboard-interrupted"
-MAIN_THREAD_ONLY_DEADLOCK_TEXT = (
-    "concurrent remote_exec would cause deadlock for main_thread_only execmodel"
-)
 
 
 class GatewayReceivedTerminate(Exception):

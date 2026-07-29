@@ -15,10 +15,15 @@ class XSpec:
     * If no "=value" is given, assume a boolean True value
     """
 
+    #: keys accepted under an older spelling, mapped to the canonical one.
+    #: ``execmodel`` described a *local* execution model that no longer
+    #: exists; what the key actually selects is the worker's profile.
+    _ALIASES = {"execmodel": "profile"}
+
     # XXX allow customization, for only allow specific key names
     chdir: str | None = None
     dont_write_bytecode: bool | None = None
-    execmodel: str | None = None
+    profile: str | None = None
     id: str | None = None
     installvia: str | None = None
     nice: str | None = None
@@ -42,7 +47,9 @@ class XSpec:
                 key, value = keyvalue[:i], keyvalue[i + 1 :]
             if key[0] == "_":
                 raise AttributeError("%r not a valid XSpec key" % key)
-            if key in self.__dict__:
+            # duplicates are checked on the canonical name, so
+            # ``execmodel=x//profile=y`` is rejected like any other clash
+            if self._ALIASES.get(key, key) in self.__dict__:
                 raise ValueError(f"duplicate key: {key!r} in {string!r}")
             if key.startswith("env:"):
                 self.env[key[4:]] = value
@@ -53,6 +60,15 @@ class XSpec:
         if name[0] == "_":
             raise AttributeError(name)
         return None
+
+    @property
+    def execmodel(self) -> str | None:
+        """Deprecated alias for :attr:`profile` (accepted indefinitely)."""
+        return self.profile
+
+    @execmodel.setter
+    def execmodel(self, value: str | None) -> None:
+        self.profile = value
 
     def __repr__(self) -> str:
         return f"<XSpec {self._spec!r}>"

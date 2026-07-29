@@ -19,6 +19,7 @@ from ._multi import MultiChannel
 from ._multi import default_group
 from ._multi import makegateway
 from ._multi import set_execmodel
+from ._multi import set_profile
 from ._rsync import RSync
 from ._xspec import XSpec
 
@@ -38,4 +39,5 @@ __all__ = [
     "default_group",
     "makegateway",
     "set_execmodel",
+    "set_profile",
 ]

@@ -31,6 +31,7 @@ from ._channel import NO_ENDMARKER_WANTED
 from ._errors import GatewayReceivedTerminate
 from ._errors import RemoteError
 from ._execmodel import ExecModel
+from ._execmodel import get_execmodel
 from ._message import FrameDecoder
 from ._message import Message
 from ._message import gateway_info
@@ -224,6 +225,8 @@ class SyncBridgeGateway(AsyncGateway):
         d = {
             "numchannels": len(gateway._channelfactory._channels),
             "numexecuting": execpool.active_count() if execpool is not None else 0,
+            "profile": gateway.execmodel.backend,
+            # legacy key, same value -- pytest-xdist reads it
             "execmodel": gateway.execmodel.backend,
         }
         gateway._send(Message.CHANNEL_DATA, message.channelid, dumps_internal(d))
@@ -718,7 +721,7 @@ class FacadeAsyncGroup(AsyncGroup):
     def _make_gateway(self, stream: ByteStream, spec: Any) -> AsyncGateway:
         import execnet
 
-        sync_gw = execnet.Gateway(_TempIO(self.group.execmodel), spec)
+        sync_gw = execnet.Gateway(_TempIO(get_execmodel(spec.profile)), spec)
         # the caller's concurrency library, inherited from the facade
         sync_gw._wait_backend = self.group._wait_backend
         return SyncBridgeGateway(
@@ -777,7 +780,7 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
     assert isinstance(bridge, SyncBridgeGateway)
     gw: Gateway = bridge.sync_gateway  # type: ignore[assignment]
     gw._io = SyncIOHandle(
-        group.execmodel,
+        get_execmodel(spec.profile),
         bridge,
         process=async_group._processes.get(bridge),
         remoteaddress=bridge.remoteaddress,

@@ -42,6 +42,7 @@ from .sync import XSpec
 from .sync import default_group
 from .sync import makegateway
 from .sync import set_execmodel
+from .sync import set_profile
 
 __all__ = [
     "Channel",
@@ -61,6 +62,7 @@ __all__ = [
     "default_group",
     "makegateway",
     "set_execmodel",
+    "set_profile",
 ]
 
 
@@ -92,6 +94,14 @@ _LAZY_MODULES = (
 #: then delete this and its test.  Nothing else may be added here.
 _XDIST_COMPAT = ("dumps",)
 
+#: Warn about the shim at most once per process.  xdist reaches it from
+#: ``serialize_warning_message``, i.e. from inside pytest's
+#: warning-recording hook: warning every time makes recording one warning
+#: record another, which records another -- an unbounded loop that wedges
+#: the worker.  Once is also simply the right amount of noise for a name
+#: whose caller is a library, not the user.
+_xdist_compat_warned: set[str] = set()
+
 
 def __getattr__(name: str) -> Any:
     if name in _LAZY_MODULES:
@@ -100,14 +110,18 @@ def __getattr__(name: str) -> Any:
         return importlib.import_module(f".{name}", __name__)
     if name in _XDIST_COMPAT:
         import importlib
-        import warnings
 
-        warnings.warn(
-            f"execnet.{name} is a temporary pytest-xdist compatibility shim and"
-            " will be removed; the standalone serializer is not public. Use"
-            " execnet.can_send(obj) to test whether a value can cross a channel.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        if name not in _xdist_compat_warned:
+            import warnings
+
+            _xdist_compat_warned.add(name)
+            warnings.warn(
+                f"execnet.{name} is a temporary pytest-xdist compatibility shim"
+                " and will be removed; the standalone serializer is not public."
+                " Use execnet.can_send(obj) to test whether a value can cross a"
+                " channel.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         return getattr(importlib.import_module("._serialize", __name__), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -166,10 +166,13 @@ def worker_cli_arg(spec: Any) -> str:
 
     config: dict[str, Any] = {
         "id": f"{spec.id}-worker",
-        "execmodel": spec.execmodel,
+        "profile": spec.profile,
+        # pre-3.0 spelling, same value: a worker from an older execnet
+        # reads this one.  Drop with the XSpec alias.
+        "execmodel": spec.profile,
         # derived, not configurable: the gevent profile parks its greenlets
         # on gevent wakeners, every other profile is thread-shaped.
-        "wait": "gevent" if spec.execmodel == "gevent" else "thread",
+        "wait": "gevent" if spec.profile == "gevent" else "thread",
         "coordinator_version": execnet.__version__,
     }
     # Startup setup applied by the worker before serving (never through
@@ -213,7 +216,7 @@ def _extra_with_tokens(config: str) -> list[str]:
     backend needs gevent importable in the worker.
     """
     parsed = json.loads(config)
-    if parsed.get("execmodel") == "gevent" or parsed.get("wait") == "gevent":
+    if parsed.get("profile") == "gevent" or parsed.get("wait") == "gevent":
         return ["--with", "gevent"]
     return []
 

@@ -24,7 +24,6 @@ _MOVED = {
     # errors and error texts
     "sysex": "._errors",
     "INTERRUPT_TEXT": "._errors",
-    "MAIN_THREAD_ONLY_DEADLOCK_TEXT": "._errors",
     "GatewayReceivedTerminate": "._errors",
     "HostNotFound": "._errors",
     "geterrortext": "._errors",

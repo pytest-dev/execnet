@@ -179,46 +179,49 @@ def group() -> Iterator[execnet.Group]:
 @pytest.fixture
 def gw(
     request: pytest.FixtureRequest,
-    execmodel: ExecModel,
+    profile: str,
     group: execnet.Group,
 ) -> Gateway:
     try:
         return group[request.param]
     except KeyError:
         if request.param == "popen":
-            gw = group.makegateway("popen//id=popen//execmodel=%s" % execmodel.backend)
+            gw = group.makegateway("popen//id=popen//profile=%s" % profile)
         elif request.param == "socket":
-            # if execmodel.backend != "thread":
-            #    pytest.xfail(
-            #        "cannot set remote non-thread execmodel for sockets")
             pname = "sproxy1"
             if pname not in group:
                 proxygw = group.makegateway("popen//id=%s" % pname)
             # assert group['proxygw'].remote_status().receiving
             gw = group.makegateway(
-                f"socket//id=socket//installvia={pname}//execmodel={execmodel.backend}"
+                f"socket//id=socket//installvia={pname}//profile={profile}"
             )
             # TODO(typing): Clarify this assignment.
             gw.proxygw = proxygw  # type: ignore[attr-defined]
             assert pname in group
         elif request.param == "ssh":
             sshhost = request.getfixturevalue("specssh").ssh
-            # we don't use execmodel.backend here
-            # but you can set it when specifying the ssh spec
+            # the profile is not forced here; set it in the ssh spec instead
             gw = group.makegateway(f"ssh={sshhost}//id=ssh")
         elif request.param == "proxy":
             group.makegateway("popen//id=proxy-transport")
             gw = group.makegateway(
-                "popen//via=proxy-transport//id=proxy//execmodel=%s" % execmodel.backend
+                "popen//via=proxy-transport//id=proxy//profile=%s" % profile
             )
         else:
-            assert 0, f"unknown execmodel: {request.param}"
+            assert 0, f"unknown gateway type: {request.param}"
         return gw
 
 
-@pytest.fixture(params=["thread", "main_thread_only"], scope="session")
-def execmodel(request: pytest.FixtureRequest) -> ExecModel:
-    return get_execmodel(request.param)
+@pytest.fixture(params=["thread"], scope="session")
+def profile(request: pytest.FixtureRequest) -> str:
+    """The worker profile gateways in this test run are created with."""
+    return request.param
+
+
+@pytest.fixture(scope="session")
+def execmodel(profile: str) -> ExecModel:
+    """The deprecated ExecModel shim for ``profile`` (pytest-xdist compat)."""
+    return get_execmodel(profile)
 
 
 @pytest.fixture

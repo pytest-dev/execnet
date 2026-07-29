@@ -582,22 +582,15 @@ def test_popen_args(spec: str, expected_args: list[str]) -> None:
     assert args[len(expected_args) :][:3] == ["-u", "-m", "execnet._trio_worker"]
 
 
-def test_assert_main_thread_only(
-    execmodel: _execmodel.ExecModel, makegateway: Callable[[str], Gateway]
+def test_sequential_remote_exec_claims_the_main_thread(
+    makegateway: Callable[[str], Gateway],
 ) -> None:
-    if execmodel.backend != "main_thread_only":
-        pytest.skip("can only run with main_thread_only")
-
-    gw = makegateway(f"execmodel={execmodel.backend}//popen")
-
+    # The `thread` profile hands each request the worker main thread while
+    # it is idle -- the GUI/signal-safety property `main_thread_only`
+    # existed for.  Sequential remote_execs therefore all land there.
+    gw = makegateway("profile=thread//popen")
     try:
-        # Submit multiple remote_exec requests in quick succession and
-        # assert that all tasks execute in the main thread. It is
-        # necessary to call receive on each channel before the next
-        # remote_exec call, since the channel will raise an error if
-        # concurrent remote_exec requests are submitted as in
-        # test_main_thread_only_concurrent_remote_exec_deadlock.
-        for i in range(10):
+        for _ in range(10):
             ch = gw.remote_exec(
                 """
                     import time, threading
@@ -605,7 +598,6 @@ def test_assert_main_thread_only(
                     channel.send(threading.current_thread() is threading.main_thread())
             """
             )
-
             try:
                 res = ch.receive()
             finally:
@@ -621,43 +613,29 @@ def test_assert_main_thread_only(
         gw.join()
 
 
-def test_main_thread_only_concurrent_remote_exec_deadlock(
-    execmodel: _execmodel.ExecModel, makegateway: Callable[[str], Gateway]
+def test_main_thread_only_is_deprecated_and_overflows(
+    makegateway: Callable[[str], Gateway],
 ) -> None:
-    if execmodel.backend != "main_thread_only":
-        pytest.skip("can only run with main_thread_only")
-
-    gw = makegateway(f"execmodel={execmodel.backend}//popen")
+    # `main_thread_only` now maps to `thread`.  Where it used to refuse a
+    # second concurrent remote_exec with a deadlock error, the request now
+    # overflows to a pool thread -- the first one still gets the main
+    # thread, which is what the profile was for.
+    with pytest.warns(DeprecationWarning, match="main_thread_only"):
+        gw = makegateway("profile=main_thread_only//popen")
     channels = []
     try:
-        # Submit multiple remote_exec requests in quick succession and
-        # assert that MAIN_THREAD_ONLY_DEADLOCK_TEXT is raised if
-        # concurrent remote_exec requests are submitted for the
-        # main_thread_only execmodel (as compensation for the lack of
-        # back pressure in remote_exec calls which do not attempt to
-        # block until the remote main thread is idle).
-        for i in range(2):
+        for _ in range(2):
             channels.append(
                 gw.remote_exec(
                     """
                     import threading
                     channel.send(threading.current_thread() is threading.main_thread())
-                    # Wait forever, ensuring that the deadlock case triggers.
-                    threading.Event().wait()
+                    channel.receive()
             """
                 )
             )
-
-        expected_results = (
-            True,
-            execnet._errors.MAIN_THREAD_ONLY_DEADLOCK_TEXT,
-        )
-        for expected, ch in zip(expected_results, channels, strict=True):
-            try:
-                res = ch.receive()
-            except execnet.RemoteError as e:
-                res = e.formatted
-            assert res == expected
+        # both run: first on the main thread, second on an overflow thread
+        assert [ch.receive(TESTTIMEOUT) for ch in channels] == [True, False]
     finally:
         for ch in channels:
             ch.close()
