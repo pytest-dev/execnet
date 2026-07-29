@@ -27,7 +27,11 @@ import os
 import sys
 import threading
 from types import TracebackType
+from typing import TYPE_CHECKING
 from typing import Any
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
 
 __all__ = ["Host", "check_not_in_event_loop", "default_host"]
 
@@ -142,7 +146,7 @@ class Host:
         if trio_host is not None:
             trio_host.stop(timeout=timeout)
 
-    def __enter__(self) -> Host:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(

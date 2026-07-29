@@ -1,6 +1,61 @@
 2.2.0 (UNRELEASED)
 ------------------
 
+* One namespace per concurrency library you drive execnet from:
+  ``execnet.sync`` (plain threads; the top-level ``execnet.*`` aliases),
+  ``execnet.trio``, ``execnet.aio`` and the new ``execnet.gevent``, whose blocking
+  waits park the calling greenlet instead of its OS thread (needs ``execnet[gevent]``).
+
+  ``execnet.trio`` is the only surface that runs gateways *directly*, as tasks in your
+  own nursery. The others drive a Trio host thread, so their blocking calls now raise
+  when made from inside a running asyncio or trio loop -- naming the namespace to use
+  instead -- rather than stalling that loop. Channels inside a worker are exempt:
+  exec'd code may run its own event loop and talk to its channel from within it.
+* The ``execnet.portal`` namespace is gone. It exposed the ``Wakener`` protocol and the
+  ``Mailbox``/``OneShot``/``LoopPortal`` primitives but not the registry needed to plug
+  a ``Wakener`` in, and execnet does not offer third-party event-loop integration: a new
+  concurrency library gets a namespace of its own, as gevent just did. The primitives
+  are internal again.
+* Gateway groups share one Trio host thread per process instead of starting one each.
+  Pass ``execnet.Host()`` as ``Group(host=...)`` (or ``AsyncGroup(host=...)``) for an
+  isolated loop with deterministic teardown -- ``Host`` is a context manager and joins
+  its thread on exit, where the shared one stops at interpreter exit.
+* The ``execmodel=`` spec key is now ``profile=``; ``execmodel=`` remains an accepted
+  alias. It always selected the *worker* profile -- where exec'd code runs relative to
+  the worker's protocol loop -- while the local execution model it was named after no
+  longer exists. Accordingly ``Group(execmodel=...)``, ``Group.set_execmodel()``,
+  ``Group.execmodel`` and ``Group.remote_execmodel`` are deprecated in favour of
+  ``Group(profile=...)``, ``Group.set_profile()`` and ``Group.profile``; only the
+  remote default they set has any effect. ``remote_status()`` reports both
+  ``profile`` and ``execmodel``.
+* The ``main_thread_only`` profile is deprecated and now behaves like ``thread``, which
+  already hands the first ``remote_exec`` the worker's real main thread -- the
+  GUI/signal-safety property it was added for in 2.1.0. Its other behaviour is gone:
+  a second concurrent ``remote_exec`` used to close the channel with
+  ``concurrent remote_exec would cause deadlock``, and now runs on a pool thread. That
+  guard was a one-second timeout that reported a merely slow predecessor as a deadlock.
+* The ``wait=`` spec key added earlier in this release cycle is gone. Which primitive a
+  blocking wait parks on describes the *caller*, which is what choosing a namespace
+  already says; a worker's own backend is derived from its profile.
+* ``execnet.aio`` now propagates cancellation. Cancelling an awaited ``receive`` (with
+  ``asyncio.timeout``, say) cancels the host-side operation, where it previously
+  abandoned only the asyncio side and let the operation consume an item that was then
+  discarded. ``send``, ``send_eof``, ``aclose`` and ``terminate`` are shielded instead,
+  so they cannot tear halfway.
+
+  Its classes gained the ``Async`` prefix -- ``AsyncGroup``, ``AsyncGateway``,
+  ``AsyncChannel`` -- matching ``execnet.trio``, and ``AsyncGroup`` can be driven with
+  ``start()``/``aclose()`` from application lifespan hooks instead of ``async with``.
+  ``open_popen_gateway`` is renamed ``open_gateway`` on both async namespaces, since it
+  always accepted any spec.
+* ``execnet.dumps``, the temporary pytest-xdist compatibility shim, now warns once per
+  process rather than on every access. xdist reaches it from ``serialize_warning_message``,
+  i.e. from inside pytest's warning-recording hook, so a single ``DeprecationWarning``
+  raised in a worker made recording that warning record another, unbounded, wedging the
+  run.
+* ``Gateway.remote_init_threads()`` raises a ``DeprecationWarning`` instead of printing
+  to stdout. It has been a no-operation since execnet 1.2.
+
 * `#380 <https://github.com/pytest-dev/execnet/pull/380>`__: Add support for Python 3.13 and 3.14, and drop EOL 3.8 and 3.9.
 * Trio host-thread Message IO for local ``popen`` + import bootstrap (coordinator and
   worker). Adds a hard ``trio`` dependency. Disable with ``EXECNET_TRIO_HOST=0``.
@@ -31,7 +86,8 @@
   load. Opcode bytes are unchanged for every type that survives.
 * The supported API is now exactly five namespaces: ``execnet`` (aliases of
   ``execnet.sync``), ``execnet.sync``, ``execnet.trio``, ``execnet.aio`` and
-  ``execnet.portal``. The pre-Trio modules ``execnet.gateway_base``, ``execnet.gateway``,
+  ``execnet.gevent`` -- one per concurrency library you drive execnet from. The
+  pre-Trio modules ``execnet.gateway_base``, ``execnet.gateway``,
   ``execnet.multi``, ``execnet.rsync``, ``execnet.rsync_remote`` and ``execnet.xspec``
   were only ever reachable because ``import execnet`` pulled them in transitively; they
   are now deprecated forwarding shims that warn on attribute access and will be removed
@@ -55,8 +111,7 @@
   ``can_send``.
 * ``execnet.trio`` no longer exports ``ByteStream``, ``RawChannel``,
   ``RawChannelStream`` or ``serve_gateway``; the raw-channel layer is internal routing
-  detail. No names were added to ``execnet.sync``, ``execnet.aio`` or
-  ``execnet.portal``.
+  detail. No names were added to ``execnet.sync`` or ``execnet.aio``.
 
 
 2.1.2 (2025-11-11)

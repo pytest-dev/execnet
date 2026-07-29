@@ -118,7 +118,7 @@ def test_terminate_gateway_explicitly() -> None:
 
 def test_cancelled_receive_does_not_consume_an_item() -> None:
     # The bridge cancels the host-side receive, so the item stays queued
-    # instead of being consumed and dropped -- asyncio.timeout around a
+    # instead of being consumed and dropped -- an asyncio timeout around a
     # receive must behave like passing timeout=.
     async def main() -> None:
         async with execnet.aio.open_gateway() as gateway:
@@ -130,8 +130,7 @@ def test_cancelled_receive_does_not_consume_an_item() -> None:
                 """
             )
             with pytest.raises(asyncio.TimeoutError):
-                async with asyncio.timeout(0.05):
-                    await channel.receive()
+                await asyncio.wait_for(channel.receive(), 0.05)
             # release the worker; nothing was consumed by the cancelled wait
             await channel.send("go")
             assert [await channel.receive() for _ in range(3)] == [0, 1, 2]
@@ -144,9 +143,7 @@ def test_cancelled_send_still_arrives() -> None:
     # the wire, rather than a frame half-written to the peer.
     async def main() -> None:
         async with execnet.aio.open_gateway() as gateway:
-            channel = await gateway.remote_exec(
-                "channel.send(channel.receive() * 2)"
-            )
+            channel = await gateway.remote_exec("channel.send(channel.receive() * 2)")
             task = asyncio.ensure_future(channel.send(21))
             await asyncio.sleep(0)
             task.cancel()

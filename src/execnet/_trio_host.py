@@ -32,9 +32,12 @@ from ._errors import GatewayReceivedTerminate
 from ._errors import RemoteError
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
+from ._host import DEFAULT_CALLBACK_THREADS
 from ._message import FrameDecoder
 from ._message import Message
 from ._message import gateway_info
+from ._portal import LoopPortal
+from ._portal import OneShot
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 from ._trace import trace
@@ -46,9 +49,6 @@ from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_process
 from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
-from ._host import DEFAULT_CALLBACK_THREADS
-from ._portal import LoopPortal
-from ._portal import OneShot
 
 #: bound on how long the endmarker callback may run during host shutdown
 CONSUMER_ENDMARKER_GRACE = 10.0

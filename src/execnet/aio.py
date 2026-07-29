@@ -386,7 +386,7 @@ async def _start_host(host: Host) -> Any:
     def start() -> None:
         try:
             trio_host = host._ensure_started()
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             loop.call_soon_threadsafe(_set_future_error, future, exc)
         else:
             loop.call_soon_threadsafe(_set_future_result, future, trio_host)

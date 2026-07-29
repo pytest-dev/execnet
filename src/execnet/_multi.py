@@ -167,9 +167,7 @@ class Group:
             DeprecationWarning,
             stacklevel=2,
         )
-        self.set_profile(
-            execmodel if remote_execmodel is None else remote_execmodel
-        )
+        self.set_profile(execmodel if remote_execmodel is None else remote_execmodel)
 
     def __repr__(self) -> str:
         idgateways = [gw.id for gw in self]
@@ -273,9 +271,7 @@ class Group:
         self.terminate(timeout=1.0)
         if self._async_group is not None:
             with suppress(Exception):
-                self._host._ensure_started().call_sync(
-                    self._async_group.shutdown.set
-                )
+                self._host._ensure_started().call_sync(self._async_group.shutdown.set)
             self._async_group = None
 
     def terminate(self, timeout: float | None = None) -> None:

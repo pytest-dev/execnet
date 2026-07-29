@@ -34,7 +34,6 @@ _MOVED = {
     "LoadError": "._errors",
     # execution model presets
     "ExecModel": "._execmodel",
-    "EXECMODEL_PROFILES": "._execmodel",
     "get_execmodel": "._execmodel",
     # wire protocol
     "WriteIO": "._message",

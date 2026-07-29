@@ -42,8 +42,8 @@ from ._errors import GatewayReceivedTerminate
 from ._errors import HostNotFound
 from ._errors import RemoteError
 from ._errors import TimeoutError
-from ._execmodel import resolve_profile
 from ._exec_source import normalize_exec_source
+from ._execmodel import resolve_profile
 from ._message import FrameDecoder
 from ._message import Message
 from ._message import gateway_info

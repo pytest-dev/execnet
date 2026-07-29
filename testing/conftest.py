@@ -215,7 +215,8 @@ def gw(
 @pytest.fixture(params=["thread"], scope="session")
 def profile(request: pytest.FixtureRequest) -> str:
     """The worker profile gateways in this test run are created with."""
-    return request.param
+    param: str = request.param
+    return param
 
 
 @pytest.fixture(scope="session")

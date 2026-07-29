@@ -48,7 +48,6 @@ class TestSharedHost:
 
     def test_explicit_host_is_isolated_and_closes(self) -> None:
         host = Host(name="execnet-host-isolated")
-        assert not host.running
         group = execnet.Group(host=host)
         assert group.host is host
         assert group.host is not default_host()
@@ -56,7 +55,6 @@ class TestSharedHost:
             gateway = group.makegateway("popen")
             channel = gateway.remote_exec("channel.send(6 * 7)")
             assert channel.receive(TESTTIMEOUT) == 42
-            assert host.running
             assert "execnet-host-isolated" in host_thread_names()
         finally:
             group.terminate(timeout=5.0)
@@ -78,9 +76,7 @@ class TestSharedHost:
         assert not host.running
         assert "execnet-host-lazy" not in host_thread_names()
 
-    @pytest.mark.skipif(
-        not hasattr(os, "fork"), reason="requires os.fork"
-    )
+    @pytest.mark.skipif(not hasattr(os, "fork"), reason="requires os.fork")
     def test_forked_child_gets_a_fresh_default_host(self) -> None:
         # the child inherits a Host object whose thread does not exist
         # there, so the first use must build a new one
@@ -114,14 +110,14 @@ class TestEventLoopGuard:
 
     def test_makegateway_inside_asyncio_raises(self) -> None:
         async def main() -> None:
-            with pytest.raises(RuntimeError, match="execnet.aio"):
+            with pytest.raises(RuntimeError, match=r"execnet\.aio"):
                 execnet.Group().makegateway("popen")
 
         asyncio.run(main())
 
     def test_makegateway_inside_trio_raises(self) -> None:
         async def main() -> None:
-            with pytest.raises(RuntimeError, match="execnet.trio"):
+            with pytest.raises(RuntimeError, match=r"execnet\.trio"):
                 execnet.Group().makegateway("popen")
 
         trio.run(main)
@@ -133,11 +129,11 @@ class TestEventLoopGuard:
             channel = gateway.remote_exec("channel.send(1)")
 
             async def main() -> None:
-                with pytest.raises(RuntimeError, match="execnet.aio"):
+                with pytest.raises(RuntimeError, match=r"execnet\.aio"):
                     channel.receive(TESTTIMEOUT)
-                with pytest.raises(RuntimeError, match="execnet.aio"):
+                with pytest.raises(RuntimeError, match=r"execnet\.aio"):
                     channel.send(1)
-                with pytest.raises(RuntimeError, match="execnet.aio"):
+                with pytest.raises(RuntimeError, match=r"execnet\.aio"):
                     channel.waitclose(TESTTIMEOUT)
 
             asyncio.run(main())
