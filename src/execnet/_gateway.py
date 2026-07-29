@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import types
+import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
@@ -53,7 +54,7 @@ class Gateway(BaseGateway):
         except AttributeError:
             r = "uninitialized"
             i = "no"
-        return f"<{self.__class__.__name__} id={self.id!r} {r}, {self.execmodel.backend} model, {i} active channels>"
+        return f"<{self.__class__.__name__} id={self.id!r} {r}, {self.spec.profile} profile, {i} active channels>"
 
     def exit(self) -> None:
         """Trigger gateway exit.
@@ -137,7 +138,12 @@ class Gateway(BaseGateway):
 
     def remote_init_threads(self, num: int | None = None) -> None:
         """DEPRECATED.  Is currently a NO-OPERATION already."""
-        print("WARNING: remote_init_threads() is a no-operation in execnet-1.2")
+        warnings.warn(
+            "remote_init_threads() has been a no-operation since execnet 1.2"
+            " and will be removed; drop the call.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
 
 class RInfo:

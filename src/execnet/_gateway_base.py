@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import os
 import sys
-import threading
 from _thread import interrupt_main
 from collections.abc import Callable
 from contextlib import suppress
@@ -69,7 +68,7 @@ class BaseGateway:
             session.bind_sync_channel(channel)
 
     def _new_wakener(self) -> Wakener:
-        """A fresh wakener for one blocking-wait carrier (wait= axis)."""
+        """A fresh wakener for one blocking-wait carrier."""
         return make_wakener(self._wait_backend)
 
     def _bind_channel(self, channel: Channel) -> None:
@@ -171,7 +170,6 @@ class WorkerGateway(BaseGateway):
     _trio_exec: Any = None
     # The exec pool (a TrioWorkerExec duck-typed as WorkerPool for STATUS).
     _execpool: Any = None
-    _executetask_complete: threading.Event | None = None
 
     def _local_schedulexec(self, channel: Channel, sourcetask: bytes) -> None:
         trio_exec = self._trio_exec
@@ -232,8 +230,3 @@ class WorkerGateway(BaseGateway):
                 channel.close(errortext)
                 return
         channel.close()
-        if self._executetask_complete is not None:
-            # Indicate that this task has finished executing, meaning
-            # that there is no possibility of it triggering a deadlock
-            # for the next spawn call.
-            self._executetask_complete.set()

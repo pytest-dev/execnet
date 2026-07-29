@@ -1,4 +1,4 @@
-"""The pure-async worker profile (execmodel=trio).
+"""The pure-async worker profile (profile=trio).
 
 One single thread in the worker: the trio loop owns the main thread and
 exec'd sources run as tasks on it, talking through AsyncChannels.  Sync
@@ -21,7 +21,7 @@ TESTTIMEOUT = 10.0
 
 @pytest.fixture
 def trio_gw(makegateway: Callable[[str], Gateway]) -> Gateway:
-    return makegateway("popen//execmodel=trio")
+    return makegateway("popen//profile=trio")
 
 
 class TestSyncCoordinator:
@@ -95,21 +95,37 @@ class TestSyncCoordinator:
             channel.receive(TESTTIMEOUT)
 
     def test_status_and_rinfo(self, trio_gw: Gateway) -> None:
-        assert trio_gw.remote_status().execmodel == "trio"
+        status = trio_gw.remote_status()
+        assert status.profile == "trio"
+        # legacy STATUS key, kept for pytest-xdist
+        assert status.execmodel == "trio"
         rinfo = trio_gw._rinfo()
         assert rinfo.pid
         assert rinfo.version_info
 
 
-def test_unknown_execmodel_rejected(makegateway: Callable[[str], Gateway]) -> None:
-    with pytest.raises(ValueError, match="unknown execmodel"):
+def test_unknown_profile_rejected(makegateway: Callable[[str], Gateway]) -> None:
+    with pytest.raises(ValueError, match="unknown profile"):
+        makegateway("popen//profile=nope")
+    # the pre-3.0 spelling routes to the same validation
+    with pytest.raises(ValueError, match="unknown profile"):
         makegateway("popen//execmodel=nope")
+
+
+def test_execmodel_is_an_accepted_alias_for_profile(
+    makegateway: Callable[[str], Gateway],
+) -> None:
+    gw = makegateway("popen//execmodel=trio")
+    assert gw.spec.profile == "trio"
+    assert gw.spec.execmodel == "trio"
+    with pytest.raises(ValueError, match="duplicate key"):
+        execnet.XSpec("popen//execmodel=trio//profile=thread")
 
 
 def test_trio_native_coordinator() -> None:
     async def main() -> None:
         async with execnet.trio.AsyncGroup() as group:
-            gateway = await group.makegateway("popen//execmodel=trio")
+            gateway = await group.makegateway("popen//profile=trio")
             channel = await gateway.remote_exec(
                 "await channel.send(await channel.receive() * 2)"
             )

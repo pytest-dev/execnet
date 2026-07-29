@@ -42,6 +42,7 @@ from ._errors import GatewayReceivedTerminate
 from ._errors import HostNotFound
 from ._errors import RemoteError
 from ._errors import TimeoutError
+from ._execmodel import resolve_profile
 from ._exec_source import normalize_exec_source
 from ._message import FrameDecoder
 from ._message import Message
@@ -667,6 +668,8 @@ class AsyncGateway:
             status = {
                 "numchannels": len(self._channels),
                 "numexecuting": task_exec.active_count() if task_exec else 0,
+                "profile": "trio",
+                # legacy key, same value -- pytest-xdist reads it
                 "execmodel": "trio",
             }
             self._send_nowait(Message.CHANNEL_DATA, channelid, dumps_internal(status))
@@ -905,9 +908,14 @@ class AsyncGroup:
             raise RuntimeError(f"{self!r} is not entered")
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
-        if spec.execmodel is None:
-            # the sync Group normally stamps this before spawning
-            spec.execmodel = "thread"
+        if spec.profile is None:
+            # An async coordinator does not imply an async worker: the
+            # worker's shape is its own choice, and the default stays the
+            # thread profile.  Pass ``profile=trio`` for a worker that runs
+            # exec'd async sources as tasks.
+            spec.profile = "thread"
+        else:
+            spec.profile = resolve_profile(spec.profile)
         if spec.id is None:
             spec.id = "gw%d" % len(self._gateways)
         process: trio.Process | None = None

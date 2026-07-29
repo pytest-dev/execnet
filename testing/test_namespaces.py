@@ -109,11 +109,24 @@ def test_dumps_is_a_temporary_xdist_shim() -> None:
     from execnet import _serialize
 
     assert execnet._XDIST_COMPAT == ("dumps",)
+    execnet._xdist_compat_warned.discard("dumps")
     with pytest.warns(DeprecationWarning, match="temporary pytest-xdist"):
         assert execnet.dumps is _serialize.dumps
     # reachable, but never advertised
     assert "dumps" not in execnet.__all__
     assert "dumps" not in dir(execnet)
+
+
+def test_dumps_shim_warns_only_once() -> None:
+    # xdist reaches this from serialize_warning_message, i.e. from inside
+    # pytest's warning-recording hook: warning every time makes recording
+    # one warning record another, ad infinitum, and the worker wedges.
+    execnet._xdist_compat_warned.discard("dumps")
+    with pytest.warns(DeprecationWarning, match="temporary pytest-xdist"):
+        execnet.dumps  # noqa: B018
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        execnet.dumps  # noqa: B018
 
 
 def test_boundary_kit_is_private() -> None:

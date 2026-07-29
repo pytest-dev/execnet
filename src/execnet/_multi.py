@@ -11,6 +11,7 @@ import queue
 import threading
 import time
 import types
+import warnings
 from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Iterator
@@ -25,9 +26,9 @@ from typing import overload
 
 from ._boundary import WaitBackend
 from ._channel import Channel
-from ._execmodel import EXECMODEL_PROFILES
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
+from ._execmodel import resolve_profile
 from ._trace import trace
 from ._xspec import XSpec
 
@@ -50,24 +51,36 @@ class Group:
     _wait_backend: WaitBackend = "thread"
 
     def __init__(
-        self, xspecs: Iterable[XSpec | str | None] = (), execmodel: str = "thread"
+        self,
+        xspecs: Iterable[XSpec | str | None] = (),
+        profile: str | None = None,
+        *,
+        execmodel: str | None = None,
     ) -> None:
         """Initialize a group and make gateways as specified.
 
-        execmodel can be one of the supported execution models.
+        ``profile`` is the default worker profile for gateways created
+        without an explicit ``profile=`` in their spec.  ``execmodel`` is
+        the deprecated spelling (pytest-xdist still passes it).
         """
+        if execmodel is not None:
+            if profile is not None:
+                raise TypeError("pass either profile= or execmodel=, not both")
+            warnings.warn(
+                "Group(execmodel=...) is deprecated; use Group(profile=...)."
+                " execnet has no local execution model any more -- the value"
+                " only selects the worker profile.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            profile = execmodel
         self._gateways: list[Gateway] = []
         self._autoidcounter = 0
         self._autoidlock = Lock()
         self._gateways_to_join: list[Gateway] = []
         self._trio_host: Any = None
         self._async_group: Any = None
-        # we use the same execmodel for all of the Gateway objects
-        # we spawn on our side.  Probably we should not allow different
-        # execmodels between different groups but not clear.
-        # Note that "other side" execmodels may differ and is typically
-        # specified by the spec passed to makegateway.
-        self.set_execmodel(execmodel)
+        self.set_profile("thread" if profile is None else profile)
         for xspec in xspecs:
             self.makegateway(xspec)
         atexit.register(self._cleanup_atexit)
@@ -95,32 +108,62 @@ class Group:
         return self._async_group
 
     @property
+    def profile(self) -> str:
+        """Default worker profile for gateways created by this group."""
+        return self._profile
+
+    def set_profile(self, profile: str) -> None:
+        """Set the default worker profile for newly created gateways.
+
+        NOTE: only settable before any gateway is created.
+        """
+        if self._gateways:
+            raise ValueError(
+                "can not set the profile if gateways have been created already"
+            )
+        self._profile = resolve_profile(profile)
+
+    @property
     def execmodel(self) -> ExecModel:
-        return self._execmodel
+        """Deprecated: there is no local execution model any more."""
+        warnings.warn(
+            "Group.execmodel is deprecated: execnet has no local execution"
+            " model. Use Group.profile for the worker profile.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return get_execmodel(self._profile)
 
     @property
     def remote_execmodel(self) -> ExecModel:
-        return self._remote_execmodel
+        """Deprecated alias for :attr:`profile`, as an ExecModel shim."""
+        warnings.warn(
+            "Group.remote_execmodel is deprecated; use Group.profile.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return get_execmodel(self._profile)
 
     def set_execmodel(
         self, execmodel: str, remote_execmodel: str | None = None
     ) -> None:
-        """Set the execution model for local and remote site.
+        """Deprecated alias for :meth:`set_profile`.
 
-        execmodel can be one of the supported execution models.
-        It determines the execution model for any newly created gateway.
-        If remote_execmodel is not specified it takes on the value of execmodel.
-
-        NOTE: Execution models can only be set before any gateway is created.
+        The *local* execution model it used to set no longer exists -- all
+        protocol IO runs on the Trio host -- so only the worker profile is
+        taken from these arguments (``remote_execmodel`` when given, else
+        ``execmodel``).
         """
-        if self._gateways:
-            raise ValueError(
-                "can not set execution models if gateways have been created already"
-            )
-        if remote_execmodel is None:
-            remote_execmodel = execmodel
-        self._execmodel = get_execmodel(execmodel)
-        self._remote_execmodel = get_execmodel(remote_execmodel)
+        warnings.warn(
+            "Group.set_execmodel is deprecated; use Group.set_profile(profile)."
+            " execnet has no local execution model, so only the remote value"
+            " has an effect.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.set_profile(
+            execmodel if remote_execmodel is None else remote_execmodel
+        )
 
     def __repr__(self) -> str:
         idgateways = [gw.id for gw in self]
@@ -161,11 +204,14 @@ class Group:
 
             id=<string>     specifies the gateway id
             python=<path>   specifies which python interpreter to execute
-            execmodel=name  worker profile: where exec'd code runs relative
-                            to the worker's protocol loop.  'thread' (pool
-                            threads) or 'main_thread_only' (serialized on
-                            the worker main thread, GUI/signal-safe).
-            wait=backend    wakener for blocking waits ('thread' default)
+            profile=name    worker profile: where exec'd code runs relative
+                            to the worker's protocol loop.  'thread'
+                            (default; the first remote_exec claims the
+                            worker main thread, further ones overflow to
+                            pool threads), 'trio' (async sources as tasks,
+                            single-threaded) or 'gevent' (a greenlet per
+                            remote_exec).  Spelled 'execmodel=' before
+                            execnet 3.0; that spelling still works.
             chdir=<path>    specifies to which directory to change
             nice=<path>     specifies process priority of new process
             env:NAME=value  specifies a remote environment variable setting.
@@ -177,13 +223,10 @@ class Group:
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
         self.allocate_id(spec)
-        if spec.execmodel is None:
-            spec.execmodel = self.remote_execmodel.backend
-        elif spec.execmodel not in EXECMODEL_PROFILES:
-            raise ValueError(
-                f"unknown execmodel {spec.execmodel!r}"
-                f" (known profiles: {list(EXECMODEL_PROFILES)})"
-            )
+        if spec.profile is None:
+            spec.profile = self._profile
+        else:
+            spec.profile = resolve_profile(spec.profile)
         from . import _trio_host
 
         if not (spec.socket or spec.via or spec.ssh or spec.vagrant_ssh or spec.popen):
@@ -414,4 +457,6 @@ def safe_terminate(
 
 default_group = Group()
 makegateway = default_group.makegateway
+set_profile = default_group.set_profile
+#: deprecated alias, see Group.set_execmodel
 set_execmodel = default_group.set_execmodel

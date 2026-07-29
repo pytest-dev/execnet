@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import functools
 import os
 import sys
 import threading
@@ -12,7 +11,6 @@ from typing import Any
 
 import trio
 
-from ._errors import MAIN_THREAD_ONLY_DEADLOCK_TEXT
 from ._errors import geterrortext
 from ._execmodel import get_execmodel
 from ._gateway_base import WorkerGateway
@@ -59,25 +57,15 @@ class PoolExec:
         pass
 
 
-#: How long admission waits for the previous main-thread exec to finish
-#: before declaring a deadlock.  Kept small: a genuine second concurrent
-#: remote_exec never returns, so this only affects how fast that is
-#: reported.  (Under heavy CPU contention a merely slow predecessor can be
-#: misread as a deadlock, but main_thread_only is an xdist-only transitional
-#: profile slated for removal, so the whole guard goes away with it.)
-MAIN_THREAD_ONLY_ADMIT_TIMEOUT = 1.0
+class PrimaryThreadPump:
+    """Runs exec requests handed to it on the process main thread.
 
-
-class MainExec:
-    """Exec strategy: serialize each request onto the process main thread.
-
-    The ``main_thread_only`` profile (GUI/signal-safe: pytest under xdist
-    runs this way).  Admission waits for the previous request to finish and
-    closes the channel with the deadlock text when it cannot within
-    ``MAIN_THREAD_ONLY_ADMIT_TIMEOUT`` (a second concurrent remote_exec would
-    deadlock the requester).
+    The building block for every strategy that needs a real main thread:
+    :meth:`integrate_as_primary_thread` parks there draining a mailbox, and
+    :meth:`run` hands one request over and awaits its completion.
     """
 
+    #: whether _run_worker must hand this strategy the process main thread
     needs_primary_thread = True
 
     def __init__(self, gateway: WorkerGateway) -> None:
@@ -87,15 +75,7 @@ class MainExec:
         )
 
     async def admit(self, channel: Channel, item: ExecItem) -> bool:
-        complete = self.gateway._executetask_complete
-        assert complete is not None
-        wait_slot = functools.partial(
-            complete.wait, timeout=MAIN_THREAD_ONLY_ADMIT_TIMEOUT
-        )
-        if not await trio.to_thread.run_sync(wait_slot, abandon_on_cancel=True):
-            channel.close(MAIN_THREAD_ONLY_DEADLOCK_TEXT)
-            return False
-        complete.clear()
+        """FIFO admission gate; always open."""
         return True
 
     async def run(self, channel: Channel, item: ExecItem) -> None:
@@ -119,14 +99,19 @@ class MainExec:
         self._primary.put(None)
 
 
-class HybridExec(MainExec):
+class HybridExec(PrimaryThreadPump):
     """Exec strategy: primary on the main thread, overflow on pool threads.
 
-    The classic ``thread`` execmodel shape: a request arriving while the
+    The classic ``thread`` profile shape: a request arriving while the
     main thread is idle claims it (pytest and friends get a true main
     thread); requests arriving while it is busy run on worker threads
     instead of queueing.  The claim is decided during FIFO admission so
     the *first* request always gets the main thread.
+
+    This is also what the retired ``main_thread_only`` profile now maps to:
+    it existed for the main-thread guarantee, which the claim provides,
+    and its extra behaviour -- refusing a second concurrent remote_exec
+    rather than overflowing -- was a deadlock guard, not a feature.
     """
 
     def __init__(self, gateway: WorkerGateway) -> None:
@@ -160,8 +145,8 @@ class HybridExec(MainExec):
 class GreenletExec:
     """Exec strategy: greenlets on a gevent hub owning the main thread.
 
-    ``execmodel=gevent``: each request runs as a greenlet spawned by the
-    integrate loop; the worker's ``wait=gevent`` wakeners make channel
+    ``profile=gevent``: each request runs as a greenlet spawned by the
+    integrate loop; the worker's gevent wakeners make channel
     operations park the greenlet, so concurrent remote_execs cooperate on
     the one main thread.  Requires gevent in the worker environment
     (provisioning adds the ``gevent`` requirement automatically).
@@ -207,18 +192,17 @@ class GreenletExec:
         self._primary.put(None)
 
 
-# execmodel profile -> exec strategy for the sync-facade worker; the
-# "trio" profile serves a plain AsyncGateway instead (TaskExec below).
+# worker profile -> exec strategy for the sync-facade worker; the "trio"
+# profile serves a plain AsyncGateway instead (TaskExec below).
 # Future placement strategies slot in here (e.g. subinterpreters).
 WORKER_EXEC_STRATEGIES: dict[str, Callable[[WorkerGateway], Any]] = {
     "thread": HybridExec,
-    "main_thread_only": MainExec,
     "gevent": GreenletExec,
 }
 
 
 class TaskExec:
-    """Exec strategy for the pure-async profile (``execmodel=trio``).
+    """Exec strategy for the pure-async profile (``profile=trio``).
 
     Sources run as tasks on the worker's own loop, in the one and only
     thread of the process, and receive an ``AsyncChannel``.  Sources must
@@ -261,7 +245,7 @@ class TaskExec:
             toplevel_await = bool(co.co_flags & inspect.CO_COROUTINE)
             if not toplevel_await and not call_name:
                 await channel.aclose(
-                    "sync source under execmodel=trio: the source must use"
+                    "sync source under profile=trio: the source must use"
                     " top-level await (or pass an async function)"
                 )
                 return
@@ -274,7 +258,7 @@ class TaskExec:
                 result = function(channel, **kwargs)
                 if not hasattr(result, "__await__"):
                     await channel.aclose(
-                        f"sync function {call_name!r} under execmodel=trio:"
+                        f"sync function {call_name!r} under profile=trio:"
                         " remote_exec functions must be async"
                     )
                     return
@@ -299,7 +283,7 @@ class TrioWorkerExec:
     Exec requests flow through a single pump task so admission happens
     strictly in message-arrival order (trio task scheduling order is
     deliberately unordered, so per-request tasks would race for e.g. the
-    main_thread_only slot).  Where an admitted request runs is the
+    main-thread claim).  Where an admitted request runs is the
     strategy's business (:data:`WORKER_EXEC_STRATEGIES`).
     """
 
@@ -454,7 +438,7 @@ def _build_worker_gateway(
         strategy_factory = WORKER_EXEC_STRATEGIES[model.backend]
     except KeyError:
         raise ValueError(
-            f"execmodel {model.backend!r} has no worker exec strategy "
+            f"profile {model.backend!r} has no worker exec strategy "
             f"(known: {sorted(WORKER_EXEC_STRATEGIES)})"
         ) from None
     strategy = strategy_factory(gateway)
@@ -462,10 +446,6 @@ def _build_worker_gateway(
     # Duck-type as the exec pool for STATUS / _terminate_execution.
     gateway._execpool = trio_exec
     gateway._trio_exec = trio_exec
-    gateway._executetask_complete = None
-    if strategy.needs_primary_thread:
-        gateway._executetask_complete = threading.Event()
-        gateway._executetask_complete.set()
     return gateway, trio_exec
 
 
@@ -504,7 +484,7 @@ async def _make_fd_io(read_fd: int, write_fd: int) -> Any:
 
 
 async def _serve_async_worker(stream: Any, id: str) -> None:
-    """Serve a plain AsyncGateway with task-based exec (execmodel=trio).
+    """Serve a plain AsyncGateway with task-based exec (profile=trio).
 
     The whole worker is this one trio run on the process main thread: the
     dispatch loop and every exec'd source share it.  Termination cancels
@@ -523,7 +503,7 @@ async def _serve_async_worker(stream: Any, id: str) -> None:
 
 
 def serve_popen_async(id: str) -> None:
-    """Serve the pure-async worker over the stdio pipes (execmodel=trio)."""
+    """Serve the pure-async worker over the stdio pipes (profile=trio)."""
     from ._trio_gateway import staple_fd_stream
 
     read_fd, write_fd = _prepare_protocol_fds()
@@ -548,11 +528,11 @@ def serve_socket_async(id: str, socket_fd: int) -> None:
     os._exit(0)
 
 
-def serve_popen_trio(id: str, execmodel: str = "thread", wait: str = "thread") -> None:
+def serve_popen_trio(id: str, profile: str = "thread", wait: str = "thread") -> None:
     """Serve a WorkerGateway over the stdio pipes (popen / ssh worker)."""
     from . import _trio_host
 
-    model = get_execmodel(execmodel)
+    model = get_execmodel(profile)
     read_fd, write_fd = _prepare_protocol_fds()
     # Bootstrap handshake: the coordinator waits for this byte on our stdout
     # before starting the Message protocol.  We are launched as a plain module
@@ -566,7 +546,7 @@ def serve_popen_trio(id: str, execmodel: str = "thread", wait: str = "thread") -
 
 
 def serve_socket_trio(
-    id: str, execmodel: str, socket_fd: int, wait: str = "thread"
+    id: str, profile: str, socket_fd: int, wait: str = "thread"
 ) -> None:
     """Serve a WorkerGateway over an inherited socket fd.
 
@@ -576,7 +556,7 @@ def serve_socket_trio(
     """
     from . import _trio_host
 
-    model = get_execmodel(execmodel)
+    model = get_execmodel(profile)
     host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
     host.start()
     io = host.call(_trio_host.adopt_socket, socket_fd)
@@ -640,7 +620,7 @@ def _main() -> None:
     """Entry point for ``python -m execnet._trio_worker <config-json> [--socket-fd N]``.
 
     ``<config-json>`` is the coordinator's ``_provision.worker_cli_arg`` payload:
-    ``{"id", "execmodel", "coordinator_version"}``.  With ``--socket-fd`` the
+    ``{"id", "profile", "wait", "coordinator_version"}``.  With ``--socket-fd`` the
     worker serves over that inherited socket (socketserver); otherwise over the
     stdio pipes (popen / ssh).  The worker imports execnet + trio from the
     environment; no source is sent over the wire to bootstrap it.
@@ -658,25 +638,20 @@ def _main() -> None:
     config = json.loads(ns.config)
     _check_version(config["coordinator_version"])
     _apply_worker_setup(config)
-    if config["execmodel"] == "trio":
+    # "execmodel" is the pre-3.0 spelling; accept both so a version-skewed
+    # coordinator still connects.
+    profile = config.get("profile") or config["execmodel"]
+    wait = config.get("wait", "thread")
+    if profile == "trio":
         # pure-async profile: one thread, the loop owns the main thread
         if ns.socket_fd is not None:
             serve_socket_async(config["id"], ns.socket_fd)
         else:
             serve_popen_async(config["id"])
     elif ns.socket_fd is not None:
-        serve_socket_trio(
-            config["id"],
-            config["execmodel"],
-            ns.socket_fd,
-            wait=config.get("wait", "thread"),
-        )
+        serve_socket_trio(config["id"], profile, ns.socket_fd, wait=wait)
     else:
-        serve_popen_trio(
-            id=config["id"],
-            execmodel=config["execmodel"],
-            wait=config.get("wait", "thread"),
-        )
+        serve_popen_trio(id=config["id"], profile=profile, wait=wait)
 
 
 if __name__ == "__main__":
