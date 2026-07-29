@@ -17,6 +17,63 @@ pytest testing/ -n 12` passes (~7s) since the session-attach race fix
 `testing/test_ssh_local.py` (asyncssh server; system ssh client needed).
 Known flake: `test_socket_installvia` EOFs rarely under load.
 
+## Surface review — LANDED 2026-07-29 (`7aa17fe..e75cd0a`)
+
+The public surface had settled commit by commit and was never reviewed as
+a whole.  Doing that before the Phase D docs froze it produced the
+following, which **wins over anything below or in
+`handoff-boundary-protocol-rethink.md` that contradicts it**.
+
+**Namespaces are now one per concurrency library you drive execnet from**:
+`execnet.sync` (threads; the top-level aliases), `execnet.trio`,
+`execnet.aio`, `execnet.gevent`.  `execnet.portal` is gone --
+`execnet._portal` plus the trio-free `execnet._boundary`.
+
+| was | is | why |
+|---|---|---|
+| `execnet.portal` public | `execnet._portal` private | it exported `Wakener`/`Mailbox`/`OneShot`/`LoopPortal` but *not* `register_wakener`, so the advertised extension point was unreachable -- and there is no plan to let third parties add event loops at all |
+| Wakener registry (`register_wakener`, lazy module table) | two-branch `make_wakener(Literal["thread","gevent"])` | exactly two backends exist; every other library gets a facade |
+| `wait=` spec key | gone; `Group._wait_backend`, set by the facade | it described the *caller*, which the namespace already says.  Worker-side wait was always derived from the profile |
+| gevent via `wait=gevent` | `execnet.gevent.Group` | symmetric with the other surfaces |
+| `execmodel=` spec key | `profile=` (`execmodel=` a permanent alias) | the key selects the *worker profile*; the local execution model it was named after no longer exists |
+| `Group(execmodel=)`, `set_execmodel`, `group.execmodel` | deprecated; only the remote default survives | they had no behavioural effect.  **xdist passes `Group(execmodel=...)` as a keyword** -- that must keep working |
+| `main_thread_only` profile | deprecated alias for `thread` | `HybridExec` already gives the first remote_exec the real main thread.  Its extra behaviour (refusing a second concurrent remote_exec) was a 1s-timeout deadlock guard, now deleted |
+| one `TrioHost` per `Group` | one shared `execnet.Host` per process, `Group(host=...)` to override | a host is a thread and a loop, not something groups need isolated |
+| blocking inside a running loop hangs | raises, naming `execnet.aio` / `execnet.trio` | worker-side channels stay exempt: exec'd code may run its own loop |
+| `aio.Group`/`Gateway`/`Channel` | `aio.AsyncGroup`/`AsyncGateway`/`AsyncChannel` | matches `execnet.trio`; swapping the import ports the code |
+| `open_popen_gateway` | `open_gateway` (both async surfaces) | it always accepted any spec |
+
+Behaviour changes worth a changelog line:
+
+- a second concurrent `remote_exec` under `main_thread_only` used to close
+  the channel with `MAIN_THREAD_ONLY_DEADLOCK_TEXT`; it now runs on a pool
+  thread.  `_executetask_complete`, `MAIN_THREAD_ONLY_ADMIT_TIMEOUT` and
+  the error text are deleted; `MainExec` became `PrimaryThreadPump`.
+- `execnet.aio` cancellation is now real: a cancelled `receive` cancels
+  the host-side operation instead of consuming and discarding an item.
+  `send`/`send_eof`/`aclose`/`terminate` are shielded instead.
+- the boundary carriers raise `execnet.TimeoutError`, not the builtin;
+  `OneShot` double-resolve is a `RuntimeError`, not an `assert`.
+- `STATUS` answers both `profile` and (legacy) `execmodel`.
+- **Latent livelock fixed**: `execnet.dumps` warned on *every* access, and
+  xdist calls it from `serialize_warning_message` -- i.e. from inside
+  pytest's warning-recording hook.  One DeprecationWarning in a worker
+  therefore recorded a warning that recorded a warning, unbounded, and
+  wedged the run.  The shim warns once per process
+  (`execnet._xdist_compat_warned`).  Anything that warns in a worker can
+  hit this class of bug; keep it in mind.
+
+New tests: `testing/test_host.py` (sharing, explicit `Host`, fork, the
+loop guards), `testing/test_boundary.py` (renamed from `test_portal.py`),
+aio cancellation contracts in `testing/test_aio.py`.  The `execmodel`
+fixture parametrization collapsed to a single `profile` fixture, so the
+suite is ~540 items rather than ~765.
+
+Still open from the review, deliberately not done: the async surfaces have
+no `remote_status()`, no `MultiChannel`, no group iteration, and no
+`RSync`.  `AsyncGroup.makegateway` defaults workers to the `thread`
+profile (the coordinator's shape does not dictate the worker's).
+
 ## Where the repo stands (2026-07-25, after `a69b844`)
 
 One protocol engine: `AsyncGateway` (`_trio_gateway.py`).  The sync API
@@ -45,12 +102,12 @@ File map (src/execnet/):
 
 | file | role |
 |---|---|
-| `gateway_base.py` | `Message` wire protocol + sans-IO `FrameDecoder`, serializer (CHANNEL opcode incl. duck-typed `save_AsyncChannel`), sync `Channel`/`ChannelFactory` (raw-receiver registry), `BaseGateway`/`WorkerGateway` (`_send` via bridge, `_send_nonblocking` for GC), `ExecModel`, `WorkerPool`, `HostNotFound` |
+| `_message.py` / `_serialize.py` / `_channel.py` / `_gateway_base.py` / `_errors.py` / `_execmodel.py` | split by concern since this table was written: wire protocol + sans-IO `FrameDecoder`; serializer (CHANNEL opcode incl. duck-typed `save_AsyncChannel`); sync `Channel`/`ChannelFactory`; `BaseGateway`/`WorkerGateway`; error types; `WORKER_PROFILES` + `resolve_profile` + the deprecated `ExecModel` xdist shim.  `gateway_base.py` is now only a warning shim |
 | `_trio_gateway.py` | async core: `ByteStream` Protocol, `RawChannel`/`AsyncChannel`, `AsyncGateway` (outbound queue of `(frame, on_written)`; `_finalize` hook), `AsyncGroup` (all transports, overridable `_make_gateway`/`_open_via_stream`/`_resolve_socket_address`, reapers, bounded terminate), stream/argv helpers |
 | `_trio_host.py` | `TrioHost` (loop thread), `SyncBridgeGateway`, `FacadeAsyncGroup`, `makegateway_trio`, `SyncIOHandle`, `RawTunnelStream` (via tunnel; `aclose` feeds own reader EOF), `GATEWAY_START_*` handlers |
 | `_trio_worker.py` | worker entry (`_main`/`serve_popen_trio`/`serve_socket_trio`), `TrioWorkerExec` (FIFO `_pump` admission; `integrate_as_primary_thread`), `_prepare_protocol_fds`, `_check_version` |
 | `gateway.py` / `multi.py` | sync `Gateway` / sync `Group` facade, `MultiChannel`, `safe_terminate` (WorkerPool-based, kept for tests) |
-| `sync.py` / `trio.py` / `portal.py` | the three public namespaces |
+| `sync.py` / `trio.py` / `aio.py` / `gevent.py` | the four public namespaces; `_host.py` holds the shared `Host`, `_portal.py`/`_boundary.py` the (private) boundary kit |
 | `_exec_source.py`, `_provision.py`, `xspec.py`, `rsync.py` | source normalization, uv provisioning + argv builders, spec parsing, rsync |
 
 ## Semantics that MUST survive (xdist depends on them)
@@ -84,20 +141,23 @@ different use-cases get named profiles, `execmodel=` is the public mode
 key (xdist already passes it), and `wait=` is the only other public
 knob.  Implemented in commits `b2f43c3..cbce183`:
 
-| `execmodel=` | loop thread | exec'd code runs | channel | worker wait | extra deps |
+| `profile=` (was `execmodel=`) | loop thread | exec'd code runs | channel | worker wait | extra deps |
 |---|---|---|---|---|---|
 | `thread` (default) | side thread | **classic hybrid restored**: primary on the main thread, overflow on pool threads (claim decided during FIFO admission) | sync | thread | — |
-| `main_thread_only` | side thread | main thread, serialized (deadlock guard) | sync | thread | — |
+| ~~`main_thread_only`~~ | *deprecated 2026-07-29, aliases to `thread`* | | | | |
 | `trio` (new) | **main thread** | async sources as tasks — one single thread total; top-level await or async def; sync sources rejected; termination cancels tasks | AsyncChannel | (loop) | — |
 | `gevent` (revived) | side thread | greenlets on a main-thread hub, one per remote_exec | sync | gevent (derived) | `execnet[gevent]`, auto-added by uv provisioning |
+
+(The coordinator-side counterpart of the last row is now `execnet.gevent`,
+not `wait=gevent`.)
 
 Architecture: `TrioWorkerExec` is a pure FIFO admission pump delegating
 to strategy objects (`WORKER_EXEC_STRATEGIES` in `_trio_worker.py`:
 PoolExec building block, MainExec, HybridExec, GreenletExec; TaskExec
 serves a plain AsyncGateway via its pluggable `_exec_handler` — no sync
 bridge at all in the trio profile).  Subinterpreters: future strategy
-slot, not built.  `EXECMODEL_PROFILES` (gateway_base) validates
-coordinator-side in makegateway.
+slot, not built.  `WORKER_PROFILES` (`_execmodel.py`) validates
+coordinator-side in makegateway, via `resolve_profile`.
 
 **Native info/setup** (the pytest fix): `Message.GATEWAY_INFO` (code 10)
 answers `_rinfo()` from the dispatch loop; chdir/nice/env ship in the
@@ -108,9 +168,9 @@ post-start remote_exec setup block are gone.
 
 Coordinator-gevent integration: `TrioHost.call_pending` (OneShot from a
 host task) backs makegateway / `SyncIOHandle.wait/kill` /
-`Group.terminate` whenever the wait backend is not `thread`, so a gevent
-app's management ops park only the calling greenlet.  `wait=thread`
-keeps the KI-deferred `portal.run` path.
+`Group.terminate` whenever the group's wait backend is not `thread`, so a
+gevent app's management ops park only the calling greenlet.  The default
+`thread` backend keeps the KI-deferred `portal.run` path.
 
 Still decided/standing: core stays trio-only (anyio/asyncio-core port
 rejected; asyncio apps use `execnet.aio`); eventlet stays dead; exec'd

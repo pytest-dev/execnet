@@ -134,3 +134,22 @@ def test_trio_native_coordinator() -> None:
                 assert await channel.receive() == 42
 
     trio_lib.run(main)
+
+
+def test_async_coordinator_defaults_to_a_thread_worker() -> None:
+    # An async coordinator does not imply an async worker: the worker's
+    # shape is its own choice, so the default stays the thread profile.
+    async def main() -> None:
+        async with execnet.trio.AsyncGroup() as group:
+            gateway = await group.makegateway("popen")
+            channel = await gateway.remote_exec(
+                "import threading;"
+                " channel.send(threading.current_thread() is"
+                " threading.main_thread())"
+            )
+            with trio_lib.fail_after(TESTTIMEOUT):
+                # a sync source at all proves this is not the trio profile,
+                # which rejects them
+                assert await channel.receive() is True
+
+    trio_lib.run(main)

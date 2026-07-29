@@ -128,9 +128,23 @@ port.  Phase E (anyio-native core) becomes optional purity/perf work.
    in the first waiter's hub (carriers may be constructed on the host
    loop); tests behind the `gevent` dependency group.
 
-Next: Phase C `loop=main` / `exec=task` on the smaller core
-(handoff-phase-c-worker-axes.md), and Phase D docs cover the four
-namespaces + the axes/presets.
+## SUPERSEDED 2026-07-29 by the surface review
+
+Phase C landed, and reviewing the whole public surface at once (before
+Phase D docs froze it) retired several of the decisions above.  See
+"Surface review" in `handoff-phase-c-worker-axes.md` for what stands.  In
+short:
+
+- **The Wakener extension point is gone.**  There was never a plan to let
+  third parties add event loops, and the asyncio wakener sketched here was
+  deliberately never built (P4 chose per-call bridging).  What is left is
+  two wait backends, threads and gevent, behind a two-branch
+  `make_wakener`.  `execnet.portal` is now private `execnet._portal`.
+- **`wait=` is gone as a spec key.**  It described the *caller's*
+  concurrency library, which is what picking a namespace already says.
+  gevent got the facade it was missing: `execnet.gevent`.
+- **The `loop=` / `exec=` axes stayed dropped**; `execmodel=` became
+  `profile=` (see below).
 
 ## Invariants (unchanged, re-mapped)
 

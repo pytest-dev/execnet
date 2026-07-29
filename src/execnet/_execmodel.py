@@ -110,9 +110,7 @@ def resolve_profile(name: str) -> str:
         )
         return replacement
     if name not in WORKER_PROFILES:
-        raise ValueError(
-            f"unknown profile {name!r} (known: {list(WORKER_PROFILES)})"
-        )
+        raise ValueError(f"unknown profile {name!r} (known: {list(WORKER_PROFILES)})")
     return name
 
 

@@ -17,7 +17,6 @@ import pytest
 
 import execnet
 from execnet import Gateway
-from execnet import _execmodel
 from execnet import _trace
 
 TESTTIMEOUT = 10.0  # seconds

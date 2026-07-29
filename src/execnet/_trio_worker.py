@@ -11,12 +11,13 @@ from typing import Any
 
 import trio
 
+from ._boundary import Mailbox
+from ._boundary import WaitBackend
 from ._errors import geterrortext
 from ._execmodel import get_execmodel
 from ._gateway_base import WorkerGateway
 from ._serialize import loads_internal
 from ._trace import trace
-from ._boundary import Mailbox
 
 if TYPE_CHECKING:
     from . import _trio_host
@@ -426,7 +427,10 @@ class _WorkerIOStub:
 
 
 def _build_worker_gateway(
-    host: _trio_host.TrioHost, id: str, model: ExecModel, wait: str = "thread"
+    host: _trio_host.TrioHost,
+    id: str,
+    model: ExecModel,
+    wait: WaitBackend = "thread",
 ) -> tuple[WorkerGateway, TrioWorkerExec]:
     """Construct the WorkerGateway + exec pump/strategy (no IO yet)."""
     trace(f"creating workergateway on trio id={id!r}")
@@ -450,7 +454,11 @@ def _build_worker_gateway(
 
 
 def _run_worker(
-    host: _trio_host.TrioHost, io: Any, id: str, model: ExecModel, wait: str = "thread"
+    host: _trio_host.TrioHost,
+    io: Any,
+    id: str,
+    model: ExecModel,
+    wait: WaitBackend = "thread",
 ) -> None:
     """Attach ``io`` as the gateway session and serve until shutdown."""
     gateway, trio_exec = _build_worker_gateway(host, id, model, wait)
@@ -528,7 +536,9 @@ def serve_socket_async(id: str, socket_fd: int) -> None:
     os._exit(0)
 
 
-def serve_popen_trio(id: str, profile: str = "thread", wait: str = "thread") -> None:
+def serve_popen_trio(
+    id: str, profile: str = "thread", wait: WaitBackend = "thread"
+) -> None:
     """Serve a WorkerGateway over the stdio pipes (popen / ssh worker)."""
     from . import _trio_host
 
@@ -546,7 +556,7 @@ def serve_popen_trio(id: str, profile: str = "thread", wait: str = "thread") -> 
 
 
 def serve_socket_trio(
-    id: str, profile: str, socket_fd: int, wait: str = "thread"
+    id: str, profile: str, socket_fd: int, wait: WaitBackend = "thread"
 ) -> None:
     """Serve a WorkerGateway over an inherited socket fd.
 
@@ -641,7 +651,7 @@ def _main() -> None:
     # "execmodel" is the pre-3.0 spelling; accept both so a version-skewed
     # coordinator still connects.
     profile = config.get("profile") or config["execmodel"]
-    wait = config.get("wait", "thread")
+    wait: WaitBackend = config.get("wait", "thread")
     if profile == "trio":
         # pure-async profile: one thread, the loop owns the main thread
         if ns.socket_fd is not None:
