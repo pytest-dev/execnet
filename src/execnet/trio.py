@@ -29,7 +29,7 @@ from ._errors import TimeoutError
 from ._trio_gateway import AsyncChannel
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
-from ._trio_gateway import open_popen_gateway
+from ._trio_gateway import open_gateway
 from ._xspec import XSpec
 
 __all__ = [
@@ -43,5 +43,5 @@ __all__ = [
     "RemoteError",
     "TimeoutError",
     "XSpec",
-    "open_popen_gateway",
+    "open_gateway",
 ]

@@ -80,7 +80,7 @@ def test_trio_namespace_exposes_async_core() -> None:
     assert execnet.trio.AsyncGroup is _trio_gateway.AsyncGroup
     assert execnet.trio.AsyncGateway is _trio_gateway.AsyncGateway
     assert execnet.trio.AsyncChannel is _trio_gateway.AsyncChannel
-    assert execnet.trio.open_popen_gateway is _trio_gateway.open_popen_gateway
+    assert execnet.trio.open_gateway is _trio_gateway.open_gateway
     # error types are shared with the sync surface; the standalone serializer
     # is intentionally not exposed on any public namespace
     assert execnet.trio.RemoteError is execnet.RemoteError

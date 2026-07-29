@@ -32,6 +32,7 @@ from .sync import DataFormatError
 from .sync import DumpError
 from .sync import Gateway
 from .sync import Group
+from .sync import Host
 from .sync import HostNotFound
 from .sync import LoadError
 from .sync import MultiChannel
@@ -50,6 +51,7 @@ __all__ = [
     "DumpError",
     "Gateway",
     "Group",
+    "Host",
     "HostNotFound",
     "LoadError",
     "MultiChannel",

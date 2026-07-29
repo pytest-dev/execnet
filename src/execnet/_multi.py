@@ -29,6 +29,9 @@ from ._channel import Channel
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
 from ._execmodel import resolve_profile
+from ._host import Host
+from ._host import check_not_in_event_loop
+from ._host import default_host
 from ._trace import trace
 from ._xspec import XSpec
 
@@ -55,13 +58,16 @@ class Group:
         xspecs: Iterable[XSpec | str | None] = (),
         profile: str | None = None,
         *,
+        host: Host | None = None,
         execmodel: str | None = None,
     ) -> None:
         """Initialize a group and make gateways as specified.
 
         ``profile`` is the default worker profile for gateways created
-        without an explicit ``profile=`` in their spec.  ``execmodel`` is
-        the deprecated spelling (pytest-xdist still passes it).
+        without an explicit ``profile=`` in their spec.  ``host`` is the
+        Trio host thread to serve this group's protocol IO on; it defaults
+        to the process-wide one.  ``execmodel`` is the deprecated spelling
+        of ``profile`` (pytest-xdist still passes it).
         """
         if execmodel is not None:
             if profile is not None:
@@ -78,20 +84,20 @@ class Group:
         self._autoidcounter = 0
         self._autoidlock = Lock()
         self._gateways_to_join: list[Gateway] = []
-        self._trio_host: Any = None
+        self._host = default_host() if host is None else host
         self._async_group: Any = None
         self.set_profile("thread" if profile is None else profile)
         for xspec in xspecs:
             self.makegateway(xspec)
         atexit.register(self._cleanup_atexit)
 
-    def _ensure_trio_host(self) -> Any:
-        if self._trio_host is None:
-            from . import _trio_host
+    @property
+    def host(self) -> Host:
+        """The Trio host thread this group's protocol IO runs on."""
+        return self._host
 
-            self._trio_host = _trio_host.TrioHost(name="execnet-trio-group")
-            self._trio_host.start()
-        return self._trio_host
+    def _ensure_trio_host(self) -> Any:
+        return self._host._ensure_started()
 
     def _ensure_async_group(self) -> Any:
         """The FacadeAsyncGroup owning the async side, running on the host."""
@@ -218,6 +224,7 @@ class Group:
 
         If no spec is given, self.defaultspec is used.
         """
+        check_not_in_event_loop("Group.makegateway()")
         if not spec:
             spec = self.defaultspec
         if not isinstance(spec, XSpec):
@@ -260,15 +267,16 @@ class Group:
         self._gateways_to_join.append(gateway)
 
     def _cleanup_atexit(self) -> None:
+        # The host is shared and stops itself at exit; a group only owns
+        # its gateways and the async group task running on that host.
         trace(f"=== atexit cleanup {self!r} ===")
         self.terminate(timeout=1.0)
         if self._async_group is not None:
             with suppress(Exception):
-                self._trio_host.call_sync(self._async_group.shutdown.set)
+                self._host._ensure_started().call_sync(
+                    self._async_group.shutdown.set
+                )
             self._async_group = None
-        if self._trio_host is not None:
-            self._trio_host.stop(timeout=1.0)
-            self._trio_host = None
 
     def terminate(self, timeout: float | None = None) -> None:
         """Trigger exit of member gateways and wait for termination
@@ -307,12 +315,13 @@ class Group:
         a OneShot instead of blocking the OS thread (which would stall the
         hub for the whole grace).
         """
+        trio_host = self._host._ensure_started()
         if self._wait_backend == "thread":
-            self._trio_host.call(self._async_group.terminate, timeout)
+            trio_host.call(self._async_group.terminate, timeout)
             return
         from ._boundary import make_wakener
 
-        self._trio_host.call_pending(
+        trio_host.call_pending(
             self._async_group.terminate,
             timeout,
             wakener=make_wakener(self._wait_backend),

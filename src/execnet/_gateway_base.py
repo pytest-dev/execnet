@@ -45,6 +45,16 @@ class BaseGateway:
     #: write-acks, join).  Inherited from the facade coordinator-side, and
     #: derived from the worker profile worker-side.
     _wait_backend: WaitBackend = "thread"
+    #: whether blocking operations refuse to run inside a foreign event
+    #: loop.  Only coordinator-side: exec'd code in a worker may legitimately
+    #: run its own loop and talk to its channel from inside it.
+    _guard_event_loop = False
+
+    def _check_event_loop(self, what: str) -> None:
+        if self._guard_event_loop:
+            from ._host import check_not_in_event_loop
+
+            check_not_in_event_loop(what)
 
     def __init__(self, io: IO, id, _startcount: int = 2) -> None:
         self.execmodel = io.execmodel

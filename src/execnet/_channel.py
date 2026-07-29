@@ -286,6 +286,7 @@ class Channel:
         # For a callback channel wait on the consumer task finishing (so every
         # callback, including the endmarker, has run); otherwise wait for the
         # non-"opened" state directly.
+        self.gateway._check_event_loop("channel.waitclose()")
         signal = (
             self._consumer_done
             if self._consumer_done is not None
@@ -309,6 +310,7 @@ class Channel:
         """
         if self.isclosed():
             raise OSError(f"cannot send to {self!r}")
+        self.gateway._check_event_loop("channel.send()")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
     def receive(self, timeout: float | None = None) -> Any:
@@ -325,6 +327,7 @@ class Channel:
         mailbox = self._mailbox
         if mailbox is None:
             raise OSError("cannot receive(), channel has receiver callback")
+        self.gateway._check_event_loop("channel.receive()")
         x = mailbox.get(timeout)
         if x is ENDMARKER:
             mailbox.put(x)  # for other receivers

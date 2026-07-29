@@ -31,6 +31,7 @@ class Gateway(BaseGateway):
     """Gateway to a local or remote Python Interpreter."""
 
     _group: Group
+    _guard_event_loop = True
 
     def __init__(self, io: IO, spec: XSpec) -> None:
         """:private:
