@@ -14,6 +14,7 @@ from ._errors import LoadError
 from ._errors import RemoteError
 from ._errors import TimeoutError
 from ._gateway import Gateway
+from ._host import Host
 from ._multi import Group
 from ._multi import MultiChannel
 from ._multi import default_group
@@ -29,6 +30,7 @@ __all__ = [
     "DumpError",
     "Gateway",
     "Group",
+    "Host",
     "HostNotFound",
     "LoadError",
     "MultiChannel",

@@ -46,11 +46,10 @@ from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_process
 from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
+from ._host import DEFAULT_CALLBACK_THREADS
 from ._portal import LoopPortal
 from ._portal import OneShot
 
-#: default cap on concurrent threadpool threads running receiver callbacks
-DEFAULT_CALLBACK_THREADS = 40
 #: bound on how long the endmarker callback may run during host shutdown
 CONSUMER_ENDMARKER_GRACE = 10.0
 
@@ -550,8 +549,13 @@ class SyncBridgeGateway(AsyncGateway):
 class TrioHost:
     """Dedicated OS thread running ``trio.run`` for protocol IO."""
 
-    def __init__(self, name: str = "execnet-trio-host") -> None:
+    def __init__(
+        self,
+        name: str = "execnet-trio-host",
+        callback_threads: int = DEFAULT_CALLBACK_THREADS,
+    ) -> None:
         self._name = name
+        self._callback_threads = callback_threads
         self._thread: threading.Thread | None = None
         self._portal: LoopPortal | None = None
         self._nursery: trio.Nursery | None = None
@@ -591,7 +595,7 @@ class TrioHost:
     async def _main(self) -> None:
         self._portal = LoopPortal()
         self._shutdown = trio.Event()
-        self._callback_limiter = trio.CapacityLimiter(DEFAULT_CALLBACK_THREADS)
+        self._callback_limiter = trio.CapacityLimiter(self._callback_threads)
         try:
             async with trio.open_nursery() as nursery:
                 self._nursery = nursery

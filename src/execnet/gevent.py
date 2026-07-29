@@ -36,6 +36,7 @@ from ._multi import MultiChannel
 from ._xspec import XSpec
 from .sync import Channel
 from .sync import Gateway
+from .sync import Host
 from .sync import RSync
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "DumpError",
     "Gateway",
     "Group",
+    "Host",
     "HostNotFound",
     "LoadError",
     "MultiChannel",

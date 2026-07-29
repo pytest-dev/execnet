@@ -22,7 +22,7 @@ from execnet._serialize import dumps_internal
 from execnet._serialize import loads_internal
 from execnet._trio_gateway import AsyncGateway
 from execnet._trio_gateway import AsyncGroup
-from execnet._trio_gateway import open_popen_gateway
+from execnet._trio_gateway import open_gateway
 
 
 @asynccontextmanager
@@ -284,7 +284,7 @@ class TestPopenAsyncGateway:
 
     def test_remote_exec_roundtrip(self) -> None:
         async def main() -> None:
-            async with open_popen_gateway() as gateway:
+            async with open_gateway() as gateway:
                 channel = await gateway.remote_exec(
                     "channel.send(channel.receive() + 1)"
                 )
@@ -296,7 +296,7 @@ class TestPopenAsyncGateway:
 
     def test_remote_exec_function_with_kwargs(self) -> None:
         async def main() -> None:
-            async with open_popen_gateway() as gateway:
+            async with open_gateway() as gateway:
                 channel = await gateway.remote_exec(_remote_add, a=40, b=2)
                 assert await channel.receive() == 42
 
@@ -304,7 +304,7 @@ class TestPopenAsyncGateway:
 
     def test_remote_error_propagates(self) -> None:
         async def main() -> None:
-            async with open_popen_gateway() as gateway:
+            async with open_gateway() as gateway:
                 channel = await gateway.remote_exec("raise ValueError('kaboom')")
                 with pytest.raises(RemoteError, match="kaboom"):
                     await channel.receive()
@@ -313,7 +313,7 @@ class TestPopenAsyncGateway:
 
     def test_exec_finish_closes_channel_ending_iteration(self) -> None:
         async def main() -> None:
-            async with open_popen_gateway() as gateway:
+            async with open_gateway() as gateway:
                 channel = await gateway.remote_exec(
                     "for i in range(3): channel.send(i)"
                 )
@@ -323,7 +323,7 @@ class TestPopenAsyncGateway:
 
     def test_concurrent_remote_execs(self) -> None:
         async def main() -> None:
-            async with open_popen_gateway() as gateway:
+            async with open_gateway() as gateway:
                 results = []
 
                 async def run_one(value: int) -> None:

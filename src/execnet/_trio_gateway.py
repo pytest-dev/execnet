@@ -1033,7 +1033,7 @@ class AsyncGroup:
 
 
 @asynccontextmanager
-async def open_popen_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGateway]:
+async def open_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGateway]:
     """Spawn one popen worker and serve an AsyncGateway over its stdio.
 
     Runs inside the caller's own trio run -- no host thread involved.
