@@ -807,7 +807,16 @@ def _spawn_socket_worker(fd: int) -> subprocess.Popen[bytes]:
         }
     )
     return subprocess.Popen(
-        [sys.executable, "-m", "execnet._trio_worker", config, "--socket-fd", str(fd)],
+        [
+            sys.executable,
+            "-m",
+            "execnet",
+            "worker",
+            "--protocol-fd",
+            str(fd),
+            "--config",
+            config,
+        ],
         pass_fds=[fd],
     )
 

@@ -80,7 +80,7 @@ class TestXSpec:
 
         spec = XSpec("popen//python=sudo python3//id=gw0")
         args = _trio_gateway.popen_module_args(spec)
-        assert args[:5] == ["sudo", "python3", "-u", "-m", "execnet._trio_worker"]
+        assert args[:6] == ["sudo", "python3", "-u", "-m", "execnet", "worker"]
 
     def test_env(self) -> None:
         xspec = XSpec("popen//env:NAME=value1")

@@ -185,10 +185,9 @@ except ValueError as exc:
 
 
 @pytest.mark.skipif("not hasattr(os, 'dup')")
-def test_stdouterrin_setnull(capfd: pytest.CaptureFixture[str]) -> None:
-    # _prepare_protocol_fds dups the stdio fds for the Message protocol and
-    # points fd 0/1 at devnull; writes/reads on the original fds must go
-    # nowhere.  Back up and restore the real fds around the call.
+def test_stdio_disposition_devnull(capfd: pytest.CaptureFixture[str]) -> None:
+    # apply_stdio(devnull) points fd 0/1 at the null device: writes and
+    # reads on them must go nowhere.  Back up and restore the real fds.
     from execnet import _trio_worker
 
     orig_stdin = sys.stdin
@@ -196,9 +195,10 @@ def test_stdouterrin_setnull(capfd: pytest.CaptureFixture[str]) -> None:
     orig_fd0 = os.dup(0)
     orig_fd1 = os.dup(1)
     try:
-        read_fd, write_fd = _trio_worker._prepare_protocol_fds()
+        read_fd, write_fd = _trio_worker._dup_protocol_fds()
         os.close(read_fd)
         os.close(write_fd)
+        _trio_worker.apply_stdio(stdin="devnull", stdout="devnull")
         os.write(1, b"hello")
         os.read(0, 1)
         out, err = capfd.readouterr()
@@ -210,6 +210,26 @@ def test_stdouterrin_setnull(capfd: pytest.CaptureFixture[str]) -> None:
         os.dup2(orig_fd0, 0)
         os.dup2(orig_fd1, 1)
         os.close(orig_fd0)
+        os.close(orig_fd1)
+
+
+@pytest.mark.skipif("not hasattr(os, 'dup')")
+def test_stdio_disposition_stdout_to_stderr(capfd: pytest.CaptureFixture[str]) -> None:
+    # The stdio transport's default: remote output lands on stderr rather
+    # than the null device, so it stays visible without touching the wire.
+    from execnet import _trio_worker
+
+    orig_stdout = sys.stdout
+    orig_fd1 = os.dup(1)
+    try:
+        _trio_worker.apply_stdio(stdout="stderr")
+        os.write(1, b"to-stderr")
+        out, err = capfd.readouterr()
+        assert not out
+        assert "to-stderr" in err
+    finally:
+        sys.stdout = orig_stdout
+        os.dup2(orig_fd1, 1)
         os.close(orig_fd1)
 
 
