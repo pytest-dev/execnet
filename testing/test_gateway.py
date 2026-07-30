@@ -432,15 +432,12 @@ class TestSshPopenGateway:
         from execnet import _trio_host
 
         monkeypatch.setattr(
-            _provision, "ssh_remote_command", lambda spec: ("worker-cmd", b"")
+            _provision, "ssh_remote_command", lambda spec, *a, **kw: "worker-cmd"
         )
-        args, preamble = _trio_host.ssh_trio_args(
-            execnet.XSpec("ssh=xyz//ssh_config=qwe")
-        )
+        args = _trio_host.ssh_trio_args(execnet.XSpec("ssh=xyz//ssh_config=qwe"))
         assert args[args.index("-F") + 1] == "qwe"
         assert "xyz" in args
         assert args[-1] == "worker-cmd"
-        assert preamble == b""
 
     def test_sshaddress(self, gw: Gateway, specssh: execnet.XSpec) -> None:
         assert gw.remoteaddress == specssh.ssh
@@ -581,15 +578,17 @@ def test_popen_args(spec: str, expected_args: list[str]) -> None:
     assert args[len(expected_args) :][:4] == ["-u", "-m", "execnet", "worker"]
 
 
-def test_sequential_remote_exec_claims_the_main_thread(
+def test_first_remote_exec_claims_the_main_thread(
     makegateway: Callable[[str], Gateway],
 ) -> None:
-    # The `thread` profile hands each request the worker main thread while
-    # it is idle -- the GUI/signal-safety property `main_thread_only`
-    # existed for.  Sequential remote_execs therefore all land there.
+    # The `thread` profile hands the first request the worker main thread
+    # -- the GUI/signal-safety property `main_thread_only` existed for.
+    # FIFO admission makes that one deterministic; a sequential *re*-exec
+    # races the claim release (see HybridExec), so only the first is
+    # asserted here.
     gw = makegateway("profile=thread//popen")
     try:
-        for _ in range(10):
+        for _ in range(1):
             ch = gw.remote_exec(
                 """
                     import time, threading

@@ -880,6 +880,23 @@ def start_socketserver_via(
     return realhost, int(realport)
 
 
+async def _run_delivery_step(argv: list[str], payload: bytes) -> None:
+    """Run an out-of-band delivery command, feeding ``payload`` to its stdin."""
+    process = await trio.lowlevel.open_process(argv, stdin=subprocess.PIPE)
+    try:
+        assert process.stdin is not None
+        await process.stdin.send_all(payload)
+        await process.stdin.aclose()
+        code = await process.wait()
+    except BaseException:
+        with trio.CancelScope(shield=True), trio.move_on_after(5):
+            process.kill()
+            await process.wait()
+        raise
+    if code != 0:
+        raise RuntimeError(f"delivery step failed with exit {code}: {argv[0]}")
+
+
 async def _start_sub_and_relay(
     gateway: BaseGateway, channelid: int, request: dict[str, Any]
 ) -> None:
@@ -891,8 +908,8 @@ async def _start_sub_and_relay(
     one whole frame), while the sub's stdout runs through a FrameDecoder so
     every CHANNEL_DATA sent back carries exactly one frame -- except the
     initial ready byte, which is forwarded on its own for the handshake.
-    A stdin preamble (shipped wheel for a dev-version ssh sub) is streamed
-    before the relayed protocol bytes.
+    A shipped wheel (dev-version ssh sub) is delivered first, over its own
+    connection, so the relayed stream carries protocol bytes only.
     """
     from . import _provision
 
@@ -901,7 +918,9 @@ async def _start_sub_and_relay(
             gateway._send(Message.CHANNEL_CLOSE_ERROR, channelid, dumps_internal(text))
 
     try:
-        args, preamble = _provision.sub_spawn_argv(request)
+        args, delivery = _provision.sub_spawn_argv(request)
+        if delivery is not None:
+            await _run_delivery_step(*delivery)
         process = await open_popen_process(args)
     except Exception as exc:
         send_close_error(f"could not spawn via sub-gateway: {exc}")
@@ -912,8 +931,6 @@ async def _start_sub_and_relay(
 
     async def coordinator_to_sub() -> None:
         assert process.stdin is not None
-        if preamble:
-            await process.stdin.send_all(preamble)
         with suppress(RemoteError):
             async for data in raw:
                 await process.stdin.send_all(data)

@@ -117,6 +117,59 @@ no `remote_status()`, no `MultiChannel`, no group iteration, and no
 `RSync`.  `AsyncGroup.makegateway` defaults workers to the `thread`
 profile (the coordinator's shape does not dictate the worker's).
 
+## CLI + transports — LANDED 2026-07-30
+
+The protocol used to *be* the worker's stdin/stdout.  `execnet worker` now
+names the transport, and the CLI is the launch contract (every launcher
+emits `python -m execnet worker ...`, or `execnet worker ...` under
+`uv run`).  `_trio_worker` keeps the serving/profile layer; argument
+parsing lives in `_cli`.
+
+| transport | who uses it | how |
+|---|---|---|
+| `--protocol-fd N` / `R,W` | popen (`transport=socket`), socketserver, `installvia` | inherited socketpair via `pass_fds`; a single fd must be a socket (checked with `S_ISSOCK`), a pipe needs the pair form |
+| `--protocol-connect ADDR` | ssh / vagrant_ssh (`transport=socket`) | coordinator binds a private unix socket, `ssh -R` forwards it, the worker dials back |
+| `--protocol-listen ADDR` | nothing yet — for trampolines | binds, prints `{"listening": ...}`, serves the first connection |
+| `--protocol-stdio` | Windows, `transport=stdio`, and the `via` tunnel (which relays over the sub's stdio by construction) | the classic pipe pair |
+
+`transport=socket|stdio` is a spec key defaulting per platform
+(`_provision.resolve_transport`); Windows stays on stdio because
+`subprocess` rejects `pass_fds` there and `ssh -R` cannot forward a unix
+socket.  **Still unverified: whether the pre-existing socket/`installvia`
+path (which already used `pass_fds`) works on the Windows CI job at all.**
+
+Things this fixed, each verified while doing it:
+
+- remote `print()` used to go to `/dev/null`; a worker's stdio is now the
+  user's, with `stdin=`/`stdout=`/`stderr=` spec keys to override.  On the
+  stdio transport the fallback is close stdin + stdout→stderr, so output
+  is visible without a second stream.
+- the ssh worker config carried `env:` values **in the remote argv**,
+  readable by every user on that host via `ps`.  The socket transport
+  frees ssh's stdin, so it goes there (`--config-fd 0`).
+- the dev-coordinator wheel was framed in-band on the protocol pipe with
+  `head -c <N>`; it now travels on its own ssh connection before the
+  launch, cached remotely under `"$HOME"/.cache/execnet/wheels`.  Two
+  traps found writing that: `shlex.quote("~/...")` creates a directory
+  literally named `~` (use `"$HOME"`), and the cached-skip branch must
+  still drain stdin or the coordinator gets EPIPE.
+
+`HostNotFound` needed rework for the dial-back: with no shared pipe there
+is no EOF to observe, so `_accept_or_diagnose` races the accept against
+`process.wait()` and still maps ssh's exit 255.
+
+The asyncssh harness in `testing/test_ssh_local.py` needed a
+`server_factory` whose `unix_server_requested` returns True — asyncssh
+refuses `-R` unix forwards otherwise, which is what a dial-back needs.
+
+Known semantic loss, documented on `HybridExec` and in the changelog:
+`main_thread_only` serialized, so *every* sequential `remote_exec` got the
+main thread.  The `thread` profile releases its claim just after the
+channel close that lets the coordinator send the next request, so an
+immediate re-exec can rarely land on a pool thread.  The first request is
+still deterministic (FIFO admission).  This surfaced as a `-n 12` flake,
+not by reasoning — worth remembering that the hybrid claim is best-effort.
+
 ## Where the repo stands (2026-07-25, after `a69b844`)
 
 One protocol engine: `AsyncGateway` (`_trio_gateway.py`).  The sync API

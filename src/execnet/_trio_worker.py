@@ -90,6 +90,9 @@ class PrimaryThreadPump:
         self._primary.put((channel, item, done))
         await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
 
+    def released(self) -> None:
+        """Hook: the main thread is free again (called on it, before done)."""
+
     def integrate_as_primary_thread(self) -> None:
         """Block the main thread running exec tasks until shutdown."""
         while True:
@@ -100,6 +103,9 @@ class PrimaryThreadPump:
             try:
                 self.gateway.executetask((channel, item))
             finally:
+                # Release before signalling: the next request should see the
+                # main thread free as early as we can make it.
+                self.released()
                 done.set()
 
     def trigger_shutdown(self) -> None:
@@ -119,6 +125,16 @@ class HybridExec(PrimaryThreadPump):
     it existed for the main-thread guarantee, which the claim provides,
     and its extra behaviour -- refusing a second concurrent remote_exec
     rather than overflowing -- was a deadlock guard, not a feature.
+
+    One difference from that profile is worth knowing: it *serialized*, so
+    every sequential remote_exec was guaranteed the main thread.  Here the
+    claim is released as the exec finishes, while the channel close that
+    tells the coordinator it may send the next one is emitted a moment
+    earlier -- so a coordinator that immediately re-execs can, rarely, be
+    admitted before the release lands and get a pool thread instead.  The
+    *first* request always gets the main thread; a caller that needs the
+    guarantee for every request wants the ``trio`` or ``gevent`` profile,
+    where placement is not a race.
     """
 
     def __init__(self, gateway: WorkerGateway) -> None:
@@ -135,6 +151,10 @@ class HybridExec(PrimaryThreadPump):
                 self._claimed.add(channel.id)
         return True
 
+    def released(self) -> None:
+        with self._claim_lock:
+            self._primary_busy = False
+
     async def run(self, channel: Channel, item: ExecItem) -> None:
         with self._claim_lock:
             claimed = channel.id in self._claimed
@@ -145,8 +165,9 @@ class HybridExec(PrimaryThreadPump):
         try:
             await super().run(channel, item)
         finally:
-            with self._claim_lock:
-                self._primary_busy = False
+            # released() normally cleared this on the main thread already;
+            # repeat it so a cancelled or failed run cannot strand the claim
+            self.released()
 
 
 class GreenletExec:

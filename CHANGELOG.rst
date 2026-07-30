@@ -1,6 +1,58 @@
 2.2.0 (UNRELEASED)
 ------------------
 
+* New ``execnet`` command line, and it is now the launch contract between a
+  coordinator and the worker process it starts::
+
+    execnet worker  --protocol-stdio | --protocol-fd FD[,FD]
+                    | --protocol-connect ADDR | --protocol-listen ADDR
+                    --config JSON | --config-fd FD | --config-file PATH
+                    --stdin/--stdout/--stderr DISPOSITION
+    execnet server  [HOST:PORT] [--once]
+    execnet info
+
+  ``ADDR`` is ``unix:/path`` or ``host:port``. Provisioning emits
+  ``python -m execnet worker ...`` for a direct interpreter launch and
+  ``execnet worker ...`` under ``uv run``; both are the same CLI.
+  ``execnet-socketserver`` still works and forwards to ``execnet server``
+  with a ``DeprecationWarning``. ``execnet info`` reports version, trio
+  availability and supported transports as JSON, and replaces the
+  ``import execnet, trio`` probe used to decide whether a ``python=``
+  interpreter can host a worker directly.
+* The protocol no longer has to be the worker's stdin/stdout. A new
+  ``transport=socket|stdio`` spec key selects; it defaults to ``socket`` on
+  POSIX and ``stdio`` on Windows, where neither ``pass_fds`` nor ``ssh -R``
+  unix-socket forwarding is available. ``socket`` means an inherited
+  socketpair for ``popen`` and an ``ssh -R``-forwarded unix socket that the
+  worker dials back on for ``ssh=``/``vagrant_ssh=``.
+* **A worker's stdio now belongs to the code it runs.** It used to be
+  redirected to the null device so it could not corrupt the protocol, which
+  meant a remote ``print()`` went nowhere at all. With the socket transport
+  the worker leaves fd 0/1/2 alone entirely; with the stdio transport it
+  closes stdin and folds stdout onto stderr rather than discarding both.
+  Remote output that used to vanish now reaches the coordinator -- and a
+  worker can now also *read* the coordinator's stdin. New ``stdin=``,
+  ``stdout=`` and ``stderr=`` spec keys (``inherit``/``devnull``, plus
+  ``close`` for stdin and ``stderr`` for stdout) override any of it, e.g.
+  ``popen//stdin=devnull``.
+* **The worker config no longer travels in the remote command line** for
+  ssh gateways, which closes an exposure: the config carries ``env:``
+  values, and a remote argv is readable by every user on that host through
+  ``ps``. The socket transport frees ssh's stdin, so the config goes there
+  (``--config-fd 0``) instead.
+* A shipped wheel (dev-version coordinator) is delivered to an ssh remote
+  over its own connection before the worker is launched, and cached there
+  by name. The launch command no longer needs ``head -c <N>`` byte
+  accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
+  protocol stream never carries a payload.
+* ``main_thread_only`` used to *serialize*, so every sequential
+  ``remote_exec`` was guaranteed the worker's main thread. The ``thread``
+  profile it now maps to releases its claim as an exec finishes, a moment
+  after the channel close that lets the coordinator send the next request --
+  so a coordinator that immediately re-execs can rarely land on a pool
+  thread instead. The *first* request always gets the main thread; use the
+  ``trio`` or ``gevent`` profile where placement must never race.
+
 * One namespace per concurrency library you drive execnet from:
   ``execnet.sync`` (plain threads; the top-level ``execnet.*`` aliases),
   ``execnet.trio``, ``execnet.aio`` and the new ``execnet.gevent``, whose blocking

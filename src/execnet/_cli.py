@@ -162,7 +162,10 @@ def _load_config(ns: argparse.Namespace) -> dict[str, Any]:
     if ns.config is not None:
         raw = ns.config
     elif ns.config_fd is not None:
-        with os.fdopen(ns.config_fd, "r", encoding="utf-8") as stream:
+        # read a dup, so ``--config-fd 0`` leaves fd 0 itself open (at EOF).
+        # Closing it would free the slot for the next os.open, and anything
+        # then writing to "stdin" would land in an unrelated file.
+        with os.fdopen(os.dup(ns.config_fd), "r", encoding="utf-8") as stream:
             raw = stream.read()
     elif ns.config_file is not None:
         with open(ns.config_file, encoding="utf-8") as stream:
@@ -219,8 +222,16 @@ def interpreter_info() -> dict[str, Any]:
     """
     from ._version import version
 
+    try:
+        import trio
+
+        trio_version: str | None = trio.__version__
+    except Exception:
+        trio_version = None
+
     return {
         "execnet": version,
+        "trio": trio_version,
         "python": ".".join(str(part) for part in sys.version_info[:3]),
         "executable": sys.executable,
         "platform": sys.platform,

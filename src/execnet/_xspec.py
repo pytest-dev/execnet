@@ -32,6 +32,10 @@ class XSpec:
     socket: str | None = None
     ssh: str | None = None
     ssh_config: str | None = None
+    stderr: str | None = None
+    stdin: str | None = None
+    stdout: str | None = None
+    transport: str | None = None
     vagrant_ssh: str | None = None
     via: str | None = None
 

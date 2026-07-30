@@ -31,6 +31,19 @@ CLIENT_KEY = SSHKEYS / "insecure_client_ed25519"
 CLIENT_PUBKEY = SSHKEYS / "insecure_client_ed25519.pub"
 
 
+class _ForwardingSSHServer(asyncssh.SSHServer):  # type: ignore[misc]
+    """Accepts ``-R`` unix-socket forwards, which the socket transport needs.
+
+    execnet's ssh worker dials back to the coordinator over a unix socket
+    that ``ssh -R`` forwards; asyncssh refuses such requests unless the
+    server opts in, and returning True asks it to do the standard
+    forwarding.
+    """
+
+    def unix_server_requested(self, listen_path: str) -> bool:
+        return True
+
+
 class SSHServerThread:
     """asyncssh server on an ephemeral port, driven from its own asyncio thread."""
 
@@ -64,6 +77,7 @@ class SSHServerThread:
             0,
             server_host_keys=[str(HOST_KEY)],
             authorized_client_keys=str(CLIENT_PUBKEY),
+            server_factory=_ForwardingSSHServer,
             process_factory=self._handle,
             encoding=None,  # binary stdio
         )

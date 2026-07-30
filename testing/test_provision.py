@@ -24,20 +24,40 @@ def test_worker_cli_arg_carries_config() -> None:
 def test_ssh_remote_command_released(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(execnet, "__version__", "9.9.9")
     spec = execnet.XSpec("ssh=host//id=gw0//execmodel=thread")
-    command, preamble = _provision.ssh_remote_command(spec)
+    command = _provision.ssh_remote_command(spec)
     assert "execnet==9.9.9" in command
-    assert "head -c" not in command  # no shipping
-    assert preamble == b""
+    assert "head -c" not in command  # nothing is framed into the launch
 
 
 @pytest.mark.skipif(released, reason="released execnet resolves from an index")
 @pytest.mark.skipif(not _provision.uv_available(), reason="uv required to build wheel")
-def test_ssh_remote_command_dev_ships_wheel() -> None:
+def test_ssh_remote_command_dev_uses_a_delivered_wheel() -> None:
+    # The wheel travels out of band now (its own connection, before the
+    # launch), so the launch command just points uv at where it landed --
+    # no byte accounting, no `exec` to keep an fd alive.
     spec = execnet.XSpec("ssh=host//id=gw0//execmodel=thread")
-    command, preamble = _provision.ssh_remote_command(spec)
-    assert "mktemp -d" in command
-    assert f"head -c {len(preamble)}" in command
-    assert preamble[:2] == b"PK"  # a wheel is a zip archive
+    command = _provision.ssh_remote_command(spec)
+    wheel = _provision.ssh_wheel(spec)
+    assert wheel is not None
+    assert wheel.read_bytes()[:2] == b"PK"  # a wheel is a zip archive
+    assert _provision.remote_wheel_path(wheel) in command
+    assert "head -c" not in command
+    assert "mktemp -d" not in command
+
+
+@pytest.mark.skipif(released, reason="released execnet resolves from an index")
+@pytest.mark.skipif(not _provision.uv_available(), reason="uv required to build wheel")
+def test_wheel_delivery_command_expands_home_and_drains_stdin() -> None:
+    wheel = _provision.ssh_wheel(execnet.XSpec("ssh=host//id=gw0"))
+    assert wheel is not None
+    command = _provision.wheel_delivery_command(wheel)
+    # $HOME must stay expandable: quoting it as a literal would create a
+    # directory actually named "~"
+    assert '"$HOME"' in command
+    assert "~" not in command
+    # the coordinator always streams the wheel, so the cached branch has
+    # to consume stdin too or it hands the coordinator an EPIPE
+    assert "cat > /dev/null" in command
 
 
 def test_vagrant_ssh_argv() -> None:
@@ -59,7 +79,7 @@ def test_vagrant_ssh_argv() -> None:
 def test_sub_spawn_argv_plain_popen() -> None:
     import sys
 
-    argv, preamble = _provision.sub_spawn_argv({"config": "{}"})
+    argv, delivery = _provision.sub_spawn_argv({"config": "{}"})
     assert argv == [
         sys.executable,
         "-u",
@@ -69,7 +89,7 @@ def test_sub_spawn_argv_plain_popen() -> None:
         "--config",
         "{}",
     ]
-    assert preamble == b""
+    assert delivery is None
 
 
 def test_sub_spawn_argv_vagrant_released() -> None:
@@ -78,7 +98,7 @@ def test_sub_spawn_argv_vagrant_released() -> None:
         "vagrant_ssh": "default",
         "requirement": "execnet==9.9.9",
     }
-    argv, preamble = _provision.sub_spawn_argv(request)
+    argv, delivery = _provision.sub_spawn_argv(request)
     assert argv[:5] == ["vagrant", "ssh", "default", "--", "-C"]
     assert "execnet==9.9.9" in argv[-1]
-    assert preamble == b""
+    assert delivery is None
