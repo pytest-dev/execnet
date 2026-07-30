@@ -72,11 +72,25 @@ suite is ~540 items rather than ~765.
 ### D.3 done: the xdist suite runs in CI (2026-07-30)
 
 The `xdist` job in `.github/workflows/test.yml` runs pytest-xdist's own
-test suite against the execnet built from the branch.  **Doing this for
-the first time found 16 real regressions** that our suite could not see
-(it runs xdist as a *tool*, which exercises none of the crash-replacement
-or report-serialization paths).  Baseline: released execnet 2.1.2 gives
-220 passed / 0 failed.  Two root causes, both fixed:
+test suite against the execnet built from the branch, in two variants:
+
+- **`release`** — pinned `v3.8.0` + `pytest<9`, a combination verified
+  green against *released* execnet 2.1.2 (196 passed / 0 failed).  This
+  one blocks: a failure means we broke something.  Bump the ref and the
+  pytest pin together, and only after re-checking the new pair against
+  released execnet — xdist 3.8.0 with pytest 9 fails two of its own tests
+  regardless of execnet, which is why the pin exists.
+- **`default-branch`** — floating, `continue-on-error`.  Early warning for
+  drift on either side, without letting an xdist-side breakage block
+  execnet PRs.  The `ref` is left empty so it follows xdist's default
+  branch, which is `master`, not `main` — worth knowing before hardcoding
+  a name.
+
+**Doing this for the first time found 16 real regressions** that our suite
+could not see (it runs xdist as a *tool*, which exercises none of the
+crash-replacement or report-serialization paths).  Baseline for xdist's
+default branch: released execnet 2.1.2 gives 220 passed / 0 failed.  Two
+root causes, both fixed:
 
 1. `makegateway` wrote the *normalized* profile back onto the caller's
    XSpec.  xdist reuses one spec object and re-reads `spec.execmodel` to
@@ -91,10 +105,12 @@ or report-serialization paths).  Baseline: released execnet 2.1.2 gives
 2. the `execnet.dumps` deprecation warning (see above).
 
 Remaining known failure, deselected via `.github/xdist-known-failures.txt`
-(the job is green otherwise): `test_remote_inner_argv` asserts
+(both jobs are green otherwise): `test_remote_inner_argv` asserts
 `sys.argv == ["-c"]` and documents "the behavior due to execnet using
 `python -c`" -- which the no-source-shipping worker launch deliberately
-changed.  That one needs an xdist PR.
+changed.  That one needs an xdist PR.  The deselect list is shared by both
+targets; pytest ignores a `--deselect` that matches nothing, so an entry
+may name a test only one xdist version has.
 
 Still open from the review, deliberately not done: the async surfaces have
 no `remote_status()`, no `MultiChannel`, no group iteration, and no

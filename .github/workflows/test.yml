@@ -11,11 +11,6 @@ on:
       - "main"
 
   workflow_dispatch:
-    inputs:
-      xdist-ref:
-        description: "pytest-xdist ref to test against"
-        default: "main"
-        type: string
 
 # Cancel running jobs for the same workflow and branch.
 concurrency:
@@ -78,16 +73,47 @@ jobs:
   # which does not exercise any of that -- so run xdist's own test suite
   # against the execnet built from this branch.
   #
+  # Two targets:
+  #
+  # * `release` is a pinned combination known to be green against the last
+  #   *released* execnet, so a failure there means we broke something.  It
+  #   blocks.  Bump `ref`/`pytest` together, and only after checking the new
+  #   pair is green against released execnet -- otherwise the signal is
+  #   gone.  (xdist 3.8.0 needs pytest<9: with pytest 9 two of its tests
+  #   fail against released execnet too.)
+  # * `default-branch` is early warning for drift on both sides.  It is
+  #   allowed to fail, because it can go red for reasons that are xdist's
+  #   to fix.  An empty `ref` follows whatever xdist's default branch is
+  #   (`master` today) rather than hardcoding a name that could change.
+  #
   # To reproduce locally:
-  #   git clone --depth 1 https://github.com/pytest-dev/pytest-xdist
+  #   git clone https://github.com/pytest-dev/pytest-xdist
+  #   git -C pytest-xdist checkout v3.8.0     # or stay on the default branch
   #   python -m venv .xdist-venv
-  #   .xdist-venv/bin/pip install ./pytest-xdist[testing] pytest .
+  #   .xdist-venv/bin/pip install ./pytest-xdist[testing] "pytest<9" .
   #   cd pytest-xdist && ../.xdist-venv/bin/python -m pytest
   xdist:
 
     needs: [package]
 
     runs-on: ubuntu-latest
+
+    name: xdist (${{ matrix.name }})
+
+    continue-on-error: ${{ matrix.experimental }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release
+            ref: "v3.8.0"
+            pytest: "pytest<9"
+            experimental: false
+          - name: default-branch
+            ref: ""
+            pytest: "pytest"
+            experimental: true
 
     steps:
     - uses: actions/checkout@v7
@@ -97,7 +123,7 @@ jobs:
     - uses: actions/checkout@v7
       with:
         repository: pytest-dev/pytest-xdist
-        ref: ${{ inputs.xdist-ref || 'main' }}
+        ref: ${{ matrix.ref }}
         path: pytest-xdist
 
     - name: Download Package
@@ -115,10 +141,10 @@ jobs:
       shell: bash
       run: |
         python -m pip install --upgrade pip
-        python -m pip install "./pytest-xdist[testing]" pytest
+        python -m pip install "./pytest-xdist[testing]" "${{ matrix.pytest }}"
         # after xdist, so its execnet>=2.1 requirement does not win
         python -m pip install --force-reinstall `find dist/*.tar.gz`
-        python -c "import execnet; print('execnet', execnet.__version__)"
+        python -c "import execnet, xdist; print('execnet', execnet.__version__)"
 
     - name: Run the pytest-xdist test suite
       shell: bash
