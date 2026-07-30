@@ -12,6 +12,8 @@ Delivery of execnet into that environment is version-aware:
 * dev coordinator (``X.Y.Z.devN+g...``) -> build a wheel from the editable
   install's source tree, cache it keyed by version, and ``uv run --with <wheel>``
 
+``EXECNET_PROVISION_WHEEL`` overrides both: see :data:`PROVISION_WHEEL_ENV`.
+
 trio is pulled transitively as an execnet dependency.
 """
 
@@ -194,18 +196,70 @@ def _build_wheel(version: str) -> Path:
     return wheel
 
 
+#: names a prebuilt wheel to provision remotes from, bypassing both the
+#: index lookup and the build-from-source path.
+#:
+#: This exists for testing an *artifact*: CI installs execnet from a built
+#: distribution, which leaves a dev version with no editable source tree to
+#: build from -- so provisioning would be unavailable exactly where it most
+#: wants exercising.  Pointing this at the wheel from the same build makes
+#: the workers run the code under test rather than something rebuilt from a
+#: checkout that may have moved on.
+PROVISION_WHEEL_ENV = "EXECNET_PROVISION_WHEEL"
+
+
+def _explicit_wheel() -> Path | None:
+    """The wheel named by :data:`PROVISION_WHEEL_ENV`, if it is set.
+
+    Set-but-wrong is a configuration error, not a reason to quietly fall
+    back to building: the fallback would provision something *other* than
+    what the caller asked to test.
+    """
+    raw = os.environ.get(PROVISION_WHEEL_ENV)
+    if not raw:
+        return None
+    wheel = Path(raw)
+    if not wheel.is_file():
+        raise RuntimeError(f"{PROVISION_WHEEL_ENV}={raw!r} is not an existing file")
+    if wheel.suffix != ".whl":
+        raise RuntimeError(f"{PROVISION_WHEEL_ENV}={raw!r} is not a wheel")
+    return wheel.resolve()
+
+
+def provisioning_wheel() -> Path | None:
+    """The wheel to provision remotes from, or None to resolve from an index.
+
+    The one place the "released vs dev vs explicitly given" decision is
+    made; every launcher (uv popen, ssh, via sub-spawn) routes through it so
+    they cannot disagree about what a remote ends up running.
+    """
+    explicit = _explicit_wheel()
+    if explicit is not None:
+        return explicit
+
+    import execnet
+
+    version = execnet.__version__
+    if _RELEASED_RE.match(version):
+        return None
+    return _build_wheel(version)
+
+
 def provisioning_available() -> bool:
     """Whether this coordinator can produce material to provision a remote.
 
     A released version resolves from an index.  A dev version has to build
     a wheel, which needs the editable checkout it came from -- so a dev
     version installed *from a wheel* (what ``tox --installpkg`` produces,
-    and what a CI artifact test runs against) can do neither.  Callers that
-    need a remote worker should check this rather than let
-    :func:`coordinator_requirement` raise.
+    and what a CI artifact test runs against) can do neither, unless
+    :data:`PROVISION_WHEEL_ENV` hands it one.  Callers that need a remote
+    worker should check this rather than let :func:`coordinator_requirement`
+    raise.
     """
     import execnet
 
+    if _explicit_wheel() is not None:
+        return True
     if _RELEASED_RE.match(execnet.__version__):
         return True
     return _editable_source_root() is not None
@@ -215,10 +269,10 @@ def coordinator_requirement() -> str:
     """A ``uv --with`` requirement that installs this coordinator's execnet."""
     import execnet
 
-    version = execnet.__version__
-    if _RELEASED_RE.match(version):
-        return f"execnet=={version}"
-    return str(_build_wheel(version))
+    wheel = provisioning_wheel()
+    if wheel is not None:
+        return str(wheel)
+    return f"execnet=={execnet.__version__}"
 
 
 def worker_cli_arg(spec: Any) -> str:
@@ -393,24 +447,19 @@ def ssh_remote_command(spec: Any, *protocol: str, config_on_stdin: bool = False)
     """
     import execnet
 
-    version = execnet.__version__
     config = worker_cli_arg(spec)
     kwargs: dict[str, Any] = {"config_on_stdin": config_on_stdin}
-    if _RELEASED_RE.match(version):
-        kwargs["requirement"] = f"execnet=={version}"
+    wheel = provisioning_wheel()
+    if wheel is None:
+        kwargs["requirement"] = f"execnet=={execnet.__version__}"
     else:
-        kwargs["wheel"] = _build_wheel(version)
+        kwargs["wheel"] = wheel
     return _remote_shell_command(spec.python, config, *protocol, **kwargs)
 
 
 def ssh_wheel(spec: Any) -> Path | None:
     """The wheel this coordinator must deliver before launching, if any."""
-    import execnet
-
-    version = execnet.__version__
-    if _RELEASED_RE.match(version):
-        return None
-    return _build_wheel(version)
+    return provisioning_wheel()
 
 
 def ssh_argv(
@@ -472,11 +521,10 @@ def spawn_request(spec: Any) -> dict[str, Any]:
         "ssh_config": spec.ssh_config or None,
     }
     if spec.ssh or spec.vagrant_ssh or spec.python:
-        version = execnet.__version__
-        if _RELEASED_RE.match(version):
-            request["requirement"] = f"execnet=={version}"
+        wheel = provisioning_wheel()
+        if wheel is None:
+            request["requirement"] = f"execnet=={execnet.__version__}"
         else:
-            wheel = _build_wheel(version)
             request["wheel"] = (wheel.name, wheel.read_bytes())
     return request
 

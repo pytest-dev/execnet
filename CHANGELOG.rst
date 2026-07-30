@@ -45,6 +45,15 @@
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* New ``EXECNET_PROVISION_WHEEL`` environment variable naming a prebuilt
+  wheel to provision remote workers from, instead of resolving the
+  coordinator's version from an index or building one from its source tree.
+  This is for testing a built artifact: an execnet installed *from* a
+  distribution has a dev version but no source tree, so it can do neither
+  and every test needing a provisioned worker would skip. Pointing this at
+  the wheel from the same build makes those workers run the artifact under
+  test. Set but not naming an existing ``.whl`` is an error rather than a
+  silent fallback, which would provision something else.
 * ``main_thread_only`` used to *serialize*, so every sequential
   ``remote_exec`` was guaranteed the worker's main thread. The ``thread``
   profile it now maps to releases its claim as an exec finishes, a moment
