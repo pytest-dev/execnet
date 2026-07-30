@@ -45,6 +45,13 @@
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* Fixed Windows workers, which could not start at all: adopting the
+  inherited stdio pipes went through ``trio.lowlevel.FdStream``, which is
+  POSIX-only. Windows has no async equivalent -- trio's Windows pipe streams
+  need OVERLAPPED handles registered with an IOCP, and the stdio a process
+  inherits is an ordinary synchronous pipe -- so those reads and writes now
+  run in the thread pool. The socket transport, where it is available, still
+  needs no threads.
 * New ``EXECNET_PROVISION_WHEEL`` environment variable naming a prebuilt
   wheel to provision remote workers from, instead of resolving the
   coordinator's version from an index or building one from its source tree.

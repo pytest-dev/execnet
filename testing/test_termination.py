@@ -152,7 +152,12 @@ def test_terminate_implicit_does_trykill(
     """
         % str(execnetdir)
     )
-    popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE)
+    # as above: this asserts execnet's teardown is silent, and tox's
+    # PYTHONWARNDEFAULTENCODING makes trio's own subprocess module emit an
+    # EncodingWarning that would be counted as our noise.
+    env = dict(os.environ)
+    env.pop("PYTHONWARNDEFAULTENCODING", None)
+    popen = subprocess.Popen([str(anypython), str(p)], stdout=subprocess.PIPE, env=env)
     # sync with start-up
     assert popen.stdout is not None
     popen.stdout.readline()
