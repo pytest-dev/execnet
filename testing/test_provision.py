@@ -22,6 +22,8 @@ def test_worker_cli_arg_carries_config() -> None:
 
 
 def test_ssh_remote_command_released(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the index path specifically -- an explicit wheel would override it
+    monkeypatch.delenv(_provision.PROVISION_WHEEL_ENV, raising=False)
     monkeypatch.setattr(execnet, "__version__", "9.9.9")
     spec = execnet.XSpec("ssh=host//id=gw0//execmodel=thread")
     command = _provision.ssh_remote_command(spec)
@@ -98,6 +100,60 @@ def test_sub_spawn_argv_plain_popen() -> None:
         "{}",
     ]
     assert delivery is None
+
+
+class TestExplicitWheel:
+    """``EXECNET_PROVISION_WHEEL`` names the wheel remotes are provisioned from."""
+
+    @pytest.fixture
+    def wheel(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
+        wheel = tmp_path / "execnet-9.9.9-py3-none-any.whl"
+        wheel.write_bytes(b"PK\x03\x04not-really-a-wheel")
+        monkeypatch.setenv(_provision.PROVISION_WHEEL_ENV, str(wheel))
+        return wheel
+
+    def test_wins_over_the_index_for_a_released_version(
+        self, wheel, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # a released coordinator would otherwise resolve execnet==X.Y.Z, which
+        # is the wrong artifact when the point is to test *this* build
+        monkeypatch.setattr(execnet, "__version__", "9.9.9")
+        assert _provision.provisioning_wheel() == wheel
+        assert _provision.coordinator_requirement() == str(wheel)
+        command = _provision.ssh_remote_command(execnet.XSpec("ssh=host//id=gw0"))
+        assert "execnet==9.9.9" not in command
+        assert _provision.remote_wheel_path(wheel) in command
+
+    def test_makes_provisioning_available_without_a_source_tree(
+        self, wheel, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(execnet, "__version__", "9.9.9.dev1+gdeadbee")
+        monkeypatch.setattr(_provision, "_editable_source_root", lambda: None)
+        assert _provision.provisioning_available()
+
+    def test_ships_those_bytes_to_a_via_master(
+        self, wheel, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(execnet, "__version__", "9.9.9")
+        request = _provision.spawn_request(execnet.XSpec("ssh=host//id=gw0"))
+        assert request["wheel"] == (wheel.name, wheel.read_bytes())
+        assert "requirement" not in request
+
+    @pytest.mark.parametrize(
+        ("name", "exists"),
+        [("execnet-9.9.9-py3-none-any.whl", False), ("execnet.tar.gz", True)],
+    )
+    def test_rejects_what_it_cannot_provision_from(
+        self, name: str, exists: bool, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # falling back to a build here would provision something other than
+        # what the caller asked for -- silently testing the wrong thing
+        path = tmp_path / name
+        if exists:
+            path.touch()
+        monkeypatch.setenv(_provision.PROVISION_WHEEL_ENV, str(path))
+        with pytest.raises(RuntimeError, match=_provision.PROVISION_WHEEL_ENV):
+            _provision.provisioning_wheel()
 
 
 def test_sub_spawn_argv_vagrant_released() -> None:

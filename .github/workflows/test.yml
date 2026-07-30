@@ -64,7 +64,13 @@ jobs:
 
     - name: Test
       shell: bash
+      # The suite is installed from the sdist, which leaves a dev version
+      # with no source tree to build a provisioning wheel from -- so every
+      # test that needs a provisioned worker (ssh, foreign python, via)
+      # would skip.  Hand it the wheel from the same build instead: the
+      # workers then run exactly the artifact under test.
       run: |
+        export EXECNET_PROVISION_WHEEL="$PWD/$(find dist -name '*.whl' | head -1)"
         tox run -e py --installpkg `find dist/*.tar.gz`
 
   # pytest-xdist drives execnet's local parallel testing: popen gateways,
