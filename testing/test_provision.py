@@ -60,7 +60,15 @@ def test_sub_spawn_argv_plain_popen() -> None:
     import sys
 
     argv, preamble = _provision.sub_spawn_argv({"config": "{}"})
-    assert argv == [sys.executable, "-u", "-m", "execnet._trio_worker", "{}"]
+    assert argv == [
+        sys.executable,
+        "-u",
+        "-m",
+        "execnet",
+        "worker",
+        "--config",
+        "{}",
+    ]
     assert preamble == b""
 
 

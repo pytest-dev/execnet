@@ -38,7 +38,9 @@ classifiers = [
 ]
 
 [project.scripts]
-execnet-socketserver = "execnet._socketserver:main"
+execnet = "execnet._cli:main"
+# deprecated alias for `execnet server`
+execnet-socketserver = "execnet._cli:socketserver_main"
 
 [project.optional-dependencies]
 gevent = [

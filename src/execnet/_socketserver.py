@@ -1,18 +1,20 @@
 """Trio socket server for execnet gateways.
 
 Listens on a TCP port and hands each accepted connection (by fd) to a fresh
-``python -m execnet._trio_worker`` subprocess that serves the gateway over it.
-No code is executed inline.
+worker subprocess that serves the gateway over it.  No code is executed
+inline.
 
-This module implements the ``execnet-socketserver`` console command, which is
-the supported entry point -- run it on the target host, or install-free with
-``uvx --from execnet execnet-socketserver``.
+The supported entry point is ``execnet server`` (see :mod:`execnet._cli`) --
+run it on the target host, or install-free with
+``uvx --from execnet execnet server``.  The old ``execnet-socketserver``
+console command still works and forwards here with a DeprecationWarning.
 """
 
 from __future__ import annotations
 
 
-async def _trio_serve(hostport: str, once: bool) -> None:
+async def serve(hostport: str, once: bool) -> None:
+    """Bind ``hostport`` and hand accepted connections to worker processes."""
     import trio
 
     from execnet import _trio_host
@@ -38,28 +40,10 @@ async def _trio_serve(hostport: str, once: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Console entry point (``execnet-socketserver``)."""
-    import argparse
+    """Deprecated ``execnet-socketserver`` console entry point."""
+    from ._cli import socketserver_main
 
-    import trio
-
-    parser = argparse.ArgumentParser(
-        prog="execnet-socketserver",
-        description="Serve execnet gateway connections over a socket.",
-    )
-    parser.add_argument(
-        "hostport",
-        nargs="?",
-        default=":8888",
-        help="address to bind as HOST:PORT or :PORT (default: :8888)",
-    )
-    parser.add_argument(
-        "--once",
-        action="store_true",
-        help="serve a single connection and exit instead of looping",
-    )
-    args = parser.parse_args(argv)
-    trio.run(_trio_serve, args.hostport, args.once)
+    socketserver_main(argv)
 
 
 if __name__ == "__main__":

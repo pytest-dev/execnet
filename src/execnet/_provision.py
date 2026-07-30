@@ -2,8 +2,9 @@
 
 Non-same-interpreter Trio workers (foreign-python popen, later ssh/socket) are
 launched inside an environment that ``uv`` provisions with a matching execnet +
-trio.  The worker itself is always ``python -m execnet._trio_worker`` and does
-the usual ``b"1"`` stdio handshake; only the launch prefix differs.
+trio.  The worker itself is always ``python -m execnet worker`` and does the
+usual ``b"1"`` handshake on whichever protocol transport it was given; only
+the launch prefix differs.
 
 Delivery of execnet into that environment is version-aware:
 
@@ -158,8 +159,8 @@ def coordinator_requirement() -> str:
 def worker_cli_arg(spec: Any) -> str:
     """Single JSON CLI argument carrying the worker config (the whole 'spec thing').
 
-    Passed to ``python -m execnet._trio_worker`` by every launcher (popen, uv,
-    ssh) so the worker config lives in one place rather than scattered positional
+    Passed to ``python -m execnet worker`` by every launcher (popen, uv, ssh)
+    so the worker config lives in one place rather than scattered positional
     args.
     """
     import execnet
@@ -192,18 +193,24 @@ def worker_cli_arg(spec: Any) -> str:
     return json.dumps(config)
 
 
-def _worker_tokens(config: str) -> list[str]:
-    """``python -u -m execnet._trio_worker <config>`` tokens.
+def _worker_tokens(config: str | None, *protocol: str) -> list[str]:
+    """``python -u -m execnet worker`` tokens for a launch.
 
     The literal ``python`` token is resolved by uv (inside the provisioned
-    environment) or the remote shell.
+    environment) or the remote shell.  ``config`` of None means the config
+    arrives on stdin (``--config-fd 0``), which is what remote launches use:
+    a config in argv is visible in ``ps`` to every user on that host, and it
+    carries ``env:`` values.
     """
-    return ["python", "-u", "-m", "execnet._trio_worker", config]
+    tokens = ["python", "-u", "-m", "execnet", "worker", *protocol]
+    if config is None:
+        return [*tokens, "--config-fd", "0"]
+    return [*tokens, "--config", config]
 
 
-def worker_module_tokens(spec: Any) -> list[str]:
-    """``python -u -m execnet._trio_worker <config>`` tokens for ``spec``."""
-    return _worker_tokens(worker_cli_arg(spec))
+def worker_module_tokens(spec: Any, *protocol: str) -> list[str]:
+    """``python -u -m execnet worker`` tokens for ``spec``."""
+    return _worker_tokens(worker_cli_arg(spec), *protocol)
 
 
 def _uv_tokens(python: str | None) -> list[str]:
@@ -227,7 +234,7 @@ def _extra_with_tokens(config: str) -> list[str]:
     return []
 
 
-def uv_worker_argv(spec: Any) -> list[str]:
+def uv_worker_argv(spec: Any, *protocol: str) -> list[str]:
     """``uv run`` argv to launch the Trio worker locally (wheel path is local)."""
     config = worker_cli_arg(spec)
     return [
@@ -235,7 +242,7 @@ def uv_worker_argv(spec: Any) -> list[str]:
         "--with",
         coordinator_requirement(),
         *_extra_with_tokens(config),
-        *_worker_tokens(config),
+        *_worker_tokens(config, *protocol),
     ]
 
 
@@ -398,8 +405,8 @@ def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
     if python:
         assert isinstance(python, str)
         if target_has_execnet(python):
-            argv = [*shell_split_path(python), "-u", "-m", "execnet._trio_worker"]
-            return [*argv, config], b""
+            argv = [*shell_split_path(python), "-u", "-m", "execnet", "worker"]
+            return [*argv, "--config", config], b""
         requirement, _ = _requested_requirement(request)
         if requirement is None or not uv_available():
             raise RuntimeError(
@@ -412,4 +419,12 @@ def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
             requirement,
             *_worker_tokens(config),
         ], b""
-    return [sys.executable, "-u", "-m", "execnet._trio_worker", config], b""
+    return [
+        sys.executable,
+        "-u",
+        "-m",
+        "execnet",
+        "worker",
+        "--config",
+        config,
+    ], b""

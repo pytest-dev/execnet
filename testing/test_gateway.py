@@ -578,7 +578,7 @@ def test_popen_args(spec: str, expected_args: list[str]) -> None:
 
     args = _trio_gateway.popen_module_args(execnet.XSpec(spec + "//id=gw0"))
     assert args[: len(expected_args)] == expected_args
-    assert args[len(expected_args) :][:3] == ["-u", "-m", "execnet._trio_worker"]
+    assert args[len(expected_args) :][:4] == ["-u", "-m", "execnet", "worker"]
 
 
 def test_sequential_remote_exec_claims_the_main_thread(

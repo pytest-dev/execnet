@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import os
+import stat
 import sys
 import threading
 from collections.abc import Callable
+from collections.abc import Sequence
+from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Protocol
 
 import trio
 
@@ -369,37 +374,66 @@ class TrioWorkerExec:
         return self._idle.wait(timeout)
 
 
-def _prepare_protocol_fds() -> tuple[int, int]:
-    """Dup protocol pipes off stdin/stdout and redirect stdio to /dev/null.
+def _devnull() -> str:
+    try:
+        return os.devnull
+    except AttributeError:  # pragma: no cover - defensive
+        return "NUL" if os.name == "nt" else "/dev/null"
 
-    Returns ``(read_fd, write_fd)`` for the Message protocol (child reads
-    coordinator stdin writes; child writes go to coordinator stdout reads).
+
+def _dup_protocol_fds() -> tuple[int, int]:
+    """Move the protocol off stdin/stdout, leaving fd 0/1 free to redirect.
+
+    Returns ``(read_fd, write_fd)`` for the Message protocol (the worker
+    reads what the coordinator writes to our stdin, and writes what the
+    coordinator reads from our stdout).  What happens to fd 0/1 afterwards
+    is the caller's choice -- see :func:`apply_stdio`.
     """
     if not hasattr(os, "dup"):  # pragma: no cover - jython legacy
-        raise RuntimeError("Trio worker requires os.dup")
+        raise RuntimeError("the execnet worker requires os.dup")
+    return os.dup(0), os.dup(1)
 
-    try:
-        devnull = os.devnull
-    except AttributeError:
-        devnull = "NUL" if os.name == "nt" else "/dev/null"
 
-    read_fd = os.dup(0)
-    fd = os.open(devnull, os.O_RDONLY)
-    os.dup2(fd, 0)
-    os.close(fd)
+def apply_stdio(
+    stdin: str = "inherit", stdout: str = "inherit", stderr: str = "inherit"
+) -> None:
+    """Point the worker's standard fds where the launcher asked.
 
-    write_fd = os.dup(1)
-    fd = os.open(devnull, os.O_WRONLY)
-    os.dup2(fd, 1)
+    ``inherit`` leaves an fd alone, which is the default once the protocol
+    has a transport of its own: a worker's output is then the user's, not
+    something execnet has to swallow to protect the wire.
 
-    if os.name == "nt":
-        sys.stderr = os.fdopen(os.dup(2), "w", 1)
+    ``close`` (stdin only) reopens fd 0 on the null device *and* closes
+    ``sys.stdin``.  Reads through Python raise, while the fd itself stays
+    reserved -- genuinely closing it would let the next ``os.open`` land on
+    fd 0, where anything writing to "stdin" would corrupt an unrelated file.
+    """
+    if stdin in ("close", "devnull"):
+        fd = os.open(_devnull(), os.O_RDONLY)
+        os.dup2(fd, 0)
+        os.close(fd)
+        if stdin == "close":
+            with suppress(Exception):
+                sys.stdin.close()
+            sys.stdin = os.fdopen(0, "r", closefd=False)
+            sys.stdin.close()
+        else:
+            sys.stdin = os.fdopen(0, "r", closefd=False)
+
+    if stdout == "stderr":
+        os.dup2(2, 1)
+        sys.stdout = os.fdopen(1, "w", buffering=1, closefd=False)
+    elif stdout == "devnull":
+        fd = os.open(_devnull(), os.O_WRONLY)
+        os.dup2(fd, 1)
+        os.close(fd)
+        sys.stdout = os.fdopen(1, "w", buffering=1, closefd=False)
+
+    if stderr == "devnull":
+        fd = os.open(_devnull(), os.O_WRONLY)
         os.dup2(fd, 2)
-    os.close(fd)
-
-    sys.stdin = os.fdopen(0, "r", 1, closefd=False)
-    sys.stdout = os.fdopen(1, "w", 1, closefd=False)
-    return read_fd, write_fd
+        os.close(fd)
+        sys.stderr = os.fdopen(2, "w", buffering=1, closefd=False)
 
 
 class _WorkerIOStub:
@@ -511,67 +545,193 @@ async def _serve_async_worker(stream: Any, id: str) -> None:
         nursery.cancel_scope.cancel()
 
 
-def serve_popen_async(id: str) -> None:
-    """Serve the pure-async worker over the stdio pipes (profile=trio)."""
-    from ._trio_gateway import staple_fd_stream
+class Transport(Protocol):
+    """How a worker's protocol stream comes into being.
 
-    read_fd, write_fd = _prepare_protocol_fds()
-    os.write(write_fd, b"1")
-
-    async def main() -> None:
-        await _serve_async_worker(staple_fd_stream(read_fd, write_fd), id)
-
-    trio.run(main)
-    os._exit(0)
-
-
-def serve_socket_async(id: str, socket_fd: int) -> None:
-    """Serve the pure-async worker over an inherited socket fd."""
-    from . import _trio_host
-
-    async def main() -> None:
-        stream = await _trio_host.adopt_socket(socket_fd)
-        await _serve_async_worker(stream, id)
-
-    trio.run(main)
-    os._exit(0)
-
-
-def serve_popen_trio(
-    id: str, profile: str = "thread", wait: WaitBackend = "thread"
-) -> None:
-    """Serve a WorkerGateway over the stdio pipes (popen / ssh worker)."""
-    from . import _trio_host
-
-    model = get_execmodel(profile)
-    read_fd, write_fd = _prepare_protocol_fds()
-    # Bootstrap handshake: the coordinator waits for this byte on our stdout
-    # before starting the Message protocol.  We are launched as a plain module
-    # (``python -m execnet._trio_worker``), so nothing was sent to bootstrap us.
-    os.write(write_fd, b"1")
-
-    host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
-    host.start()
-    io = host.call(_make_fd_io, read_fd, write_fd)
-    _run_worker(host, io, id, model, wait)
-
-
-def serve_socket_trio(
-    id: str, profile: str, socket_fd: int, wait: WaitBackend = "thread"
-) -> None:
-    """Serve a WorkerGateway over an inherited socket fd.
-
-    Used for the socketserver (an accepted TCP connection) and, in future, a
-    popen socketpair.  The socket is adopted inside Trio and the handshake is
-    written on the host loop; config comes from the CLI.
+    Split in two because the stdio transport has to claim fd 0/1 *before*
+    anything else touches them (including reading ``--config-fd 0``), while
+    opening the stream itself needs a running trio loop.
     """
+
+    #: default stdio disposition once this transport is serving
+    stdio_defaults: tuple[str, str, str]
+
+    def prepare(self) -> None:
+        """Synchronous fd bookkeeping, before the config is read."""
+
+    async def open(self) -> Any:
+        """The protocol ByteStream, ready for the Message protocol."""
+
+
+async def _send_ready(stream: Any) -> Any:
+    """Write the single handshake byte the coordinator waits for."""
+    await stream.send_all(b"1")
+    return stream
+
+
+class StdioTransport:
+    """The protocol *is* this process's stdin/stdout (the classic shape).
+
+    Nothing else can use fd 0/1 afterwards, so the default disposition
+    closes stdin and folds stdout onto stderr -- remote ``print()`` stays
+    visible on the coordinator instead of going to the null device, and it
+    cannot corrupt the wire because the wire is no longer fd 1.
+    """
+
+    stdio_defaults = ("close", "stderr", "inherit")
+
+    def __init__(self) -> None:
+        self._fds: tuple[int, int] | None = None
+
+    def prepare(self) -> None:
+        self._fds = _dup_protocol_fds()
+
+    async def open(self) -> Any:
+        from ._trio_gateway import staple_fd_stream
+
+        assert self._fds is not None, "prepare() first"
+        read_fd, write_fd = self._fds
+        return await _send_ready(staple_fd_stream(read_fd, write_fd))
+
+
+class FdTransport:
+    """The protocol runs over inherited fds: one socket, or a pipe pair."""
+
+    stdio_defaults = ("inherit", "inherit", "inherit")
+
+    def __init__(self, fds: Sequence[int]) -> None:
+        self.fds = tuple(fds)
+
+    def prepare(self) -> None:
+        pass
+
+    async def open(self) -> Any:
+        from . import _trio_host
+        from ._trio_gateway import staple_fd_stream
+
+        if len(self.fds) == 2:
+            read_fd, write_fd = self.fds
+            return await _send_ready(staple_fd_stream(read_fd, write_fd))
+        (fd,) = self.fds
+        if not stat.S_ISSOCK(os.fstat(fd).st_mode):
+            raise ValueError(
+                f"--protocol-fd {fd} is not a socket; a single fd must be"
+                " bidirectional, use --protocol-fd READFD,WRITEFD for a pipe pair"
+            )
+        # adopt_socket sends the handshake itself
+        return await _trio_host.adopt_socket(fd)
+
+
+def parse_address(address: str) -> tuple[str, Any]:
+    """``unix:/path`` or ``host:port`` -> ``("unix", path)`` / ``("tcp", (h, p))``."""
+    if address.startswith("unix:"):
+        return "unix", address[len("unix:") :]
+    host, sep, port = address.rpartition(":")
+    if not sep or not port.isdigit():
+        raise ValueError(f"expected unix:/path or host:port, got {address!r}")
+    return "tcp", (host or "localhost", int(port))
+
+
+class ConnectTransport:
+    """The worker dials out to the coordinator and serves on that connection.
+
+    This is what lets ssh carry the protocol without owning our stdio: the
+    coordinator listens on a local unix socket, ``ssh -R`` forwards it, and
+    we connect to the remote end of the forward.
+    """
+
+    stdio_defaults = ("inherit", "inherit", "inherit")
+
+    def __init__(self, address: str) -> None:
+        self.kind, self.target = parse_address(address)
+
+    def prepare(self) -> None:
+        pass
+
+    async def open(self) -> Any:
+        if self.kind == "unix":
+            stream = await trio.open_unix_socket(self.target)
+        else:
+            stream = await trio.open_tcp_stream(*self.target)
+        return await _send_ready(stream)
+
+
+class ListenTransport:
+    """The worker listens and serves the first coordinator that connects.
+
+    The bound address is printed to stdout as JSON before serving, so a
+    launcher that asked for an ephemeral port can learn which one it got.
+    """
+
+    stdio_defaults = ("inherit", "inherit", "inherit")
+
+    def __init__(self, address: str) -> None:
+        self.kind, self.target = parse_address(address)
+
+    def prepare(self) -> None:
+        pass
+
+    async def open(self) -> Any:
+        if self.kind == "unix":
+            sock = trio.socket.socket(trio.socket.AF_UNIX, trio.socket.SOCK_STREAM)
+            await sock.bind(self.target)
+            sock.listen(1)
+            listeners = [trio.SocketListener(sock)]
+            bound: Any = self.target
+        else:
+            host, port = self.target
+            listeners = await trio.open_tcp_listeners(port, host=host)
+            bound = listeners[0].socket.getsockname()[:2]
+        print(json.dumps({"listening": bound}), flush=True)
+        stream = await listeners[0].accept()
+        for listener in listeners:
+            await listener.aclose()
+        return await _send_ready(stream)
+
+
+def serve_worker(
+    config: dict[str, Any],
+    transport: Transport,
+    *,
+    stdin: str | None = None,
+    stdout: str | None = None,
+    stderr: str | None = None,
+) -> None:
+    """Serve one gateway for ``config`` over ``transport``, then exit.
+
+    ``transport.prepare()`` must already have run (the CLI does it before
+    reading the config, so ``--config-fd 0`` still works under the stdio
+    transport).
+    """
+    _check_version(config["coordinator_version"])
+    _apply_worker_setup(config)
+    defaults = transport.stdio_defaults
+    apply_stdio(
+        stdin=stdin if stdin is not None else defaults[0],
+        stdout=stdout if stdout is not None else defaults[1],
+        stderr=stderr if stderr is not None else defaults[2],
+    )
+
+    id = config["id"]
+    # "execmodel" is the pre-3.0 spelling; accept both so a version-skewed
+    # coordinator still connects.
+    profile = effective_profile(config.get("profile") or config["execmodel"])
+    wait: WaitBackend = config.get("wait", "thread")
+
+    if profile == "trio":
+        # pure-async profile: one thread, the loop owns the main thread
+        async def main() -> None:
+            await _serve_async_worker(await transport.open(), id)
+
+        trio.run(main)
+        os._exit(0)
+
     from . import _trio_host
 
-    model = get_execmodel(profile)
     host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
     host.start()
-    io = host.call(_trio_host.adopt_socket, socket_fd)
-    _run_worker(host, io, id, model, wait)
+    io = host.call(transport.open)
+    _run_worker(host, io, id, get_execmodel(profile), wait)
 
 
 def _rough_version(version: str) -> tuple[int, ...]:
@@ -625,46 +785,3 @@ def _check_version(coordinator_version: str) -> None:
             % (coordinator_version, execnet.__version__)
         )
         sys.stderr.flush()
-
-
-def _main() -> None:
-    """Entry point for ``python -m execnet._trio_worker <config-json> [--socket-fd N]``.
-
-    ``<config-json>`` is the coordinator's ``_provision.worker_cli_arg`` payload:
-    ``{"id", "profile", "wait", "coordinator_version"}``.  With ``--socket-fd`` the
-    worker serves over that inherited socket (socketserver); otherwise over the
-    stdio pipes (popen / ssh).  The worker imports execnet + trio from the
-    environment; no source is sent over the wire to bootstrap it.
-    """
-    import argparse
-    import json
-
-    parser = argparse.ArgumentParser(prog="execnet._trio_worker")
-    parser.add_argument("config", help="JSON worker config")
-    # Protocol transport: an inherited socket fd (socketserver, or a future popen
-    # socketpair); without it the worker serves over the stdio pipes (ssh).
-    parser.add_argument("--socket-fd", type=int, default=None)
-    ns = parser.parse_args()
-
-    config = json.loads(ns.config)
-    _check_version(config["coordinator_version"])
-    _apply_worker_setup(config)
-    # "execmodel" is the pre-3.0 spelling; accept both so a version-skewed
-    # coordinator still connects.
-    profile = config.get("profile") or config["execmodel"]
-    wait: WaitBackend = config.get("wait", "thread")
-    profile = effective_profile(profile)
-    if profile == "trio":
-        # pure-async profile: one thread, the loop owns the main thread
-        if ns.socket_fd is not None:
-            serve_socket_async(config["id"], ns.socket_fd)
-        else:
-            serve_popen_async(config["id"])
-    elif ns.socket_fd is not None:
-        serve_socket_trio(config["id"], profile, ns.socket_fd, wait=wait)
-    else:
-        serve_popen_trio(id=config["id"], profile=profile, wait=wait)
-
-
-if __name__ == "__main__":
-    _main()

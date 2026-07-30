@@ -101,8 +101,10 @@ async def open_popen_process(args: list[str]) -> trio.Process:
     )
 
 
-def popen_module_args(spec: Any) -> list[str]:
-    """Launch the Trio worker as a module: ``python -m execnet._trio_worker``.
+def popen_module_args(
+    spec: Any, *protocol: str, config_on_stdin: bool = False
+) -> list[str]:
+    """Launch the Trio worker as a module: ``python -m execnet worker``.
 
     No source is sent over the wire; the worker imports the installed execnet +
     trio.  Used for same-interpreter popen and for a ``python=`` interpreter that
@@ -118,11 +120,15 @@ def popen_module_args(spec: Any) -> list[str]:
     args = [*interpreter, "-u"]
     if getattr(spec, "dont_write_bytecode", False):
         args.append("-B")
-    args += ["-m", "execnet._trio_worker", _provision.worker_cli_arg(spec)]
+    args += ["-m", "execnet", "worker", *protocol]
+    if config_on_stdin:
+        args += ["--config-fd", "0"]
+    else:
+        args += ["--config", _provision.worker_cli_arg(spec)]
     return args
 
 
-def popen_worker_argv(spec: Any) -> list[str]:
+def popen_worker_argv(spec: Any, *protocol: str) -> list[str]:
     """Argv for a popen worker: direct module launch, or uv-provisioned.
 
     A bare ``python=`` interpreter without execnet gets execnet + trio
@@ -131,8 +137,8 @@ def popen_worker_argv(spec: Any) -> list[str]:
     from . import _provision
 
     if spec.python and not _provision.target_has_execnet(spec.python):
-        return _provision.uv_worker_argv(spec)
-    return popen_module_args(spec)
+        return _provision.uv_worker_argv(spec, *protocol)
+    return popen_module_args(spec, *protocol)
 
 
 class RawChannel:
