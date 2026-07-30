@@ -15,6 +15,7 @@ import trio as trio_lib
 import execnet
 import execnet.trio
 from execnet import Gateway
+from execnet import _provision
 
 TESTTIMEOUT = 10.0
 
@@ -62,7 +63,12 @@ class TestSyncCoordinator:
         )
         active, on_main = channel.receive(TESTTIMEOUT)
         assert on_main
-        assert active == 1
+        # The profile itself needs no threads -- exec'd sources are tasks on
+        # the loop.  The *transport* may: adopting inherited stdio has no
+        # async form on Windows, so those reads and writes run in the thread
+        # pool.  Only the socket transport is genuinely single-threaded.
+        if _provision.resolve_transport(trio_gw.spec) == "socket":
+            assert active == 1
 
     def test_concurrent_execs_cooperate(self, trio_gw: Gateway) -> None:
         # two execs run as tasks on one loop: the first parks in receive

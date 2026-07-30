@@ -81,8 +81,59 @@ def staple_process_stream(process: trio.Process) -> ByteStream:
     return trio.StapledStream(process.stdin, process.stdout)
 
 
+class ThreadedFdStream:
+    """A :class:`ByteStream` over blocking fds, doing its IO in worker threads.
+
+    The Windows stand-in for ``trio.lowlevel.FdStream``, which is POSIX-only.
+    Trio *does* have Windows pipe streams, but they require handles opened in
+    OVERLAPPED mode and register them with an IOCP -- and the stdio a process
+    inherits from its parent is an ordinary synchronous pipe, so a worker
+    cannot adopt its own fd 0/1 that way.
+
+    Blocking reads and writes therefore go to the thread pool.  A pending
+    read is abandoned on cancellation, since nothing can interrupt it short
+    of the peer closing; a write is not, because a torn write would leave a
+    half-message on the wire and desynchronize the framing.
+    """
+
+    def __init__(self, read_fd: int, write_fd: int) -> None:
+        self._read_fd: int | None = read_fd
+        self._write_fd: int | None = write_fd
+
+    async def receive_some(self, max_bytes: int | None = None) -> bytes:
+        fd = self._read_fd
+        if fd is None:
+            raise trio.ClosedResourceError("stream closed")
+        return await trio.to_thread.run_sync(
+            os.read, fd, max_bytes or 65536, abandon_on_cancel=True
+        )
+
+    async def send_all(self, data: bytes) -> None:
+        fd = self._write_fd
+        if fd is None:
+            raise trio.ClosedResourceError("stream closed")
+        view = memoryview(data)
+        while view:
+            written = await trio.to_thread.run_sync(os.write, fd, view)
+            view = view[written:]
+
+    async def send_eof(self) -> None:
+        fd, self._write_fd = self._write_fd, None
+        if fd is not None:
+            os.close(fd)
+
+    async def aclose(self) -> None:
+        await self.send_eof()
+        fd, self._read_fd = self._read_fd, None
+        if fd is not None:
+            os.close(fd)
+        await trio.lowlevel.checkpoint()
+
+
 def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
     """One bidirectional stream over OS pipe fds (worker stdio pipes)."""
+    if not hasattr(trio.lowlevel, "FdStream"):  # Windows
+        return ThreadedFdStream(read_fd, write_fd)
     return trio.StapledStream(
         trio.lowlevel.FdStream(write_fd), trio.lowlevel.FdStream(read_fd)
     )

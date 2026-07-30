@@ -8,6 +8,7 @@ machine, RemoteError propagation, and gateway termination.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -22,6 +23,7 @@ from execnet._serialize import dumps_internal
 from execnet._serialize import loads_internal
 from execnet._trio_gateway import AsyncGateway
 from execnet._trio_gateway import AsyncGroup
+from execnet._trio_gateway import ThreadedFdStream
 from execnet._trio_gateway import open_gateway
 
 
@@ -401,5 +403,78 @@ class TestAsyncGroup:
             async with AsyncGroup() as group:
                 with pytest.raises(ValueError, match="unsupported spec"):
                     await group.makegateway("id=notype")
+
+        trio.run(main)
+
+
+class TestThreadedFdStream:
+    """The Windows stand-in for ``trio.lowlevel.FdStream``.
+
+    Exercised on every platform, since Windows is the only place it is
+    *used* and the least convenient place to find out it is broken.
+    """
+
+    def test_roundtrip_through_a_pipe_pair(self) -> None:
+        async def main() -> None:
+            their_read, our_write = os.pipe()
+            our_read, their_write = os.pipe()
+            stream = ThreadedFdStream(our_read, our_write)
+            try:
+                await stream.send_all(b"hello ")
+                await stream.send_all(b"world")
+                assert os.read(their_read, 11) == b"hello world"
+
+                os.write(their_write, b"back")
+                assert await stream.receive_some(4) == b"back"
+            finally:
+                await stream.aclose()
+                os.close(their_read)
+                os.close(their_write)
+
+        trio.run(main)
+
+    def test_receive_reports_eof_as_empty(self) -> None:
+        async def main() -> None:
+            our_read, their_write = os.pipe()
+            stream = ThreadedFdStream(our_read, os.open(os.devnull, os.O_WRONLY))
+            os.close(their_write)
+            try:
+                assert await stream.receive_some(4) == b""
+            finally:
+                await stream.aclose()
+
+        trio.run(main)
+
+    def test_send_eof_lets_the_peer_see_the_end(self) -> None:
+        async def main() -> None:
+            their_read, our_write = os.pipe()
+            stream = ThreadedFdStream(os.open(os.devnull, os.O_RDONLY), our_write)
+            try:
+                await stream.send_all(b"tail")
+                await stream.send_eof()
+                assert os.read(their_read, 4) == b"tail"
+                assert os.read(their_read, 4) == b""  # write end is gone
+                with pytest.raises(trio.ClosedResourceError):
+                    await stream.send_all(b"more")
+            finally:
+                await stream.aclose()
+                os.close(their_read)
+
+        trio.run(main)
+
+    def test_a_cancelled_read_is_abandoned_not_awaited(self) -> None:
+        # a blocking read on a pipe cannot be interrupted, so cancellation
+        # must not wait for it -- otherwise shutdown hangs until the peer
+        # happens to write.
+        async def main() -> None:
+            our_read, their_write = os.pipe()
+            stream = ThreadedFdStream(our_read, os.open(os.devnull, os.O_WRONLY))
+            try:
+                with trio.move_on_after(0.2) as scope:
+                    await stream.receive_some(4)
+                assert scope.cancelled_caught
+            finally:
+                os.close(their_write)
+                await stream.aclose()
 
         trio.run(main)
