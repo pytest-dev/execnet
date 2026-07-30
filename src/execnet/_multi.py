@@ -229,9 +229,11 @@ class Group:
             spec = XSpec(spec)
         self.allocate_id(spec)
         if spec.profile is None:
+            # filling in a missing value is idempotent; rewriting one the
+            # caller set is not -- see resolve_profile's docstring
             spec.profile = self._profile
         else:
-            spec.profile = resolve_profile(spec.profile)
+            resolve_profile(spec.profile)
         from . import _trio_host
 
         if not (spec.socket or spec.via or spec.ssh or spec.vagrant_ssh or spec.popen):

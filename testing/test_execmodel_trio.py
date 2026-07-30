@@ -153,3 +153,31 @@ def test_async_coordinator_defaults_to_a_thread_worker() -> None:
                 assert await channel.receive() is True
 
     trio_lib.run(main)
+
+
+def test_makegateway_does_not_rewrite_the_callers_profile(
+    makegateway: Callable[[str], Gateway],
+) -> None:
+    # pytest-xdist reuses one XSpec across gateways and re-reads
+    # spec.execmodel to decide whether it still needs its
+    # "execmodel=main_thread_only//" prefix.  Normalizing the value it set
+    # made the second use build a spec with a duplicate key, which broke
+    # crashed-worker replacement.  Filling in a *missing* value is fine;
+    # rewriting one the caller set is not.
+    spec = execnet.XSpec("execmodel=main_thread_only//popen")
+    with pytest.warns(DeprecationWarning, match="main_thread_only"):
+        gw = makegateway(spec)  # type: ignore[arg-type]
+    assert spec.execmodel == "main_thread_only"
+    assert spec.profile == "main_thread_only"
+    # ... while the worker still gets a profile it has a strategy for
+    assert gw.remote_status().profile == "thread"
+
+
+def test_makegateway_fills_in_a_missing_profile() -> None:
+    group = execnet.Group()
+    try:
+        spec = execnet.XSpec("popen")
+        group.makegateway(spec)
+        assert spec.profile == "thread"
+    finally:
+        group.terminate(timeout=5.0)

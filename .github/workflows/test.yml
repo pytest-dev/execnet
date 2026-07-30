@@ -10,6 +10,13 @@ on:
     branches:
       - "main"
 
+  workflow_dispatch:
+    inputs:
+      xdist-ref:
+        description: "pytest-xdist ref to test against"
+        default: "main"
+        type: string
+
 # Cancel running jobs for the same workflow and branch.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -64,3 +71,66 @@ jobs:
       shell: bash
       run: |
         tox run -e py --installpkg `find dist/*.tar.gz`
+
+  # pytest-xdist drives execnet's local parallel testing: popen gateways,
+  # the main-thread worker profile, crashed-worker replacement, and the
+  # report/warning serialization.  Our own suite runs xdist as a *tool*,
+  # which does not exercise any of that -- so run xdist's own test suite
+  # against the execnet built from this branch.
+  #
+  # To reproduce locally:
+  #   git clone --depth 1 https://github.com/pytest-dev/pytest-xdist
+  #   python -m venv .xdist-venv
+  #   .xdist-venv/bin/pip install ./pytest-xdist[testing] pytest .
+  #   cd pytest-xdist && ../.xdist-venv/bin/python -m pytest
+  xdist:
+
+    needs: [package]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        path: execnet
+
+    - uses: actions/checkout@v7
+      with:
+        repository: pytest-dev/pytest-xdist
+        ref: ${{ inputs.xdist-ref || 'main' }}
+        path: pytest-xdist
+
+    - name: Download Package
+      uses: actions/download-artifact@v8
+      with:
+        name: Packages
+        path: dist
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.13"
+
+    - name: Install pytest-xdist and this execnet
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install "./pytest-xdist[testing]" pytest
+        # after xdist, so its execnet>=2.1 requirement does not win
+        python -m pip install --force-reinstall `find dist/*.tar.gz`
+        python -c "import execnet; print('execnet', execnet.__version__)"
+
+    - name: Run the pytest-xdist test suite
+      shell: bash
+      working-directory: pytest-xdist
+      run: |
+        deselect=()
+        # `|| [ -n "$line" ]` so a file without a trailing newline still
+        # contributes its last entry
+        while read -r line || [ -n "$line" ]; do
+          line="${line%%#*}"
+          line="$(echo "$line" | xargs)"
+          [ -n "$line" ] && deselect+=(--deselect "$line")
+        done < ../execnet/.github/xdist-known-failures.txt
+        printf 'deselecting %d known failure(s)\n' $(( ${#deselect[@]} / 2 ))
+        python -m pytest -ra "${deselect[@]}"

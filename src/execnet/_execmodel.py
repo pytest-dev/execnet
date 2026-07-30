@@ -96,8 +96,31 @@ WORKER_PROFILES = (
 DEPRECATED_PROFILES = {"main_thread_only": "thread"}
 
 
+def effective_profile(name: str) -> str:
+    """Validate a profile name and map deprecated spellings, silently.
+
+    For the places that *consume* a profile (worker config, strategy
+    lookup).  :func:`resolve_profile` is the one that warns, and is called
+    once where the value enters.
+    """
+    replacement = DEPRECATED_PROFILES.get(name)
+    if replacement is not None:
+        return replacement
+    if name not in WORKER_PROFILES:
+        raise ValueError(f"unknown profile {name!r} (known: {list(WORKER_PROFILES)})")
+    return name
+
+
 def resolve_profile(name: str) -> str:
-    """Validate a ``profile=`` value, mapping deprecated spellings."""
+    """Validate a ``profile=`` value, warning about deprecated spellings.
+
+    Callers that hold a caller-supplied :class:`~execnet._xspec.XSpec` must
+    *not* write the result back onto it: pytest-xdist reuses a spec object
+    across gateways and re-reads ``spec.execmodel`` to decide whether it
+    still needs prefixing, so normalizing the value it set makes the second
+    use build a spec with a duplicate key.  Validate here, and map with
+    :func:`effective_profile` where the value is used.
+    """
     replacement = DEPRECATED_PROFILES.get(name)
     if replacement is not None:
         warnings.warn(
