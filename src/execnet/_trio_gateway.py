@@ -22,9 +22,11 @@ unbounded memory channels.
 from __future__ import annotations
 
 import math
+import os
 import subprocess
 import sys
 import types
+import uuid
 from collections.abc import AsyncIterator
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -121,6 +123,7 @@ def popen_module_args(
     if getattr(spec, "dont_write_bytecode", False):
         args.append("-B")
     args += ["-m", "execnet", "worker", *protocol]
+    args += _provision.stdio_tokens(spec)
     if config_on_stdin:
         args += ["--config-fd", "0"]
     else:
@@ -757,29 +760,192 @@ async def serve_gateway(
             await gateway.aclose()
 
 
-def ssh_transport_args(spec: Any) -> tuple[list[str], bytes]:
-    """``(ssh argv, stdin preamble)`` for an ssh worker.
+#: how long to wait for an ssh worker to dial back before giving up
+SSH_CONNECT_TIMEOUT = 60.0
 
-    The remote runs the uv-provisioned worker; for a dev coordinator the
-    preamble carries the wheel bytes that the remote command receives.
+
+def _ssh_argv(
+    spec: Any, command: str, forward: tuple[str, str] | None = None
+) -> list[str]:
+    """ssh/vagrant argv running ``command``, optionally with a ``-R`` forward.
+
+    ``forward`` is ``(remote_socket, local_socket)``.  ``StreamLocalBindUnlink``
+    makes sshd replace a stale socket file rather than refuse to bind.
     """
     from . import _provision
 
-    remote_command, preamble = _provision.ssh_remote_command(spec)
-    assert spec.ssh is not None
-    return _provision.ssh_argv(spec.ssh, spec.ssh_config, remote_command), preamble
+    options: list[str] = []
+    if forward is not None:
+        remote_sock, local_sock = forward
+        options += ["-R", f"{remote_sock}:{local_sock}"]
+        options += ["-o", "StreamLocalBindUnlink=yes"]
+    if spec.ssh is not None:
+        return _provision.ssh_argv(spec.ssh, spec.ssh_config, command, options)
+    assert spec.vagrant_ssh is not None
+    return _provision.vagrant_ssh_argv(
+        spec.vagrant_ssh, spec.ssh_config, command, options
+    )
 
 
-def vagrant_transport_args(spec: Any) -> tuple[list[str], bytes]:
-    """``(vagrant ssh argv, stdin preamble)`` for a vagrant_ssh worker."""
+def ssh_transport_args(spec: Any) -> list[str]:
+    """ssh argv for a stdio-transport ssh worker."""
     from . import _provision
 
-    remote_command, preamble = _provision.ssh_remote_command(spec)
+    assert spec.ssh is not None
+    return _ssh_argv(spec, _provision.ssh_remote_command(spec))
+
+
+def vagrant_transport_args(spec: Any) -> list[str]:
+    """vagrant-ssh argv for a stdio-transport vagrant_ssh worker."""
+    from . import _provision
+
     assert spec.vagrant_ssh is not None
-    argv = _provision.vagrant_ssh_argv(
-        spec.vagrant_ssh, spec.ssh_config, remote_command
+    return _ssh_argv(spec, _provision.ssh_remote_command(spec))
+
+
+@asynccontextmanager
+async def _dialback_listener() -> AsyncIterator[tuple[str, trio.SocketListener]]:
+    """A private unix socket the worker will be forwarded back to."""
+    import shutil
+    import tempfile
+
+    directory = tempfile.mkdtemp(prefix="execnet-dialback-")
+    os.chmod(directory, 0o700)
+    path = os.path.join(directory, "gw.sock")
+    sock = trio.socket.socket(trio.socket.AF_UNIX, trio.socket.SOCK_STREAM)
+    await sock.bind(path)
+    sock.listen(1)
+    listener = trio.SocketListener(sock)
+    try:
+        yield path, listener
+    finally:
+        with trio.CancelScope(shield=True), suppress(Exception):
+            await listener.aclose()
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+async def _accept_or_diagnose(
+    listener: trio.SocketListener,
+    process: trio.Process,
+    remoteaddress: str,
+) -> trio.SocketStream:
+    """Await the worker's dial-back, or explain why it never came.
+
+    With the stdio transport a dead ssh shows up as EOF on the protocol
+    pipe.  Here there is no such pipe, so the accept is raced against the
+    process exiting -- ssh's 255 still means "could not reach or
+    authenticate the host".
+    """
+    accepted: list[trio.SocketStream] = []
+    exited: list[int] = []
+
+    async def accept(nursery: trio.Nursery) -> None:
+        accepted.append(await listener.accept())
+        nursery.cancel_scope.cancel()
+
+    async def watch(nursery: trio.Nursery) -> None:
+        exited.append(await process.wait())
+        nursery.cancel_scope.cancel()
+
+    with trio.move_on_after(SSH_CONNECT_TIMEOUT):
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(accept, nursery)
+            nursery.start_soon(watch, nursery)
+    if accepted:
+        return accepted[0]
+    with trio.CancelScope(shield=True), trio.move_on_after(5):
+        process.kill()
+        await process.wait()
+    if exited and exited[0] == 255:
+        raise HostNotFound(remoteaddress)
+    if exited:
+        raise EOFError(
+            f"ssh worker exited with {exited[0]} before connecting back"
+            f" to {remoteaddress}"
+        )
+    raise EOFError(
+        f"ssh worker did not connect back within {SSH_CONNECT_TIMEOUT}s"
+        f" ({remoteaddress})"
     )
-    return argv, preamble
+
+
+async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
+    """Spawn an ssh/vagrant worker on the transport ``spec`` resolves to.
+
+    ``transport=socket`` forwards a private unix socket to the remote with
+    ``ssh -R`` and lets the worker dial back on it, which leaves ssh's
+    stdin free for the config (so it is not in the remote argv, where every
+    user on that host can read the ``env:`` values) and leaves the worker's
+    stdout and stderr free for the code it runs.
+    """
+    from . import _provision
+
+    remoteaddress = spec.ssh or spec.vagrant_ssh
+    assert remoteaddress is not None
+    wheel = _provision.ssh_wheel(spec)
+    if wheel is not None:
+        await deliver_remote_wheel(spec, wheel)
+
+    if _provision.resolve_transport(spec) == "stdio":
+        args = (
+            ssh_transport_args(spec)
+            if spec.ssh is not None
+            else vagrant_transport_args(spec)
+        )
+        return await connect_command_worker(args, remoteaddress=remoteaddress)
+
+    async with _dialback_listener() as (local_sock, listener):
+        remote_sock = f"/tmp/execnet-{uuid.uuid4().hex}.sock"
+        command = _provision.ssh_remote_command(
+            spec,
+            "--protocol-connect",
+            f"unix:{remote_sock}",
+            config_on_stdin=True,
+        )
+        argv = _ssh_argv(spec, command, forward=(remote_sock, local_sock))
+        # stdout/stderr stay inherited: remote output is the user's now.
+        process = await trio.lowlevel.open_process(argv, stdin=subprocess.PIPE)
+        try:
+            assert process.stdin is not None
+            await process.stdin.send_all(_provision.worker_cli_arg(spec).encode())
+            await process.stdin.aclose()
+            stream = await _accept_or_diagnose(listener, process, remoteaddress)
+            await read_handshake_ack(stream, "ssh")
+        except BaseException:
+            with trio.CancelScope(shield=True), trio.move_on_after(5):
+                process.kill()
+                await process.wait()
+            raise
+    return stream, process
+
+
+async def deliver_remote_wheel(spec: Any, wheel: Any) -> None:
+    """Ship ``wheel`` to the remote over its own connection, before launching.
+
+    Out of band on purpose: the protocol stream never carries a payload, so
+    the launch command needs no ``head -c <N>`` byte accounting and no
+    ``exec`` to keep an fd alive.  Skipped remote-side when the file is
+    already cached there.
+    """
+    from . import _provision
+
+    argv = _ssh_argv(spec, _provision.wheel_delivery_command(wheel))
+    process = await trio.lowlevel.open_process(argv, stdin=subprocess.PIPE)
+    try:
+        assert process.stdin is not None
+        await process.stdin.send_all(wheel.read_bytes())
+        await process.stdin.aclose()
+        code = await process.wait()
+    except BaseException:
+        with trio.CancelScope(shield=True), trio.move_on_after(5):
+            process.kill()
+            await process.wait()
+        raise
+    if code != 0:
+        raise HostNotFound(
+            f"could not deliver the execnet wheel to {spec.ssh or spec.vagrant_ssh}"
+            f" (exit {code})"
+        )
 
 
 async def connect_command_worker(
@@ -813,6 +979,44 @@ async def connect_command_worker(
         if host_not_found:
             assert remoteaddress is not None
             raise HostNotFound(remoteaddress) from None
+        raise
+    return stream, process
+
+
+async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
+    """Spawn a local worker for ``spec`` on its resolved transport.
+
+    With ``transport=socket`` the protocol runs over an inherited
+    socketpair, so the child's stdin/stdout/stderr stay the user's: remote
+    ``print()`` reaches the terminal instead of being swallowed to keep the
+    wire clean.  ``transport=stdio`` is the classic pipe pair.
+    """
+    from . import _provision
+
+    if _provision.resolve_transport(spec) == "stdio":
+        return await connect_command_worker(popen_worker_argv(spec))
+
+    import socket as _socket
+
+    ours, theirs = _socket.socketpair()
+    try:
+        args = popen_worker_argv(spec, "--protocol-fd", str(theirs.fileno()))
+        process = await trio.lowlevel.open_process(args, pass_fds=(theirs.fileno(),))
+    except BaseException:
+        ours.close()
+        theirs.close()
+        raise
+    # The child holds its own copy now; ours would keep the pair open.
+    theirs.close()
+    stream = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
+    try:
+        await read_handshake_ack(stream, "bootstrap")
+    except BaseException:
+        with trio.CancelScope(shield=True):
+            with trio.move_on_after(5):
+                process.kill()
+                await process.wait()
+            await stream.aclose()
         raise
     return stream, process
 
@@ -934,20 +1138,11 @@ class AsyncGroup:
         elif spec.socket:
             address, remoteaddress = await self._resolve_socket_address(spec)
             stream = await connect_socket_worker(address, remoteaddress)
-        elif spec.ssh:
-            args, preamble = ssh_transport_args(spec)
-            remoteaddress = spec.ssh
-            stream, process = await connect_command_worker(
-                args, preamble=preamble, remoteaddress=remoteaddress
-            )
-        elif spec.vagrant_ssh:
-            args, preamble = vagrant_transport_args(spec)
-            remoteaddress = spec.vagrant_ssh
-            stream, process = await connect_command_worker(
-                args, preamble=preamble, remoteaddress=remoteaddress
-            )
+        elif spec.ssh or spec.vagrant_ssh:
+            remoteaddress = spec.ssh or spec.vagrant_ssh
+            stream, process = await connect_ssh_worker(spec)
         elif spec.popen or spec.python:
-            stream, process = await connect_command_worker(popen_worker_argv(spec))
+            stream, process = await connect_popen_worker(spec)
         else:
             raise ValueError(f"unsupported spec for AsyncGroup: {spec!r}")
         gateway = self._make_gateway(stream, spec)

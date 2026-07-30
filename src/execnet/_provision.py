@@ -31,6 +31,35 @@ from typing import Any
 
 _RELEASED_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
+#: ``transport=`` values: where a worker's protocol stream lives.
+#:
+#: ``socket`` keeps the protocol off the worker's stdio -- an inherited
+#: socketpair for popen, an ``ssh -R``-forwarded unix socket for ssh -- so
+#: the worker's stdin/stdout/stderr belong to the code it runs.  ``stdio``
+#: is the classic shape, and the only one available where the machinery
+#: ``socket`` needs is missing.
+TRANSPORTS = ("socket", "stdio")
+
+
+def socket_transport_available() -> bool:
+    """Whether this coordinator can drive the socket transport.
+
+    ``subprocess`` refuses ``pass_fds`` on Windows and ``ssh -R`` cannot
+    forward a unix socket there either, so Windows coordinators stay on
+    stdio unless someone asks for otherwise and accepts the consequences.
+    """
+    return not sys.platform.startswith("win")
+
+
+def resolve_transport(spec: Any) -> str:
+    """The transport for ``spec``: explicit if given, else the platform default."""
+    requested: str | None = getattr(spec, "transport", None)
+    if requested is None:
+        return "socket" if socket_transport_available() else "stdio"
+    if requested not in TRANSPORTS:
+        raise ValueError(f"unknown transport {requested!r} (known: {list(TRANSPORTS)})")
+    return requested
+
 
 def uv_available() -> bool:
     """Whether the ``uv`` launcher is on PATH."""
@@ -49,18 +78,37 @@ def shell_split_path(path: str) -> list[str]:
 
 
 @cache
-def target_has_execnet(python: str) -> bool:
-    """Whether interpreter ``python`` can already import execnet + trio.
+def target_info(python: str) -> dict[str, Any] | None:
+    """``execnet info`` from interpreter ``python``, or None if it cannot run.
 
-    When true the worker can be launched directly on that interpreter
-    (preserving ``sys.executable``); otherwise it must be uv-provisioned.
+    One probe answers everything provisioning wants to know before it
+    connects: whether execnet is importable at all, which version it is,
+    whether trio is there, and which transports it can serve.  An execnet
+    too old to have the CLI fails the probe and gets uv-provisioned, which
+    is the right outcome.
     """
-    argv = [*shell_split_path(python), "-c", "import execnet, trio"]
+    argv = [*shell_split_path(python), "-m", "execnet", "info"]
     try:
         completed = subprocess.run(argv, capture_output=True, timeout=30, check=False)
-        return completed.returncode == 0
     except (OSError, subprocess.SubprocessError):
-        return False
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        info: dict[str, Any] = json.loads(completed.stdout)
+    except ValueError:
+        return None
+    return info
+
+
+def target_has_execnet(python: str) -> bool:
+    """Whether ``python`` can host a worker directly (execnet + trio present).
+
+    When true the worker is launched on that interpreter as-is (preserving
+    ``sys.executable``); otherwise it must be uv-provisioned.
+    """
+    info = target_info(python)
+    return info is not None and info.get("trio") is not None
 
 
 def _version_slug(version: str) -> str:
@@ -193,6 +241,22 @@ def worker_cli_arg(spec: Any) -> str:
     return json.dumps(config)
 
 
+def stdio_tokens(spec: Any) -> list[str]:
+    """``--stdin/--stdout/--stderr`` tokens for whatever ``spec`` asked for.
+
+    A worker inherits the coordinator's stdio by default now that the
+    protocol has a transport of its own, which also means remote code can
+    *consume* the coordinator's stdin.  These keys are how a caller says
+    otherwise, e.g. ``popen//stdin=devnull``.
+    """
+    tokens = []
+    for name in ("stdin", "stdout", "stderr"):
+        value = getattr(spec, name, None)
+        if value:
+            tokens += [f"--{name}", value]
+    return tokens
+
+
 def _worker_tokens(config: str | None, *protocol: str) -> list[str]:
     """``python -u -m execnet worker`` tokens for a launch.
 
@@ -246,68 +310,114 @@ def uv_worker_argv(spec: Any, *protocol: str) -> list[str]:
     ]
 
 
+#: where a shipped wheel lands on the remote, keyed by name (which carries
+#: the version) so repeated gateways to one host reuse it.  A *shell
+#: fragment*, not a path: ``$HOME`` is expanded remotely, and quoting it as
+#: a literal would create a directory actually called ``~``.
+REMOTE_WHEEL_DIR = '"$HOME"/.cache/execnet/wheels'
+
+
+def remote_wheel_path(wheel: Path) -> str:
+    """Shell fragment for the remote path a shipped wheel is delivered to."""
+    return f"{REMOTE_WHEEL_DIR}/{shlex.quote(wheel.name)}"
+
+
+def wheel_delivery_command(wheel: Path) -> str:
+    """Remote sh command that receives ``wheel`` on stdin, unless already there.
+
+    Out of band: run over its *own* ssh connection before the worker
+    launch, so the protocol stream never has to carry a payload and the
+    launch command needs neither ``head -c <N>`` byte accounting nor
+    ``exec`` to keep an fd alive.
+
+    Both branches consume stdin -- the coordinator streams the wheel
+    unconditionally, and a remote that skipped the write without draining
+    would hand it an EPIPE.
+    """
+    path = remote_wheel_path(wheel)
+    return (
+        f"mkdir -p {REMOTE_WHEEL_DIR} || exit 1; "
+        f"if [ -s {path} ]; then cat > /dev/null; else cat > {path}.tmp"
+        f" && mv {path}.tmp {path}; fi"
+    )
+
+
 def _remote_shell_command(
     python: str | None,
     config: str,
-    *,
+    *protocol: str,
     requirement: str | None = None,
     wheel: Path | None = None,
-) -> tuple[str, bytes]:
-    """Remote sh command + stdin preamble launching the worker via uv.
+    config_on_stdin: bool = False,
+) -> str:
+    """Remote sh command launching the worker via uv.
 
-    With ``requirement`` the remote installs from an index and no preamble is
-    needed.  With ``wheel`` a POSIX-sh prelude receives the wheel bytes from
-    stdin (``head -c N``) into a temp dir and ``exec``s uv against it; the
-    wheel bytes are returned as the preamble to stream before the protocol.
+    ``requirement`` installs from an index; ``wheel`` uses one already
+    delivered by :func:`wheel_delivery_command`.
     """
-    worker = _worker_tokens(config)
+    worker = _worker_tokens(None if config_on_stdin else config, *protocol)
     uv = [*_uv_tokens(python), *_extra_with_tokens(config)]
     if wheel is None:
         assert requirement is not None
-        return shlex.join([*uv, "--with", requirement, *worker]), b""
-
-    data = wheel.read_bytes()
-    # "$d/"<name>: expand the temp dir, concatenate the (quoted) wheel filename.
-    remote_wheel = '"$d/"' + shlex.quote(wheel.name)
-    uv_run = " ".join(shlex.quote(token) for token in [*uv, "--with"])
-    worker_cmd = " ".join(shlex.quote(token) for token in worker)
-    prelude = (
-        f"d=$(mktemp -d) && "
-        f"head -c {len(data)} > {remote_wheel} && "
-        f"exec {uv_run} {remote_wheel} {worker_cmd}"
+        return shlex.join([*uv, "--with", requirement, *worker])
+    # the wheel path is remote-side and may contain ~, so it is not quoted
+    # by shlex.join -- splice it in after quoting the rest
+    return " ".join(
+        [shlex.join([*uv, "--with"]), remote_wheel_path(wheel), shlex.join(worker)]
     )
-    return prelude, data
 
 
-def ssh_remote_command(spec: Any) -> tuple[str, bytes]:
-    """Remote shell command + stdin preamble to launch the worker over ssh.
+def ssh_remote_command(spec: Any, *protocol: str, config_on_stdin: bool = False) -> str:
+    """Remote shell command launching the worker over ssh.
 
-    Released coordinator -> ``uv run --with execnet==<ver> …`` with no preamble.
-    Dev coordinator -> wheel-shipping prelude (see ``_remote_shell_command``).
+    Released coordinator -> ``uv run --with execnet==<ver> …``.  Dev
+    coordinator -> ``uv run --with <delivered wheel> …``; delivering the
+    wheel is a separate step (:func:`wheel_delivery_command`).
     """
     import execnet
 
     version = execnet.__version__
     config = worker_cli_arg(spec)
+    kwargs: dict[str, Any] = {"config_on_stdin": config_on_stdin}
     if _RELEASED_RE.match(version):
-        return _remote_shell_command(
-            spec.python, config, requirement=f"execnet=={version}"
-        )
-    return _remote_shell_command(spec.python, config, wheel=_build_wheel(version))
+        kwargs["requirement"] = f"execnet=={version}"
+    else:
+        kwargs["wheel"] = _build_wheel(version)
+    return _remote_shell_command(spec.python, config, *protocol, **kwargs)
 
 
-def ssh_argv(ssh: str, ssh_config: str | None, remote_command: str) -> list[str]:
+def ssh_wheel(spec: Any) -> Path | None:
+    """The wheel this coordinator must deliver before launching, if any."""
+    import execnet
+
+    version = execnet.__version__
+    if _RELEASED_RE.match(version):
+        return None
+    return _build_wheel(version)
+
+
+def ssh_argv(
+    ssh: str,
+    ssh_config: str | None,
+    remote_command: str,
+    options: list[str] | None = None,
+) -> list[str]:
     """``ssh`` client argv running ``remote_command`` on host ``ssh``."""
     args = ["ssh", "-C"]
     if ssh_config:
         args += ["-F", ssh_config]
+    if options:
+        args += options
     args += ssh.split()
     args.append(remote_command)
     return args
 
 
 def vagrant_ssh_argv(
-    machine: str, ssh_config: str | None, remote_command: str
+    machine: str,
+    ssh_config: str | None,
+    remote_command: str,
+    options: list[str] | None = None,
 ) -> list[str]:
     """``vagrant ssh`` argv running ``remote_command`` on the named VM.
 
@@ -317,6 +427,8 @@ def vagrant_ssh_argv(
     args = ["vagrant", "ssh", machine, "--", "-C"]
     if ssh_config:
         args += ["-F", ssh_config]
+    if options:
+        args += options
     args.append(remote_command)
     return args
 
@@ -375,14 +487,24 @@ def _requested_requirement(request: dict[str, Any]) -> tuple[str | None, Path | 
     return None, None
 
 
-def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
-    """(argv, stdin preamble) spawning a requested sub-worker on this host.
+#: an out-of-band step to run before a sub-worker launch: ``(argv, stdin)``
+DeliveryStep = tuple[list[str], bytes]
+
+
+def sub_spawn_argv(
+    request: dict[str, Any],
+) -> tuple[list[str], DeliveryStep | None]:
+    """(argv, wheel delivery) spawning a requested sub-worker on this host.
 
     Handles a ``GATEWAY_START_SUB`` request on a via master: plain popen runs
     this interpreter's worker module, a foreign ``python`` runs directly when
     it already has execnet and is uv-provisioned otherwise, and ``ssh`` wraps
-    the remote uv command (streaming a shipped wheel as the preamble for dev
-    versions).
+    the remote uv command.  A shipped wheel is delivered by the returned
+    step -- its own ssh connection, run before the launch -- rather than
+    framed into the launch command's stdin.
+
+    The sub's protocol is relayed over its stdio by the master, so it always
+    gets the stdio transport.
     """
     config = request["config"]
     assert isinstance(config, str)
@@ -393,20 +515,27 @@ def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
         requirement, wheel = _requested_requirement(request)
         if requirement is None:
             raise RuntimeError("remote spawn request without provisioning material")
-        command, preamble = _remote_shell_command(
-            python, config, requirement=requirement, wheel=wheel
-        )
         ssh_config = request.get("ssh_config")
-        if ssh:
-            assert isinstance(ssh, str)
-            return ssh_argv(ssh, ssh_config, command), preamble
-        assert isinstance(vagrant, str)
-        return vagrant_ssh_argv(vagrant, ssh_config, command), preamble
+
+        def wrap(command: str, options: list[str] | None = None) -> list[str]:
+            if ssh:
+                assert isinstance(ssh, str)
+                return ssh_argv(ssh, ssh_config, command, options)
+            assert isinstance(vagrant, str)
+            return vagrant_ssh_argv(vagrant, ssh_config, command, options)
+
+        delivery: DeliveryStep | None = None
+        if wheel is not None:
+            delivery = (wrap(wheel_delivery_command(wheel)), wheel.read_bytes())
+            command = _remote_shell_command(python, config, wheel=wheel)
+        else:
+            command = _remote_shell_command(python, config, requirement=requirement)
+        return wrap(command), delivery
     if python:
         assert isinstance(python, str)
         if target_has_execnet(python):
             argv = [*shell_split_path(python), "-u", "-m", "execnet", "worker"]
-            return [*argv, "--config", config], b""
+            return [*argv, "--config", config], None
         requirement, _ = _requested_requirement(request)
         if requirement is None or not uv_available():
             raise RuntimeError(
@@ -418,7 +547,7 @@ def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
             "--with",
             requirement,
             *_worker_tokens(config),
-        ], b""
+        ], None
     return [
         sys.executable,
         "-u",
@@ -427,4 +556,4 @@ def sub_spawn_argv(request: dict[str, Any]) -> tuple[list[str], bytes]:
         "worker",
         "--config",
         config,
-    ], b""
+    ], None
