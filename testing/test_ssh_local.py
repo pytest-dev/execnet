@@ -14,15 +14,35 @@ import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import asyncssh
 import pytest
 
 import execnet
+from execnet import _provision
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("ssh") is None, reason="system ssh client required"
-)
+if TYPE_CHECKING:
+    import asyncssh
+else:
+    # a module-level `import asyncssh` would be a collection *error* in an
+    # environment without it, not a skip
+    asyncssh = pytest.importorskip("asyncssh")
+
+pytestmark = [
+    pytest.mark.skipif(
+        shutil.which("ssh") is None, reason="system ssh client required"
+    ),
+    # the harness runs each remote command through a POSIX shell, and the
+    # commands execnet builds are POSIX sh
+    pytest.mark.skipif(
+        sys.platform.startswith("win"), reason="POSIX-shell remote harness"
+    ),
+    pytest.mark.skipif(
+        not _provision.provisioning_available(),
+        reason="a dev execnet installed without its source tree cannot build"
+        " a wheel to provision the remote with",
+    ),
+]
 
 # Committed, intentionally-insecure test keys (see sshkeys/README.md).
 SSHKEYS = Path(__file__).parent / "sshkeys"

@@ -194,6 +194,23 @@ def _build_wheel(version: str) -> Path:
     return wheel
 
 
+def provisioning_available() -> bool:
+    """Whether this coordinator can produce material to provision a remote.
+
+    A released version resolves from an index.  A dev version has to build
+    a wheel, which needs the editable checkout it came from -- so a dev
+    version installed *from a wheel* (what ``tox --installpkg`` produces,
+    and what a CI artifact test runs against) can do neither.  Callers that
+    need a remote worker should check this rather than let
+    :func:`coordinator_requirement` raise.
+    """
+    import execnet
+
+    if _RELEASED_RE.match(execnet.__version__):
+        return True
+    return _editable_source_root() is not None
+
+
 def coordinator_requirement() -> str:
     """A ``uv --with`` requirement that installs this coordinator's execnet."""
     import execnet

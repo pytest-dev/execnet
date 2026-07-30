@@ -99,8 +99,17 @@ def test_close_initiating_remote_no_error(
         execnet.default_group.terminate()
     """
     )
+    # This asserts execnet's own teardown prints nothing.  tox sets
+    # PYTHONWARNDEFAULTENCODING to catch *our* encoding bugs, but it also
+    # makes trio's subprocess module emit an EncodingWarning we cannot fix
+    # and that is not what this test guards.
+    env = dict(os.environ)
+    env.pop("PYTHONWARNDEFAULTENCODING", None)
     popen = subprocess.Popen(
-        [anypython, str(p), str(execnetdir)], stdout=None, stderr=subprocess.PIPE
+        [anypython, str(p), str(execnetdir)],
+        stdout=None,
+        stderr=subprocess.PIPE,
+        env=env,
     )
     _out, err = popen.communicate()
     print(err)

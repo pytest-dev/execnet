@@ -358,8 +358,17 @@ class TestServerCommand:
         assert called == [["server", ":0", "--once"]]
 
 
+needs_provisioning = pytest.mark.skipif(
+    not _provision.provisioning_available(),
+    reason="a dev execnet installed without its source tree cannot build a"
+    " wheel to provision a remote with",
+)
+
+
 class TestRemoteCommand:
     """What ends up on the remote host's command line."""
+
+    pytestmark = needs_provisioning
 
     def test_config_is_not_in_the_remote_argv(self) -> None:
         # env: values are secrets often enough; the remote argv is readable
