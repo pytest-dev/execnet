@@ -797,29 +797,52 @@ _socket_worker_counter = itertools.count()
 
 
 def _spawn_socket_worker(fd: int) -> subprocess.Popen[bytes]:
-    """Spawn a worker subprocess serving over the inherited socket ``fd``."""
+    """Spawn a worker subprocess serving the accepted socket ``fd``.
+
+    POSIX hands the fd over with ``pass_fds``.  Windows has no such thing,
+    so the socket is duplicated into the child with ``WSADuplicateSocket``
+    and the blob travels in the config -- which is why the config goes to
+    stdin there: it cannot be built until the child's pid exists.
+    """
     import execnet
 
-    config = json.dumps(
-        {
-            "id": "socketworker%d" % next(_socket_worker_counter),
-            "execmodel": "thread",
-            "coordinator_version": execnet.__version__,
-        }
+    from . import _provision
+    from ._trio_gateway import SHARE_KEY
+    from ._trio_gateway import dumps_config
+    from ._trio_gateway import share_socket
+
+    config: dict[str, Any] = {
+        "id": "socketworker%d" % next(_socket_worker_counter),
+        "execmodel": "thread",
+        "coordinator_version": execnet.__version__,
+    }
+    argv = [sys.executable, "-m", "execnet", "worker"]
+    if not _provision.socket_share_required():
+        return subprocess.Popen(
+            [*argv, "--protocol-fd", str(fd), "--config", json.dumps(config)],
+            pass_fds=[fd],
+        )
+
+    import socket as _socket
+
+    process = subprocess.Popen(
+        [*argv, "--protocol-share", "--config-fd", "0"], stdin=subprocess.PIPE
     )
-    return subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "execnet",
-            "worker",
-            "--protocol-fd",
-            str(fd),
-            "--config",
-            config,
-        ],
-        pass_fds=[fd],
-    )
+    try:
+        # a view on the accepted socket, so share() can reach it; detach so
+        # dropping the view does not close the fd we do not own
+        view = _socket.socket(fileno=fd)
+        try:
+            config[SHARE_KEY] = share_socket(view, process.pid)
+        finally:
+            view.detach()
+        assert process.stdin is not None
+        process.stdin.write(dumps_config(config))
+        process.stdin.close()
+    except BaseException:
+        process.kill()
+        raise
+    return process
 
 
 async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> None:
@@ -827,9 +850,18 @@ async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> N
 
     ``reap`` waits for the worker (loop server); when false the worker outlives
     this task (one-shot / installvia).
+
+    A failed spawn closes the connection.  The coordinator is already waiting
+    on the other end for a handshake byte that is never coming, and an EOF is
+    the only thing that will move it -- without this it waits forever.
     """
-    proc = _spawn_socket_worker(stream.socket.fileno())
-    # The child forked with a copy of the fd; release ours.
+    try:
+        proc = _spawn_socket_worker(stream.socket.fileno())
+    except BaseException:
+        with trio.CancelScope(shield=True), suppress(Exception):
+            await stream.aclose()
+        raise
+    # The child holds its own copy of the socket now; release ours.
     await stream.aclose()
     if reap:
         await trio.to_thread.run_sync(proc.wait)
@@ -842,7 +874,25 @@ async def _start_socket_and_reply(
 
     Runs as a task on the worker's Trio host (scheduled from the message
     handler).  The reply travels back on ``channelid`` like a STATUS reply.
+
+    Refusing *before* replying is what makes an unsupported host survivable:
+    once the address has gone out the coordinator will connect and wait for
+    a handshake, and there is no longer any way to tell it why nobody is
+    there.  An error close instead surfaces at its ``channel.receive()``.
     """
+    from . import _provision
+
+    if not _provision.socket_handoff_available():
+        gateway._send(
+            Message.CHANNEL_CLOSE_ERROR,
+            channelid,
+            dumps_internal(
+                f"cannot serve a socket gateway on {sys.platform}: this host "
+                "cannot hand an accepted socket to a worker process"
+            ),
+        )
+        return
+
     listeners = await trio.open_tcp_listeners(0, host=bind_host)
     addr = listeners[0].socket.getsockname()
     gateway._send(Message.CHANNEL_DATA, channelid, dumps_internal((addr[0], addr[1])))

@@ -615,6 +615,51 @@ class StdioTransport:
         return await _send_ready(staple_fd_stream(read_fd, write_fd))
 
 
+class ShareTransport:
+    """The protocol socket was duplicated into this process by its launcher.
+
+    The Windows counterpart of an inherited fd: ``subprocess`` refuses
+    ``pass_fds`` there, but ``WSADuplicateSocket`` can duplicate a socket
+    into a named pid.  The resulting blob is bound to *us*, so it is inert
+    to anything else that might read it -- and it arrives in the config
+    rather than in argv, because sharing needs our pid and so cannot happen
+    until we have been spawned.
+
+    Like any other socket transport, the worker's stdio stays untouched.
+    """
+
+    stdio_defaults = ("inherit", "inherit", "inherit")
+
+    def __init__(self) -> None:
+        self._blob: bytes | None = None
+
+    def prepare(self) -> None:
+        pass
+
+    def adopt(self, config: dict[str, Any]) -> None:
+        """Take the share blob out of the config, once it has been read."""
+        import base64
+
+        from ._trio_gateway import SHARE_KEY
+
+        raw = config.pop(SHARE_KEY, None)
+        if raw is None:
+            raise SystemExit(
+                f"execnet worker: --protocol-share needs {SHARE_KEY!r} in the config"
+            )
+        self._blob = base64.b64decode(raw)
+
+    async def open(self) -> Any:
+        import socket as _socket
+
+        from . import _trio_host
+
+        assert self._blob is not None, "adopt() first"
+        sock = _socket.fromshare(self._blob)  # type: ignore[attr-defined]  # Windows
+        # adopt_socket takes ownership of the fd and sends the handshake
+        return await _trio_host.adopt_socket(sock.detach())
+
+
 class FdTransport:
     """The protocol runs over inherited fds: one socket, or a pipe pair."""
 

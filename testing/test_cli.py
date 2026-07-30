@@ -220,7 +220,12 @@ class TestTransportSelection:
     def test_defaults_per_platform(self) -> None:
         spec = execnet.XSpec("popen")
         expected = "stdio" if sys.platform.startswith("win") else "socket"
-        assert _provision.resolve_transport(spec) == expected
+        assert (
+            _provision.resolve_transport(
+                spec, default=_provision.default_spawn_transport()
+            )
+            == expected
+        )
 
     def test_explicit_wins(self) -> None:
         assert _provision.resolve_transport(
@@ -232,6 +237,47 @@ class TestTransportSelection:
             _provision.resolve_transport(
                 execnet.XSpec("popen//transport=carrier-pigeon")
             )
+
+    def test_unavailable_falls_back_when_unasked(self) -> None:
+        assert (
+            _provision.resolve_transport(execnet.XSpec("popen"), available=False)
+            == "stdio"
+        )
+
+    def test_asking_for_an_impossible_transport_is_an_error(self) -> None:
+        # the alternative is a gateway that hangs waiting for a worker that
+        # was never able to reach us -- which is what ssh on Windows did
+        with pytest.raises(ValueError, match="not available"):
+            _provision.resolve_transport(
+                execnet.XSpec("ssh=host//transport=socket"), available=False
+            )
+
+    def test_windows_can_serve_the_socket_transport_but_does_not_default_to_it(
+        self,
+    ) -> None:
+        # sharing is new; stdio is what has years of Windows behind it
+        if _provision.socket_share_required():
+            assert _provision.socket_handoff_available()
+            assert _provision.default_spawn_transport() == "stdio"
+        else:
+            assert _provision.default_spawn_transport() == "socket"
+
+    def test_ssh_cannot_dial_back_on_windows(self) -> None:
+        # no AF_UNIX in CPython there, and Win32-OpenSSH cannot -R a unix socket
+        assert _provision.ssh_dialback_available() == (
+            not _provision.socket_share_required()
+        )
+
+    def test_socket_transport_roundtrip(self) -> None:
+        # explicitly, on every platform: this is the only coverage the
+        # Windows socket.share() handoff gets
+        group = execnet.Group()
+        try:
+            gateway = group.makegateway("popen//transport=socket")
+            channel = gateway.remote_exec("channel.send(6 * 7)")
+            assert channel.receive(TESTTIMEOUT) == 42
+        finally:
+            group.terminate(timeout=5.0)
 
     @posix_only
     def test_socket_transport_keeps_the_protocol_off_stdio(self) -> None:
@@ -401,3 +447,221 @@ class TestRemoteCommand:
         assert argv[argv.index("-R") + 1] == "/tmp/remote.sock:/tmp/local.sock"
         # a stale remote socket must not block the bind
         assert "StreamLocalBindUnlink=yes" in argv
+
+
+class TestSocketWorkerSpawnFailure:
+    """A server that cannot start a worker must not leave a coordinator waiting.
+
+    The coordinator connects and blocks for the ``b"1"`` handshake.  Nothing
+    else will ever move it, so a failed spawn has to close the connection --
+    otherwise one unsupported gateway wedges the whole session, which is what
+    ``socket//installvia=`` did on Windows.
+    """
+
+    def test_a_failed_spawn_closes_the_connection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import trio
+
+        from execnet import _trio_host
+
+        def boom(fd: int) -> Any:
+            raise RuntimeError("no worker for you")
+
+        monkeypatch.setattr(_trio_host, "_spawn_socket_worker", boom)
+
+        async def main() -> bytes:
+            ours, theirs = socket.socketpair()
+            server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
+            with pytest.raises(RuntimeError, match="no worker"):
+                await _trio_host.serve_socket_connection(server, reap=False)
+            # the coordinator's end: EOF, not silence
+            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
+            with trio.fail_after(5):
+                return await client.receive_some(1)
+
+        assert trio.run(main) == b""
+
+    def test_a_host_that_cannot_hand_over_a_socket_refuses_up_front(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # refusing before the address is replied is what makes it diagnosable:
+        # afterwards the coordinator is already connecting, and a closed
+        # socket can only ever say "EOF".
+        from execnet import _trio_host
+
+        monkeypatch.setattr(_provision, "socket_handoff_available", lambda: False)
+        sent: list[tuple[int, int, bytes]] = []
+
+        class FakeGateway:
+            def _send(self, code: int, channelid: int = 0, data: bytes = b"") -> None:
+                sent.append((code, channelid, data))
+
+        import trio
+
+        from execnet._message import Message
+        from execnet._serialize import loads_internal
+
+        gateway: Any = FakeGateway()
+        trio.run(_trio_host._start_socket_and_reply, gateway, 7, "localhost")
+
+        assert len(sent) == 1
+        code, channelid, data = sent[0]
+        assert code == Message.CHANNEL_CLOSE_ERROR
+        assert channelid == 7
+        assert "cannot hand an accepted socket" in loads_internal(data)
+
+
+class TestShareTransport:
+    """The Windows socket handoff. Only ``adopt`` is testable off Windows."""
+
+    def test_adopt_decodes_the_blob_out_of_the_config(self) -> None:
+        import base64
+
+        from execnet import _trio_worker
+        from execnet._trio_gateway import SHARE_KEY
+
+        transport = _trio_worker.ShareTransport()
+        config = {"id": "gw", SHARE_KEY: base64.b64encode(b"blobby").decode("ascii")}
+        transport.adopt(config)
+        assert transport._blob == b"blobby"
+        # consumed, so it cannot be mistaken for worker configuration
+        assert SHARE_KEY not in config
+
+    def test_adopt_without_a_blob_is_a_clear_error(self) -> None:
+        from execnet import _trio_worker
+
+        transport = _trio_worker.ShareTransport()
+        with pytest.raises(SystemExit, match="protocol_share"):
+            transport.adopt({"id": "gw"})
+
+    def test_the_cli_accepts_the_flag(self) -> None:
+        ns = _cli._build_parser().parse_args(
+            ["worker", "--protocol-share", "--config", "{}"]
+        )
+        assert ns.protocol_share is True
+
+    def test_share_is_exclusive_with_the_other_transports(self) -> None:
+        with pytest.raises(SystemExit):
+            _cli._build_parser().parse_args(
+                ["worker", "--protocol-share", "--protocol-stdio", "--config", "{}"]
+            )
+
+
+class TestShareHandoffWiring:
+    """How the share blob gets from coordinator to worker.
+
+    ``WSADuplicateSocket`` itself only exists on Windows, but everything
+    around it -- the flag in argv, the config on stdin, the blob inside that
+    config -- is the part that can be wired up wrong, and that is testable
+    anywhere.
+    """
+
+    def test_popen_spawn_puts_the_flag_in_argv_and_the_blob_in_the_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import base64
+
+        import trio
+
+        from execnet import _trio_gateway
+        from execnet._trio_gateway import SHARE_KEY
+
+        written: list[bytes] = []
+        seen: dict[str, Any] = {}
+
+        class FakeStdin:
+            async def send_all(self, data: bytes) -> None:
+                written.append(data)
+
+            async def aclose(self) -> None:
+                pass
+
+        class FakeProcess:
+            pid = 4321
+            stdin = FakeStdin()
+
+        async def fake_open_process(args: list[str], **kwargs: Any) -> Any:
+            seen["args"] = args
+            seen["kwargs"] = kwargs
+            return FakeProcess()
+
+        monkeypatch.setattr(_provision, "socket_share_required", lambda: True)
+        monkeypatch.setattr(trio.lowlevel, "open_process", fake_open_process)
+        monkeypatch.setattr(
+            _trio_gateway,
+            "share_socket",
+            lambda sock, pid: base64.b64encode(b"dup-for-%d" % pid).decode("ascii"),
+        )
+
+        spec = execnet.XSpec("popen//id=gw0")
+        ours, theirs = socket.socketpair()
+        try:
+            trio.run(_trio_gateway._spawn_with_socket, spec, theirs)
+        finally:
+            ours.close()
+            theirs.close()
+
+        args = seen["args"]
+        assert "--protocol-share" in args
+        # the config cannot be in argv: the blob is not built until we have
+        # a pid, which is only true once the process exists
+        assert "--config-fd" in args
+        assert "--config" not in args
+        assert "pass_fds" not in seen["kwargs"]
+
+        config = json.loads(b"".join(written))
+        assert base64.b64decode(config[SHARE_KEY]) == b"dup-for-4321"
+        assert config["id"] == "gw0-worker"
+
+    def test_server_side_spawn_shares_the_accepted_socket(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import base64
+
+        from execnet import _trio_gateway
+        from execnet import _trio_host
+        from execnet._trio_gateway import SHARE_KEY
+
+        written: list[bytes] = []
+        seen: dict[str, Any] = {}
+
+        class FakeStdin:
+            def write(self, data: bytes) -> None:
+                written.append(data)
+
+            def close(self) -> None:
+                pass
+
+        class FakePopen:
+            pid = 99
+            stdin = FakeStdin()
+
+        def fake_popen(args: list[str], **kwargs: Any) -> Any:
+            seen["args"] = args
+            seen["kwargs"] = kwargs
+            return FakePopen()
+
+        monkeypatch.setattr(_provision, "socket_share_required", lambda: True)
+        monkeypatch.setattr(subprocess, "Popen", fake_popen)
+        monkeypatch.setattr(
+            _trio_gateway,
+            "share_socket",
+            lambda sock, pid: base64.b64encode(b"accepted-%d" % pid).decode("ascii"),
+        )
+
+        ours, theirs = socket.socketpair()
+        try:
+            _trio_host._spawn_socket_worker(theirs.fileno())
+            # the socket we do not own must survive being viewed for share()
+            assert theirs.fileno() >= 0
+            theirs.send(b"still open")
+            assert ours.recv(16) == b"still open"
+        finally:
+            ours.close()
+            theirs.close()
+
+        assert "--protocol-share" in seen["args"]
+        assert "pass_fds" not in seen["kwargs"]
+        config = json.loads(b"".join(written))
+        assert base64.b64decode(config[SHARE_KEY]) == b"accepted-99"

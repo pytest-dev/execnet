@@ -43,23 +43,82 @@ _RELEASED_RE = re.compile(r"^\d+\.\d+\.\d+$")
 TRANSPORTS = ("socket", "stdio")
 
 
-def socket_transport_available() -> bool:
-    """Whether this coordinator can drive the socket transport.
+def socket_handoff_available() -> bool:
+    """Whether we can hand a socket to a worker process we spawn ourselves.
 
-    ``subprocess`` refuses ``pass_fds`` on Windows and ``ssh -R`` cannot
-    forward a unix socket there either, so Windows coordinators stay on
-    stdio unless someone asks for otherwise and accepts the consequences.
+    Two different mechanisms, one question.  POSIX passes the fd through
+    ``pass_fds``.  Windows refuses that outright, but ``socket.share()``
+    (``WSADuplicateSocket``) duplicates the socket into a named pid, and the
+    resulting blob rides in the worker config -- see the ``share`` transport
+    in ``_trio_worker``.
     """
-    return not sys.platform.startswith("win")
+    import socket as _socket
+
+    if sys.platform.startswith("win"):
+        return hasattr(_socket.socket, "share")
+    return True
 
 
-def resolve_transport(spec: Any) -> str:
-    """The transport for ``spec``: explicit if given, else the platform default."""
+def socket_share_required() -> bool:
+    """Whether handing a socket to a child needs ``share()`` and not ``pass_fds``.
+
+    A function rather than a ``sys.platform`` test at each call site: those
+    read as dead code to a type checker running with the other platform's
+    assumptions, and this is the one question being asked anyway.
+    """
+    return sys.platform.startswith("win")
+
+
+def ssh_dialback_available() -> bool:
+    """Whether an ssh worker can dial back to us over a forwarded unix socket.
+
+    Needs ``AF_UNIX`` here -- CPython has never exposed it on Windows -- and
+    ``StreamLocal`` forwarding in the ssh client and server, which
+    Win32-OpenSSH does not implement.  Neither is a coordinator-side choice,
+    so ssh gateways there stay on the stdio transport.
+    """
+    import socket as _socket
+
+    return hasattr(_socket, "AF_UNIX") and not sys.platform.startswith("win")
+
+
+def default_spawn_transport() -> str:
+    """What a worker we spawn gets when the spec does not say.
+
+    Windows can *serve* the socket transport (see :func:`socket_share_required`),
+    but stdio is what has years of exercise there while sharing is new, so it
+    stays the default until the share path has CI behind it.
+    ``transport=socket`` opts in.
+    """
+    if socket_share_required():
+        return "stdio"
+    return "socket" if socket_handoff_available() else "stdio"
+
+
+def resolve_transport(
+    spec: Any, *, available: bool = True, default: str | None = None
+) -> str:
+    """The transport for ``spec``: explicit if given, else the default.
+
+    ``available`` is the caller's capability for *its* kind of gateway --
+    :func:`socket_handoff_available` for a worker we spawn,
+    :func:`ssh_dialback_available` for one that has to reach back to us.
+    Asking for a transport that cannot work is an error at makegateway time,
+    rather than a hang once nobody connects.  ``default`` decouples "can
+    work" from "is what you get by default".
+    """
     requested: str | None = getattr(spec, "transport", None)
     if requested is None:
-        return "socket" if socket_transport_available() else "stdio"
+        if default is not None:
+            return default
+        return "socket" if available else "stdio"
     if requested not in TRANSPORTS:
         raise ValueError(f"unknown transport {requested!r} (known: {list(TRANSPORTS)})")
+    if requested == "socket" and not available:
+        raise ValueError(
+            "transport=socket is not available for this gateway on "
+            f"{sys.platform}; use transport=stdio"
+        )
     return requested
 
 
@@ -275,12 +334,13 @@ def coordinator_requirement() -> str:
     return f"execnet=={execnet.__version__}"
 
 
-def worker_cli_arg(spec: Any) -> str:
-    """Single JSON CLI argument carrying the worker config (the whole 'spec thing').
+def worker_config(spec: Any) -> dict[str, Any]:
+    """The worker config for ``spec`` (the whole 'spec thing'), as a dict.
 
-    Passed to ``python -m execnet worker`` by every launcher (popen, uv, ssh)
-    so the worker config lives in one place rather than scattered positional
-    args.
+    Every launcher (popen, uv, ssh) sends this so the worker config lives in
+    one place rather than scattered positional args.  A launcher may add to
+    it before serializing -- the ``share`` transport puts its duplicated
+    socket here, since that cannot exist until the worker has been spawned.
     """
     import execnet
 
@@ -309,7 +369,12 @@ def worker_cli_arg(spec: Any) -> str:
         config["nice"] = int(spec.nice)
     if spec.env:
         config["env"] = spec.env
-    return json.dumps(config)
+    return config
+
+
+def worker_cli_arg(spec: Any) -> str:
+    """:func:`worker_config` serialized for ``--config``/``--config-fd``."""
+    return json.dumps(worker_config(spec))
 
 
 def stdio_tokens(spec: Any) -> list[str]:
@@ -369,7 +434,9 @@ def _extra_with_tokens(config: str) -> list[str]:
     return []
 
 
-def uv_worker_argv(spec: Any, *protocol: str) -> list[str]:
+def uv_worker_argv(
+    spec: Any, *protocol: str, config_on_stdin: bool = False
+) -> list[str]:
     """``uv run`` argv to launch the Trio worker locally (wheel path is local)."""
     config = worker_cli_arg(spec)
     return [
@@ -377,7 +444,7 @@ def uv_worker_argv(spec: Any, *protocol: str) -> list[str]:
         "--with",
         coordinator_requirement(),
         *_extra_with_tokens(config),
-        *_worker_tokens(config, *protocol),
+        *_worker_tokens(None if config_on_stdin else config, *protocol),
     ]
 
 
