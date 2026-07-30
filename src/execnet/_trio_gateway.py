@@ -182,7 +182,9 @@ def popen_module_args(
     return args
 
 
-def popen_worker_argv(spec: Any, *protocol: str) -> list[str]:
+def popen_worker_argv(
+    spec: Any, *protocol: str, config_on_stdin: bool = False
+) -> list[str]:
     """Argv for a popen worker: direct module launch, or uv-provisioned.
 
     A bare ``python=`` interpreter without execnet gets execnet + trio
@@ -191,8 +193,10 @@ def popen_worker_argv(spec: Any, *protocol: str) -> list[str]:
     from . import _provision
 
     if spec.python and not _provision.target_has_execnet(spec.python):
-        return _provision.uv_worker_argv(spec, *protocol)
-    return popen_module_args(spec, *protocol)
+        return _provision.uv_worker_argv(
+            spec, *protocol, config_on_stdin=config_on_stdin
+        )
+    return popen_module_args(spec, *protocol, config_on_stdin=config_on_stdin)
 
 
 class RawChannel:
@@ -937,7 +941,10 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     if wheel is not None:
         await deliver_remote_wheel(spec, wheel)
 
-    if _provision.resolve_transport(spec) == "stdio":
+    dialback = _provision.resolve_transport(
+        spec, available=_provision.ssh_dialback_available()
+    )
+    if dialback == "stdio":
         args = (
             ssh_transport_args(spec)
             if spec.ssh is not None
@@ -1034,6 +1041,56 @@ async def connect_command_worker(
     return stream, process
 
 
+#: config key carrying a ``socket.share()`` blob to a ``--protocol-share``
+#: worker, base64 encoded because the config is JSON.
+SHARE_KEY = "protocol_share"
+
+
+def share_socket(sock: Any, pid: int) -> str:
+    """``socket.share(pid)`` as a base64 string for the worker config."""
+    import base64
+
+    return base64.b64encode(sock.share(pid)).decode("ascii")
+
+
+async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
+    """Spawn a worker owning ``theirs``, by whichever handoff this OS has.
+
+    POSIX passes the fd itself.  Windows cannot -- ``subprocess`` refuses
+    ``pass_fds`` there -- so the socket is duplicated into the child with
+    ``WSADuplicateSocket``.  That needs the child's pid, so it can only
+    happen once the child exists: the flag goes in argv, the blob follows in
+    the config on stdin.
+    """
+    from . import _provision
+
+    if not _provision.socket_share_required():
+        args = popen_worker_argv(spec, "--protocol-fd", str(theirs.fileno()))
+        return await trio.lowlevel.open_process(args, pass_fds=(theirs.fileno(),))
+
+    args = popen_worker_argv(spec, "--protocol-share", config_on_stdin=True)
+    process = await trio.lowlevel.open_process(args, stdin=subprocess.PIPE)
+    try:
+        assert process.stdin is not None
+        config = _provision.worker_config(spec)
+        config[SHARE_KEY] = share_socket(theirs, process.pid)
+        await process.stdin.send_all(dumps_config(config))
+        await process.stdin.aclose()
+    except BaseException:
+        with trio.CancelScope(shield=True), suppress(Exception):
+            process.kill()
+            await process.wait()
+        raise
+    return process
+
+
+def dumps_config(config: dict[str, Any]) -> bytes:
+    """The worker config as the bytes a ``--config-fd`` worker reads."""
+    import json
+
+    return json.dumps(config).encode("utf-8")
+
+
 async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     """Spawn a local worker for ``spec`` on its resolved transport.
 
@@ -1044,15 +1101,19 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     """
     from . import _provision
 
-    if _provision.resolve_transport(spec) == "stdio":
+    transport = _provision.resolve_transport(
+        spec,
+        available=_provision.socket_handoff_available(),
+        default=_provision.default_spawn_transport(),
+    )
+    if transport == "stdio":
         return await connect_command_worker(popen_worker_argv(spec))
 
     import socket as _socket
 
     ours, theirs = _socket.socketpair()
     try:
-        args = popen_worker_argv(spec, "--protocol-fd", str(theirs.fileno()))
-        process = await trio.lowlevel.open_process(args, pass_fds=(theirs.fileno(),))
+        process = await _spawn_with_socket(spec, theirs)
     except BaseException:
         ours.close()
         theirs.close()

@@ -87,6 +87,14 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="ADDR",
         help="listen on ADDR (unix:/path or host:port) for one connection",
     )
+    transport.add_argument(
+        "--protocol-share",
+        action="store_true",
+        help=(
+            "adopt a socket duplicated into us with socket.share(); the blob"
+            " travels in the config (Windows, where fds cannot be inherited)"
+        ),
+    )
 
     config = worker.add_mutually_exclusive_group()
     config.add_argument("--config", metavar="JSON", help="worker config as JSON")
@@ -185,12 +193,18 @@ def _run_worker(ns: argparse.Namespace) -> None:
         transport = _trio_worker.ConnectTransport(ns.protocol_connect)
     elif ns.protocol_listen is not None:
         transport = _trio_worker.ListenTransport(ns.protocol_listen)
+    elif ns.protocol_share:
+        transport = _trio_worker.ShareTransport()
     else:
         transport = _trio_worker.StdioTransport()
     # The stdio transport owns fd 0/1, so it has to claim them before the
     # config is read (--config-fd 0 would be the very fd we are moving).
     transport.prepare()
     config = _load_config(ns)
+    if isinstance(transport, _trio_worker.ShareTransport):
+        # the only transport that cannot exist before the config is read:
+        # its socket was duplicated to our pid, so it travels inside it
+        transport.adopt(config)
     _trio_worker.serve_worker(
         config,
         transport,

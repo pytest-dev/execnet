@@ -45,6 +45,45 @@
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* ``channel.send()`` and ``channel.receive()`` check for a foreign event
+  loop before they check whether the channel is still open. Calling a
+  blocking API from inside a loop is a caller bug either way, and which of
+  the two errors you got depended on whether the peer had closed yet --
+  so the more useful message lost a race.
+* Whether a socket can be handed to a worker is now settled by *doing* it
+  once rather than by looking for ``socket.share``. An implementation with
+  the name but not a working call -- PyPy on Windows -- otherwise passed
+  the check and failed later, at the point where the only thing left to
+  tell the coordinator was a closed socket. Such a host now refuses the
+  request up front, and ``socket=``/``installvia=`` gateways are skipped
+  there rather than failing.
+* A socket gateway that fails to start no longer takes down the gateway it
+  was requested through. It ran as a task on that worker's host, so an
+  unsupported sub-gateway used to cost the master as well.
+* A worker that cannot be handed its socket now fails instead of hanging.
+  A ``socket=``/``installvia=`` worker is spawned by the *server*, so a
+  failure there used to leave the coordinator waiting forever on a
+  handshake byte nobody was going to send -- one unsupported gateway could
+  wedge a whole session. A host that cannot hand over a socket at all now
+  refuses the request before replying with an address, which surfaces as a
+  remote error rather than an unexplained wait; and a spawn that fails
+  anyway closes the connection, so the coordinator sees EOF.
+* New ``share`` protocol transport (``execnet worker --protocol-share``)
+  carrying a socket to a worker on Windows, where ``subprocess`` refuses
+  ``pass_fds``. The socket is duplicated into the child with
+  ``socket.share()`` (``WSADuplicateSocket``); because that needs the
+  child's pid, the flag travels in argv and the blob follows in the config
+  on stdin. The blob is bound to that one pid, so it is inert to anything
+  else. This makes ``transport=socket`` work on Windows for ``popen`` and
+  fixes ``socket=``/``installvia=`` gateways served from a Windows host.
+  Windows still *defaults* to ``transport=stdio``; ask for
+  ``transport=socket`` to opt in.
+* ``transport=socket`` on a gateway that cannot provide it is now an error
+  at ``makegateway`` time naming the platform, instead of a gateway that
+  waits for a worker which was never able to reach back. ssh dial-back
+  needs ``AF_UNIX`` (which CPython does not expose on Windows) and
+  ``StreamLocal`` forwarding (which Win32-OpenSSH does not implement), so
+  ssh gateways there stay on stdio.
 * Fixed Windows workers, which could not start at all: adopting the
   inherited stdio pipes went through ``trio.lowlevel.FdStream``, which is
   POSIX-only. Windows has no async equivalent -- trio's Windows pipe streams

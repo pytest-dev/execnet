@@ -12,6 +12,7 @@ import pytest
 
 import execnet
 from execnet import Gateway
+from execnet import _provision
 from execnet._execmodel import ExecModel
 from execnet._execmodel import get_execmodel
 
@@ -188,6 +189,11 @@ def gw(
         if request.param == "popen":
             gw = group.makegateway("popen//id=popen//profile=%s" % profile)
         elif request.param == "socket":
+            if not _provision.socket_handoff_available():
+                # the server accepts the connection and must then give it to
+                # a worker process; where neither pass_fds nor a working
+                # socket.share() exists (PyPy on Windows) there is no way to
+                pytest.skip("this interpreter cannot hand a socket to a worker")
             pname = "sproxy1"
             if pname not in group:
                 proxygw = group.makegateway("popen//id=%s" % pname)

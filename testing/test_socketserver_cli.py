@@ -14,12 +14,19 @@ from collections.abc import Iterator
 import pytest
 
 import execnet
+from execnet import _provision
 
 SERVER = shutil.which("execnet-socketserver")
 
-pytestmark = pytest.mark.skipif(
-    SERVER is None, reason="execnet-socketserver console script not installed"
-)
+pytestmark = [
+    pytest.mark.skipif(
+        SERVER is None, reason="execnet-socketserver console script not installed"
+    ),
+    pytest.mark.skipif(
+        not _provision.socket_handoff_available(),
+        reason="the server must hand the accepted socket to a worker process",
+    ),
+]
 
 
 @pytest.fixture

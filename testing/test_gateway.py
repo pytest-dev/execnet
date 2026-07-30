@@ -269,14 +269,19 @@ class TestBasicGateway:
         assert rinfo.cwd
         assert rinfo.version_info
         assert repr(rinfo)
-        old = gw.remote_exec(
+        chdir = gw.remote_exec(
             """
             import os.path
             cwd = os.getcwd()
             channel.send(os.path.basename(cwd))
             os.chdir('..')
         """
-        ).receive()
+        )
+        old = chdir.receive()
+        # receive() returns when the *send* arrives, and the chdir happens
+        # after it -- so without waiting for the exec to finish, the _rinfo
+        # below races it.  Slower interpreters lose that race.
+        chdir.waitclose(TESTTIMEOUT)
         try:
             rinfo2 = gw._rinfo()
             assert rinfo2.cwd == rinfo.cwd
