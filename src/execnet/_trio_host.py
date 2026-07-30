@@ -28,6 +28,7 @@ import trio
 from ._boundary import Flag
 from ._channel import ENDMARKER
 from ._channel import NO_ENDMARKER_WANTED
+from ._channel import Endmarker
 from ._errors import GatewayReceivedTerminate
 from ._errors import RemoteError
 from ._execmodel import ExecModel
@@ -315,7 +316,7 @@ class SyncBridgeGateway(AsyncGateway):
         self,
         channel: Any,
         callback: Callable[[Any], Any],
-        endmarker: object,
+        endmarker: Endmarker,
     ) -> None:
         """Switch ``channel`` to callback mode: a loop task drains it.
 
@@ -394,7 +395,7 @@ class SyncBridgeGateway(AsyncGateway):
         channel: Any,
         inbox: trio.MemoryReceiveChannel[bytes],
         callback: Callable[[Any], Any],
-        endmarker: object,
+        endmarker: Endmarker,
         done: Flag,
     ) -> None:
         """Drain ``inbox`` into ``callback`` (each call off the loop thread).

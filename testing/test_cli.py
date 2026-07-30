@@ -14,7 +14,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -30,7 +30,7 @@ TESTTIMEOUT = 30.0
 
 
 def worker_config(**overrides: object) -> str:
-    config = {
+    config: dict[str, object] = {
         "id": "cli-test-worker",
         "profile": "thread",
         "execmodel": "thread",
@@ -89,9 +89,7 @@ class TestArgumentGrammar:
                 ["worker", "--config", "{}", "--config-fd", "0"]
             )
 
-    @pytest.mark.parametrize(
-        ("value", "expected"), [("3", (3,)), ("4,5", (4, 5))]
-    )
+    @pytest.mark.parametrize(("value", "expected"), [("3", (3,)), ("4,5", (4, 5))])
     def test_protocol_fd_accepts_one_fd_or_a_pair(
         self, value: str, expected: tuple[int, ...]
     ) -> None:
@@ -110,7 +108,7 @@ class TestArgumentGrammar:
             (":8888", ("tcp", ("localhost", 8888))),
         ],
     )
-    def test_parse_address(self, address: str, expected: tuple) -> None:
+    def test_parse_address(self, address: str, expected: tuple[str, Any]) -> None:
         from execnet._trio_worker import parse_address
 
         assert parse_address(address) == expected
@@ -168,6 +166,7 @@ class TestProtocolFd:
                 capture_output=True,
                 text=True,
                 timeout=TESTTIMEOUT,
+                check=False,
             )
         finally:
             os.close(read_fd)
@@ -208,9 +207,7 @@ class TestConfigSources:
     def test_config_file(self, tmp_path) -> None:
         path = tmp_path / "config.json"
         path.write_text(worker_config())
-        ns = _cli._build_parser().parse_args(
-            ["worker", "--config-file", str(path)]
-        )
+        ns = _cli._build_parser().parse_args(["worker", "--config-file", str(path)])
         assert _cli._load_config(ns)["id"] == "cli-test-worker"
 
     def test_no_config_source_is_an_error(self) -> None:
@@ -226,13 +223,15 @@ class TestTransportSelection:
         assert _provision.resolve_transport(spec) == expected
 
     def test_explicit_wins(self) -> None:
-        assert _provision.resolve_transport(execnet.XSpec("popen//transport=stdio")) == (
-            "stdio"
-        )
+        assert _provision.resolve_transport(
+            execnet.XSpec("popen//transport=stdio")
+        ) == ("stdio")
 
     def test_unknown_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="unknown transport"):
-            _provision.resolve_transport(execnet.XSpec("popen//transport=carrier-pigeon"))
+            _provision.resolve_transport(
+                execnet.XSpec("popen//transport=carrier-pigeon")
+            )
 
     @posix_only
     def test_socket_transport_keeps_the_protocol_off_stdio(self) -> None:
@@ -353,7 +352,7 @@ class TestServerCommand:
 
     def test_socketserver_alias_warns(self, monkeypatch: pytest.MonkeyPatch) -> None:
         called: list[list[str]] = []
-        monkeypatch.setattr(_cli, "main", lambda argv: called.append(argv))
+        monkeypatch.setattr(_cli, "main", called.append)
         with pytest.warns(DeprecationWarning, match="execnet server"):
             _cli.socketserver_main([":0", "--once"])
         assert called == [["server", ":0", "--once"]]
