@@ -25,7 +25,9 @@ from typing import TypeAlias
 from typing import overload
 
 from ._boundary import WaitBackend
+from ._channel import NO_ENDMARKER_WANTED
 from ._channel import Channel
+from ._channel import Endmarker
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
 from ._execmodel import resolve_profile
@@ -37,9 +39,6 @@ from ._xspec import XSpec
 
 if TYPE_CHECKING:
     from ._gateway import Gateway
-
-
-NO_ENDMARKER_WANTED = object()
 
 
 class Group:
@@ -379,7 +378,7 @@ class MultiChannel:
                 l.append(obj)
         return l
 
-    def make_receive_queue(self, endmarker: object = NO_ENDMARKER_WANTED):
+    def make_receive_queue(self, endmarker: Endmarker = NO_ENDMARKER_WANTED):
         try:
             return self._queue  # type: ignore[has-type]
         except AttributeError:
@@ -391,10 +390,7 @@ class MultiChannel:
                 def putreceived(obj, channel: Channel = ch) -> None:
                     self._queue.put((channel, obj))  # type: ignore[union-attr]
 
-                if endmarker is NO_ENDMARKER_WANTED:
-                    ch.setcallback(putreceived)
-                else:
-                    ch.setcallback(putreceived, endmarker=endmarker)
+                ch.setcallback(putreceived, endmarker=endmarker)
             return self._queue
 
     def waitclose(self) -> None:

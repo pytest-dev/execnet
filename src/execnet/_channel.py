@@ -8,6 +8,7 @@ off the loop thread.
 
 from __future__ import annotations
 
+import enum
 import threading
 import weakref
 from collections.abc import Callable
@@ -30,7 +31,26 @@ from ._serialize import loads_internal
 if TYPE_CHECKING:
     from ._gateway_base import BaseGateway
 
-NO_ENDMARKER_WANTED = object()
+
+class NoEndmarker(enum.Enum):
+    """Type of the "no endmarker wanted" sentinel.
+
+    An enum rather than a bare ``object()`` so it is nameable in an
+    annotation: an endmarker may be *any* object, so the only thing that
+    distinguishes "none wanted" from a legitimate endmarker is identity,
+    and a second module inventing its own ``object()`` for it would be
+    silently wrong.  ``endmarker: object | Literal[NoEndmarker.NOT_WANTED]``
+    says which sentinel a caller has to hand back.
+    """
+
+    NOT_WANTED = enum.auto()
+
+
+NO_ENDMARKER_WANTED = NoEndmarker.NOT_WANTED
+
+#: what an ``endmarker=`` parameter accepts: any object to deliver at the
+#: end, or the sentinel meaning "do not deliver one"
+Endmarker = object | Literal[NoEndmarker.NOT_WANTED]
 
 
 class Channel:
@@ -82,7 +102,7 @@ class Channel:
     def setcallback(
         self,
         callback: Callable[[Any], Any],
-        endmarker: object = NO_ENDMARKER_WANTED,
+        endmarker: Endmarker = NO_ENDMARKER_WANTED,
     ) -> None:
         """Set a callback function for receiving items.
 

@@ -27,6 +27,7 @@ from ._boundary import Wakener
 from ._boundary import make_wakener
 from ._channel import Channel
 from ._channel import ChannelFactory
+from ._channel import Endmarker
 from ._errors import INTERRUPT_TEXT
 from ._errors import geterrortext
 from ._errors import sysex
@@ -109,7 +110,7 @@ class BaseGateway:
         self,
         channel: Channel,
         callback: Callable[[Any], Any],
-        endmarker: object,
+        endmarker: Endmarker,
     ) -> None:
         """Attach a receiver callback: hand the channel to a consumer task.
 
