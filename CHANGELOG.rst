@@ -20,6 +20,12 @@
   Pass ``execnet.Host()`` as ``Group(host=...)`` (or ``AsyncGroup(host=...)``) for an
   isolated loop with deterministic teardown -- ``Host`` is a context manager and joins
   its thread on exit, where the shared one stops at interpreter exit.
+* A spec's ``profile=``/``execmodel=`` value is no longer rewritten in place when it
+  names a deprecated profile. pytest-xdist reuses one ``XSpec`` across gateways and
+  re-reads ``spec.execmodel`` to decide whether it still needs prefixing, so normalizing
+  the value it set made the second use build a spec with a duplicate key -- which broke
+  crashed-worker replacement. The spec keeps what the caller spelled; the mapping happens
+  where the value is consumed.
 * The ``execmodel=`` spec key is now ``profile=``; ``execmodel=`` remains an accepted
   alias. It always selected the *worker* profile -- where exec'd code runs relative to
   the worker's protocol loop -- while the local execution model it was named after no
@@ -48,11 +54,12 @@
   ``start()``/``aclose()`` from application lifespan hooks instead of ``async with``.
   ``open_popen_gateway`` is renamed ``open_gateway`` on both async namespaces, since it
   always accepted any spec.
-* ``execnet.dumps``, the temporary pytest-xdist compatibility shim, now warns once per
-  process rather than on every access. xdist reaches it from ``serialize_warning_message``,
-  i.e. from inside pytest's warning-recording hook, so a single ``DeprecationWarning``
-  raised in a worker made recording that warning record another, unbounded, wedging the
-  run.
+* ``execnet.dumps``, the temporary pytest-xdist compatibility shim, no longer warns.
+  xdist reaches it from ``serialize_warning_message`` -- from inside pytest's
+  warning-recording hook, once per warning a *user's* test raises. Warning there put a
+  spurious execnet ``DeprecationWarning`` in that user's warnings summary, attributed to
+  their test, about a probe only xdist can port; and warning on every access made
+  recording one warning record another, unbounded, wedging the run.
 * ``Gateway.remote_init_threads()`` raises a ``DeprecationWarning`` instead of printing
   to stdout. It has been a no-operation since execnet 1.2.
 

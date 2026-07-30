@@ -915,7 +915,7 @@ class AsyncGroup:
             # exec'd async sources as tasks.
             spec.profile = "thread"
         else:
-            spec.profile = resolve_profile(spec.profile)
+            resolve_profile(spec.profile)
         if spec.id is None:
             spec.id = "gw%d" % len(self._gateways)
         process: trio.Process | None = None

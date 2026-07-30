@@ -164,15 +164,21 @@ def worker_cli_arg(spec: Any) -> str:
     """
     import execnet
 
+    from ._execmodel import effective_profile
+
+    # the spec keeps whatever the caller spelled; the worker gets what it
+    # actually has a strategy for.  A spec that never went through a Group
+    # has no profile at all -- the default applies, as it would there.
+    profile = effective_profile(spec.profile or "thread")
     config: dict[str, Any] = {
         "id": f"{spec.id}-worker",
-        "profile": spec.profile,
+        "profile": profile,
         # pre-3.0 spelling, same value: a worker from an older execnet
         # reads this one.  Drop with the XSpec alias.
-        "execmodel": spec.profile,
+        "execmodel": profile,
         # derived, not configurable: the gevent profile parks its greenlets
         # on gevent wakeners, every other profile is thread-shaped.
-        "wait": "gevent" if spec.profile == "gevent" else "thread",
+        "wait": "gevent" if profile == "gevent" else "thread",
         "coordinator_version": execnet.__version__,
     }
     # Startup setup applied by the worker before serving (never through

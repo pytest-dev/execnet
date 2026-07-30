@@ -14,6 +14,7 @@ import trio
 from ._boundary import Mailbox
 from ._boundary import WaitBackend
 from ._errors import geterrortext
+from ._execmodel import effective_profile
 from ._execmodel import get_execmodel
 from ._gateway_base import WorkerGateway
 from ._serialize import loads_internal
@@ -439,7 +440,7 @@ def _build_worker_gateway(
     gateway._wait_backend = wait
 
     try:
-        strategy_factory = WORKER_EXEC_STRATEGIES[model.backend]
+        strategy_factory = WORKER_EXEC_STRATEGIES[effective_profile(model.backend)]
     except KeyError:
         raise ValueError(
             f"profile {model.backend!r} has no worker exec strategy "
@@ -652,6 +653,7 @@ def _main() -> None:
     # coordinator still connects.
     profile = config.get("profile") or config["execmodel"]
     wait: WaitBackend = config.get("wait", "thread")
+    profile = effective_profile(profile)
     if profile == "trio":
         # pure-async profile: one thread, the loop owns the main thread
         if ns.socket_fd is not None:
