@@ -31,6 +31,10 @@ def test_ssh_remote_command_released(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.skipif(released, reason="released execnet resolves from an index")
 @pytest.mark.skipif(not _provision.uv_available(), reason="uv required to build wheel")
+@pytest.mark.skipif(
+    not _provision.provisioning_available(),
+    reason="a dev execnet installed without its source tree cannot build a wheel",
+)
 def test_ssh_remote_command_dev_uses_a_delivered_wheel() -> None:
     # The wheel travels out of band now (its own connection, before the
     # launch), so the launch command just points uv at where it landed --
@@ -47,6 +51,10 @@ def test_ssh_remote_command_dev_uses_a_delivered_wheel() -> None:
 
 @pytest.mark.skipif(released, reason="released execnet resolves from an index")
 @pytest.mark.skipif(not _provision.uv_available(), reason="uv required to build wheel")
+@pytest.mark.skipif(
+    not _provision.provisioning_available(),
+    reason="a dev execnet installed without its source tree cannot build a wheel",
+)
 def test_wheel_delivery_command_expands_home_and_drains_stdin() -> None:
     wheel = _provision.ssh_wheel(execnet.XSpec("ssh=host//id=gw0"))
     assert wheel is not None

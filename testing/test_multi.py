@@ -15,6 +15,7 @@ import execnet
 from execnet import Gateway
 from execnet import Group
 from execnet import XSpec
+from execnet import _provision
 from execnet._channel import Channel
 from execnet._execmodel import ExecModel
 from execnet._multi import safe_terminate
@@ -232,6 +233,10 @@ class TestGroup:
         group.makegateway("popen//via=master//id=worker")
         group.terminate(1.0)
 
+    @pytest.mark.skipif(
+        not _provision.provisioning_available(),
+        reason="a via sub-spec ships provisioning material eagerly",
+    )
     def test_via_foreign_python(self) -> None:
         # A python= sub-spec through a via master: the master resolves the
         # interpreter locally (this interpreter has execnet, so the sub runs

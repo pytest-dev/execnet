@@ -392,45 +392,45 @@ gevent = [
 ]
 testing = [
     { name = "asyncssh" },
-    { name = "hatch" },
     { name = "hypothesis" },
-    { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-timeout" },
-    { name = "tox" },
     { name = "uv" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "execnet", extra = ["testing"] },
+    { name = "hatch" },
+    { name = "pre-commit" },
     { name = "pytest-xdist" },
+    { name = "tox" },
 ]
 gevent = [
     { name = "gevent" },
-]
-testing = [
-    { name = "execnet", extra = ["testing"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "asyncssh", marker = "extra == 'testing'" },
     { name = "gevent", marker = "extra == 'gevent'" },
-    { name = "hatch", marker = "extra == 'testing'" },
     { name = "hypothesis", marker = "extra == 'testing'" },
-    { name = "pre-commit", marker = "extra == 'testing'" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">8.0" },
     { name = "pytest-timeout", marker = "extra == 'testing'" },
-    { name = "tox", marker = "extra == 'testing'" },
     { name = "trio", specifier = ">=0.32" },
     { name = "uv", marker = "extra == 'testing'" },
 ]
 provides-extras = ["gevent", "testing"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest-xdist", specifier = ">=3.8.0" }]
+dev = [
+    { name = "execnet", extras = ["testing"] },
+    { name = "hatch" },
+    { name = "pre-commit" },
+    { name = "pytest-xdist", specifier = ">=3.8.0" },
+    { name = "tox" },
+]
 gevent = [{ name = "gevent", specifier = ">=26.7.0" }]
-testing = [{ name = "execnet", extras = ["testing"] }]
 
 [[package]]
 name = "filelock"
