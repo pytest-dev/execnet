@@ -1267,14 +1267,33 @@ class AsyncGroup:
             stream, process = await connect_popen_worker(spec)
         else:
             raise ValueError(f"unsupported spec for AsyncGroup: {spec!r}")
-        gateway = self._make_gateway(stream, spec)
-        gateway.remoteaddress = remoteaddress
-        await self._nursery.start(gateway._serve)
+        # From here to the registration below, the worker is running but
+        # nothing owns it yet: a failure (a cancel, most likely -- there is
+        # not much else) would leave a process the group never terminates.
+        # The connect helpers each clean up after themselves the same way;
+        # this is the seam between them and the group.
+        try:
+            gateway = self._make_gateway(stream, spec)
+            gateway.remoteaddress = remoteaddress
+            await self._nursery.start(gateway._serve)
+        except BaseException:
+            with trio.CancelScope(shield=True):
+                await self._abandon(stream, process)
+            raise
         self._gateways.append(gateway)
         if process is not None:
             self._processes[gateway] = process
             self._nursery.start_soon(self._reap_process, process)
         return gateway
+
+    async def _abandon(self, stream: ByteStream, process: trio.Process | None) -> None:
+        """Drop a worker nobody took ownership of (best effort, bounded)."""
+        with suppress(Exception):
+            await stream.aclose()
+        if process is not None:
+            with trio.move_on_after(5), suppress(Exception):
+                process.kill()
+                await process.wait()
 
     def _make_gateway(self, stream: ByteStream, spec: Any) -> AsyncGateway:
         """Construct the gateway object for a freshly connected stream.

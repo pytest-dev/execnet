@@ -229,6 +229,10 @@ class SyncBridgeGateway(AsyncGateway):
         # so the primary thread is not waiting on _done while terminate waits
         # on the primary thread draining work.
         self._done_sync.set(None)
+        if getattr(gateway, "_execpool", None) is None:
+            # a coordinator has no execution to shut down (its
+            # _terminate_execution is a no-op) and the thread hop is not free
+            return
         gateway._trace("[trio-bridge] terminating execution")
         # May sleep/SIGINT; keep it off the Trio scheduling thread.
         await trio.to_thread.run_sync(

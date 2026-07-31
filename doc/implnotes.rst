@@ -149,7 +149,20 @@ Sends from a non-host thread wait until the frame is written, so an abrupt
 ``os._exit`` cannot drop queued data.  Sends from the host thread itself
 (inside a receiver callback) only enqueue, to avoid deadlocking the writer
 task.  ``setcallback`` runs its callback on a bounded thread pool rather than
-on the loop.
+on the loop: a consumer task per channel keeps that channel's order strict
+while a slow callback blocks nothing but its own thread.  The pool is shared
+by every channel in the process and bounded (``Host(callback_threads=...)``,
+40 by default), so callbacks that wait on *each other* can fill it and stall
+the rest; work that waits belongs on a thread of its own.
+
+The host itself is not a resource that can be taken away quietly.  Closing
+it is final, and a fork leaves every inherited object dead in the child --
+both raise, because the alternative is a wait on a loop that will never run
+again (``execnet._errors.ForkedResourceError``).  For the same reason
+nothing scheduled with ``portal.post`` may raise: trio turns an exception in
+an entry-queue callback into a ``TrioInternalError`` that ends the whole
+run, so a call that loses a race with shutdown reports through its own
+result object instead.
 
 Inside the worker
 ----------------------

@@ -117,6 +117,13 @@ class Channel:
         specified the callback is eventually called with it when the channel
         closes, and ``waitclose()`` does not return until every callback
         (including the endmarker) has run.
+
+        The pool the callbacks run on is shared and bounded (40 threads by
+        default, ``Host(callback_threads=...)``).  A callback may block --
+        that is the point of running it off the loop -- but callbacks that
+        block on *each other*, directly or through a queue only another
+        callback drains, can occupy the whole pool and stall every channel in
+        the process.  Hand work that waits to a thread of your own.
         """
         self.gateway._start_channel_consumer(self, callback, endmarker)
 

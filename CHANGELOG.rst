@@ -169,6 +169,11 @@ series, once the consumers that need them have released without them.
   naming the fork. Recovery is explicit and belongs to the child: build a new
   ``Host`` and a new ``Group`` on it. A child that asks for the default host gets a
   fresh one, and it no longer inherits the parent's atexit cleanup.
+* A ``makegateway`` that fails after the worker answered its handshake no longer
+  leaves that worker running. There is a seam between the connect helpers, which
+  each clean up after themselves, and the group taking ownership of the process;
+  a failure in it (a cancellation, realistically) used to leave a worker nothing
+  would ever terminate.
 * ``Group.terminate()`` and ``Gateway.join()`` join the calls that refuse to run
   inside a running asyncio or trio loop. Both block on the host with no useful
   bound -- ``join()`` until the worker dies -- which is the stall the guard exists to
