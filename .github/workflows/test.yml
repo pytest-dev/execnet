@@ -26,6 +26,29 @@ jobs:
     - name: Build and Check Package
       uses: hynek/build-and-inspect-python-package@v2.18
 
+  # The docs build is `-W`, so a stale reference is an error, and the same
+  # env runs the doc examples as doctests -- they claim to be tested, and
+  # for years they silently were not.
+  docs:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.13"
+
+    - name: Install dependencies
+      run: pip install tox
+
+    - name: Build the docs and run the doc examples
+      run: tox run -e docs
+
   test:
 
     needs: [package]

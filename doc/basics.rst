@@ -12,6 +12,56 @@ help to manage creation and termination of sub-interpreters.
 
 .. currentmodule:: execnet
 
+
+Namespaces
+===============================================
+
+execnet has one namespace per concurrency library you drive it *from*.  All
+of them speak the same protocol to the same kind of worker; what differs is
+what a waiting call does to the caller.
+
+:mod:`execnet.sync`
+    The blocking API for plain threads.  The top-level ``execnet.*`` names
+    are aliases into it, so ``import execnet`` is this surface.
+
+:mod:`execnet.trio`
+    The trio-native API: ``AsyncGroup``, ``AsyncGateway``, ``AsyncChannel``,
+    awaited inside your own ``trio.run``.
+
+:mod:`execnet.aio`
+    The same three classes for asyncio, awaited inside your own event loop.
+
+:mod:`execnet.gevent`
+    The blocking API again, except that every wait parks the calling
+    *greenlet* rather than its OS thread.  Needs ``execnet[gevent]``.
+
+:mod:`execnet.trio` is the only surface that runs gateways *directly*, as
+tasks in your own nursery.  The other three run protocol IO on a Trio host
+thread (see `The host thread`_) and block the caller until it answers --
+which inside a running event loop would stall every task on it, so those
+calls raise ``RuntimeError`` naming the namespace to use instead.
+
+::
+
+    import trio
+    import execnet.trio
+
+    async def main():
+        async with execnet.trio.AsyncGroup() as group:
+            gateway = await group.makegateway("popen")
+            channel = await gateway.remote_exec("channel.send(6 * 7)")
+            print(await channel.receive())
+
+    trio.run(main)
+
+The rest of this page shows the blocking API.  Apart from ``async``/``await``
+and the ``Async`` prefix, the async namespaces mirror it; see
+:doc:`the namespace reference <api>` for what each one offers.
+
+This is about the *caller*.  Where remote code runs inside the worker is an
+independent choice -- see `Worker profiles`_.
+
+
 Gateways: bootstrapping Python interpreters
 ===================================================
 
@@ -24,15 +74,24 @@ passing it a gateway specification or URL.
 
 Here is an example which instantiates a simple Python subprocess::
 
+    >>> import execnet
     >>> gateway = execnet.makegateway()
 
 Gateways allow to `remote execute code`_ and
 `exchange data`_ bidirectionally.
 
+Workers are never sent their own source code: a worker imports the
+``execnet`` (and ``trio``) that is installed in the environment it runs in.
+Where that environment does not have execnet yet, it is provisioned with
+uv_ -- so a bare ``python=`` interpreter or an ssh remote needs ``uv`` on
+its ``PATH``, not a pre-installed execnet.
+
+.. _uv: https://docs.astral.sh/uv/
+
 Examples for valid gateway specifications
 -------------------------------------------
 
-* ``ssh=wyvern//python=python3.3//chdir=mycache`` specifies a Python3.3
+* ``ssh=wyvern//python=python3.13//chdir=mycache`` specifies a Python 3.13
   interpreter on the host ``wyvern``.  The remote process will have
   ``mycache`` as its current working directory.
 
@@ -57,14 +116,76 @@ Examples for valid gateway specifications
   same interpreter as the one it is initiated from and additionally
   remotely sets an environment variable ``NAME`` to ``value``.
 
-* ``socket=192.168.1.4:8888`` specifies a Python Socket server
-  process that listens on ``192.168.1.4:8888``.  Such a server can be
-  started with the ``execnet-socketserver`` console command, e.g. run
-  anywhere with ``uvx --from execnet execnet-socketserver :8888``.
+* ``socket=192.168.1.4:8888`` specifies a Python server process that
+  listens on ``192.168.1.4:8888``.  Such a server is started with the
+  ``execnet server`` command, e.g. run anywhere with
+  ``uvx --from execnet execnet server :8888``; see
+  :ref:`instantiate gateways through sockets <socket-server>`.
 
-.. versionadded:: 1.5
+.. _spec-keys:
 
-* ``vagarant_ssh`` opens a python interpreter via the vagarant ssh command
+Specification keys
+-------------------------------------------
+
+*Which interpreter to reach, and how*
+
+``popen``
+    A subprocess of this process.  The default when no other target is given.
+
+``python=PATH``
+    The interpreter to run, as a path or a ``PATH``-discoverable name.
+    Combined with ``popen``, ``ssh=`` or ``vagrant_ssh=``.
+
+``ssh=ARGS``
+    Run the worker on a host reachable by the ``ssh`` client binary.  The
+    value is passed to it as arguments, so ``ssh=-p 5000 myhost`` works.
+
+``ssh_config=PATH``
+    An ssh configuration file to pass as ``-F PATH``.
+
+``vagrant_ssh=NAME``
+    Like ``ssh=``, through ``vagrant ssh`` for the named box.
+
+``socket=HOST:PORT``
+    Connect to a running ``execnet server`` and have it spawn the worker.
+
+``via=GATEWAY-ID``
+    Create this gateway's connection *on* another gateway of the same group,
+    which then relays for it (see :doc:`proxy examples <example/test_proxy>`).
+
+``installvia=GATEWAY-ID``
+    Start a socket server through the named gateway and connect to it.
+
+*What the worker looks like*
+
+``profile=thread|trio|gevent``
+    Where exec'd code runs inside the worker; see `Worker profiles`_.
+    ``execmodel=`` is an accepted older spelling of the same key.
+
+``transport=socket|stdio``
+    Which stream carries the protocol; see `Transports`_.
+
+``stdin=``, ``stdout=``, ``stderr=``
+    What the worker does with its standard fds; see `Worker output`_.
+
+``id=NAME``
+    The gateway's id within its group, instead of an allocated ``gwN``.
+
+``chdir=PATH``
+    Working directory of the worker.  Defaults to the instantiator's
+    directory for ``popen``, and to the login home directory for ``ssh=``.
+
+``nice=N``
+    Run the worker at that ``nice`` level (POSIX).
+
+``dont_write_bytecode``
+    Pass ``-B`` to the worker interpreter.
+
+``env:NAME=value``
+    Set an environment variable in the worker.  May be repeated.
+
+Keys are separated by ``//``, may not repeat, and a key without ``=value``
+means ``True``.
 
 
 .. _`remote execute code`:
@@ -132,38 +253,145 @@ processes then you often want to call ``group.terminate()``
 yourself and specify a larger or not timeout.
 
 
-threading models: thread, main_thread_only
+.. _worker-profiles:
+
+Worker profiles
 ====================================================================
 
-.. versionadded:: 1.2 (status: experimental!)
+.. versionchanged:: 2.2
+   The ``execmodel=`` key is now spelled ``profile=`` and only ever
+   described the *worker*.  The local execution model it was named after
+   no longer exists: see `Namespaces`_ for the local choice.
 
-execnet supports "thread" and "main_thread_only" as thread models on
-each of the two sides.  You need to decide which model to use before
-you create any gateways::
+A worker's profile says where the code you ``remote_exec`` runs relative to
+the worker's own protocol loop.  Pass it per gateway::
 
-    # content of threadmodel.py
-    import execnet
-    # locally use "thread", remotely use "main_thread_only" model
-    execnet.set_execmodel("thread", "main_thread_only")
-    gw = execnet.makegateway()
-    print (gw)
-    print (gw.remote_status())
-    print (gw.remote_exec("channel.send(1)").receive())
+    >>> import execnet
+    >>> gw = execnet.makegateway("popen//profile=trio")
 
-You can execute this little test file::
+``thread`` (the default)
+    Exec'd code runs on the worker's main thread while that is free, and on
+    pool threads for anything concurrent with it.  The *first*
+    ``remote_exec`` always gets the real main thread, which is what GUI
+    loops and signal handlers need.
 
-    $ python threadmodel.py
-    <Gateway id='gw0' receive-live, thread profile, 0 active channels>
-    <RInfo 'numchannels=0, numexecuting=0, execmodel=main_thread_only'>
-    1
+``trio``
+    Exec'd code runs as a task on the worker's own Trio loop, in the single
+    thread of that process, and is handed an ``AsyncChannel``.  Sources must
+    be async -- a plain function, or a source string with no top-level
+    ``await``, is rejected rather than allowed to starve the loop.
 
-How to execute in the main thread
-------------------------------------------------
+``gevent``
+    Exec'd code runs as a greenlet on a gevent hub owning the worker's main
+    thread, so concurrent execs cooperate on that one thread.  Provisioning
+    adds the ``gevent`` requirement to the worker environment.
 
-When the remote side of a gateway uses the "thread" model, execution
-will preferably run in the main thread.  This allows GUI loops
-or other code to behave correctly.  If you, however, start multiple
-executions concurrently, they will run in non-main threads.
+``main_thread_only`` is deprecated and now behaves like ``thread``, whose
+main-thread claim is what it existed for.  Its other behaviour is gone: a
+second concurrent ``remote_exec`` used to fail the channel with
+``concurrent remote_exec would cause deadlock``, and now runs on a pool
+thread.
+
+Set the default for a whole group with ``Group(profile=...)`` or
+``group.set_profile(...)``; ``execnet.set_profile(...)`` sets it on the
+default group.
+
+
+Transports
+====================================================================
+
+.. versionadded:: 2.2
+
+The Message protocol does not have to be the worker's stdin/stdout.  The
+``transport=`` key selects:
+
+``socket`` (the default)
+    The worker gets a socket of its own for the protocol.  For ``popen`` it
+    is an inherited socketpair (a socket duplicated with ``socket.share()``
+    on Windows); for ``ssh=``/``vagrant_ssh=`` it is a unix socket forwarded
+    with ``ssh -R`` that the worker dials back on.
+
+``stdio``
+    The classic transport: the protocol *is* the worker's stdin/stdout.
+
+Requesting ``transport=socket`` where it cannot work is an error at
+``makegateway`` time naming the platform, rather than a gateway that waits
+for a worker which was never able to reach back.  That case is ssh on
+Windows, where CPython does not expose ``AF_UNIX`` and Win32-OpenSSH does
+not implement ``StreamLocal`` forwarding.
+
+
+.. _worker-output:
+
+Worker output
+====================================================================
+
+.. versionchanged:: 2.2
+   A worker's stdio belongs to the code it runs.  It used to be redirected
+   to the null device, so a remote ``print()`` went nowhere at all.
+
+With the socket transport the worker leaves fd 0/1/2 alone: remote output
+reaches your terminal (or your ``capfd``), and remote code can read *your*
+stdin.  With ``transport=stdio`` the protocol needs those fds, so the worker
+closes stdin and folds its stdout onto stderr instead of discarding both.
+
+Override any of it per gateway:
+
+===========  ==========================================  =================
+key          values                                      default
+===========  ==========================================  =================
+``stdin=``   ``inherit``, ``close``, ``devnull``         transport-defined
+``stdout=``  ``inherit``, ``devnull``, ``stderr``        transport-defined
+``stderr=``  ``inherit``, ``devnull``                    transport-defined
+===========  ==========================================  =================
+
+For example ``popen//stdin=devnull`` gives remote code an empty stdin while
+keeping its output visible.
+
+
+The host thread
+====================================================================
+
+.. versionadded:: 2.2
+
+The blocking, asyncio and gevent surfaces have no event loop of their own to
+put gateways on, so protocol IO runs on a :class:`Host`: one OS thread
+running a Trio loop, shared by every group in the process and stopped at
+interpreter exit.  You need to know it exists in two cases: it is why a
+blocking call from inside a running event loop is an error, and it is what
+you pass when you want an isolated loop with deterministic teardown::
+
+    with execnet.Host() as host:
+        group = execnet.Group(host=host)
+        ...
+        group.terminate()
+    # the thread is joined here, rather than at interpreter exit
+
+Gateways served by a host must be terminated before it closes; closing does
+not terminate them for you.  :mod:`execnet.trio` uses no host at all.
+
+
+The execnet command line
+====================================================================
+
+.. versionadded:: 2.2
+
+``execnet server [HOST:PORT] [--once]``
+    Accept gateway connections on a socket and hand each to a fresh worker
+    subprocess -- the bootstrapping point for ``socket=`` gateways.  See
+    :ref:`instantiate gateways through sockets <socket-server>`.  This
+    replaces the ``execnet-socketserver`` console script, which still works
+    and forwards here with a ``DeprecationWarning``.
+
+``execnet info``
+    Print this interpreter's execnet version, trio availability, executable,
+    platform and supported transports as JSON.  A coordinator uses it to
+    decide whether a ``python=`` interpreter can host a worker directly.
+
+``execnet worker ...``
+    The launch contract between a coordinator and the worker process it
+    starts.  You do not run this by hand; it is documented in
+    :doc:`implnotes`.
 
 
 remote_status: get low-level execution info
@@ -178,7 +406,14 @@ information from the remote side.
 
 Calling this method tells you e.g. how many execution
 tasks are queued, how many are executing and how many
-channels are active.
+channels are active::
+
+    >>> import execnet
+    >>> gw = execnet.makegateway()
+    >>> gw.remote_status()
+    <RInfo 'execmodel=thread, numchannels=0, numexecuting=0, profile=thread'>
+
+``execmodel`` repeats ``profile`` under its old name.
 
 rsync: synchronise filesystem with remote
 ===============================================================
@@ -206,8 +441,11 @@ Debugging execnet
 By setting the environment variable ``EXECNET_DEBUG`` you can
 configure a tracing mechanism:
 
-:EXECNET_DEBUG=1:  write per-process trace-files to ``execnet-debug-PID``
+:EXECNET_DEBUG=1:  write per-process trace-files to ``execnet-debug-PID`` in the system temp directory
 :EXECNET_DEBUG=2:  perform tracing to stderr (popen-gateway workers will send this to their instantiator)
+
+See :doc:`the debugging example <example/test_debug>` for what a trace
+looks like.
 
 
 .. _`dumps/loads`:

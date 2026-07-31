@@ -28,6 +28,7 @@ Next checkout the basic api and examples:
 
    examples
    basics
+   api
    changelog
 
 .. _pip: http://pypi.python.org/pypi/pip

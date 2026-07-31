@@ -1,74 +1,174 @@
-gateway_base.py
+==============================================================================
+Implementation notes
+==============================================================================
+
+How a gateway is actually built.  Everything here is internal: no name in
+this document is part of the public API, and the on-wire protocol is
+deliberately unversioned and unstandardised.
+
+The Message protocol
 ----------------------
 
-The code of this module is sent to the "other side"
-as a means of bootstrapping a Gateway object
-capable of receiving and executing code,
-and routing data through channels.
+Both sides speak a stream of Messages: a 9-byte header (type, channel id,
+payload length) followed by the payload.  ``execnet._message.FrameDecoder``
+turns arbitrary byte chunks into Messages and is sans-IO -- it never reads,
+writes or awaits -- so a receiver only has to stream bytes into it.  Payloads
+carrying channel items are encoded by ``execnet._serialize``, which handles
+builtin data plus channel references and nothing else (see
+:ref:`serialization`).
 
-Gateways operate on InputOutput objects offering
-    a write and a read(n) method.
+No source shipping
+----------------------
 
-Once bootstrapped a higher level protocol
-based on Messages is used.  Messages are serialized
-to and from InputOutput objects.  The details of this protocol
-are locally defined in this module.  There is no need
-for standardizing or versioning the protocol.
+A worker is not sent its own source.  It is launched as a command that runs
+the ``execnet`` (and ``trio``) installed in its own environment, and refuses
+a coordinator whose major/minor version differs from its own.  This is what
+makes provisioning a separate concern from connecting, and it is an
+invariant: nothing may reintroduce shipping the core over the wire.
 
-Trio host-thread IO
--------------------
+The launch contract: ``execnet worker``
+----------------------------------------
 
-``popen`` and ``ssh`` gateways run their Message protocol IO inside a
-dedicated OS thread hosting a Trio event loop
-(``execnet._trio_host.TrioHost``).  No source is sent over the wire; the
-worker is launched as ``python -m execnet._trio_worker`` and imports the
-installed ``execnet`` + ``trio`` (a rough major/minor version check guards
-against an incompatible install).  How the worker environment is obtained
-depends on the target:
+Every launcher emits the same command line, so there is exactly one way a
+worker starts::
 
-* Same-interpreter ``popen`` -> ``sys.executable -m execnet._trio_worker``.
-* A ``python=`` interpreter that already has execnet -> that interpreter
-  directly (so ``sys.executable`` is preserved).
-* A bare ``python=`` interpreter or an ``ssh`` remote -> provisioned via
-  ``uv`` (``execnet._provision``): ``uv run --with <req>`` where ``<req>``
-  is ``execnet==<ver>`` for a released coordinator or a locally-built,
-  version-cached wheel for a dev coordinator.  For an ``ssh`` remote on a
-  dev coordinator the wheel is not on the remote filesystem, so the remote
-  command is a POSIX-sh prelude that reads the wheel bytes from stdin
-  (``head -c N`` into a temp dir) and ``exec``s ``uv`` against it; the
-  coordinator streams those bytes before the Message protocol.
+    execnet worker  --protocol-stdio | --protocol-fd FD[,FD]
+                    | --protocol-connect ADDR | --protocol-listen ADDR
+                    | --protocol-share
+                    --config JSON | --config-fd FD | --config-file PATH
+                    --stdin/--stdout/--stderr DISPOSITION
 
-The worker configuration (id, execmodel, coordinator version) is passed as a
-single JSON CLI argument (``_provision.worker_cli_arg``), so every launcher
-shares one contract instead of scattered positional args.
+``ADDR`` is ``unix:/path`` or ``host:port``.  Provisioning emits ``python -m
+execnet worker ...`` for a direct interpreter launch (where the console
+script's location is not knowable) and ``execnet worker ...`` under ``uv
+run``; both are the same CLI.
 
-Coordinator and worker roles:
+The **config** (gateway id, worker profile, coordinator version, ``env:``
+values, and for ``--protocol-share`` the socket blob) is JSON.  It travels in
+argv only where argv is private to the machine: a remote argv is readable
+through ``ps`` by every user on that host, so ssh passes it on stdin with
+``--config-fd 0``.  Do not regress that.
 
-* Coordinator: ``trio.lowlevel.open_process`` (directly, or wrapped in
-  ``ssh``) plus async framed reader/writer tasks per gateway (one host
-  thread per ``Group``).  It waits for the worker's ``b"1"`` handshake
-  before starting the Message protocol.
-* Worker: ``serve_popen_trio`` adopts stdio pipe fds into Trio streams and
-  writes the handshake byte; ``remote_exec`` is scheduled from the Trio
-  nursery (``trio.to_thread`` for ``thread``, main-thread handoff for
-  ``main_thread_only``).
+Naming the transport explicitly is what frees the worker's stdio.  Once the
+protocol has a stream of its own, fd 0/1/2 belong to the code the worker
+runs, and ``--stdin/--stdout/--stderr`` say what to do with them (the
+defaults come from the transport: leave them alone for a socket, close stdin
+and fold stdout onto stderr for stdio).
 
-Sync ``Channel`` / ``Gateway`` APIs are unchanged.  Sends from non-host
-threads wait until the frame is written (so abrupt ``os._exit`` cannot drop
-queued data).  Sends from the Trio host thread (receiver callbacks) only
-enqueue, to avoid deadlocking the writer task.
+Two more subcommands round it out: ``execnet server [HOST:PORT] [--once]``
+accepts coordinator connections and hands each to a fresh worker (no code
+runs in the server process itself), and ``execnet info`` prints version,
+trio availability, executable, platform and supported transports as JSON --
+which is how a coordinator decides whether a ``python=`` interpreter can
+host a worker directly, *before* connecting to it.
 
-``socket`` and ``via`` gateways run on the Trio host too.  ``socket``
-connects a Trio TCP stream to an ``execnet-socketserver`` (itself a Trio
-listener spawning ``python -m execnet._trio_worker --socket-fd`` subprocess
-workers).  Infrastructure that used to be driven by ``remote_exec``-ing
-source is now expressed as native protocol messages handled on the target's
-Trio host: ``GATEWAY_START_SOCKET`` (installvia -> bind a one-shot listener,
-reply with its address) and ``GATEWAY_START_SUB`` (``via`` -> spawn a
-sub-worker — popen, foreign python, ssh, or vagrant — and relay its protocol
-over the request channel).
+Transports
+----------------------
 
-The Trio host is the only IO path; the legacy thread receiver and the
-source-shipping bootstrap have been removed.  The receiver task terminates
-when the remote side sends a gateway termination message or the
-IO-connection drops.
+``transport=socket`` is the default for every worker execnet spawns; the
+protocol only rides on stdin/stdout when asked to, or when nothing else can
+work.
+
+How the worker gets its protocol stream, by gateway:
+
+``popen``, POSIX
+    an inherited socketpair (``pass_fds``, ``--protocol-fd``)
+
+``popen``, Windows
+    a socket duplicated into the child pid with ``socket.share()``, the blob
+    travelling in the config (``--protocol-share``)
+
+``socket=`` / ``installvia=``
+    the server accepts the connection, then hands that socket to the worker
+    it spawns, by whichever of the two mechanisms the platform has
+
+``ssh=`` / ``vagrant_ssh=``
+    an ``ssh -R`` forwarded unix socket the worker dials back on (POSIX
+    only)
+
+Windows has no ``pass_fds``, hence ``socket.share()`` (``WSADuplicateSocket``),
+which duplicates into a *named pid* -- and the pid does not exist until the
+child does, which is why the flag is in argv while the blob follows in the
+config.  The blob is bound to that one pid, so it is inert to anything else;
+that beats handle inheritance, which would need ``close_fds=False`` and leak
+every inheritable handle to the child and its grandchildren.
+
+Hand a socket over **as a socket, never as an fd**.  Rebuilding one with
+``socket.socket(fileno=fd)`` makes the constructor re-derive family, type and
+proto by querying the handle, and PyPy on Windows cannot do that to a handle
+produced by ``WSADuplicateSocket``.
+
+ssh on Windows stays on stdio and cannot do otherwise: CPython has never
+exposed ``AF_UNIX`` there and Win32-OpenSSH does not implement
+``StreamLocal`` forwarding.  Asking for ``transport=socket`` anyway is an
+error at ``makegateway`` time rather than a gateway that waits forever.
+
+Whether a socket can be handed over at all is settled by *doing* it once --
+sharing to our own pid and rebuilding the result -- not by looking for
+``socket.share``: an implementation with the name but not a working call
+would pass the check and fail later, at the point where the only thing left
+to tell the coordinator is a closed socket.
+
+Provisioning the worker environment
+------------------------------------
+
+``execnet._provision`` decides what command to run, by target:
+
+* Same-interpreter ``popen`` -> ``sys.executable -m execnet worker``.
+* A ``python=`` interpreter whose ``execnet info`` answers -> that
+  interpreter directly, so ``sys.executable`` is preserved.
+* A bare ``python=`` interpreter or an ``ssh`` remote -> uv_:
+  ``uv run --with <req> execnet worker``, where ``<req>`` is
+  ``execnet==<version>`` for a released coordinator and a locally built,
+  version-cached wheel for a development one.  A dev coordinator's wheel is
+  not on the remote filesystem, so it is copied over its own ssh connection
+  and cached there by name before the worker is launched -- the protocol
+  stream never carries a payload.
+* ``EXECNET_PROVISION_WHEEL`` names a prebuilt wheel to use instead, which
+  is how a built artifact gets tested by the suite that built it.
+
+.. _uv: https://docs.astral.sh/uv/
+
+The Trio host thread
+----------------------
+
+Protocol IO is a Trio program.  :mod:`execnet.trio` runs it in the caller's
+own nursery; every other surface has no loop to put it on, so it runs on a
+``Host``: one OS thread running ``trio.run``, shared per process
+(``execnet._host.Host`` -> ``execnet._trio_host.TrioHost``).  ``execnet._host``
+deliberately does not ``import trio``, so ``import execnet`` does not load the
+event loop machinery.
+
+Blocking calls cross into it through ``execnet._portal`` and park on a
+wakener from ``execnet._boundary`` -- which is what makes
+:mod:`execnet.gevent` possible: same host, same tasks, a different primitive
+to park on.  Calling a blocking API from inside a running asyncio or trio
+loop would stall that loop, so it raises instead.
+
+Sends from a non-host thread wait until the frame is written, so an abrupt
+``os._exit`` cannot drop queued data.  Sends from the host thread itself
+(inside a receiver callback) only enqueue, to avoid deadlocking the writer
+task.  ``setcallback`` runs its callback on a bounded thread pool rather than
+on the loop.
+
+Inside the worker
+----------------------
+
+The worker adopts its transport, writes a single ``b"1"`` handshake byte,
+and serves the Message protocol on its own Trio loop.  Where exec'd code
+runs is the ``profile=`` axis (:ref:`worker profiles <worker-profiles>`),
+implemented as an exec strategy per profile in ``execnet._trio_worker``:
+``HybridExec`` (main thread while free, pool threads for overflow),
+``GreenletExec`` (gevent hub on the main thread) and ``TaskExec`` (tasks on
+the worker's own loop, for ``profile=trio``, which is the only profile whose
+sources must be async).
+
+Infrastructure that used to be expressed by ``remote_exec``-ing source is
+now native protocol messages handled on the target's host:
+``GATEWAY_START_SOCKET`` (``installvia=`` -- bind a one-shot listener and
+reply with its address) and ``GATEWAY_START_SUB`` (``via=`` -- spawn a
+sub-worker and relay its protocol over the request channel).  A sub-gateway
+that fails to start must not take its coordinator down with it, and a
+failure that cannot be reported must still close the connection, so the
+requesting side sees EOF instead of waiting for a handshake byte nobody will
+send.

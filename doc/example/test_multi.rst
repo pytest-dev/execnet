@@ -49,8 +49,9 @@ data immediately and without blocking execution::
     >>> ch.waitclose()
     >>> assert l == [42]
 
-Note that the callback function will be executed in the
-receiver thread and should not block or run for too long.
+The callback runs on a pool thread, one item at a time per channel and in
+order, so it may block without stalling the protocol loop -- but a channel
+whose callback blocks receives nothing further until it returns.
 
 Robustly receive results and termination notification
 -----------------------------------------------------
