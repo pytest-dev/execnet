@@ -2,11 +2,6 @@
    :align: right
 
 
-.. warning::
-
-    execnet currently is in maintenance-only mode, mostly because it is still the backend
-    of the pytest-xdist plugin. Do not use in new projects.
-
 Python_ is a mature dynamic language whose interpreters can interact with
 all major computing platforms today.
 
@@ -78,10 +73,10 @@ Known uses
 Project status
 --------------------------
 
-The project is currently in **maintenance-only mode**, with PRs fixing bugs being gracefully accepted.
-
-Currently there are no plans to improve the project further, being maintained mostly because it is
-used as backend of the popular `pytest-xdist <https://github.com/pytest-dev/pytest-xdist>`__ plugin.
+``execnet`` is the backend of the popular `pytest-xdist
+<https://github.com/pytest-dev/pytest-xdist>`__ plugin, which is both what
+keeps it maintained and the compatibility bar every change is held to.
+Bug reports and PRs are welcome; see :doc:`support`.
 
 ``execnet`` was conceived originally by `Holger Krekel`_ and is licensed under the MIT license
 since version 1.2.
