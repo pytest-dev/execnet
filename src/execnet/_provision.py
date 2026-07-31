@@ -592,14 +592,14 @@ def vagrant_ssh_argv(
 
 
 def spawn_request(spec: Any) -> dict[str, Any]:
-    """Payload for ``GATEWAY_START_SUB``: ask a via master to spawn a sub-worker.
+    """Payload for ``GATEWAY_START_SUB``: ask a via coordinator to spawn a sub-worker.
 
     Carries the sub-spec essentials plus provisioning material when the sub
     may need it (ssh or foreign python): a released coordinator sends a pip
-    requirement; a dev coordinator ships its wheel bytes for the master to
+    requirement; a dev build ships its wheel bytes for that coordinator to
     materialize into its local wheel cache.
 
-    TODO: the wheel is shipped eagerly because only the master can tell
+    TODO: the wheel is shipped eagerly because only that coordinator can tell
     whether the target interpreter already has execnet; a wheel-on-demand
     round-trip would avoid the transfer in the common provisioned case.
     """
@@ -653,14 +653,14 @@ def sub_spawn_argv(
 ) -> tuple[list[str], DeliveryStep | None]:
     """(argv, wheel delivery) spawning a requested sub-worker on this host.
 
-    Handles a ``GATEWAY_START_SUB`` request on a via master: plain popen runs
+    Handles a ``GATEWAY_START_SUB`` request on a via coordinator: plain popen runs
     this interpreter's worker module, a foreign ``python`` runs directly when
     it already has execnet and is uv-provisioned otherwise, and ``ssh`` wraps
     the remote uv command.  A shipped wheel is delivered by the returned
     step -- its own ssh connection, run before the launch -- rather than
     framed into the launch command's stdin.
 
-    The sub's protocol is relayed over its stdio by the master, so it always
+    The sub's protocol is relayed over its stdio by that coordinator, so it always
     gets the stdio transport.
     """
     config = request["config"]

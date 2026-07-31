@@ -229,8 +229,8 @@ class TestGroup:
 
     def test_terminate_with_proxying(self) -> None:
         group = Group()
-        group.makegateway("popen//id=master")
-        group.makegateway("popen//via=master//id=worker")
+        group.makegateway("popen//id=coordinator")
+        group.makegateway("popen//via=coordinator//id=worker")
         group.terminate(1.0)
 
     @pytest.mark.skipif(
@@ -238,16 +238,16 @@ class TestGroup:
         reason="a via sub-spec ships provisioning material eagerly",
     )
     def test_via_foreign_python(self) -> None:
-        # A python= sub-spec through a via master: the master resolves the
+        # A python= sub-spec through a via coordinator: it resolves the
         # interpreter locally (this interpreter has execnet, so the sub runs
         # the worker module directly, no uv provisioning).
         import sys
 
         group = Group()
         try:
-            group.makegateway("popen//id=master")
+            group.makegateway("popen//id=coordinator")
             gw = group.makegateway(
-                f"popen//python={sys.executable}//via=master//id=sub"
+                f"popen//python={sys.executable}//via=coordinator//id=sub"
             )
             channel = gw.remote_exec("channel.send(channel.receive() + 1)")
             channel.send(41)

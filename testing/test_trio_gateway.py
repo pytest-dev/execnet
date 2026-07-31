@@ -377,21 +377,21 @@ class TestAsyncGroup:
 
         trio.run(main)
 
-    def test_via_gateway_relays_through_master(self) -> None:
+    def test_via_gateway_relays_through_coordinator(self) -> None:
         async def main() -> None:
             async with AsyncGroup() as group:
-                master = await group.makegateway("popen//id=master")
-                sub = await group.makegateway("popen//via=master")
-                master_channel = await master.remote_exec(
+                coordinator = await group.makegateway("popen//id=coordinator")
+                sub = await group.makegateway("popen//via=coordinator")
+                coordinator_channel = await coordinator.remote_exec(
                     "import os; channel.send(os.getpid())"
                 )
                 sub_channel = await sub.remote_exec(
                     "import os; channel.send(os.getpid())"
                 )
-                master_pid = await master_channel.receive()
+                coordinator_pid = await coordinator_channel.receive()
                 sub_pid = await sub_channel.receive()
-                # a real second process, reached through the master's relay
-                assert sub_pid != master_pid
+                # a real second process, reached through the coordinator's relay
+                assert sub_pid != coordinator_pid
                 echo = await sub.remote_exec("channel.send(channel.receive() * 2)")
                 await echo.send(21)
                 assert await echo.receive() == 42

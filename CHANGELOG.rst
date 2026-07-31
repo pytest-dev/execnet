@@ -59,7 +59,7 @@
   there rather than failing.
 * A socket gateway that fails to start no longer takes down the gateway it
   was requested through. It ran as a task on that worker's host, so an
-  unsupported sub-gateway used to cost the master as well.
+  unsupported sub-gateway used to cost that coordinator as well.
 * ``execnet server :0`` reported a port nothing was listening on. Binding a
   wildcard host with an ephemeral port gives *each* address family its own
   random port, and only the first was reported -- so a client dialling the
