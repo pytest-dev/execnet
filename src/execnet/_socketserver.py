@@ -12,6 +12,34 @@ console command still works and forwards here with a DeprecationWarning.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from trio import SocketListener
+
+
+async def _one_port(
+    listeners: list[SocketListener], host: str | None
+) -> list[SocketListener]:
+    """Re-bind ``listeners`` so every address family shares a single port.
+
+    Asking for port 0 on a wildcard host binds each family to its *own*
+    random port -- trio documents this.  We report one address, so the other
+    family would then be listening somewhere the caller was never told
+    about, and which family gets reported first is platform-dependent:
+    IPv4 on Linux, IPv6 on Windows, where a client dialling 127.0.0.1 was
+    told a port nothing was listening on.
+    """
+    import trio
+
+    ports = {listener.socket.getsockname()[1] for listener in listeners}
+    if len(ports) < 2:
+        return listeners
+    port = listeners[0].socket.getsockname()[1]
+    for listener in listeners:
+        await listener.aclose()
+    return await trio.open_tcp_listeners(port, host=host)
+
 
 async def serve(hostport: str, once: bool) -> None:
     """Bind ``hostport`` and hand accepted connections to worker processes."""
@@ -20,7 +48,10 @@ async def serve(hostport: str, once: bool) -> None:
     from execnet import _trio_host
 
     host, _, port_str = hostport.rpartition(":")
-    listeners = await trio.open_tcp_listeners(int(port_str), host=host or None)
+    bind_host = host or None
+    listeners = await trio.open_tcp_listeners(int(port_str), host=bind_host)
+    if int(port_str) == 0:
+        listeners = await _one_port(listeners, bind_host)
     addr = listeners[0].socket.getsockname()
     # Report the bound address (port may be ephemeral) for callers to read.
     print("execnet-socketserver listening on %s %s" % (addr[0], addr[1]), flush=True)
