@@ -46,6 +46,12 @@
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* A worker that dies abruptly reports ``EOFError`` on every transport. A
+  killed peer *resets* a socket -- Windows reports ``WSAECONNRESET`` --
+  where a pipe would simply reach EOF, so the same event used to surface
+  as ``trio.BrokenResourceError`` on one transport and ``EOFError`` on the
+  other. Endmarker callbacks and ``channel._getremoteerror()`` now behave
+  the same either way.
 * ``channel.send()`` and ``channel.receive()`` check for a foreign event
   loop before they check whether the channel is still open. Calling a
   blocking API from inside a loop is a caller bug either way, and which of

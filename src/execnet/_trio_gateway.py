@@ -653,7 +653,19 @@ class AsyncGateway:
             while True:
                 try:
                     data = await self._stream.receive_some(RECEIVE_CHUNK)
-                except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
+                except trio.BrokenResourceError as exc:
+                    # A peer that died abruptly *resets* a socket -- Windows
+                    # reports WSAECONNRESET -- where a pipe would simply have
+                    # reached EOF.  Same event, so report the same thing:
+                    # callers test for EOFError, and an endmarker callback
+                    # must fire either way.
+                    if not self._closed:
+                        error = EOFError(f"connection closed: {exc}")
+                        error.__cause__ = exc
+                        self._error = error
+                    return
+                except trio.ClosedResourceError as exc:
+                    # we closed it; not the peer going away
                     if not self._closed:
                         self._error = exc
                     return
