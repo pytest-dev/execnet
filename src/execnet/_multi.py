@@ -101,6 +101,23 @@ class Group:
     def _ensure_trio_host(self) -> Any:
         return self._host._ensure_started()
 
+    def host_call(self, trio_host: Any, async_fn: Any, *args: Any) -> Any:
+        """Run ``async_fn`` on the host, parking the way this facade parks.
+
+        ``wait=thread`` keeps the KI-deferred ``portal.run`` path.  Any other
+        backend implies the caller may not own its OS thread -- a gevent hub
+        runs every other greenlet on it -- so the work becomes a host task
+        and the wait happens on a OneShot with this facade's wakener.
+        """
+        if self._wait_backend == "thread":
+            return trio_host.call(async_fn, *args)
+        from ._boundary import make_wakener
+
+        pending = trio_host.call_pending(
+            async_fn, *args, wakener=make_wakener(self._wait_backend)
+        )
+        return pending.wait()
+
     def _ensure_async_group(self) -> Any:
         """The FacadeAsyncGroup owning the async side, running on the host."""
         if self._async_group is None:
@@ -112,7 +129,7 @@ class Group:
                 async_group = _trio_host.FacadeAsyncGroup(self, host)
                 return await host._nursery.start(async_group.run)
 
-            self._async_group = host.call(_start)
+            self._async_group = self.host_call(host, _start)
         return self._async_group
 
     @property
@@ -324,23 +341,9 @@ class Group:
             self._gateways_to_join[:] = []
 
     def _host_terminate(self, timeout: float | None) -> None:
-        """Terminate the async group, parking correctly for the wait backend.
-
-        A non-thread backend implies the caller may be a greenlet: wait on
-        a OneShot instead of blocking the OS thread (which would stall the
-        hub for the whole grace).
-        """
+        """Terminate the async group, parking the way this facade parks."""
         trio_host = self._host._ensure_started()
-        if self._wait_backend == "thread":
-            trio_host.call(self._async_group.terminate, timeout)
-            return
-        from ._boundary import make_wakener
-
-        trio_host.call_pending(
-            self._async_group.terminate,
-            timeout,
-            wakener=make_wakener(self._wait_backend),
-        ).wait()
+        self.host_call(trio_host, self._async_group.terminate, timeout)
 
     def remote_exec(
         self,

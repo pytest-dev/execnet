@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import sys
 import traceback
+from contextlib import suppress
 
 #: exceptions that must never be swallowed by a broad ``except``
 sysex = (KeyboardInterrupt, SystemExit)
@@ -89,8 +90,14 @@ class RemoteError(Exception):
 
     def warn(self) -> None:
         if self.formatted != INTERRUPT_TEXT:
-            # XXX do this better
-            sys.stderr.write(f"[{os.getpid()}] Warning: unhandled {self!r}\n")
+            # A best-effort diagnostic that must not raise: it runs for a
+            # channel nobody kept a reference to, which can be on the host
+            # loop (a close replayed to a late-bound consumer) and as late
+            # as interpreter shutdown, where stderr may already be closed.
+            # An exception on the loop ends the run for every gateway.
+            with suppress(Exception):
+                # XXX do this better
+                sys.stderr.write(f"[{os.getpid()}] Warning: unhandled {self!r}\n")
 
 
 class TimeoutError(IOError):

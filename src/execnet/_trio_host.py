@@ -528,6 +528,33 @@ class SyncBridgeGateway(AsyncGateway):
         return not self._done_sync.is_set()
 
 
+#: modules trio's cross-thread machinery needs the real versions of
+_GEVENT_SENSITIVE = ("select", "socket", "thread", "queue")
+
+
+def _startup_hint() -> str:
+    """Name gevent when monkey-patching is what kept the loop from starting.
+
+    The host loop is a trio program in a side thread, and trio reaches for
+    ``select.epoll``, real sockets and a real ``SimpleQueue`` to talk to it.
+    ``gevent.monkey`` replaces those process-wide, so a patched process
+    fails somewhere inside trio with an error that says nothing about
+    gevent.
+    """
+    monkey = sys.modules.get("gevent.monkey")
+    if monkey is None:
+        return ""
+    patched = [name for name in _GEVENT_SENSITIVE if monkey.is_module_patched(name)]
+    if not patched:
+        return ""
+    return (
+        f" -- gevent has monkey-patched {', '.join(patched)}, and the host loop"
+        " needs the real ones. execnet.gevent supports a process that uses"
+        " gevent without monkey-patching these modules; its blocking waits"
+        " park the calling greenlet either way."
+    )
+
+
 class TrioHost:
     """Dedicated OS thread running ``trio.run`` for protocol IO."""
 
@@ -545,6 +572,7 @@ class TrioHost:
         self._shutdown: trio.Event | None = None
         self._started = False
         self._callback_limiter: trio.CapacityLimiter | None = None
+        self._startup_error: BaseException | None = None
 
     def start(self) -> None:
         if self._started:
@@ -552,7 +580,12 @@ class TrioHost:
         self._thread = threading.Thread(target=self._run, name=self._name, daemon=True)
         self._thread.start()
         if not self._ready.wait(timeout=30):
-            raise RuntimeError("TrioHost failed to start")
+            raise RuntimeError("TrioHost failed to start within 30s")
+        error = self._startup_error
+        if error is not None:
+            raise RuntimeError(
+                f"the execnet host loop could not start: {error!r}{_startup_hint()}"
+            ) from error
         self._started = True
 
     @property
@@ -572,7 +605,18 @@ class TrioHost:
         return self._portal is not None and self._portal.is_loop_thread()
 
     def _run(self) -> None:
-        trio.run(self._main)
+        try:
+            trio.run(self._main)
+        except BaseException as exc:
+            if self._ready.is_set():
+                # the loop was up and died later: nobody is waiting on us,
+                # so let the thread report it the loud way
+                raise
+            # start() is blocked on _ready and would otherwise wait out the
+            # full timeout and raise something generic, with the actual
+            # reason only on stderr
+            self._startup_error = exc
+            self._ready.set()
 
     async def _main(self) -> None:
         self._portal = LoopPortal()
@@ -758,16 +802,9 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
     """Create a sync-facade Gateway for ``spec`` on the group's Trio host."""
     host: TrioHost = group._ensure_trio_host()
     async_group: FacadeAsyncGroup = group._ensure_async_group()
-    if group._wait_backend == "thread":
-        bridge = host.call(async_group.makegateway, spec)
-    else:
-        # e.g. a gevent app: wait on a OneShot so only the calling
-        # greenlet parks while the gateway comes up, not the whole hub.
-        from ._boundary import make_wakener
-
-        bridge = host.call_pending(
-            async_group.makegateway, spec, wakener=make_wakener(group._wait_backend)
-        ).wait()
+    # e.g. a gevent app: only the calling greenlet parks while the gateway
+    # comes up, not the whole hub.
+    bridge = group.host_call(host, async_group.makegateway, spec)
     assert isinstance(bridge, SyncBridgeGateway)
     gw: Gateway = bridge.sync_gateway  # type: ignore[assignment]
     gw._io = SyncIOHandle(

@@ -1,9 +1,11 @@
 """The execnet.gevent facade: greenlet-parking blocking waits.
 
 Opt-in: requires the ``gevent`` dependency group (``uv sync --group
-gevent``); skipped when gevent is not installed.  No monkey-patching is
+gevent``); skipped when gevent is not installed.  Monkey-patching is not
 needed -- the wakener parks the waiting greenlet while the trio host
-thread keeps running the protocol.
+thread keeps running the protocol -- and is not supported either: the host
+loop needs the real ``select``/``socket``/``thread``/``queue``, so these
+tests run in an unpatched process and so must the facade.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ gevent = pytest.importorskip("gevent")
 
 import execnet  # noqa: E402
 import execnet.gevent  # noqa: E402
+from execnet import _trio_host  # noqa: E402
 from execnet._boundary import Flag  # noqa: E402
 from execnet._boundary import Mailbox  # noqa: E402
 from execnet._boundary import make_wakener  # noqa: E402
@@ -105,6 +108,28 @@ class TestGeventGateway:
             assert gevent.spawn(channel.receive, TESTTIMEOUT).get(TESTTIMEOUT) == 42
             ticker.get(timeout=TESTTIMEOUT)
             assert progressed == [0, 1, 2, 3, 4]
+        finally:
+            gevent.spawn(group.terminate, 5.0).get(timeout=TESTTIMEOUT)
+
+    def test_no_management_op_takes_the_blocking_portal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # the deterministic half of the test above.  TrioHost.call waits for
+        # arbitrary host-side work with the calling OS thread parked, which
+        # for a gevent caller is the hub and every greenlet on it -- so no
+        # facade path may take it.  Easy to miss for the lazily started async
+        # group, whose wait is short enough that a timing test stays green.
+        # (A bounded scheduling hop -- portal.run_sync, for the setcallback
+        # switch -- is a different thing and stays allowed.)
+        def forbidden(self: object, async_fn: object, *args: object) -> None:
+            raise AssertionError("the gevent facade used the blocking portal.run")
+
+        monkeypatch.setattr(_trio_host.TrioHost, "call", forbidden)
+        group = execnet.gevent.Group()
+        try:
+            gateway = gevent.spawn(group.makegateway, "popen").get(timeout=TESTTIMEOUT)
+            channel = gateway.remote_exec("channel.send(42)")
+            assert gevent.spawn(channel.receive, TESTTIMEOUT).get(TESTTIMEOUT) == 42
         finally:
             gevent.spawn(group.terminate, 5.0).get(timeout=TESTTIMEOUT)
 

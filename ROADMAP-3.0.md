@@ -97,7 +97,35 @@ the routing layer `_trio_host`/`_trio_worker` drive.  Underscore both
 (every caller is ours), keep `open_channel` as the async `newchannel()`,
 and add a namespace test pinning the public method set.
 
-### 4. Stale wording
+### 4. `execnet.gevent` and monkey-patching — decide what we claim
+
+The facade works in a process that uses gevent *without* monkey-patching,
+and its own promise holds there: blocking waits park the calling greenlet.
+It does **not** work once `gevent.monkey` has patched the modules trio
+reaches for from a side thread — verified in every variant:
+
+| patched | where it dies |
+|---|---|
+| `patch_all()` | `select.epoll` is removed; trio's IO manager cannot be built |
+| `patch_all(select=False)` | trio's wakeup socketpair is a gevent socket -> `EBADF` |
+| `patch_all(thread=False, socket=False, select=False)` | `queue.SimpleQueue` is gevent's; `from_thread.run` -> `LoopExit` |
+
+Which is a problem, because a real gevent application usually *does*
+monkey-patch.  The failure is now immediate and names gevent
+(`TrioHost.start` -> `_startup_hint`) rather than hanging for 30s, and the
+docs no longer imply patching is fine, so nothing is silently broken.  But
+"supported for gevent apps" is a bigger claim than "works if you drive
+gevent explicitly", and only one of them is true today.
+
+Three ways out, in increasing order of ambition: keep the honest
+limitation and document it (where we are); give the host loop the
+originals (`monkey.get_original`) everywhere trio touches the stdlib,
+which means fighting a global patch from inside a library and is likely
+unmaintainable; or let a gevent process drive gateways over a transport
+that needs no trio loop in-process at all.  Decide before 3.0, because it
+is what the namespace promises.
+
+### 5. Stale wording
 
 `_execmodel.ExecModel`'s docstring still describes the `loop=`/`exec=`/
 `wait=` axes, which were dropped before they shipped.  `_shim.REMOVED_IN`
