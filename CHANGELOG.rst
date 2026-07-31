@@ -1,5 +1,17 @@
-2.2.0 (UNRELEASED)
+3.0.0 (UNRELEASED)
 ------------------
+
+This release rebuilds execnet on an async-native Trio core.  It is a major
+release: a worker is now launched through the ``execnet`` command line
+rather than by bootstrapping source over the wire, the protocol rides a
+socket instead of the worker's stdin/stdout, and a worker's stdio belongs
+to the code it runs.
+
+**pytest-xdist keeps working unmodified.**  The deprecated names that
+released xdist reaches for -- ``execnet.gateway_base.ExecModel``,
+``execnet.dumps``, ``Group(execmodel=...)``, the ``execmodel=`` spec key --
+all still work here; they are scheduled for removal later in the 3.x
+series, once the consumers that need them have released without them.
 
 * New ``execnet`` command line, and it is now the launch contract between a
   coordinator and the worker process it starts::

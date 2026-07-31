@@ -17,8 +17,10 @@ import importlib
 import warnings
 from typing import Any
 
-#: shims are scheduled for removal in this release
-REMOVED_IN = "execnet 3.0"
+#: shims are scheduled for removal in this release -- later in the 3.x
+#: series, once the consumers that still import these names (pytest-xdist
+#: above all) have released a version that does not.
+REMOVED_IN = "a later execnet 3.x release"
 
 
 def forwarder(shim: str, moved: dict[str, str]) -> Any:

@@ -258,7 +258,7 @@ yourself and specify a larger or not timeout.
 Worker profiles
 ====================================================================
 
-.. versionchanged:: 2.2
+.. versionchanged:: 3.0
    The ``execmodel=`` key is now spelled ``profile=`` and only ever
    described the *worker*.  The local execution model it was named after
    no longer exists: see `Namespaces`_ for the local choice.
@@ -300,7 +300,7 @@ default group.
 Transports
 ====================================================================
 
-.. versionadded:: 2.2
+.. versionadded:: 3.0
 
 The Message protocol does not have to be the worker's stdin/stdout.  The
 ``transport=`` key selects:
@@ -326,7 +326,7 @@ not implement ``StreamLocal`` forwarding.
 Worker output
 ====================================================================
 
-.. versionchanged:: 2.2
+.. versionchanged:: 3.0
    A worker's stdio belongs to the code it runs.  It used to be redirected
    to the null device, so a remote ``print()`` went nowhere at all.
 
@@ -352,7 +352,7 @@ keeping its output visible.
 The host thread
 ====================================================================
 
-.. versionadded:: 2.2
+.. versionadded:: 3.0
 
 The blocking, asyncio and gevent surfaces have no event loop of their own to
 put gateways on, so protocol IO runs on a :class:`Host`: one OS thread
@@ -374,7 +374,7 @@ not terminate them for you.  :mod:`execnet.trio` uses no host at all.
 The execnet command line
 ====================================================================
 
-.. versionadded:: 2.2
+.. versionadded:: 3.0
 
 ``execnet server [HOST:PORT] [--once]``
     Accept gateway connections on a socket and hand each to a fresh worker
