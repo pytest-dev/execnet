@@ -297,6 +297,13 @@ class Group:
             # the same event-loop problem as makegateway() and receive()
             check_not_in_event_loop("Group.terminate()")
         while self or self._gateways_to_join:
+            # A coordinator is held back from this pass: a tunneled gateway
+            # rides *its* stream, and exit() ends with close_write, so
+            # exiting it first would shut the outbound side the sub's own
+            # termination frames still have to travel through.  The held-back
+            # coordinators come round on the next pass, by which point the
+            # async group has terminated them and their exit() is a no-op
+            # that only unregisters them for the join below.
             vias: set[str] = set()
             for gw in self:
                 if gw.spec.via:

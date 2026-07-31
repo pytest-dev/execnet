@@ -17,6 +17,7 @@ import trio
 import trio.testing
 
 from execnet import _errors
+from execnet import _trio_gateway
 from execnet._errors import RemoteError
 from execnet._message import Message
 from execnet._serialize import dumps_internal
@@ -397,6 +398,36 @@ class TestAsyncGroup:
                 assert await echo.receive() == 42
 
         trio.run(main)
+
+    def test_a_makegateway_that_fails_late_leaves_no_worker(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # between the handshake and the group taking ownership, the worker is
+        # running and nothing would ever terminate it -- the connect helpers
+        # clean up after themselves, but only until they return
+        spawned: list[trio.Process] = []
+        connect = _trio_gateway.connect_popen_worker
+
+        async def spy(spec: object) -> tuple[object, trio.Process]:
+            stream, process = await connect(spec)
+            spawned.append(process)
+            return stream, process
+
+        def boom(self: AsyncGroup, stream: object, spec: object) -> AsyncGateway:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(_trio_gateway, "connect_popen_worker", spy)
+        monkeypatch.setattr(AsyncGroup, "_make_gateway", boom)
+
+        async def main() -> None:
+            async with AsyncGroup() as group:
+                with pytest.raises(RuntimeError, match="boom"):
+                    await group.makegateway()
+
+        trio.run(main)
+        assert len(spawned) == 1
+        # killed and reaped, not left behind for the OS to inherit
+        assert spawned[0].returncode is not None
 
     def test_unsupported_spec_is_rejected(self) -> None:
         async def main() -> None:
