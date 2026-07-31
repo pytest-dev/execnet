@@ -117,13 +117,55 @@ docs no longer imply patching is fine, so nothing is silently broken.  But
 "supported for gevent apps" is a bigger claim than "works if you drive
 gevent explicitly", and only one of them is true today.
 
-Three ways out, in increasing order of ambition: keep the honest
-limitation and document it (where we are); give the host loop the
-originals (`monkey.get_original`) everywhere trio touches the stdlib,
-which means fighting a global patch from inside a library and is likely
-unmaintainable; or let a gevent process drive gateways over a transport
-that needs no trio loop in-process at all.  Decide before 3.0, because it
-is what the namespace promises.
+**Researched: can the host loop ignore the patches?**  For trio, only at a
+price nobody should pay; for asyncio, it is already free.
+
+Escaping gevent is harder than "use `monkey.get_original`", because the
+originals are not self-contained:
+
+- The saved `socket.socketpair` *is* the real function, but its body looks
+  up `socket` in the module namespace it was defined in — which is the
+  patched one — so it still returns gevent sockets.
+- Holding a reference taken *before* patching does not help either:
+  `gevent.monkey` sets `threading._CRLock = None` inside the real module,
+  so a pre-patch `threading.RLock` starts returning the Python lock the
+  moment the patch lands.
+- Rebinding module globals inside trio (13 of them) misses everything
+  captured when a class body ran — `attrs.Factory(threading.RLock)` in
+  trio's entry queue is exactly that.
+- And trio checks: `_entry_queue.task` asserts
+  `self.lock.__class__.__module__ == "_thread"`, deliberately, because
+  the alternative is "weird rare deadlocks".
+
+What does work is a *private* stdlib: re-execute `threading`, `socket`,
+`queue`, `selectors` and `subprocess` from source with their C
+dependencies presented unpatched, install them in `sys.modules` while trio
+imports, then restore.  Verified end to end — loop start, `from_thread`
+run, `run_sync_soon`, `to_thread`, socketpair transport, `open_process`,
+and the hub keeps ticking throughout.  The price is a second `threading`
+in the process: the host thread does not appear in the application's
+`threading.enumerate()`, `socket` identity splits in two (an
+`isinstance(sock, socket.socket)` on a socket from user code no longer
+means what it says, and `socket=`/`--protocol-share` take sockets from
+user code), and interpreter-shutdown thread joining is split across two
+registries.  That is a lot of hidden seam for one namespace.
+
+**asyncio needs none of this.**  Where gevent *deletes* `select.epoll`, it
+*replaces* `selectors.DefaultSelector` with a hub-backed one — so an
+asyncio loop in a monkey-patched process gets a working selector, patched
+sockets work in whichever hub they land in, and asyncio asserts nothing
+about primitive identity.  Verified on a fully patched process, all six
+paths execnet needs (call in, post, executor callbacks, socket IO,
+`create_subprocess_exec`, hub not stalled), in **both** shapes: the loop
+on a real OS thread, and the loop as a *greenlet on the application's own
+hub* — no host thread at all, which is the shape `execnet.gevent` would
+want anyway.
+
+So the options are now: keep the honest limitation and document it (where
+we are); adopt the private-stdlib trick and own its seams; or note that
+"a non-Trio engine" below is not only an internals port — it is also what
+makes `execnet.gevent` work in the environment gevent users actually have.
+Decide before 3.0, because it is what the namespace promises.
 
 ### 5. Stale wording
 
@@ -141,6 +183,12 @@ Two futures get conflated and have different answers:
   sans-IO `FrameDecoder`).  Tripwire: `aio.py` imports trio at module
   level for `trio.CancelScope`, so `execnet.aio.trio` is the trio module
   and an asyncio-only install could not import `execnet.aio` today.
+
+  It has a second payoff, measured rather than assumed (see the gevent
+  item above): asyncio runs *unmodified* in a monkey-patched gevent
+  process where trio cannot, on a thread or as a greenlet.  An asyncio
+  engine would hand `execnet.gevent` the environment its users actually
+  have, and could drop the host thread there entirely.
 - **A native asyncio surface** — `execnet.aio` running gateways on the
   *caller's* loop with no host thread, symmetric with `execnet.trio`.
   This one is visible in the API: `aio.AsyncGroup(host=)` and
