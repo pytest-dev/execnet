@@ -105,6 +105,112 @@ class TestSharedHost:
         assert result == b"\x00"
 
 
+class TestHostDestruction:
+    """Closing a host breaks what it served -- loudly, and without hanging.
+
+    A gateway's protocol IO lives on the host loop, so stopping that loop
+    is not a resource being freed underneath a working object: it ends the
+    connection.  Every operation that needs the loop must say so at the
+    call site rather than hang, deliver nothing silently, or quietly start
+    a second loop thread that none of the existing gateways are on.
+    """
+
+    def test_close_breaks_the_channels_it_served(self) -> None:
+        host = Host(name="execnet-host-broken-channel")
+        group = execnet.Group(host=host)
+        gateway = group.makegateway("popen")
+        channel = gateway.remote_exec("while 1: channel.send(channel.receive() + 1)")
+        channel.send(1)
+        assert channel.receive(TESTTIMEOUT) == 2
+
+        host.close()
+
+        assert not gateway.hasreceiver()
+        with pytest.raises(EOFError):
+            channel.receive(TESTTIMEOUT)
+        with pytest.raises(OSError):
+            channel.send(3)
+        # closed for receiving, so this returns instead of timing out
+        channel.waitclose(TESTTIMEOUT)
+        group.terminate(timeout=5.0)
+
+    def test_close_breaks_the_gateways_it_served(self) -> None:
+        host = Host(name="execnet-host-broken-gateway")
+        group = execnet.Group(host=host)
+        gateway = group.makegateway("popen")
+        assert gateway.remote_exec("channel.send(1)").receive(TESTTIMEOUT) == 1
+
+        host.close()
+
+        with pytest.raises(OSError):
+            gateway.newchannel()
+        with pytest.raises(OSError):
+            gateway.remote_exec("channel.send(1)")
+        # the receiver is finished, so this must not block
+        gateway.join(TESTTIMEOUT)
+        group.terminate(timeout=5.0)
+
+    def test_close_breaks_the_group_and_starts_no_second_loop(self) -> None:
+        host = Host(name="execnet-host-broken-group")
+        group = execnet.Group(host=host)
+        group.makegateway("popen")
+
+        host.close()
+
+        assert not host.running
+        with pytest.raises(RuntimeError, match="was closed"):
+            group.makegateway("popen")
+        # the failed attempt must not have resurrected a loop thread: the
+        # group's existing gateways could never be attached to it
+        assert not host.running
+        assert "execnet-host-broken-group" not in host_thread_names()
+        # cleaning up a broken group still returns
+        group.terminate(timeout=5.0)
+
+    def test_closing_is_final_even_for_an_unused_host(self) -> None:
+        host = Host(name="execnet-host-unused")
+        host.close()
+        with pytest.raises(RuntimeError, match="was closed"):
+            execnet.Group(host=host).makegateway("popen")
+
+    def test_aio_group_on_a_closed_host_raises(self) -> None:
+        host = Host(name="execnet-host-closed-aio")
+        host.close()
+
+        async def main() -> None:
+            with pytest.raises(RuntimeError, match="was closed"):
+                await execnet.aio.AsyncGroup(host=host).start()
+
+        asyncio.run(main())
+
+    def test_setcallback_after_close_fails_without_wedging_the_channel(self) -> None:
+        # the consumer task runs on the host loop, so with the loop gone
+        # there is nothing to attach to -- but the failure must land on the
+        # caller, not on the channel: a half-switched channel drops what it
+        # had buffered, refuses receive(), and makes waitclose() wait for a
+        # consumer that will never run
+        host = Host(name="execnet-host-late-callback")
+        group = execnet.Group(host=host)
+        gateway = group.makegateway("popen")
+        channel = gateway.remote_exec("channel.send(1); channel.send(2)")
+        assert channel.receive(TESTTIMEOUT) == 1
+        # everything the worker sent has arrived and is buffered by now
+        channel.waitclose(TESTTIMEOUT)
+
+        host.close()
+
+        received: list[object] = []
+        with pytest.raises(OSError, match="host loop"):
+            channel.setcallback(received.append, endmarker="END")
+        assert received == []
+        # untouched: the buffered item is still there, then EOF
+        assert channel.receive(TESTTIMEOUT) == 2
+        with pytest.raises(EOFError):
+            channel.receive(TESTTIMEOUT)
+        channel.waitclose(TESTTIMEOUT)
+        group.terminate(timeout=5.0)
+
+
 class TestEventLoopGuard:
     """Blocking on the host from inside a running loop must not hang."""
 

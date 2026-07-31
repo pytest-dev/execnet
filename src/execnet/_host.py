@@ -113,9 +113,13 @@ class Host:
         self.callback_threads = callback_threads
         self._lock = threading.Lock()
         self._trio_host: Any = None
+        self._closed = False
 
     def __repr__(self) -> str:
-        state = "running" if self._trio_host is not None else "idle"
+        if self._trio_host is not None:
+            state = "running"
+        else:
+            state = "closed" if self._closed else "idle"
         return f"<execnet.Host {self.name!r} {state}>"
 
     @property
@@ -125,6 +129,13 @@ class Host:
     def _ensure_started(self) -> Any:
         """The started :class:`~execnet._trio_host.TrioHost` (internal)."""
         with self._lock:
+            if self._closed:
+                raise RuntimeError(
+                    f"{self!r} was closed: the loop thread is gone, and with it"
+                    " every gateway and channel it served. Closing is final --"
+                    " build a new Host (and a new Group on it) instead of"
+                    " reusing this one."
+                )
             if self._trio_host is None:
                 from . import _trio_host
 
@@ -139,10 +150,15 @@ class Host:
         """Stop the loop and join the thread (no-op when not running).
 
         Gateways served by this host must already be terminated; closing
-        does not terminate them for you.
+        does not terminate them for you -- it *breaks* them, along with
+        their groups and channels: their protocol IO no longer has a loop
+        to run on.  Closing is final, so a group whose host went away
+        fails loudly instead of quietly resurrecting a second loop thread
+        that none of its gateways are attached to.
         """
         with self._lock:
             trio_host, self._trio_host = self._trio_host, None
+            self._closed = True
         if trio_host is not None:
             trio_host.stop(timeout=timeout)
 

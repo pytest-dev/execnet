@@ -345,6 +345,16 @@ class SyncBridgeGateway(AsyncGateway):
         """
 
         def switch() -> None:
+            if not self.host.is_host_thread():
+                # run_on_loop fell back to running us inline: the loop is
+                # gone, so no consumer task can ever drain this channel.
+                # Fail before touching the channel -- a half-switched channel
+                # loses its buffered items, refuses receive(), and leaves
+                # waitclose() waiting for a consumer that will never run.
+                raise OSError(
+                    f"cannot set callback on {channel!r}: the host loop has"
+                    " stopped, so nothing can deliver to it"
+                )
             mailbox = channel._mailbox
             if mailbox is None:
                 raise OSError(f"{channel!r} has callback already registered")

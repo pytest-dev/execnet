@@ -368,7 +368,12 @@ you pass when you want an isolated loop with deterministic teardown::
     # the thread is joined here, rather than at interpreter exit
 
 Gateways served by a host must be terminated before it closes; closing does
-not terminate them for you.  :mod:`execnet.trio` uses no host at all.
+not terminate them for you -- it *breaks* them.  Their protocol IO no longer
+has a loop to run on, so their channels reach EOF, sending raises, and the
+groups they belong to refuse to make new gateways.  Closing is final: a host
+cannot be reopened, and a group whose host went away needs a new host and a
+new group rather than quietly getting a second loop thread that none of its
+gateways are attached to.  :mod:`execnet.trio` uses no host at all.
 
 
 The execnet command line
