@@ -20,11 +20,12 @@
   ``import execnet, trio`` probe used to decide whether a ``python=``
   interpreter can host a worker directly.
 * The protocol no longer has to be the worker's stdin/stdout. A new
-  ``transport=socket|stdio`` spec key selects; it defaults to ``socket`` on
-  POSIX and ``stdio`` on Windows, where neither ``pass_fds`` nor ``ssh -R``
-  unix-socket forwarding is available. ``socket`` means an inherited
-  socketpair for ``popen`` and an ``ssh -R``-forwarded unix socket that the
-  worker dials back on for ``ssh=``/``vagrant_ssh=``.
+  ``transport=socket|stdio`` spec key selects, and ``socket`` is the default
+  for every worker execnet spawns itself: an inherited socketpair for
+  ``popen`` on POSIX, and a socket duplicated with ``socket.share()`` on
+  Windows. ``ssh=``/``vagrant_ssh=`` gateways use an ``ssh -R``-forwarded
+  unix socket the worker dials back on, which needs ``AF_UNIX`` and
+  ``StreamLocal`` forwarding, so those stay on ``stdio`` on Windows.
 * **A worker's stdio now belongs to the code it runs.** It used to be
   redirected to the null device so it could not corrupt the protocol, which
   meant a remote ``print()`` went nowhere at all. With the socket transport
@@ -51,12 +52,12 @@
   the two errors you got depended on whether the peer had closed yet --
   so the more useful message lost a race.
 * Whether a socket can be handed to a worker is now settled by *doing* it
-  once rather than by looking for ``socket.share``. An implementation with
-  the name but not a working call -- PyPy on Windows -- otherwise passed
-  the check and failed later, at the point where the only thing left to
-  tell the coordinator was a closed socket. Such a host now refuses the
-  request up front, and ``socket=``/``installvia=`` gateways are skipped
-  there rather than failing.
+  once -- sharing to our own pid and rebuilding the result -- rather than
+  by looking for ``socket.share``. An implementation with the name but not
+  a working call would otherwise pass the check and fail later, at the
+  point where the only thing left to tell the coordinator is a closed
+  socket. A host that genuinely cannot hand a socket over refuses the
+  request up front instead.
 * A socket gateway that fails to start no longer takes down the gateway it
   was requested through. It ran as a task on that worker's host, so an
   unsupported sub-gateway used to cost that coordinator as well.
@@ -80,10 +81,12 @@
   ``socket.share()`` (``WSADuplicateSocket``); because that needs the
   child's pid, the flag travels in argv and the blob follows in the config
   on stdin. The blob is bound to that one pid, so it is inert to anything
-  else. This makes ``transport=socket`` work on Windows for ``popen`` and
-  fixes ``socket=``/``installvia=`` gateways served from a Windows host.
-  Windows still *defaults* to ``transport=stdio``; ask for
-  ``transport=socket`` to opt in.
+  else. This makes ``transport=socket`` the Windows default too, and fixes
+  ``socket=``/``installvia=`` gateways served from a Windows host. A socket
+  is handed over *as a socket* rather than reduced to its handle: rebuilding
+  one from a bare handle makes the constructor re-derive family/type/proto
+  by querying it, which PyPy on Windows cannot do to a handle that came
+  from ``WSADuplicateSocket``.
 * ``transport=socket`` on a gateway that cannot provide it is now an error
   at ``makegateway`` time naming the platform, instead of a gateway that
   waits for a worker which was never able to reach back. ssh dial-back
@@ -95,8 +98,8 @@
   POSIX-only. Windows has no async equivalent -- trio's Windows pipe streams
   need OVERLAPPED handles registered with an IOCP, and the stdio a process
   inherits is an ordinary synchronous pipe -- so those reads and writes now
-  run in the thread pool. The socket transport, where it is available, still
-  needs no threads.
+  run in the thread pool. This only affects ``transport=stdio``; the socket
+  transport, which is the default, needs no threads.
 * New ``EXECNET_PROVISION_WHEEL`` environment variable naming a prebuilt
   wheel to provision remote workers from, instead of resolving the
   coordinator's version from an index or building one from its source tree.

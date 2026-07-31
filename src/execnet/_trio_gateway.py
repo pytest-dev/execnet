@@ -1102,9 +1102,7 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     from . import _provision
 
     transport = _provision.resolve_transport(
-        spec,
-        available=_provision.socket_handoff_available(),
-        default=_provision.default_spawn_transport(),
+        spec, available=_provision.socket_handoff_available()
     )
     if transport == "stdio":
         return await connect_command_worker(popen_worker_argv(spec))

@@ -107,35 +107,17 @@ def ssh_dialback_available() -> bool:
     return hasattr(_socket, "AF_UNIX") and not sys.platform.startswith("win")
 
 
-def default_spawn_transport() -> str:
-    """What a worker we spawn gets when the spec does not say.
-
-    Windows can *serve* the socket transport (see :func:`socket_share_required`),
-    but stdio is what has years of exercise there while sharing is new, so it
-    stays the default until the share path has CI behind it.
-    ``transport=socket`` opts in.
-    """
-    if socket_share_required():
-        return "stdio"
-    return "socket" if socket_handoff_available() else "stdio"
-
-
-def resolve_transport(
-    spec: Any, *, available: bool = True, default: str | None = None
-) -> str:
-    """The transport for ``spec``: explicit if given, else the default.
+def resolve_transport(spec: Any, *, available: bool = True) -> str:
+    """The transport for ``spec``: explicit if given, else the best available.
 
     ``available`` is the caller's capability for *its* kind of gateway --
     :func:`socket_handoff_available` for a worker we spawn,
     :func:`ssh_dialback_available` for one that has to reach back to us.
     Asking for a transport that cannot work is an error at makegateway time,
-    rather than a hang once nobody connects.  ``default`` decouples "can
-    work" from "is what you get by default".
+    rather than a hang once nobody connects.
     """
     requested: str | None = getattr(spec, "transport", None)
     if requested is None:
-        if default is not None:
-            return default
         return "socket" if available else "stdio"
     if requested not in TRANSPORTS:
         raise ValueError(f"unknown transport {requested!r} (known: {list(TRANSPORTS)})")
