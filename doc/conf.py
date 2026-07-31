@@ -92,10 +92,16 @@ intersphinx_mapping = {
 }
 
 nitpicky = True
+# private types that show up in documented signatures; the modules they
+# live in are internal, so there is nothing to link them to
 nitpick_ignore = [
-    ("py:class", "execnet.gateway_base.ChannelFileRead"),
-    ("py:class", "execnet.gateway_base.ChannelFileWrite"),
-    ("py:class", "execnet.gateway.Gateway"),
+    ("py:class", "execnet._channel.ChannelFileRead"),
+    ("py:class", "execnet._channel.ChannelFileWrite"),
+    ("py:class", "execnet._gateway.Gateway"),
+    ("py:class", "execnet._trio_gateway.ByteStream"),
+    ("py:class", "execnet._trio_gateway.RawChannel"),
+    ("py:class", "execnet._xspec.XSpec"),
+    ("py:class", "execnet.aio._HostBridge"),
 ]
 
 # -- Options for HTML output --------------------------------------------------

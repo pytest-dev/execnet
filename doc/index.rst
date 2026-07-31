@@ -28,7 +28,9 @@ a minimal and fast API targeting the following uses:
 Features
 ------------------
 
-* Automatic bootstrapping: no manual remote installation.
+* Automatic bootstrapping: a worker environment that lacks execnet is
+  provisioned with uv_, so there is no manual remote installation -- and no
+  source of our own is ever shipped over the wire.
 
 * Safe and simple serialization of Python builtin
   types for sending/receiving structured data messages;
@@ -41,12 +43,16 @@ Features
 
 * Easy creation, handling and termination of multiple processes
 
-* Well tested interactions between CPython 2.5-2.7, CPython-3.3, Jython 2.5.1
-  and PyPy interpreters.
+* One :doc:`namespace <api>` per concurrency library you drive it from:
+  threads, trio, asyncio or gevent.
+
+* Tested against CPython 3.10+ and PyPy 3.
 
 * Fully interoperable between Windows and Unix-ish systems.
 
 * Many tested :doc:`examples`
+
+.. _uv: https://docs.astral.sh/uv/
 
 Known uses
 -------------------

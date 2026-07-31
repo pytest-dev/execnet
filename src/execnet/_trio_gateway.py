@@ -398,7 +398,7 @@ class RawChannelStream:
 
 
 class AsyncChannel:
-    """Serialized object API over a :class:`RawChannel`.
+    """Serialized object API over a raw byte channel.
 
     Every payload is one dumps/loads-serialized item; close/EOF semantics
     and error propagation come from the raw layer.  Channels are
@@ -1359,7 +1359,7 @@ class AsyncGroup:
 
 @asynccontextmanager
 async def open_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGateway]:
-    """Spawn one popen worker and serve an AsyncGateway over its stdio.
+    """Spawn one worker for ``spec`` and serve an AsyncGateway to it.
 
     Runs inside the caller's own trio run -- no host thread involved.
     Convenience for a single-gateway :class:`AsyncGroup`.

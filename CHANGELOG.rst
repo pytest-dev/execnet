@@ -185,6 +185,15 @@
 * ``Gateway.remote_init_threads()`` raises a ``DeprecationWarning`` instead of printing
   to stdout. It has been a no-operation since execnet 1.2.
 
+* The documentation describes what execnet does now: worker profiles instead
+  of threading models, the spec keys (including ``transport=`` and the stdio
+  dispositions), the namespaces, the host thread, the ``execnet`` command
+  line, and a namespace reference for the async surfaces. ``tox -e docs``
+  now also *runs* the doc examples -- they had claimed to be automatically
+  tested while a ``pytest_plugins`` line in a non-top-level conftest made
+  collecting them an error -- and both it and the ``-W`` sphinx build run in
+  CI, where the docs had never been built at all.
+
 * `#380 <https://github.com/pytest-dev/execnet/pull/380>`__: Add support for Python 3.13 and 3.14, and drop EOL 3.8 and 3.9.
 * Trio host-thread Message IO for local ``popen`` + import bootstrap (coordinator and
   worker). Adds a hard ``trio`` dependency. Disable with ``EXECNET_TRIO_HOST=0``.
