@@ -20,6 +20,7 @@ import pytest
 import trio
 
 import execnet
+from execnet import _trio_host
 from execnet._errors import ForkedResourceError
 from execnet._host import Host
 from execnet._host import default_host
@@ -72,6 +73,21 @@ class TestSharedHost:
             group.makegateway("popen")
             group.terminate(timeout=5.0)
         assert not host.running
+
+    def test_a_loop_that_cannot_start_says_why(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # the loop comes up on a thread nobody is watching, so a trio.run
+        # that dies at once used to leave the caller waiting out the full
+        # 30s start timeout for a message that named nothing
+        async def boom(self: object) -> None:
+            raise RuntimeError("no event loop for you")
+
+        monkeypatch.setattr(_trio_host.TrioHost, "_main", boom)
+        host = Host(name="execnet-host-doomed")
+        with pytest.raises(RuntimeError, match="could not start") as excinfo:
+            execnet.Group(host=host).makegateway("popen")
+        assert "no event loop for you" in str(excinfo.value)
 
     def test_starting_is_lazy(self) -> None:
         host = Host(name="execnet-host-lazy")

@@ -16,9 +16,16 @@ on, so a slow ``receive`` no longer stalls the whole hub.  Requires
 gevent (``execnet[gevent]``).
 
 This is about the *caller*: the worker's own shape is the ``profile=``
-spec key, and ``profile=gevent`` is an independent choice.  Importing this
-module does not monkey-patch anything -- do that yourself, as early as
-usual.
+spec key, and ``profile=gevent`` is an independent choice.
+
+Importing this module monkey-patches nothing, and **the process it runs in
+must not have monkey-patched either**: the host loop is a Trio program on
+its own OS thread, and it needs the real ``select`` (for ``epoll``),
+``socket``, ``thread`` and ``queue``, which ``gevent.monkey`` replaces
+process-wide.  Patching is not what makes this namespace work anyway --
+its waits park the calling greenlet because they wait on a gevent
+primitive, not because the stdlib was swapped underneath them.  A host
+that cannot start in a patched process says so, and names gevent.
 """
 
 from __future__ import annotations

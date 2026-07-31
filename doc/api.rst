@@ -83,11 +83,18 @@ longer stalls the whole hub::
     channel = gateway.remote_exec("channel.send(6 * 7)")
     print(channel.receive())          # parks this greenlet, not the hub
 
-Requires ``execnet[gevent]``.  Importing it does not monkey-patch anything
--- do that yourself, as early as usual.  ``Group``, ``default_group`` and
+Requires ``execnet[gevent]``.  ``Group``, ``default_group`` and
 ``makegateway`` are this module's own; the remaining names (``Channel``,
 ``Gateway``, ``RSync``, the error types) are the ones from
 :mod:`execnet.sync`.
+
+Importing it monkey-patches nothing, and the process must not have
+monkey-patched either: protocol IO is a Trio loop on its own OS thread and
+needs the real ``select`` (for ``epoll``), ``socket``, ``thread`` and
+``queue``, which ``gevent.monkey`` replaces process-wide.  You do not need
+patching here -- the waits above park the calling greenlet because they
+wait on a gevent primitive.  A host that cannot start in a patched process
+raises and names gevent.
 
 This is about the *caller*.  Whether the worker itself runs greenlets is
 the independent ``profile=gevent`` spec key -- see

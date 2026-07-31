@@ -169,6 +169,21 @@ series, once the consumers that need them have released without them.
   naming the fork. Recovery is explicit and belongs to the child: build a new
   ``Host`` and a new ``Group`` on it. A child that asks for the default host gets a
   fresh one, and it no longer inherits the parent's atexit cleanup.
+* A host loop that cannot start now says why, immediately. It comes up on a thread
+  nobody is watching, so a ``trio.run`` that died at once left the caller waiting
+  out the full 30s start timeout and then raising something generic, with the
+  actual reason only on stderr. The failure is re-raised at the call site, and
+  when ``gevent.monkey`` is what broke it, the message says so.
+* ``execnet.gevent`` requires a process that has **not** monkey-patched. The host
+  loop is a Trio program on its own OS thread and needs the real ``select`` (for
+  ``epoll``), ``socket``, ``thread`` and ``queue``; ``gevent.monkey`` replaces
+  those process-wide. Patching was never what made the namespace work -- its waits
+  park the calling greenlet because they wait on a gevent primitive -- but the
+  documentation implied patching was fine, and it is not.
+* ``execnet.gevent``'s first ``makegateway`` no longer blocks the hub. Starting the
+  group's async side took the blocking portal call that every other management
+  operation on this facade deliberately avoids; it is short enough that the timing
+  test stayed green, which is why it survived.
 * A ``makegateway`` that fails after the worker answered its handshake no longer
   leaves that worker running. There is a seam between the connect helpers, which
   each clean up after themselves, and the group taking ownership of the process;
