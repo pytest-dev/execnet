@@ -95,7 +95,13 @@ async def adopt_socket(sock: int | Any) -> trio.SocketStream:
 
 
 class SyncIOHandle:
-    """Sync IO facade for Gateway.exit close_write and terminate wait/kill."""
+    """What is left of the sync IO object a ``Gateway`` is built around.
+
+    The Message IO itself belongs to the session, so the gateway's ``_io``
+    is down to one live duty: ``Gateway.exit`` closing the write side.
+    Waiting for and killing the worker process is the async group's
+    (``AsyncGroup._terminate_one``), which is where the process handle is.
+    """
 
     remoteaddress: str
 
@@ -104,12 +110,10 @@ class SyncIOHandle:
         execmodel: ExecModel,
         session: SyncBridgeGateway,
         *,
-        process: trio.Process | None = None,
         remoteaddress: str | None = None,
     ) -> None:
         self.execmodel = execmodel
         self._session = session
-        self._process = process
         if remoteaddress is not None:
             self.remoteaddress = remoteaddress
 
@@ -124,36 +128,6 @@ class SyncIOHandle:
 
     def close_write(self) -> None:
         self._session.request_close_write()
-
-    def wait(self) -> int | None:
-        process = self._process
-        if process is None:
-            return None
-
-        async def _wait() -> int | None:
-            # Always await wait() so the child is reaped (no zombies).
-            code: int | None = await process.wait()
-            return code
-
-        try:
-            return self._session.host_call(_wait)
-        except Exception:
-            return process.returncode
-
-    def kill(self) -> None:
-        process = self._process
-        if process is None:
-            return
-
-        async def _kill() -> None:
-            with trio.move_on_after(5):
-                process.kill()
-                await process.wait()
-
-        try:
-            self._session.host_call(_kill)
-        except Exception as exc:
-            trace("ERROR killing trio process:", exc)
 
 
 class SyncBridgeGateway(AsyncGateway):
@@ -463,21 +437,6 @@ class SyncBridgeGateway(AsyncGateway):
             )
         channel._close_from_remote(RemoteError(errortext), sendonly=False)
 
-    def host_call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
-        """Blocking host call that parks correctly for the wait backend.
-
-        ``wait=thread`` keeps the KI-deferred ``portal.run`` path; other
-        backends (gevent) wait on a OneShot with the gateway's wakener so
-        only the calling greenlet parks, not the whole hub.
-        """
-        gateway = self.sync_gateway
-        if gateway._wait_backend == "thread":
-            return self.host.call(async_fn, *args)
-        pending = self.host.call_pending(
-            async_fn, *args, wakener=gateway._new_wakener()
-        )
-        return pending.wait()
-
     def run_on_loop(self, sync_fn: Callable[[], T]) -> T:
         """Run ``sync_fn`` on the host loop, excluding dispatch interleaving.
 
@@ -655,7 +614,18 @@ class TrioHost:
                 result.set(value)
 
         def spawn() -> None:
-            self.start_soon(runner)
+            # Posted callbacks must not raise: trio turns an exception from
+            # an entry-queue callback into TrioInternalError and tears the
+            # whole loop down, taking every gateway in the process with it.
+            # A host that shut down between the post and here is exactly the
+            # failure this call already reports as a value.
+            try:
+                self.start_soon(runner)
+            except BaseException as exc:
+                error = RuntimeError("trio host was shut down")
+                error.__cause__ = exc
+                if not result.is_set():
+                    result.set_error(error)
 
         self.portal.post(spawn)
         return result
@@ -716,12 +686,6 @@ class _TempIO:
         return
 
     def close_write(self) -> None:
-        return
-
-    def wait(self) -> int | None:
-        return None
-
-    def kill(self) -> None:
         return
 
 
@@ -805,7 +769,6 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
     gw._io = SyncIOHandle(
         get_execmodel(spec.profile),
         bridge,
-        process=async_group._processes.get(bridge),
         remoteaddress=bridge.remoteaddress,
     )
     return gw

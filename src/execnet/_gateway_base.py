@@ -29,6 +29,7 @@ from ._channel import Channel
 from ._channel import ChannelFactory
 from ._channel import Endmarker
 from ._errors import INTERRUPT_TEXT
+from ._errors import ForkedResourceError
 from ._errors import geterrortext
 from ._errors import sysex
 from ._message import IO
@@ -51,7 +52,19 @@ class BaseGateway:
     #: run its own loop and talk to its channel from inside it.
     _guard_event_loop = False
 
-    def _check_event_loop(self, what: str) -> None:
+    def _check_usable(self, what: str) -> None:
+        """Refuse ``what`` when this gateway cannot possibly serve it.
+
+        Two caller bugs, checked before anything else (in particular before
+        the channel-state check, so which one you are told about does not
+        depend on whether the peer has closed yet): using a gateway that a
+        fork left behind in another process, and blocking a running event
+        loop's own thread.
+        """
+        if self._pid != os.getpid():
+            from ._errors import forked_error
+
+            raise forked_error(what, self._pid)
         if self._guard_event_loop:
             from ._host import check_not_in_event_loop
 
@@ -61,6 +74,8 @@ class BaseGateway:
         self.execmodel = io.execmodel
         self._io = io
         self.id = id
+        #: pid this gateway's connection (and its host loop) belongs to
+        self._pid = os.getpid()
         self._channelfactory = ChannelFactory(self, _startcount)
         # globals may be NONE at process-termination
         self.__trace = trace
@@ -132,6 +147,10 @@ class BaseGateway:
             try:
                 session.enqueue_message(message)
                 self._trace("sent", message)
+            except ForkedResourceError:
+                # "already closed?" would be a guess, and a wrong one
+                self._trace("failed to send", message, "(inherited by a fork)")
+                raise
             except (OSError, ValueError) as e:
                 self._trace("failed to send", message, e)
                 raise OSError("cannot send (already closed?)") from e
@@ -171,6 +190,7 @@ class BaseGateway:
 
     def join(self, timeout: float | None = None) -> None:
         """Wait for the receiver (Trio session) to terminate."""
+        self._check_usable("gateway.join()")
         self._trace("waiting for receiver to finish")
         session = self._trio_session
         if session is not None:

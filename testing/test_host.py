@@ -10,13 +10,17 @@ from __future__ import annotations
 
 import asyncio
 import os
+import select
+import signal
 import sys
 import threading
+from collections.abc import Callable
 
 import pytest
 import trio
 
 import execnet
+from execnet._errors import ForkedResourceError
 from execnet._host import Host
 from execnet._host import default_host
 
@@ -76,33 +80,142 @@ class TestSharedHost:
         assert not host.running
         assert "execnet-host-lazy" not in host_thread_names()
 
-    @pytest.mark.skipif(not hasattr(os, "fork"), reason="requires os.fork")
-    def test_forked_child_gets_a_fresh_default_host(self) -> None:
-        # the child inherits a Host object whose thread does not exist
-        # there, so the first use must build a new one
-        default_host()._ensure_started()
-        read_fd, write_fd = os.pipe()
-        pid = os.fork()
-        if pid == 0:  # pragma: no cover - runs in the child
-            code = 1
-            try:
-                os.close(read_fd)
-                child_host = default_host()
-                group = execnet.Group()
-                gateway = group.makegateway("popen")
-                got = gateway.remote_exec("channel.send(3)").receive(TESTTIMEOUT)
-                group.terminate(timeout=5.0)
-                code = 0 if (got == 3 and child_host.running) else 1
-            finally:
-                os.write(write_fd, bytes([code]))
-                os._exit(0)
-        os.close(write_fd)
+
+def run_in_fork(child: Callable[[], list[str]], timeout: float = 20.0) -> list[str]:
+    """Run ``child`` in a forked process and return the problems it reports.
+
+    The child reports rather than asserts, because an assertion there dies
+    with the child.  A child that blocks fails the test instead of hanging
+    the suite -- most of what can go wrong after a fork is a wait for a loop
+    thread that does not exist in this process.
+    """
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - runs in the child
+        problems = ["the child died before reporting"]
         try:
-            result = os.read(read_fd, 1)
-        finally:
             os.close(read_fd)
-            os.waitpid(pid, 0)
-        assert result == b"\x00"
+            problems = child()
+        except BaseException as exc:
+            problems = [f"the child raised {type(exc).__name__}: {exc}"]
+        finally:
+            with os.fdopen(write_fd, "wb") as report:
+                report.write("\n".join(problems).encode())
+            # not sys.exit: the parent's atexit handlers are not ours to run
+            os._exit(0)
+    os.close(write_fd)
+    chunks: list[bytes] = []
+    try:
+        if not select.select([read_fd], [], [], timeout)[0]:
+            os.kill(pid, signal.SIGKILL)
+            pytest.fail(f"the forked child was still blocked after {timeout}s")
+        while chunk := os.read(read_fd, 4096):
+            chunks.append(chunk)
+    finally:
+        os.close(read_fd)
+        os.waitpid(pid, 0)
+    return [line for line in b"".join(chunks).decode().splitlines() if line]
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="requires os.fork")
+class TestFork:
+    """Nothing execnet builds survives a fork, and it says so.
+
+    The host's loop thread is not duplicated into the child and the worker
+    connections belong to the parent, so every inherited object is dead
+    there.  Dead has to mean "raises and names the fork": the token of the
+    parent's loop still *accepts* work in the child, so without a check the
+    child waits forever for a reply nobody will send.  Recovery is the
+    child's to make explicitly, by building a new host and group.
+    """
+
+    def test_a_new_group_in_the_child_works(self) -> None:
+        # the recovery path: default_host() hands a child its own Host
+        default_host()._ensure_started()
+
+        def child() -> list[str]:
+            problems = []
+            if default_host().running:
+                problems.append("the inherited default host claims to run here")
+            group = execnet.Group()
+            gateway = group.makegateway("popen")
+            got = gateway.remote_exec("channel.send(3)").receive(TESTTIMEOUT)
+            if got != 3:
+                problems.append(f"a fresh group returned {got!r}")
+            if not group.host.running:
+                problems.append("the child's own host is not running")
+            group.terminate(timeout=5.0)
+            return problems
+
+        assert run_in_fork(child) == []
+
+    def test_inherited_channels_and_gateways_are_dead(self) -> None:
+        group = execnet.Group()
+        gateway = group.makegateway("popen")
+        channel = gateway.remote_exec("while 1: channel.send(channel.receive())")
+        channel.send(1)
+        assert channel.receive(TESTTIMEOUT) == 1
+
+        def child() -> list[str]:
+            problems: list[str] = []
+
+            def expect_forked(what: str, call: Callable[[], object]) -> None:
+                try:
+                    call()
+                except ForkedResourceError as exc:
+                    if "fork" not in str(exc):
+                        problems.append(f"{what}: does not mention the fork: {exc}")
+                except BaseException as exc:
+                    problems.append(f"{what}: {type(exc).__name__}: {exc}")
+                else:
+                    problems.append(f"{what}: did not raise")
+
+            expect_forked("channel.send()", lambda: channel.send(2))
+            expect_forked("channel.receive()", lambda: channel.receive(TESTTIMEOUT))
+            expect_forked("channel.waitclose()", lambda: channel.waitclose(5.0))
+            expect_forked("gateway.remote_exec()", lambda: gateway.remote_exec("pass"))
+            expect_forked("gateway.join()", lambda: gateway.join(5.0))
+            expect_forked("group.terminate()", lambda: group.terminate(timeout=5.0))
+            return problems
+
+        assert run_in_fork(child) == []
+        # ... and the parent's own gateway is untouched by all of that
+        channel.send(2)
+        assert channel.receive(TESTTIMEOUT) == 2
+        group.terminate(timeout=5.0)
+
+    def test_the_inherited_default_group_is_dead(self) -> None:
+        # the module-level convenience group is built at import time, so it
+        # is always one of the objects a fork leaves behind
+        execnet.makegateway("popen")
+
+        def child() -> list[str]:
+            try:
+                execnet.makegateway("popen")
+            except ForkedResourceError as exc:
+                return [] if "fork" in str(exc) else [f"unclear message: {exc}"]
+            except BaseException as exc:
+                return [f"raised {type(exc).__name__}: {exc}"]
+            return ["execnet.makegateway() did not raise"]
+
+        assert run_in_fork(child) == []
+        execnet.default_group.terminate(timeout=5.0)
+
+    def test_the_child_does_not_run_the_parents_cleanup(self) -> None:
+        group = execnet.Group()
+        group.makegateway("popen")
+
+        def child() -> list[str]:
+            # what atexit would call in the child: the parent's gateways are
+            # not ours to terminate, and trying would raise from an exit hook
+            group._cleanup_atexit()
+            if not len(group):
+                return ["the child unregistered the parent's gateways"]
+            return []
+
+        assert run_in_fork(child) == []
+        assert group[0].remote_exec("channel.send(4)").receive(TESTTIMEOUT) == 4
+        group.terminate(timeout=5.0)
 
 
 class TestHostDestruction:
@@ -211,6 +324,64 @@ class TestHostDestruction:
         group.terminate(timeout=5.0)
 
 
+class TestPostedCallbacks:
+    """Work posted to the loop must never raise *on* the loop.
+
+    Trio turns an exception from an entry-queue callback into a
+    TrioInternalError and tears the whole run down -- so one call losing a
+    race with shutdown would take every gateway in the process with it, and
+    tell the user to file a trio bug.  A host that is already going away is
+    an ordinary failure of that one call.
+    """
+
+    def test_a_call_racing_shutdown_reports_instead_of_killing_the_loop(
+        self,
+    ) -> None:
+        host = Host(name="execnet-host-late-call")
+        group = execnet.Group(host=host)
+        gateway = group.makegateway("popen")
+        trio_host = host._ensure_started()
+
+        async def never() -> None:  # pragma: no cover - never spawned
+            raise AssertionError("should not run")
+
+        nursery, trio_host._nursery = trio_host._nursery, None
+        try:
+            # the window between the root nursery closing and the run ending
+            pending = trio_host.call_pending(never)
+            with pytest.raises(RuntimeError, match="shut down"):
+                pending.wait(TESTTIMEOUT)
+        finally:
+            trio_host._nursery = nursery
+
+        assert trio_host._thread is not None and trio_host._thread.is_alive()
+        assert gateway.remote_exec("channel.send(7)").receive(TESTTIMEOUT) == 7
+        group.terminate(timeout=5.0)
+        host.close()
+
+    def test_an_aio_call_racing_shutdown_reports_instead_of_killing_the_loop(
+        self,
+    ) -> None:
+        host = Host(name="execnet-host-late-aio-call")
+
+        async def main() -> None:
+            async with execnet.aio.AsyncGroup(host=host) as group:
+                gateway = await group.makegateway("popen")
+                trio_host = host._ensure_started()
+                nursery, trio_host._nursery = trio_host._nursery, None
+                try:
+                    with pytest.raises(RuntimeError, match="shut down"):
+                        await gateway.remote_exec("channel.send(1)")
+                finally:
+                    trio_host._nursery = nursery
+                assert trio_host._thread is not None and trio_host._thread.is_alive()
+                channel = await gateway.remote_exec("channel.send(7)")
+                assert await channel.receive() == 7
+
+        asyncio.run(main())
+        host.close()
+
+
 class TestEventLoopGuard:
     """Blocking on the host from inside a running loop must not hang."""
 
@@ -245,6 +416,26 @@ class TestEventLoopGuard:
             asyncio.run(main())
             # still usable from a plain thread afterwards
             assert channel.receive(TESTTIMEOUT) == 1
+        finally:
+            group.terminate(timeout=5.0)
+
+    def test_terminate_and_join_inside_asyncio_raise(self) -> None:
+        # both block on the host with no bound worth waiting out: join()
+        # until the worker dies, terminate() for the whole grace
+        group = execnet.Group()
+        try:
+            gateway = group.makegateway("popen")
+
+            async def main() -> None:
+                with pytest.raises(RuntimeError, match=r"execnet\.aio"):
+                    gateway.join(TESTTIMEOUT)
+                with pytest.raises(RuntimeError, match=r"execnet\.aio"):
+                    group.terminate(timeout=5.0)
+                # an empty group has nothing to block on, so cleaning one up
+                # from inside a loop stays allowed
+                execnet.Group().terminate(timeout=5.0)
+
+            asyncio.run(main())
         finally:
             group.terminate(timeout=5.0)
 

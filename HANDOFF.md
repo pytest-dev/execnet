@@ -152,6 +152,17 @@ the coordinator's shape does not dictate the worker's.
   `portal.run` (KI-deferred) is only for management ops.
 - A killed worker is `EOFError` on every transport — a dead peer *resets*
   a socket where a pipe reaches EOF, and the reader maps that.
+- **Nothing posted through the portal may raise.**  Trio turns an exception
+  from an entry-queue callback into `TrioInternalError` and tears the whole
+  run down, so one call losing a race with shutdown takes every gateway in
+  the process with it — and tells the user to file a trio bug.  A posted
+  callback reports through its `OneShot`/future instead.
+- A host that goes away breaks what it served, loudly.  `Host.close()` is
+  final (no second loop thread the existing gateways are not on), and
+  nothing survives `os.fork()`: the parent loop's token still *accepts*
+  work in a child, so `LoopPortal` and `BaseGateway._check_usable` compare
+  pids and raise `ForkedResourceError` rather than let the child wait for a
+  reply nobody will send.  Recovery after a fork is the child's, explicitly.
 
 **Launch and provisioning**
 
@@ -181,9 +192,9 @@ the coordinator's shape does not dictate the worker's.
   through.  It runs as a task on that coordinator's host; letting it
   propagate cost the coordinator too, which is how one unsupported
   gateway became 51 errors.
-- `_check_event_loop` runs *before* the channel-state check in
-  `send`/`receive`.  Both are caller bugs, but which one you were told
-  about used to depend on whether the peer had closed yet.
+- `_check_usable` (fork, then event loop) runs *before* the channel-state
+  check in `send`/`receive`.  All of them are caller bugs, but which one you
+  were told about used to depend on whether the peer had closed yet.
 - Anything that warns in a *worker* can livelock a pytest run: a warning
   raised inside pytest's warning-recording hook records a warning.  The
   `execnet.dumps` shim warns once per process for exactly this reason.

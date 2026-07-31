@@ -306,7 +306,7 @@ class Channel:
         # For a callback channel wait on the consumer task finishing (so every
         # callback, including the endmarker, has run); otherwise wait for the
         # non-"opened" state directly.
-        self.gateway._check_event_loop("channel.waitclose()")
+        self.gateway._check_usable("channel.waitclose()")
         signal = (
             self._consumer_done
             if self._consumer_done is not None
@@ -328,10 +328,11 @@ class Channel:
 
         OSError is raised if the write pipe was prematurely closed.
         """
-        # before the state check: calling a blocking API from inside an event
-        # loop is a bug in the caller either way, and whether the channel has
-        # closed yet is a race -- the diagnostic should not depend on it
-        self.gateway._check_event_loop("channel.send()")
+        # before the state check: an unusable gateway (inherited by a fork,
+        # or driven from inside an event loop) is a caller bug either way,
+        # and whether the channel has closed yet is a race -- the diagnostic
+        # should not depend on it
+        self.gateway._check_usable("channel.send()")
         if self.isclosed():
             raise OSError(f"cannot send to {self!r}")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
@@ -347,7 +348,7 @@ class Channel:
         reraised as channel.RemoteError exceptions containing
         a textual representation of the remote traceback.
         """
-        self.gateway._check_event_loop("channel.receive()")
+        self.gateway._check_usable("channel.receive()")
         mailbox = self._mailbox
         if mailbox is None:
             raise OSError("cannot receive(), channel has receiver callback")

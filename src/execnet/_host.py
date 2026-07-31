@@ -30,6 +30,8 @@ from types import TracebackType
 from typing import TYPE_CHECKING
 from typing import Any
 
+from ._errors import forked_error
+
 if TYPE_CHECKING:
     from typing_extensions import Self
 
@@ -114,17 +116,21 @@ class Host:
         self._lock = threading.Lock()
         self._trio_host: Any = None
         self._closed = False
+        #: pid the loop thread was started in; a fork does not copy it
+        self._pid: int | None = None
 
     def __repr__(self) -> str:
-        if self._trio_host is not None:
-            state = "running"
-        else:
-            state = "closed" if self._closed else "idle"
-        return f"<execnet.Host {self.name!r} {state}>"
+        return f"<execnet.Host {self.name!r} {self._state()}>"
+
+    def _state(self) -> str:
+        if self._trio_host is None:
+            return "closed" if self._closed else "idle"
+        return "running" if self._pid == os.getpid() else "inherited"
 
     @property
     def running(self) -> bool:
-        return self._trio_host is not None
+        """Whether this host has a loop thread *in this process*."""
+        return self._state() == "running"
 
     def _ensure_started(self) -> Any:
         """The started :class:`~execnet._trio_host.TrioHost` (internal)."""
@@ -136,6 +142,11 @@ class Host:
                     " build a new Host (and a new Group on it) instead of"
                     " reusing this one."
                 )
+            if self._trio_host is not None and self._pid != os.getpid():
+                # Recovery after a fork is the child's to make explicitly:
+                # silently starting a second loop here would hand back a Host
+                # that none of the inherited gateways are attached to.
+                raise forked_error(f"{self!r}", self._pid)  # type: ignore[arg-type]
             if self._trio_host is None:
                 from . import _trio_host
 
@@ -143,6 +154,7 @@ class Host:
                     name=self.name, callback_threads=self.callback_threads
                 )
                 trio_host.start()
+                self._pid = os.getpid()
                 self._trio_host = trio_host
             return self._trio_host
 
@@ -184,7 +196,12 @@ def default_host() -> Host:
     """The process-wide host, started lazily and stopped at interpreter exit.
 
     After ``os.fork()`` the child inherits a Host whose thread does not
-    exist there, so the first use in a child builds a fresh one.
+    exist there, so a child asking for the default host gets a fresh one
+    and can build new groups on it.  What it does *not* get is the
+    inherited one working again: everything already attached to that host
+    -- the pre-fork groups, gateways and channels, including the
+    module-level ``execnet.makegateway`` group -- stays dead in the child
+    and says so (:class:`~execnet._errors.ForkedResourceError`).
     """
     global _default, _default_pid
     with _default_lock:
