@@ -475,12 +475,6 @@ class _WorkerIOStub:
     def close_write(self) -> None:
         return
 
-    def wait(self) -> int | None:
-        return None
-
-    def kill(self) -> None:
-        return
-
 
 def _build_worker_gateway(
     host: _trio_host.TrioHost,

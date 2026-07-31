@@ -371,7 +371,7 @@ class TestPureChannel:
             _trio_session = None
             _new_wakener = staticmethod(_boundary.ThreadWakener)
 
-            def _check_event_loop(self, what: str) -> None:
+            def _check_usable(self, what: str) -> None:
                 pass
 
             def _trace(self, *args) -> None:

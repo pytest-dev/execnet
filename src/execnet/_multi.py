@@ -7,6 +7,7 @@ Managing Gateway Groups and interactions with multiple channels.
 from __future__ import annotations
 
 import atexit
+import os
 import queue
 import threading
 import time
@@ -83,6 +84,8 @@ class Group:
         self._autoidcounter = 0
         self._autoidlock = Lock()
         self._gateways_to_join: list[Gateway] = []
+        #: pid this group belongs to; a fork does not carry its gateways over
+        self._pid = os.getpid()
         self._host = default_host() if host is None else host
         self._async_group: Any = None
         self.set_profile("thread" if profile is None else profile)
@@ -268,6 +271,10 @@ class Group:
     def _cleanup_atexit(self) -> None:
         # The host is shared and stops itself at exit; a group only owns
         # its gateways and the async group task running on that host.
+        if self._pid != os.getpid():
+            # a forked child inherited this registration along with a group
+            # whose gateways are the parent's to terminate, not ours
+            return
         trace(f"=== atexit cleanup {self!r} ===")
         self.terminate(timeout=1.0)
         if self._async_group is not None:
@@ -285,6 +292,10 @@ class Group:
         Timeout defaults to None meaning open-ended waiting and no kill
         attempts.
         """
+        if self or self._gateways_to_join:
+            # blocks on the host (termination grace, then joins), so it has
+            # the same event-loop problem as makegateway() and receive()
+            check_not_in_event_loop("Group.terminate()")
         while self or self._gateways_to_join:
             vias: set[str] = set()
             for gw in self:

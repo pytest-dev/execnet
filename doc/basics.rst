@@ -375,6 +375,13 @@ cannot be reopened, and a group whose host went away needs a new host and a
 new group rather than quietly getting a second loop thread that none of its
 gateways are attached to.  :mod:`execnet.trio` uses no host at all.
 
+``os.fork()`` is the same situation arriving by surprise: the loop thread is
+not duplicated into the child and the worker connections belong to the
+parent, so every group, gateway and channel the child inherits is dead there
+and raises rather than waiting on a loop that will never run again.  A child
+that wants gateways of its own builds a new group -- and gets a fresh host
+with it.
+
 
 The execnet command line
 ====================================================================

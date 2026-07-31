@@ -154,6 +154,25 @@ series, once the consumers that need them have released without them.
   Pass ``execnet.Host()`` as ``Group(host=...)`` (or ``AsyncGroup(host=...)``) for an
   isolated loop with deterministic teardown -- ``Host`` is a context manager and joins
   its thread on exit, where the shared one stops at interpreter exit.
+
+  Closing a host is final, and it *breaks* the groups, gateways and channels it
+  served rather than freeing a resource underneath them: their protocol IO has no
+  loop to run on any more, so channels reach EOF, sends raise, and the group refuses
+  to build new gateways instead of quietly starting a second loop thread that none of
+  its existing gateways are attached to.
+* execnet objects do not survive ``os.fork()``, and now say so instead of blocking.
+  The host's loop thread is not duplicated into the child and the worker connections
+  belong to the parent, but the parent loop's trio token still *accepts* work in the
+  child -- so a forked child using an inherited group, gateway or channel (including
+  the module-level ``execnet.makegateway``) used to wait forever for a reply nobody
+  would send. Every route to the host now checks which process it is in and raises,
+  naming the fork. Recovery is explicit and belongs to the child: build a new
+  ``Host`` and a new ``Group`` on it. A child that asks for the default host gets a
+  fresh one, and it no longer inherits the parent's atexit cleanup.
+* ``Group.terminate()`` and ``Gateway.join()`` join the calls that refuse to run
+  inside a running asyncio or trio loop. Both block on the host with no useful
+  bound -- ``join()`` until the worker dies -- which is the stall the guard exists to
+  turn into an error. Terminating a group with nothing in it stays allowed.
 * A spec's ``profile=``/``execmodel=`` value is no longer rewritten in place when it
   names a deprecated profile. pytest-xdist reuses one ``XSpec`` across gateways and
   re-reads ``spec.execmodel`` to decide whether it still needs prefixing, so normalizing

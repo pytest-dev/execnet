@@ -140,7 +140,17 @@ class _HostBridge:
             post_result(result, None)
 
         def spawn() -> None:
-            self._host.start_soon(runner)
+            # Posted callbacks must not raise: trio turns an exception from
+            # an entry-queue callback into TrioInternalError and tears the
+            # whole host loop down, taking every other group with it.  A
+            # host that shut down between the post and here resolves the
+            # future instead, like every other host-side failure.
+            try:
+                self._host.start_soon(runner)
+            except BaseException as exc:
+                error = RuntimeError("execnet aio host was shut down")
+                error.__cause__ = exc
+                post_result(None, error)
 
         try:
             self._host.portal.post(spawn)

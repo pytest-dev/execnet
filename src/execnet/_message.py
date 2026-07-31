@@ -28,6 +28,14 @@ class ReadIO(Protocol):
 
 
 class IO(Protocol):
+    """What a gateway still needs from the object it was built around.
+
+    Reading and writing moved to the Trio session long ago; what is left is
+    the write-side close behind ``Gateway.exit``.  Waiting for and killing a
+    worker process belongs to whoever holds the process handle -- the async
+    group -- not here.
+    """
+
     execmodel: ExecModel
 
     def read(self, numbytes: int, /) -> bytes: ...
@@ -37,10 +45,6 @@ class IO(Protocol):
     def close_read(self) -> None: ...
 
     def close_write(self) -> None: ...
-
-    def wait(self) -> int | None: ...
-
-    def kill(self) -> None: ...
 
 
 class Message:
