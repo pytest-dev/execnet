@@ -656,8 +656,10 @@ class ShareTransport:
 
         assert self._blob is not None, "adopt() first"
         sock = _socket.fromshare(self._blob)  # type: ignore[attr-defined]  # Windows
-        # adopt_socket takes ownership of the fd and sends the handshake
-        return await _trio_host.adopt_socket(sock.detach())
+        # hand over the socket itself, not its fd: fromshare() already knows
+        # what this socket is, and making adopt_socket re-derive that from
+        # the bare handle is what PyPy on Windows cannot do
+        return await _trio_host.adopt_socket(sock)
 
 
 class FdTransport:

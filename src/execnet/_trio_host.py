@@ -72,15 +72,23 @@ T = TypeVar("T")
 ssh_trio_args = ssh_transport_args
 
 
-async def adopt_socket(socket_fd: int) -> trio.SocketStream:
-    """Worker side: wrap an inherited socket fd and send the handshake.
+async def adopt_socket(sock: int | Any) -> trio.SocketStream:
+    """Worker side: wrap an inherited socket and send the handshake.
+
+    Takes an fd or an already-built socket.  Rebuilding one from its fd
+    makes the constructor *detect* family/type/proto by querying the
+    handle, which is not free and not universally reliable -- PyPy on
+    Windows raises ``WinError 10014`` doing it to a handle that arrived
+    from ``socket.fromshare()``.  A caller holding a real socket should
+    hand it over rather than reduce it to an integer first.
 
     Runs on the Trio host loop.  The coordinator waits for ``b"1"`` before
     starting the Message protocol; the worker config comes from the CLI.
     """
     import socket as _socket
 
-    sock = _socket.socket(fileno=socket_fd)
+    if isinstance(sock, int):
+        sock = _socket.socket(fileno=sock)
     stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
     await stream.send_all(b"1")
     return stream
