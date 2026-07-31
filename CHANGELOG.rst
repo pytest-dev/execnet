@@ -45,6 +45,21 @@
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* ``channel.send()`` and ``channel.receive()`` check for a foreign event
+  loop before they check whether the channel is still open. Calling a
+  blocking API from inside a loop is a caller bug either way, and which of
+  the two errors you got depended on whether the peer had closed yet --
+  so the more useful message lost a race.
+* Whether a socket can be handed to a worker is now settled by *doing* it
+  once rather than by looking for ``socket.share``. An implementation with
+  the name but not a working call -- PyPy on Windows -- otherwise passed
+  the check and failed later, at the point where the only thing left to
+  tell the coordinator was a closed socket. Such a host now refuses the
+  request up front, and ``socket=``/``installvia=`` gateways are skipped
+  there rather than failing.
+* A socket gateway that fails to start no longer takes down the gateway it
+  was requested through. It ran as a task on that worker's host, so an
+  unsupported sub-gateway used to cost the master as well.
 * ``execnet server :0`` reported a port nothing was listening on. Binding a
   wildcard host with an ephemeral port gives *each* address family its own
   random port, and only the first was reported -- so a client dialling the

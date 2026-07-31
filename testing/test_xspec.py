@@ -253,6 +253,10 @@ class TestMakegateway:
         assert rinfo.cwd == rinfo2.cwd
         assert rinfo.version_info == rinfo2.version_info
 
+    @pytest.mark.skipif(
+        not _provision.socket_handoff_available(),
+        reason="the server must hand the accepted socket to a worker process",
+    )
     def test_socket_installvia(self) -> None:
         group = execnet.Group()
         group.makegateway("popen//id=p1")

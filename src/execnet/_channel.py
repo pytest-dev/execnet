@@ -328,9 +328,12 @@ class Channel:
 
         OSError is raised if the write pipe was prematurely closed.
         """
+        # before the state check: calling a blocking API from inside an event
+        # loop is a bug in the caller either way, and whether the channel has
+        # closed yet is a race -- the diagnostic should not depend on it
+        self.gateway._check_event_loop("channel.send()")
         if self.isclosed():
             raise OSError(f"cannot send to {self!r}")
-        self.gateway._check_event_loop("channel.send()")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
     def receive(self, timeout: float | None = None) -> Any:
@@ -344,10 +347,10 @@ class Channel:
         reraised as channel.RemoteError exceptions containing
         a textual representation of the remote traceback.
         """
+        self.gateway._check_event_loop("channel.receive()")
         mailbox = self._mailbox
         if mailbox is None:
             raise OSError("cannot receive(), channel has receiver callback")
-        self.gateway._check_event_loop("channel.receive()")
         x = mailbox.get(timeout)
         if x is ENDMARKER:
             mailbox.put(x)  # for other receivers

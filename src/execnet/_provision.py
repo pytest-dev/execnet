@@ -43,6 +43,7 @@ _RELEASED_RE = re.compile(r"^\d+\.\d+\.\d+$")
 TRANSPORTS = ("socket", "stdio")
 
 
+@cache
 def socket_handoff_available() -> bool:
     """Whether we can hand a socket to a worker process we spawn ourselves.
 
@@ -51,11 +52,26 @@ def socket_handoff_available() -> bool:
     (``WSADuplicateSocket``) duplicates the socket into a named pid, and the
     resulting blob rides in the worker config -- see the ``share`` transport
     in ``_trio_worker``.
+
+    The Windows answer is settled by *doing* it once, against our own pid,
+    rather than by looking for the method.  An implementation that has the
+    name but not a working call -- PyPy on Windows -- would otherwise pass
+    the check and fail at the point where the only thing left to tell the
+    coordinator is a closed socket.
     """
     import socket as _socket
 
-    if sys.platform.startswith("win"):
-        return hasattr(_socket.socket, "share")
+    if not socket_share_required():
+        return True
+    try:
+        left, right = _socket.socketpair()
+        try:
+            left.share(os.getpid())  # type: ignore[attr-defined]  # Windows
+        finally:
+            left.close()
+            right.close()
+    except Exception:
+        return False
     return True
 
 

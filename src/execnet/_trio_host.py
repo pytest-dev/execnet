@@ -901,7 +901,14 @@ async def _start_socket_and_reply(
     stream = await listeners[0].accept()
     for listener in listeners:
         await listener.aclose()
-    await serve_socket_connection(stream, reap=True)
+    try:
+        await serve_socket_connection(stream, reap=True)
+    except Exception as exc:
+        # This runs as a task on *this worker's* host: letting it propagate
+        # tears the whole gateway down, so a coordinator asking for one
+        # unsupported sub-gateway would lose the master it asked through.
+        # The connection is already closed, so the coordinator gets its EOF.
+        trace(f"socket gateway for channel {channelid} failed: {exc!r}")
 
 
 def handle_start_socket(gateway: BaseGateway, channelid: int, data: bytes) -> None:
