@@ -21,10 +21,11 @@ class ExecModel:
 
     The machinery behind execution models was retired: protocol IO always
     runs on the Trio host and blocking waits go through the boundary kit's
-    wakeners (``execnet._boundary``); the name maps onto the worker config
-    axes (``loop=`` / ``exec=`` / ``wait=``).  The stdlib-delegating
-    members stay for API compatibility (pytest-xdist builds its test queue
-    on ``execmodel.RLock``/``Event``) -- every preset is thread-shaped.
+    wakeners (``execnet._boundary``).  What the name selected survives as
+    the ``profile=`` spec key (:data:`WORKER_PROFILES`).  The
+    stdlib-delegating members stay for API compatibility (pytest-xdist
+    builds its test queue on ``execmodel.RLock``/``Event``) -- every preset
+    is thread-shaped.
     """
 
     def __init__(self, backend: str) -> None:
