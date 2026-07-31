@@ -294,7 +294,7 @@ class Group:
                 if gw.id not in vias:
                     gw.exit()
             if self._async_group is not None:
-                # Tunneled (via) gateways terminate before their masters,
+                # Tunneled (via) gateways terminate before their coordinators,
                 # each with a GATEWAY_TERMINATE + timeout grace, then kill;
                 # bounded at roughly twice the timeout (issues #43 / #221).
                 try:

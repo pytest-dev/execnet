@@ -181,17 +181,17 @@ def test_ssh_roundtrip(ssh_config: str) -> None:
 
 
 def test_ssh_via_roundtrip(ssh_config: str) -> None:
-    """An ssh sub-gateway spawned by a popen master (GATEWAY_START_SUB relay).
+    """An ssh sub-gateway spawned by a popen coordinator (GATEWAY_START_SUB relay).
 
-    The master runs the ssh client; for a dev coordinator the wheel travels
-    coordinator -> master (in the spawn request) -> remote (ssh stdin preamble).
+    That coordinator runs the ssh client; for a dev build the wheel travels
+    from here into the spawn request, and on to the remote over ssh stdin.
     """
     group = execnet.Group()
     try:
-        group.makegateway("popen//id=master")
+        group.makegateway("popen//id=coordinator")
         gw = group.makegateway(
             f"ssh=testhost//ssh_config={ssh_config}//python={sys.executable}"
-            "//via=master//id=sshvia"
+            "//via=coordinator//id=sshvia"
         )
         channel = gw.remote_exec("channel.send(channel.receive() + 1)")
         channel.send(41)

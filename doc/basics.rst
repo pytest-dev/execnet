@@ -153,7 +153,7 @@ you create any gateways::
 You can execute this little test file::
 
     $ python threadmodel.py
-    <Gateway id='gw0' receive-live, thread model, 0 active channels>
+    <Gateway id='gw0' receive-live, thread profile, 0 active channels>
     <RInfo 'numchannels=0, numexecuting=0, execmodel=main_thread_only'>
     1
 

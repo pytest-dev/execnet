@@ -361,7 +361,7 @@ class RawChannelStream:
     """``ByteStream`` over a :class:`RawChannel` -- the frame-native via tunnel.
 
     The gateway writer performs one ``send_all`` per frame, so every raw
-    payload carries exactly one whole sub-protocol frame (the master relay
+    payload carries exactly one whole sub-protocol frame (the relay
     keeps that invariant in the other direction).  ``receive_some`` buffers
     payloads and honours ``max_bytes`` for the handshake read.
     """
@@ -1283,25 +1283,27 @@ class AsyncGroup:
 
         ``installvia=`` asks that group member to start a one-shot
         socketserver first.  The sync facade overrides this to talk to its
-        sync master gateway.
+        sync coordinator gateway.
         """
         if getattr(spec, "installvia", None):
-            master = self._gateway_by_id(spec.installvia)
-            realhost, realport = await start_socketserver_via(master)
+            coordinator = self._gateway_by_id(spec.installvia)
+            realhost, realport = await start_socketserver_via(coordinator)
             return (realhost, realport), "%s:%d" % (realhost, realport)
         assert spec.socket is not None
         host_str, _, port_str = spec.socket.rpartition(":")
         return (host_str, int(port_str)), spec.socket
 
     async def _open_via_stream(self, spec: Any) -> ByteStream:
-        """Ask the ``spec.via`` master to spawn a sub-worker; tunnel over a
+        """Ask the ``spec.via`` coordinator to spawn a sub-worker; tunnel over a
         raw channel (each payload one whole sub-protocol frame)."""
         from . import _provision
 
-        master = self._gateway_by_id(spec.via)
-        raw = master.open_raw_channel()
+        coordinator = self._gateway_by_id(spec.via)
+        raw = coordinator.open_raw_channel()
         request = _provision.spawn_request(spec)
-        await master._send(Message.GATEWAY_START_SUB, raw.id, dumps_internal(request))
+        await coordinator._send(
+            Message.GATEWAY_START_SUB, raw.id, dumps_internal(request)
+        )
         stream = RawChannelStream(raw)
         await read_handshake_ack(stream, "via")
         return stream
@@ -1316,7 +1318,7 @@ class AsyncGroup:
         """Terminate all gateways; never hangs (kill after ``timeout``).
 
         Tunneled (``via``) gateways go first so their termination frames
-        still travel through a live master.
+        still travel through a live coordinator.
         """
         gateways = list(self._gateways)
         self._gateways.clear()

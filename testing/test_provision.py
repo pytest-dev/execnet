@@ -131,7 +131,7 @@ class TestExplicitWheel:
         monkeypatch.setattr(_provision, "_editable_source_root", lambda: None)
         assert _provision.provisioning_available()
 
-    def test_ships_those_bytes_to_a_via_master(
+    def test_ships_those_bytes_to_a_via_coordinator(
         self, wheel, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(execnet, "__version__", "9.9.9")

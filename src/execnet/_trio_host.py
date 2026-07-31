@@ -721,7 +721,7 @@ class FacadeAsyncGroup(AsyncGroup):
     Runs on the group's :class:`TrioHost`.  Gateways come out as
     :class:`SyncBridgeGateway` objects bound to freshly built sync
     ``Gateway`` facades, and the via / installvia flows go through the sync
-    master gateway (its dispatch is sync, so async channels cannot be used
+    sync coordinator gateway (its dispatch is sync, so async channels cannot be
     on it).
     """
 
@@ -744,25 +744,25 @@ class FacadeAsyncGroup(AsyncGroup):
     async def _open_via_stream(self, spec: Any) -> ByteStream:
         from . import _provision
 
-        master = self.group[spec.via]
-        session = master._trio_session
+        coordinator = self.group[spec.via]
+        session = coordinator._trio_session
         assert isinstance(session, SyncBridgeGateway)
-        channelid = master._channelfactory.allocate_id()
+        channelid = coordinator._channelfactory.allocate_id()
         # Create the raw channel before the request goes out so no relayed
         # frame can arrive unrouted (we are on the loop: no dispatch races).
         io = RawChannelStream(session._channel_for(channelid))
         request = _provision.spawn_request(spec)
-        master._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
+        coordinator._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
         await read_handshake_ack(io, "via")
         return io
 
     async def _resolve_socket_address(self, spec: Any) -> tuple[tuple[str, int], str]:
         if getattr(spec, "installvia", None):
-            master = self.group[spec.installvia]
-            # Blocking sync channel receive on the master: run in a thread
-            # while this loop keeps dispatching the master's messages.
+            coordinator = self.group[spec.installvia]
+            # Blocking sync channel receive on that coordinator: run in a
+            # thread while this loop keeps dispatching its messages.
             realhost, realport = await trio.to_thread.run_sync(
-                start_socketserver_via, master, abandon_on_cancel=True
+                start_socketserver_via, coordinator, abandon_on_cancel=True
             )
             return (realhost, realport), "%s:%d" % (realhost, realport)
         assert spec.socket is not None
@@ -921,7 +921,7 @@ async def _start_socket_and_reply(
     except Exception as exc:
         # This runs as a task on *this worker's* host: letting it propagate
         # tears the whole gateway down, so a coordinator asking for one
-        # unsupported sub-gateway would lose the master it asked through.
+        # unsupported sub-gateway would lose the coordinator it asked through.
         # The connection is already closed, so the coordinator gets its EOF.
         trace(f"socket gateway for channel {channelid} failed: {exc!r}")
 
@@ -975,7 +975,7 @@ async def _start_sub_and_relay(
 ) -> None:
     """Spawn a requested sub-worker and relay its Message protocol frames.
 
-    Runs on the master's Trio host (the ``via`` transport).  The tunnel is
+    Runs on the coordinator's Trio host (the ``via`` transport).  The tunnel is
     frame-native both ways: coordinator payloads arrive verbatim through the
     session's raw channel and go to the sub's stdin unchanged (each payload
     one whole frame), while the sub's stdout runs through a FrameDecoder so
