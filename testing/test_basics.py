@@ -143,11 +143,16 @@ class Checker:
     ) -> subprocess.CompletedProcess[str]:
         self.idx += 1
         check_path = self.path / f"check{self.idx}.py"
-        check_path.write_text(script)
+        # utf-8 explicitly: source is utf-8 by default (PEP 3120), so writing
+        # it in the locale encoding produces a file the interpreter cannot
+        # read back wherever that is not utf-8 -- Windows, where a single
+        # em-dash in the concatenated source was enough to break it.
+        check_path.write_text(script, encoding="utf-8")
         return subprocess.run(
             [self.python, os.fspath(check_path), *extra_args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=True,
             **process_args,
         )

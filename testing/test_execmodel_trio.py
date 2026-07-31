@@ -67,7 +67,10 @@ class TestSyncCoordinator:
         # the loop.  The *transport* may: adopting inherited stdio has no
         # async form on Windows, so those reads and writes run in the thread
         # pool.  Only the socket transport is genuinely single-threaded.
-        if _provision.resolve_transport(trio_gw.spec) == "socket":
+        transport = _provision.resolve_transport(
+            trio_gw.spec, default=_provision.default_spawn_transport()
+        )
+        if transport == "socket":
             assert active == 1
 
     def test_concurrent_execs_cooperate(self, trio_gw: Gateway) -> None:

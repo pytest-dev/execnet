@@ -45,6 +45,12 @@
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* ``execnet server :0`` reported a port nothing was listening on. Binding a
+  wildcard host with an ephemeral port gives *each* address family its own
+  random port, and only the first was reported -- so a client dialling the
+  other family found nothing. Which family comes first is platform
+  dependent, which is why this worked on Linux and not on Windows. All
+  families now share the reported port.
 * A worker that cannot be handed its socket now fails instead of hanging.
   A ``socket=``/``installvia=`` worker is spawned by the *server*, so a
   failure there used to leave the coordinator waiting forever on a

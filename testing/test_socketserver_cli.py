@@ -56,3 +56,28 @@ def test_socketserver_cli_roundtrip(socketserver_port: int) -> None:
         assert channel.receive() == 42
     finally:
         group.terminate(timeout=5.0)
+
+
+def test_ephemeral_port_is_the_same_for_every_address_family() -> None:
+    """One reported port has to be *the* port.
+
+    A wildcard bind with port 0 gives each address family its own random
+    port, and only the first is reported -- so a client dialling the other
+    family finds nothing there.  Which family comes first is
+    platform-dependent (IPv4 on Linux, IPv6 on Windows), so this passed by
+    luck here while failing there.
+    """
+    import trio
+
+    from execnet import _socketserver
+
+    async def main() -> set[int]:
+        listeners = await trio.open_tcp_listeners(0, host=None)
+        listeners = await _socketserver._one_port(listeners, None)
+        try:
+            return {l.socket.getsockname()[1] for l in listeners}
+        finally:
+            for l in listeners:
+                await l.aclose()
+
+    assert len(trio.run(main)) == 1
