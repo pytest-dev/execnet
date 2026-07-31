@@ -465,7 +465,7 @@ class TestSocketWorkerSpawnFailure:
 
         from execnet import _trio_host
 
-        def boom(fd: int) -> Any:
+        def boom(sock: Any) -> Any:
             raise RuntimeError("no worker for you")
 
         monkeypatch.setattr(_trio_host, "_spawn_socket_worker", boom)
@@ -652,7 +652,7 @@ class TestShareHandoffWiring:
 
         ours, theirs = socket.socketpair()
         try:
-            _trio_host._spawn_socket_worker(theirs.fileno())
+            _trio_host._spawn_socket_worker(theirs)
             # the socket we do not own must survive being viewed for share()
             assert theirs.fileno() >= 0
             theirs.send(b"still open")

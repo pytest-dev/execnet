@@ -796,13 +796,19 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
 _socket_worker_counter = itertools.count()
 
 
-def _spawn_socket_worker(fd: int) -> subprocess.Popen[bytes]:
-    """Spawn a worker subprocess serving the accepted socket ``fd``.
+def _spawn_socket_worker(sock: Any) -> subprocess.Popen[bytes]:
+    """Spawn a worker subprocess serving the accepted socket ``sock``.
 
     POSIX hands the fd over with ``pass_fds``.  Windows has no such thing,
     so the socket is duplicated into the child with ``WSADuplicateSocket``
     and the blob travels in the config -- which is why the config goes to
     stdin there: it cannot be built until the child's pid exists.
+
+    Takes the socket rather than its fd because ``share()`` needs a stdlib
+    socket object, and building one from a bare fd makes the constructor
+    *detect* family/type/proto by querying the handle.  Passing what the
+    caller already knows skips that: it is the one difference between this
+    path and the popen one, and the popen one works where this did not.
     """
     import execnet
 
@@ -817,6 +823,7 @@ def _spawn_socket_worker(fd: int) -> subprocess.Popen[bytes]:
         "coordinator_version": execnet.__version__,
     }
     argv = [sys.executable, "-m", "execnet", "worker"]
+    fd = sock.fileno()
     if not _provision.socket_share_required():
         return subprocess.Popen(
             [*argv, "--protocol-fd", str(fd), "--config", json.dumps(config)],
@@ -831,7 +838,7 @@ def _spawn_socket_worker(fd: int) -> subprocess.Popen[bytes]:
     try:
         # a view on the accepted socket, so share() can reach it; detach so
         # dropping the view does not close the fd we do not own
-        view = _socket.socket(fileno=fd)
+        view = _socket.socket(sock.family, sock.type, sock.proto, fileno=fd)
         try:
             config[SHARE_KEY] = share_socket(view, process.pid)
         finally:
@@ -856,7 +863,7 @@ async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> N
     the only thing that will move it -- without this it waits forever.
     """
     try:
-        proc = _spawn_socket_worker(stream.socket.fileno())
+        proc = _spawn_socket_worker(stream.socket)
     except BaseException:
         with trio.CancelScope(shield=True), suppress(Exception):
             await stream.aclose()
