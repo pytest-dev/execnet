@@ -217,15 +217,18 @@ class TestConfigSources:
 
 
 class TestTransportSelection:
-    def test_defaults_per_platform(self) -> None:
+    def test_a_spawned_worker_defaults_to_the_socket_transport(self) -> None:
+        # every platform now: POSIX hands over the fd, Windows duplicates the
+        # socket with share().  Only a host that can do neither gets stdio.
         spec = execnet.XSpec("popen")
-        expected = "stdio" if sys.platform.startswith("win") else "socket"
+        expected = "socket" if _provision.socket_handoff_available() else "stdio"
         assert (
             _provision.resolve_transport(
-                spec, default=_provision.default_spawn_transport()
+                spec, available=_provision.socket_handoff_available()
             )
             == expected
         )
+        assert expected == "socket"
 
     def test_explicit_wins(self) -> None:
         assert _provision.resolve_transport(
@@ -252,15 +255,12 @@ class TestTransportSelection:
                 execnet.XSpec("ssh=host//transport=socket"), available=False
             )
 
-    def test_windows_can_serve_the_socket_transport_but_does_not_default_to_it(
-        self,
-    ) -> None:
-        # sharing is new; stdio is what has years of Windows behind it
+    def test_windows_hands_a_socket_over_by_duplicating_it(self) -> None:
+        # `subprocess` refuses pass_fds there, so the capability comes from
+        # socket.share() instead -- including on PyPy, once the socket is
+        # handed over as a socket rather than rebuilt from its handle
         if _provision.socket_share_required():
             assert _provision.socket_handoff_available()
-            assert _provision.default_spawn_transport() == "stdio"
-        else:
-            assert _provision.default_spawn_transport() == "socket"
 
     def test_ssh_cannot_dial_back_on_windows(self) -> None:
         # no AF_UNIX in CPython there, and Win32-OpenSSH cannot -R a unix socket
@@ -279,8 +279,14 @@ class TestTransportSelection:
         finally:
             group.terminate(timeout=5.0)
 
-    @posix_only
     def test_socket_transport_keeps_the_protocol_off_stdio(self) -> None:
+        # whichever handoff this platform has, the point is the same: the
+        # protocol is named on the command line, so it is not fd 0/1
+        expected = (
+            "--protocol-share"
+            if _provision.socket_share_required()
+            else "--protocol-fd"
+        )
         group = execnet.Group()
         try:
             gateway = group.makegateway("popen")
@@ -288,7 +294,7 @@ class TestTransportSelection:
                 "import sys; channel.send(sys.argv)",
             )
             argv = channel.receive(TESTTIMEOUT)
-            assert "--protocol-fd" in argv
+            assert expected in argv
         finally:
             group.terminate(timeout=5.0)
 
@@ -305,7 +311,6 @@ class TestTransportSelection:
 class TestWorkerStdio:
     """Whose stdio is it? The code the worker runs, unless told otherwise."""
 
-    @posix_only
     def test_socket_transport_inherits_stdio(self, capfd) -> None:
         group = execnet.Group()
         try:

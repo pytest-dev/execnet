@@ -68,7 +68,7 @@ class TestSyncCoordinator:
         # async form on Windows, so those reads and writes run in the thread
         # pool.  Only the socket transport is genuinely single-threaded.
         transport = _provision.resolve_transport(
-            trio_gw.spec, default=_provision.default_spawn_transport()
+            trio_gw.spec, available=_provision.socket_handoff_available()
         )
         if transport == "socket":
             assert active == 1
