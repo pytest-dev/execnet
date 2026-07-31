@@ -53,11 +53,16 @@ def socket_handoff_available() -> bool:
     resulting blob rides in the worker config -- see the ``share`` transport
     in ``_trio_worker``.
 
-    The Windows answer is settled by *doing* it once, against our own pid,
-    rather than by looking for the method.  An implementation that has the
-    name but not a working call -- PyPy on Windows -- would otherwise pass
-    the check and fail at the point where the only thing left to tell the
-    coordinator is a closed socket.
+    The Windows answer is settled by *doing* it once rather than by looking
+    for the method: an implementation that has the name but not a working
+    call would otherwise pass the check and fail later, at the point where
+    the only thing left to tell the coordinator is a closed socket.
+
+    Both halves get exercised, and both matter -- the coordinator calls
+    ``share()``, the worker calls ``fromshare()``, and either can be the
+    one that is missing.  Sharing to our *own* pid is what makes that
+    possible in one process: the blob we produce is one we are entitled to
+    rebuild, so a full round trip needs no second process to test.
     """
     import socket as _socket
 
@@ -66,7 +71,11 @@ def socket_handoff_available() -> bool:
     try:
         left, right = _socket.socketpair()
         try:
-            left.share(os.getpid())  # type: ignore[attr-defined]  # Windows
+            blob = left.share(os.getpid())  # type: ignore[attr-defined]  # Windows
+            if not blob:
+                return False
+            # the worker's half: a blob we cannot rebuild is no use to it
+            _socket.fromshare(blob).close()  # type: ignore[attr-defined]  # Windows
         finally:
             left.close()
             right.close()
