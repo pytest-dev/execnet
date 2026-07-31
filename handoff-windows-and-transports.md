@@ -153,13 +153,16 @@ relaying one is named; the requesting side is "here"/"us".
 
 ## Open work
 
-1. **`doc/basics.rst` still documents `set_execmodel` /
-   `main_thread_only`** as the API, with a whole threading-models
-   section.  Stale since the `execmodel=` → `profile=` rename; needs a
-   rewrite, not a substitution.  Two doctests in `doc/example/` expected
-   `thread model` in a gateway repr and were already broken — fixed, but
-   note **docs are not built in CI**, only `tox -e py` runs.  Consider
-   adding `tox -e docs` to the workflow.
+1. ~~**`doc/basics.rst` still documents `set_execmodel` /
+   `main_thread_only`**~~ — DONE (`98eb08d`).  `basics.rst` and
+   `implnotes.rst` rewritten, new `doc/api.rst` namespace reference,
+   `tox -e docs` now builds with `-W` *and* runs the doc examples as
+   doctests, from a new CI job.  Those examples had not been collectable
+   at all since pytest 7 (a `pytest_plugins` line in a non-top-level
+   conftest), which is why so much of them had rotted.  The public-surface
+   review that came out of the same pass is
+   `handoff-public-api-review.md`; **its recommendations are not
+   applied** — the `execnet info` one wants deciding before 2.2 ships.
 2. **`installvia` still needs a socket handoff at all.**  It would not,
    if the server spawned the worker as the *listener*
    (`--protocol-listen 127.0.0.1:0`) and reported its address back: no
