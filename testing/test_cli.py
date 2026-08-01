@@ -571,13 +571,14 @@ class TestSocketWorkerSpawnFailure:
             ours, theirs = socket.socketpair()
             server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
             client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
-            # a coordinator opens with its worker config
-            await client.send_all(worker_config().encode() + b"\n")
-            with pytest.raises(RuntimeError, match="no worker"):
-                await _trio_host.serve_socket_connection(server, reap=False)
-            # the coordinator's end: EOF, not silence
-            with trio.fail_after(5):
-                return await client.receive_some(1)
+            async with client, server:
+                # a coordinator opens with its worker config
+                await client.send_all(worker_config().encode() + b"\n")
+                with pytest.raises(RuntimeError, match="no worker"):
+                    await _trio_host.serve_socket_connection(server, reap=False)
+                # the coordinator's end: EOF, not silence
+                with trio.fail_after(5):
+                    return await client.receive_some(1)
 
         assert trio.run(main) == b""
 
@@ -628,7 +629,7 @@ class TestSocketWorkerConfig:
             ours, theirs = socket.socketpair()
             client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
             server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
-            sent = {
+            sent: dict[str, Any] = {
                 "chdir": "/tmp",
                 "profile": "gevent",
                 "env": {"A": "b"},
@@ -637,8 +638,9 @@ class TestSocketWorkerConfig:
                 "protocol_share": "bm90LXlvdXJz",
                 "argv": ["rm", "-rf"],
             }
-            await client.send_all(json.dumps(sent).encode() + b"\n")
-            return await _trio_host._read_worker_config(server)
+            async with client, server:
+                await client.send_all(json.dumps(sent).encode() + b"\n")
+                return await _trio_host._read_worker_config(server)
 
         config = trio.run(main)
         assert config == {"chdir": "/tmp", "profile": "gevent", "env": {"A": "b"}}
@@ -654,10 +656,11 @@ class TestSocketWorkerConfig:
             ours, theirs = socket.socketpair()
             client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
             server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
-            await client.send_all(b'{"chdir": "/tmp"}\nFIRST-FRAME')
-            await _trio_host._read_worker_config(server)
-            with trio.fail_after(5):
-                return await server.receive_some(32)
+            async with client, server:
+                await client.send_all(b'{"chdir": "/tmp"}\nFIRST-FRAME')
+                await _trio_host._read_worker_config(server)
+                with trio.fail_after(5):
+                    return await server.receive_some(32)
 
         assert trio.run(main) == b"FIRST-FRAME"
 
@@ -680,10 +683,11 @@ class TestSocketWorkerConfig:
             ours, theirs = socket.socketpair()
             client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
             server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
-            # returns rather than raising: the caller is an accept loop
-            await _trio_host.serve_socket_connection(server, reap=False)
-            with trio.fail_after(5):
-                return await client.receive_some(1)
+            async with client, server:
+                # returns rather than raising: the caller is an accept loop
+                await _trio_host.serve_socket_connection(server, reap=False)
+                with trio.fail_after(5):
+                    return await client.receive_some(1)
 
         assert trio.run(main) == b""
         assert spawned == []
