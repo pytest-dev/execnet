@@ -48,6 +48,7 @@ from ._trio_gateway import AsyncGroup
 from ._trio_gateway import ByteStream
 from ._trio_gateway import RawChannelStream
 from ._trio_gateway import open_popen_process
+from ._trio_gateway import provision_sync
 from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
 
@@ -772,11 +773,11 @@ class FacadeAsyncGroup(AsyncGroup):
         coordinator = self.group[spec.via]
         session = coordinator._trio_session
         assert isinstance(session, SyncBridgeGateway)
+        request = await provision_sync(_provision.spawn_request, spec)
         channelid = coordinator._channelfactory.allocate_id()
         # Create the raw channel before the request goes out so no relayed
         # frame can arrive unrouted (we are on the loop: no dispatch races).
         io = RawChannelStream(session._channel_for(channelid))
-        request = _provision.spawn_request(spec)
         coordinator._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
         await read_handshake_ack(io, "via")
         return io
@@ -1070,7 +1071,7 @@ async def _start_sub_and_relay(
             gateway._send(Message.CHANNEL_CLOSE_ERROR, channelid, dumps_internal(text))
 
     try:
-        args, delivery = _provision.sub_spawn_argv(request)
+        args, delivery = await provision_sync(_provision.sub_spawn_argv, request)
         if delivery is not None:
             await _run_delivery_step(*delivery)
         process = await open_popen_process(args)

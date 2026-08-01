@@ -197,6 +197,17 @@ shape does not dictate the worker's.
 - No source shipping.  Workers import an installed execnet + trio.
 - The worker config never travels in a remote argv — it carries `env:`
   values, and `ps` is world-readable.  ssh uses `--config-fd 0`.
+- **Nothing in `_provision` is called from the loop thread.**  Deciding
+  *what* to launch runs subprocesses — an `execnet info` probe of a
+  `python=` target (30s timeout) and a dev coordinator's `uv build`
+  (seconds, cold) — and reads whole wheels off disk.  Inline, that stalls
+  the loop: the caller's own `trio.run` for `execnet.trio`, and for every
+  other surface the *shared* host, i.e. every gateway in the process
+  including other groups'.  Every call site goes through
+  `_trio_gateway.provision_sync`; measured at 0.76s before, pinned by
+  `test_provisioning_does_not_stall_the_loop`.  The hop is deliberately
+  not `abandon_on_cancel`: the build populates a version-keyed wheel cache
+  that a half-written entry would poison for every later gateway.
 - **Hand a socket over as a socket, never as an fd.**  Rebuilding one with
   `socket.socket(fileno=fd)` re-derives family/type/proto by querying the
   handle, which PyPy on Windows fails with `WinError 10014`.
