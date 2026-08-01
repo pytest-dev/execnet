@@ -26,6 +26,12 @@ IO, so calling one from inside a running asyncio or trio event loop raises
 .. autoclass:: execnet.Host
    :members: start, running, close
 
+.. autoclass:: execnet.Deployment
+   :members: deploy
+
+.. autoclass:: execnet.Deployed
+   :members: spec, translate, workspace, python, paths
+
 
 .. _execnet-trio:
 

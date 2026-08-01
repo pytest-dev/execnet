@@ -74,6 +74,9 @@ class Message:
     #: "receive an rsync into this directory", served by the worker itself
     #: on the request's channel -- no source shipping, and no exec slot.
     GATEWAY_RSYNC = 12
+    #: "build the environment this deployment needs", likewise served by the
+    #: worker -- see :mod:`execnet._deploy_serve`.
+    GATEWAY_DEPLOY = 13
 
     # message code -> name
     _types: dict[int, str] = {
@@ -90,6 +93,7 @@ class Message:
         GATEWAY_INFO: "GATEWAY_INFO",
         GATEWAY_CONFIG: "GATEWAY_CONFIG",
         GATEWAY_RSYNC: "GATEWAY_RSYNC",
+        GATEWAY_DEPLOY: "GATEWAY_DEPLOY",
     }
 
     def __init__(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:

@@ -198,6 +198,44 @@ an entry-queue callback into a ``TrioInternalError`` that ends the whole
 run, so a call that loses a race with shutdown reports through its own
 result object instead.
 
+Deploying a project
+----------------------
+
+Workers on a host that shares no filesystem with the coordinator need the
+project before they can run anything -- and because a worker *is* the
+process that runs the tests, it has to already be inside the environment
+the project was installed into.  So provisioning is its own gateway, and
+the workers come after it::
+
+    bootstrap = group.makegateway("ssh=host")
+    target = execnet.Deployment(project=".", roots=["testing"]).deploy(bootstrap)
+    bootstrap.exit()
+    worker = group.makegateway(f"ssh=host//{target.spec}")
+
+Three steps in the one order that works: a frozen environment
+(``uv sync --frozen`` from the project's own lockfile, so the remote
+resolves nothing), the artifact (a wheel built here and installed there,
+rather than a source tree), and everything a test run needs that the wheel
+does not contain -- tests, ``conftest.py``, fixture data -- rsynced into
+the workspace.
+
+Both halves travel over the gateway's own protocol: the transfer is
+``RSync``, and the install is a ``GATEWAY_DEPLOY`` request the worker
+serves.  No second connection and no second set of credentials, which is
+what lets the same code reach a container or a pod.
+
+:class:`execnet.Deployed` reports where things landed, because the remote
+layout is a provisioning fact and the caller knows only local paths.
+Deployments sharing a ``name`` share a workspace on the host, so the second
+gateway to a machine finds the environment the first one built.
+
+One trap worth knowing about, since a worker inherits its coordinator's
+environment: ``uv pip install`` honours ``VIRTUAL_ENV``, and a coordinator
+is very often running inside one.  The deploy service scrubs that (and
+``UV_PROJECT_ENVIRONMENT``, ``CONDA_PREFIX``) and names the target
+interpreter explicitly -- otherwise the project is installed into the
+*coordinator's* environment and the deployed one silently lacks it.
+
 Inside the worker
 ----------------------
 

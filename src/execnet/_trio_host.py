@@ -40,6 +40,7 @@ from ._portal import OneShot
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 from ._trace import trace
+from ._trio_gateway import _SERVICES
 from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
@@ -189,14 +190,12 @@ class SyncBridgeGateway(AsyncGateway):
                 handle_start_socket(gateway, message.channelid, message.data)
             elif code == Message.GATEWAY_START_SUB:
                 handle_start_sub(gateway, message.channelid, message.data)
-            elif code == Message.GATEWAY_RSYNC:
-                from ._rsync_serve import serve_rsync_request
-
+            elif code in _SERVICES:
                 # the request's channel is the *coordinator's* id, which the
                 # sync factory here knows nothing about, so the service runs
                 # on the async channel this session already routes it to
                 self.host.start_soon(
-                    serve_rsync_request, self, message.channelid, message.data
+                    _SERVICES[code](), self, message.channelid, message.data
                 )
             else:
                 super()._dispatch(message)

@@ -151,6 +151,12 @@ class Gateway(BaseGateway):
         )
         return channel
 
+    def _request_deploy(self, request: dict[str, object]) -> Channel:
+        """Open a channel to a worker-side deployment step (see _deploy)."""
+        channel = self.newchannel()
+        self._send(Message.GATEWAY_DEPLOY, channel.id, dumps_internal(request))
+        return channel
+
     def remote_init_threads(self, num: int | None = None) -> None:
         """DEPRECATED.  Is currently a NO-OPERATION already."""
         warnings.warn(
