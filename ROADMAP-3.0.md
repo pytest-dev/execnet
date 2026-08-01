@@ -6,8 +6,7 @@ for.
 
 ## Why 3.0, not 2.2
 
-The branch was drafted as 2.2 and the changelog still called it that.  It
-is a major release:
+The branch was drafted as 2.2.  It is a major release:
 
 - the launch contract changed — a worker is `execnet worker …`, and no
   source is bootstrapped over the wire;
@@ -79,6 +78,12 @@ Add `"worker": true` (or `"engines": ["trio"]`), have the coordinator
 prefer it and fall back to `"trio"` only for a 2.x-vintage remote.  Keep
 emitting `"trio"` indefinitely.  One line, and it buys the freedom to
 answer honestly from an engine that is not Trio.
+
+Settle the rest of the payload in the same pass, since it is the same
+cross-version contract.  It is `execnet`, `trio`, `python`, `executable`,
+`platform`, `protocols` today; `protocols` has no reader at all and does
+not list `share`, so a Windows remote understates what it can do.  Either
+give it a reader or say in the docs that it is informational.
 
 ### 2. Deprecated names out of `__all__`
 
@@ -166,12 +171,6 @@ we are); adopt the private-stdlib trick and own its seams; or note that
 "a non-Trio engine" below is not only an internals port — it is also what
 makes `execnet.gevent` work in the environment gevent users actually have.
 Decide before 3.0, because it is what the namespace promises.
-
-### 5. Stale wording
-
-`_execmodel.ExecModel`'s docstring still describes the `loop=`/`exec=`/
-`wait=` axes, which were dropped before they shipped.  `_shim.REMOVED_IN`
-says `execnet 3.0`, which is now wrong per the policy above.
 
 ## What pins us to Trio
 
@@ -330,9 +329,8 @@ arriving.
 ## Suggested order
 
 1. `execnet info` capability key, `__all__` cleanups, underscore the engine
-   methods, fix the stale wording — small, and item 1 cannot be changed
-   after release.
-2. Changelog and docs renumbered to 3.0; undraft PR #422.
+   methods — small, and item 1 cannot be changed after release.
+2. Undraft PR #422.  (The changelog and docs are renumbered already.)
 3. Decide the execnet/xdist split for provisioning + workspaces, then build
    points 1–3 of that section.  This is what the next xdist waits on.
 4. Kubernetes: decide in-tree versus extension point, then the proxy.

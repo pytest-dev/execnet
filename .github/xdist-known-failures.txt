@@ -13,7 +13,7 @@
 
 # Asserts `sys.argv == ["-c"]`, and its own docstring says it is
 # documenting "the behavior due to execnet using `python -c`".  execnet no
-# longer ships source over the wire: workers are launched as
-# `python -m execnet._trio_worker <config>`, so sys.argv legitimately
-# differs.  Needs an xdist-side update, not an execnet fix.
+# longer ships source over the wire: workers are launched through the CLI
+# (`python -m execnet worker --protocol-... --config ...`), so sys.argv
+# legitimately differs.  Needs an xdist-side update, not an execnet fix.
 testing/test_remote.py::test_remote_inner_argv

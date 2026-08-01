@@ -13,8 +13,8 @@ execnet: distributed Python deployment and communication
 .. image:: https://github.com/pytest-dev/execnet/workflows/test/badge.svg
     :target: https://github.com/pytest-dev/execnet/actions?query=workflow%3Atest
 
-.. image:: https://img.shields.io/badge/code%20style-black-000000.svg
-    :target: https://github.com/python/black
+.. image:: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
+    :target: https://github.com/astral-sh/ruff
 
 .. _execnet: https://execnet.readthedocs.io
 
@@ -29,7 +29,9 @@ a minimal and fast API targeting the following uses:
 Features
 --------
 
-* zero-install bootstrapping: no remote installation required!
+* automatic provisioning: a target environment that lacks execnet is set up
+  with uv_, so no manual remote installation is required -- and no source of
+  our own is ever shipped over the wire
 
 * flexible communication: send/receive as well as
   callback/queue mechanisms supported
@@ -40,5 +42,8 @@ Features
 
 * interoperable between Windows and Unix-ish systems.
 
-* integrates with different threading models, including standard
-  os threads, eventlet and gevent based systems.
+* one namespace per concurrency library you drive it from: threads
+  (``execnet``), trio (``execnet.trio``), asyncio (``execnet.aio``) and
+  gevent (``execnet.gevent``).
+
+.. _uv: https://docs.astral.sh/uv/

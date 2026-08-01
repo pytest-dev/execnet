@@ -11,11 +11,16 @@ This is the doc to read first.  Two companions:
 ## How to work here
 
 ```
-uv run pytest testing/          # 552 passed, 66 skipped
-uv run pytest testing/ -n 12    # must stay green (~7s)
+uv run pytest testing/          # 574 passed, 66 skipped
+uv run pytest testing/ -n 12    # must stay green (~8s)
 uv run pre-commit run -a        # never grep-filter its output
-uv run tox -e docs              # builds with -W and doctests doc/example/
+uv run tox -e docs              # sphinx -W, then doctests all of doc/
 ```
+
+`tox -e docs` doctests the whole `doc/` tree, not just the examples:
+`doc/basics.rst` is executed too, so a `>>>` block there is checked.  The
+two files with no `>>>` in them — `doc/example/test_debug.rst` (the trace
+transcript) and `test_ssh_fileserver.rst` — are prose nothing verifies.
 
 ssh paths have a real local harness in `testing/test_ssh_local.py` (an
 asyncssh server; needs a system ssh client).  Hypothesis stress coverage
@@ -42,8 +47,10 @@ protocol (`Message` framing) is unchanged from 2.1.
 
 **No source is shipped over the wire, ever.**  Workers are launched as
 `execnet worker <transport> <config>`; foreign and remote interpreters are
-uv-provisioned; a dev coordinator builds and ships a wheel.  Version skew
-gets a rough major/minor check (`_trio_worker._check_version`).
+uv-provisioned; a dev coordinator builds and ships a wheel.  A major/minor
+version skew is **refused** by the worker before it touches its stdio
+(`_trio_worker._check_version`); `EXECNET_IGNORE_VERSION_SKEW=1` in its
+environment or its config `env:` downgrades that to a warning.
 
 ### Four namespaces, one per concurrency library you drive execnet from
 
@@ -77,8 +84,10 @@ execnet info
 
 `ADDR` is `unix:/path` or `host:port`.  Everything that starts a worker
 emits these tokens; there is no second launch path.  `execnet info`
-answers JSON (version, trio, executable, platform, protocols) so
-provisioning learns a remote's version *before* connecting.
+answers JSON — keys `execnet`, `trio`, `python`, `executable`, `platform`,
+`protocols` — so provisioning learns a remote's version *before*
+connecting.  `protocols` is advisory today: nothing reads it, and it does
+not list `share` (see roadmap item 1, which is about this payload).
 
 `transport=socket|stdio` is a spec key; **`socket` is the default for
 every worker execnet spawns**, which is why a worker's stdio is free for
@@ -128,6 +137,8 @@ the coordinator's shape does not dictate the worker's.
 | `_cli.py` / `_socketserver.py` / `_provision.py` | the CLI, `execnet server`, uv provisioning + argv builders |
 | `_execmodel.py` | `WORKER_PROFILES`, `resolve_profile`, and the deprecated `ExecModel` xdist shim |
 | `_rsync.py` / `_rsync_remote.py` / `_xspec.py` / `_exec_source.py` | rsync, spec parsing, remote_exec source normalization |
+| `_trace.py` / `_gevent_support.py` | `EXECNET_DEBUG` tracing; the gevent wait backend's hub plumbing |
+| `__main__.py` / `_version.py` | `python -m execnet` → `_cli.main`; the generated version |
 | `_shim.py` + `gateway*.py`, `multi.py`, `rsync*.py`, `xspec.py` | the deprecated pre-Trio module names, warning and forwarding |
 
 ## Invariants — do not regress

@@ -11,7 +11,7 @@ And here is some code to use it to retrieve remote contents::
 
     import execnet
     import servefiles
-    gw = execnet.makegateway("ssh=codespeak.net")
+    gw = execnet.makegateway("ssh=myhost")
     channel = gw.remote_exec(servefiles)
 
     for fn in ('/etc/passwd', '/etc/group'):
