@@ -18,6 +18,7 @@ series, once the consumers that need them have released without them.
 
     execnet worker  --protocol-stdio | --protocol-fd FD[,FD]
                     | --protocol-connect ADDR | --protocol-listen ADDR
+                    | --protocol-share
                     --config JSON | --config-fd FD | --config-file PATH
                     --stdin/--stdout/--stderr DISPOSITION
     execnet server  [HOST:PORT] [--once]
@@ -58,6 +59,16 @@ series, once the consumers that need them have released without them.
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* A worker now **refuses** a coordinator whose major/minor execnet version
+  differs from its own, where it used to print a warning and carry on. The
+  two ends are installed independently now that no source is shipped, and
+  the protocol is unversioned, so a skew has no defined behaviour. The
+  refusal happens before the worker touches its stdio -- the last moment a
+  reason can reach the user, since afterwards the coordinator only ever
+  learns EOF. A patch-level difference is still tolerated, and
+  ``EXECNET_IGNORE_VERSION_SKEW=1`` in the worker's environment (reachable
+  as ``env:EXECNET_IGNORE_VERSION_SKEW=1`` in a spec) downgrades it to the
+  old warning.
 * A worker that dies abruptly reports ``EOFError`` on every transport. A
   killed peer *resets* a socket -- Windows reports ``WSAECONNRESET`` --
   where a pipe would simply reach EOF, so the same event used to surface

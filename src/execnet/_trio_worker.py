@@ -8,6 +8,7 @@ import stat
 import sys
 import threading
 from collections.abc import Callable
+from collections.abc import Mapping
 from collections.abc import Sequence
 from contextlib import suppress
 from typing import TYPE_CHECKING
@@ -31,6 +32,10 @@ if TYPE_CHECKING:
     from ._execmodel import ExecModel
 
 ExecItem = tuple[Any, ...]
+
+#: environment variable that downgrades the fatal coordinator/worker version
+#: check to a warning; read from the config's ``env:`` values too.
+IGNORE_VERSION_SKEW = "EXECNET_IGNORE_VERSION_SKEW"
 
 
 class PoolExec:
@@ -765,7 +770,8 @@ def serve_worker(
     reading the config, so ``--config-fd 0`` still works under the stdio
     transport).
     """
-    _check_version(config["coordinator_version"])
+    # before apply_stdio, so a refusal still reaches the real stderr
+    _check_version(config["coordinator_version"], config.get("env"))
     _apply_worker_setup(config)
     defaults = transport.stdio_defaults
     apply_stdio(
@@ -831,19 +837,45 @@ def _apply_worker_setup(config: dict[str, Any]) -> None:
         os.environ[name] = value
 
 
-def _check_version(coordinator_version: str) -> None:
-    """Warn on a real (major/minor) execnet version mismatch across the wire.
+def _check_version(
+    coordinator_version: str, env: Mapping[str, str] | None = None
+) -> None:
+    """Refuse a coordinator whose (major/minor) execnet version differs.
 
     A minimal (patch-level) mismatch is tolerated.  For same-interpreter popen
-    the versions are always identical; this guards the future remote paths.
+    the versions are always identical; this guards the remote paths, where the
+    worker runs whatever execnet its own environment has.
+
+    The wire protocol is deliberately unversioned, so a skew has no defined
+    behaviour: it is refused here, at the one moment a reason can still reach
+    the user, rather than surfacing later as an unreadable message.  Set
+    :data:`IGNORE_VERSION_SKEW` (``popen//env:EXECNET_IGNORE_VERSION_SKEW=1``
+    reaches this) to downgrade it to the warning it used to be.
     """
     import execnet
 
     ours = _rough_version(execnet.__version__)
     theirs = _rough_version(coordinator_version)
-    if ours and theirs and ours != theirs:
-        sys.stderr.write(
-            "WARNING: execnet version mismatch: coordinator %s worker %s\n"
-            % (coordinator_version, execnet.__version__)
-        )
+    if not (ours and theirs and ours != theirs):
+        return
+    versions = f"coordinator {coordinator_version}, worker {execnet.__version__}"
+    if _skew_ignored(env or {}):
+        sys.stderr.write(f"WARNING: execnet version mismatch: {versions}\n")
         sys.stderr.flush()
+        return
+    raise SystemExit(
+        f"execnet worker: version mismatch: {versions}. The protocol is not "
+        "compatible across major/minor versions -- install a matching execnet "
+        f"in this environment, or set {IGNORE_VERSION_SKEW}=1 to continue anyway."
+    )
+
+
+def _skew_ignored(env: Mapping[str, str]) -> bool:
+    """Whether the worker was told to tolerate a version skew.
+
+    Read from the config's ``env:`` values as well as the process
+    environment, because the config ones are not applied until
+    :func:`_apply_worker_setup`, which runs after the check.
+    """
+    value = env.get(IGNORE_VERSION_SKEW, os.environ.get(IGNORE_VERSION_SKEW, ""))
+    return value not in ("", "0")

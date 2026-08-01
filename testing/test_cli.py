@@ -76,6 +76,89 @@ class TestInfo:
         assert not _provision.target_has_execnet(str(fake))
 
 
+class TestVersionSkew:
+    """A worker refuses a coordinator it cannot speak the protocol with.
+
+    The protocol is unversioned, so a major/minor skew has no defined
+    behaviour.  Refusing at startup -- before ``apply_stdio``, while stderr
+    is still the one the user sees -- is the last moment a reason can reach
+    them; afterwards the coordinator only ever learns EOF.
+    """
+
+    def test_the_same_version_is_fine(self) -> None:
+        from execnet import _trio_worker
+
+        _trio_worker._check_version(execnet.__version__)
+
+    def test_a_patch_level_difference_is_tolerated(self) -> None:
+        from execnet import _trio_worker
+
+        major, minor = _trio_worker._rough_version(execnet.__version__)
+        _trio_worker._check_version(f"{major}.{minor}.999")
+
+    def test_an_unparsable_version_is_not_second_guessed(self) -> None:
+        from execnet import _trio_worker
+
+        _trio_worker._check_version("some-vendored-build")
+
+    def test_a_minor_difference_is_refused(self) -> None:
+        from execnet import _trio_worker
+
+        major, minor = _trio_worker._rough_version(execnet.__version__)
+        with pytest.raises(SystemExit, match="version mismatch") as excinfo:
+            _trio_worker._check_version(f"{major}.{minor + 1}.0")
+        assert _trio_worker.IGNORE_VERSION_SKEW in str(excinfo.value)
+
+    def test_the_env_override_downgrades_it_to_a_warning(
+        self, monkeypatch: pytest.MonkeyPatch, capfd
+    ) -> None:
+        from execnet import _trio_worker
+
+        major, minor = _trio_worker._rough_version(execnet.__version__)
+        monkeypatch.setenv(_trio_worker.IGNORE_VERSION_SKEW, "1")
+        _trio_worker._check_version(f"{major}.{minor + 1}.0")
+        assert "version mismatch" in capfd.readouterr()[1]
+
+    def test_the_override_also_comes_from_the_config_env(self, capfd) -> None:
+        # config env: values are not applied until _apply_worker_setup, which
+        # runs after the check, so the check has to read them itself
+        from execnet import _trio_worker
+
+        major, minor = _trio_worker._rough_version(execnet.__version__)
+        _trio_worker._check_version(
+            f"{major}.{minor + 1}.0", {_trio_worker.IGNORE_VERSION_SKEW: "1"}
+        )
+        assert "version mismatch" in capfd.readouterr()[1]
+
+    @posix_only
+    def test_a_skewed_worker_exits_with_a_reason(self) -> None:
+        ours, theirs = socket.socketpair()
+        out = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "execnet",
+                "worker",
+                "--protocol-fd",
+                str(theirs.fileno()),
+                "--config",
+                worker_config(coordinator_version="0.1.2"),
+            ],
+            pass_fds=(theirs.fileno(),),
+            capture_output=True,
+            text=True,
+            timeout=TESTTIMEOUT,
+            check=False,
+        )
+        theirs.close()
+        try:
+            assert out.returncode != 0
+            assert "version mismatch" in out.stderr
+            assert ours.recv(1) == b""  # no handshake: the coordinator sees EOF
+        finally:
+            ours.close()
+
+
 class TestArgumentGrammar:
     def test_protocol_flags_are_mutually_exclusive(self) -> None:
         with pytest.raises(SystemExit):

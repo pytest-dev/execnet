@@ -21,10 +21,19 @@ No source shipping
 ----------------------
 
 A worker is not sent its own source.  It is launched as a command that runs
-the ``execnet`` (and ``trio``) installed in its own environment, and refuses
-a coordinator whose major/minor version differs from its own.  This is what
+the ``execnet`` (and ``trio``) installed in its own environment.  This is what
 makes provisioning a separate concern from connecting, and it is an
 invariant: nothing may reintroduce shipping the core over the wire.
+
+Because the two ends are now installed independently, the worker checks the
+coordinator version it is handed and refuses one whose major/minor differs
+from its own -- the protocol is unversioned, so a skew has no defined
+behaviour.  It refuses before it touches its stdio, which is the last moment
+a reason can reach the user: after that the coordinator only ever learns EOF.
+A patch-level difference is tolerated, and
+``EXECNET_IGNORE_VERSION_SKEW=1`` in the worker's environment (which
+``env:EXECNET_IGNORE_VERSION_SKEW=1`` in the spec reaches) downgrades the
+refusal to a warning.
 
 The launch contract: ``execnet worker``
 ----------------------------------------
