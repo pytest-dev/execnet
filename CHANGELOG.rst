@@ -59,6 +59,37 @@ series, once the consumers that need them have released without them.
   by name. The launch command no longer needs ``head -c <N>`` byte
   accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
   protocol stream never carries a payload.
+* **A worker now refuses a ``remote_exec`` past its concurrency limit**
+  instead of admitting one it cannot place. Thread-shaped execs each cost a
+  thread of the worker's budget -- which channel callbacks and its own
+  protocol work also draw on -- so exec takes half of it (20 by default) and
+  the request after that comes back as a ``RemoteError`` naming the limit.
+  Admitting it instead made request 41 wait for a slot only a finishing exec
+  could free, which from the coordinator is indistinguishable from a hung
+  ``remote_exec``. ``remote_status()`` gained ``execcapacity`` (``None``
+  under ``profile=trio``, whose execs are tasks and are not bounded this
+  way), and ``numexecuting`` now counts what is really running.
+* **An exec that finishes after its connection died no longer takes the
+  worker down.** Closing the channel is how an exec reports it finished, and
+  a connection that went away first makes that raise; the exception reached
+  the worker's root nursery, ending ``trio.run`` and printing an
+  ``ExceptionGroup`` onto the user's stderr -- which is the worker's own
+  since this release. The close now tolerates a dead connection, and the
+  exec task contains anything else it raises.
+* **``socket=`` and ``installvia=`` gateways are configured by their spec
+  again.** ``profile=``, ``chdir=``, ``nice=`` and ``env:`` were accepted,
+  validated and then silently dropped: the worker is spawned by the
+  *server*, which built the config itself and never saw the spec. The
+  coordinator now sends its worker config over the connection (one JSON
+  line, before the protocol), and the server takes the keys a spec carries
+  and none of its own. A connection that sends no config line is closed
+  instead of served, without taking the accept loop down with it.
+* ``AsyncGroup`` allocates gateway ids from a counter rather than from the
+  length of its gateway list, which ``terminate()`` empties -- so ``gw0``
+  named two different workers in one session.
+* Removed ``safe_terminate``, unused since termination moved into the async
+  group; the bound it protected (issues #43/#221) is now tested on the real
+  ``Group.terminate()`` path.
 * A worker now **refuses** a coordinator whose major/minor execnet version
   differs from its own, where it used to print a warning and carry on. The
   two ends are installed independently now that no source is shipped, and

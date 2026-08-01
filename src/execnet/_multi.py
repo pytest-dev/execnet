@@ -9,8 +9,6 @@ from __future__ import annotations
 import atexit
 import os
 import queue
-import threading
-import time
 import types
 import warnings
 from collections.abc import Callable
@@ -22,7 +20,6 @@ from threading import Lock
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
-from typing import TypeAlias
 from typing import overload
 
 from ._boundary import WaitBackend
@@ -424,59 +421,6 @@ class MultiChannel:
                     first = exc
         if first:
             raise first
-
-
-TermKillFunc: TypeAlias = Callable[[], object]
-TermKillPair: TypeAlias = tuple[TermKillFunc, TermKillFunc]
-
-
-def safe_terminate(
-    execmodel: ExecModel,
-    timeout: float | None,
-    list_of_paired_functions: Sequence[TermKillPair],
-) -> None:
-    """Run terminate/kill pairs in parallel with a hard wait bound.
-
-    Each termfunc is given ``timeout``.  If it does not finish, killfunc runs.
-    The final wait is also bounded so a stuck kill cannot hang the caller
-    forever (see issues #43 / #221).  ``execmodel`` is accepted for
-    backward compatibility and unused (daemon threads do the waiting).
-    """
-    errors: list[BaseException] = []
-
-    def termkill(termfunc: TermKillFunc, killfunc: TermKillFunc) -> None:
-        term_done = threading.Event()
-        term_errors: list[BaseException] = []
-
-        def run_term() -> None:
-            try:
-                termfunc()
-            except BaseException as exc:
-                term_errors.append(exc)
-            finally:
-                term_done.set()
-
-        threading.Thread(target=run_term, daemon=True).start()
-        if not term_done.wait(timeout):
-            killfunc()
-            return
-        if term_errors:
-            errors.append(term_errors[0])
-
-    threads = [
-        threading.Thread(target=termkill, args=pair, daemon=True)
-        for pair in list_of_paired_functions
-    ]
-    for thread in threads:
-        thread.start()
-    # Allow term timeout plus a kill attempt; never block indefinitely.
-    wait_timeout = None if timeout is None else timeout * 2
-    deadline = None if wait_timeout is None else time.monotonic() + wait_timeout
-    for thread in threads:
-        remaining = None if deadline is None else max(0, deadline - time.monotonic())
-        thread.join(remaining)
-    if errors:
-        raise errors[0]
 
 
 default_group = Group()

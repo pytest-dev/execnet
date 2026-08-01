@@ -296,6 +296,24 @@ Set the default for a whole group with ``Group(profile=...)`` or
 ``group.set_profile(...)``; ``execnet.set_profile(...)`` sets it on the
 default group.
 
+How many at once
+-------------------------------------------------------
+
+.. versionadded:: 3.0
+
+``thread`` and ``gevent`` execs each need a thread of the worker's thread
+budget, which also has to serve channel callbacks and the worker's own
+protocol work -- so a worker admits **half that budget** in concurrent
+``remote_exec`` calls (20, unless the worker changed trio's default
+limiter) and *refuses* the one after that with a ``RemoteError`` naming the
+limit.  ``remote_status().execcapacity`` reports the number.
+
+Refusing rather than queueing is deliberate: a request waiting for a thread
+that only a finishing exec can free is indistinguishable, from the
+coordinator, from an exec that hung.  For genuine fan-out use more gateways
+-- that is what a ``Group`` is for -- or ``profile=trio``, whose execs are
+tasks on the worker's loop and are not bounded this way.
+
 
 Transports
 ====================================================================
@@ -424,9 +442,12 @@ channels are active::
     >>> import execnet
     >>> gw = execnet.makegateway()
     >>> gw.remote_status()
-    <RInfo 'execmodel=thread, numchannels=0, numexecuting=0, profile=thread'>
+    <RInfo 'execcapacity=20, execmodel=thread, numchannels=0, numexecuting=0, profile=thread'>
 
-``execmodel`` repeats ``profile`` under its old name.
+``execmodel`` repeats ``profile`` under its old name.  ``execcapacity`` is
+how many concurrent ``remote_exec`` calls this worker admits before
+refusing (see `Worker profiles`_); it is ``None`` for ``profile=trio``,
+whose execs are tasks rather than threads.
 
 rsync: synchronise filesystem with remote
 ===============================================================
