@@ -744,6 +744,9 @@ class AsyncGateway:
             status = {
                 "numchannels": len(self._channels),
                 "numexecuting": task_exec.active_count() if task_exec else 0,
+                # tasks on the worker's own loop: no thread budget to run out
+                # of, so nothing is refused for capacity here
+                "execcapacity": None,
                 "profile": "trio",
                 # legacy key, same value -- pytest-xdist reads it
                 "execmodel": "trio",
@@ -1144,14 +1147,25 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
 
 
 async def connect_socket_worker(
-    address: tuple[str, int], remoteaddress: str
+    address: tuple[str, int], remoteaddress: str, spec: Any = None
 ) -> ByteStream:
-    """Connect to a running socketserver and complete the ready handshake."""
+    """Connect to a running socketserver and complete the ready handshake.
+
+    The worker is spawned by the *server*, so the config that a locally
+    spawned worker would get in its argv has to travel over the connection
+    instead: one JSON line, ahead of the protocol.  Without it ``profile=``,
+    ``chdir=``, ``nice=`` and ``env:`` on a ``socket=`` spec would be
+    accepted and then quietly dropped.
+    """
+    from . import _provision
+
     try:
         stream = await trio.open_tcp_stream(*address)
     except OSError as exc:
         raise HostNotFound(remoteaddress) from exc
     try:
+        config = _provision.worker_config(spec) if spec is not None else {}
+        await stream.send_all(dumps_config(config) + b"\n")
         await read_handshake_ack(stream, "socket")
     except BaseException:
         with trio.CancelScope(shield=True), trio.move_on_after(5):
@@ -1193,6 +1207,10 @@ class AsyncGroup:
         self._nursery: trio.Nursery | None = None
         self._gateways: list[AsyncGateway] = []
         self._processes: dict[AsyncGateway, trio.Process] = {}
+        # Monotonic, not len(self._gateways): terminate() empties that list,
+        # and an id that comes round again names two different workers in one
+        # session's traces (and in whatever the caller keyed on it).
+        self._idcount = 0
 
     def __repr__(self) -> str:
         ids = [gateway.id for gateway in self._gateways]
@@ -1249,7 +1267,8 @@ class AsyncGroup:
         else:
             resolve_profile(spec.profile)
         if spec.id is None:
-            spec.id = "gw%d" % len(self._gateways)
+            spec.id = "gw%d" % self._idcount
+            self._idcount += 1
         process: trio.Process | None = None
         remoteaddress: str | None = None
         if spec.via:
@@ -1259,7 +1278,7 @@ class AsyncGroup:
                 remoteaddress = f"{remote}[via {spec.via}]"
         elif spec.socket:
             address, remoteaddress = await self._resolve_socket_address(spec)
-            stream = await connect_socket_worker(address, remoteaddress)
+            stream = await connect_socket_worker(address, remoteaddress, spec)
         elif spec.ssh or spec.vagrant_ssh:
             remoteaddress = spec.ssh or spec.vagrant_ssh
             stream, process = await connect_ssh_worker(spec)

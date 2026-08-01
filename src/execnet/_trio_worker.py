@@ -310,6 +310,22 @@ class TaskExec:
         await channel.aclose()
 
 
+def exec_capacity() -> int:
+    """How many concurrent execs this worker admits.
+
+    Every placement costs a thread from trio's default limiter: a pool exec
+    runs there, and a main-thread exec parks there waiting for the main
+    thread to finish.  Channel callbacks and the worker's own internal
+    ``to_thread`` work draw on threads too, so exec takes *half* the budget
+    and leaves the rest to the machinery that has to keep running while
+    execs are in flight.
+
+    Must be called on the loop (the limiter is a trio run-local).
+    """
+    total = trio.to_thread.current_default_thread_limiter().total_tokens
+    return max(1, int(total // 2))
+
+
 class TrioWorkerExec:
     """FIFO admission pump feeding an exec placement strategy.
 
@@ -318,6 +334,12 @@ class TrioWorkerExec:
     deliberately unordered, so per-request tasks would race for e.g. the
     main-thread claim).  Where an admitted request runs is the
     strategy's business (:data:`WORKER_EXEC_STRATEGIES`).
+
+    Admission is bounded by :func:`exec_capacity` and a request over it is
+    **refused**, not queued: placement needs a thread, and a request waiting
+    for one it cannot get is indistinguishable from a hung exec -- it
+    occupies a channel the coordinator is waiting on, with nothing to say.
+    A refusal reaches that coordinator as a RemoteError naming the limit.
     """
 
     def __init__(
@@ -330,7 +352,11 @@ class TrioWorkerExec:
         self.gateway = gateway
         self.strategy = strategy
         self._lock = threading.Lock()
+        #: admitted and not yet finished -- the number STATUS reports, and
+        #: what admission is capped on
         self._running = 0
+        #: resolved on the loop at the first request (see exec_capacity)
+        self._capacity: int | None = None
         self._shutting_down = False
         self._idle = threading.Event()
         self._idle.set()
@@ -347,10 +373,17 @@ class TrioWorkerExec:
         with self._lock:
             return self._running
 
-    def _track_start(self) -> None:
-        with self._lock:
-            self._running += 1
-            self._idle.clear()
+    def capacity(self) -> int:
+        """Concurrent execs this worker admits (loop thread only).
+
+        Resolved on first use rather than in ``__init__``, which runs before
+        there is a loop to read the thread limiter from.  Reported by
+        ``remote_status()`` as ``execcapacity``, because a coordinator that
+        just had a request refused wants the number it hit.
+        """
+        if self._capacity is None:
+            self._capacity = exec_capacity()
+        return self._capacity
 
     def _track_finish(self) -> None:
         with self._lock:
@@ -365,10 +398,27 @@ class TrioWorkerExec:
         """
         item = loads_internal(sourcetask)
         assert isinstance(item, tuple)
+        capacity = self.capacity()  # on the loop: the limiter is readable
         with self._lock:
             if self._shutting_down:
                 channel.close("execution disallowed")
                 return
+            if self._running >= capacity:
+                full = True
+            else:
+                full = False
+                self._running += 1
+                self._idle.clear()
+        if full:
+            channel.close(
+                f"execnet worker {self.gateway.id}: refusing remote_exec, already"
+                f" running {capacity} of them -- that is this worker's"
+                " concurrency limit (half its thread budget; the rest serves"
+                " channel callbacks and protocol work). Use more gateways, or"
+                " a profile whose execs are not threads (profile=trio,"
+                " profile=gevent)."
+            )
+            return
         # Already on the Trio host thread (Message handler).
         if not self._pump_started:
             self._pump_started = True
@@ -382,9 +432,25 @@ class TrioWorkerExec:
                 self.host.start_soon(self._run_exec, channel, item)
 
     async def _run_exec(self, channel: Channel, item: ExecItem) -> None:
-        self._track_start()
+        """Run one admitted request, containing whatever it does.
+
+        This is a task on the worker's *root* nursery, so an exception that
+        leaves it ends ``trio.run`` and takes the whole worker down -- and
+        since 3.0 the worker's stderr is the user's, so the ExceptionGroup
+        lands in their terminal.  The one failure that reliably gets here is
+        also the least interesting: ``executetask`` closes the channel when
+        the source returns, and a connection that went away in the meantime
+        makes that raise.  There is nobody left to tell, so trace and stop.
+
+        Every ``host.start_soon`` entry point owes the loop this containment;
+        the socket and via handlers in ``_trio_host`` do the same.
+        """
         try:
             await self.strategy.run(channel, item)
+        except trio.Cancelled:
+            raise
+        except BaseException as exc:
+            trace(f"exec task for channel {channel.id} failed: {exc!r}")
         finally:
             self._track_finish()
 

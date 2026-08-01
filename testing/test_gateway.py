@@ -11,12 +11,14 @@ import signal
 import sys
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from textwrap import dedent
 
 import pytest
 
 import execnet
 from execnet import Gateway
+from execnet import RemoteError
 from execnet import _trace
 
 TESTTIMEOUT = 10.0  # seconds
@@ -644,3 +646,126 @@ def test_main_thread_only_is_deprecated_and_overflows(
             ch.close()
         gw.exit()
         gw.join()
+
+
+class TestExecCapacity:
+    """A worker admits a bounded number of concurrent execs, and says so.
+
+    Every placement costs a thread from trio's default limiter, and the
+    worker needs threads for channel callbacks and its own protocol work
+    too.  The bound used to be that limiter alone: request 41 was admitted
+    and then waited for a slot only a finishing exec could free, which reads
+    exactly like a hung remote_exec on a channel nobody will ever answer.
+    """
+
+    def test_capacity_is_half_the_thread_budget(self) -> None:
+        import trio
+
+        from execnet import _trio_worker
+
+        async def measure() -> tuple[int, float]:
+            return (
+                _trio_worker.exec_capacity(),
+                trio.to_thread.current_default_thread_limiter().total_tokens,
+            )
+
+        capacity, total = trio.run(measure)
+        assert capacity == max(1, int(total // 2))
+
+    def _worker_capacity(self, gw: Gateway) -> int:
+        # asked over the protocol: exec'd code runs on a thread, where the
+        # trio limiter the number comes from is not readable
+        capacity = gw.remote_status().execcapacity
+        assert isinstance(capacity, int)
+        return capacity
+
+    def test_execs_up_to_capacity_all_run(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        gw = makegateway("popen")
+        channels = []
+        try:
+            capacity = self._worker_capacity(gw)
+            for _ in range(capacity):
+                channels.append(
+                    gw.remote_exec("channel.send('running'); channel.receive()")
+                )
+            # every one of them is placed on a thread, not merely admitted
+            assert [ch.receive(TESTTIMEOUT) for ch in channels] == [
+                "running"
+            ] * capacity
+            assert gw.remote_status().numexecuting == capacity
+        finally:
+            for ch in channels:
+                with suppress(OSError):
+                    ch.send(None)
+            gw.exit()
+            gw.join()
+
+    def test_one_exec_too_many_is_refused_not_hung(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        gw = makegateway("popen")
+        channels = []
+        try:
+            capacity = self._worker_capacity(gw)
+            for _ in range(capacity):
+                channels.append(
+                    gw.remote_exec("channel.send('running'); channel.receive()")
+                )
+            for ch in channels:
+                assert ch.receive(TESTTIMEOUT) == "running"
+            # the one over the line is refused, promptly and with a reason
+            over = gw.remote_exec("channel.send('running')")
+            with pytest.raises(RemoteError, match="concurrency limit"):
+                over.receive(TESTTIMEOUT)
+            # and the worker still works once a slot actually frees
+            freed = channels.pop()
+            freed.send(None)
+            freed.waitclose(TESTTIMEOUT)
+            assert gw.remote_exec("channel.send(42)").receive(TESTTIMEOUT) == 42
+        finally:
+            for ch in channels:
+                with suppress(OSError):
+                    ch.send(None)
+            gw.exit()
+            gw.join()
+
+
+def test_exec_task_contains_its_failure() -> None:
+    """An exec task must not let anything reach the worker's root nursery.
+
+    ``executetask`` closes the channel when the source returns, and a
+    connection that went away first makes that raise.  Escaping here ends
+    ``trio.run`` and prints an ExceptionGroup onto the user's stderr, which
+    is the worker's own since 3.0.
+    """
+    import trio
+
+    from execnet import _trio_worker
+
+    class BoomStrategy:
+        needs_primary_thread = False
+
+        async def admit(self, channel: object, item: object) -> bool:
+            return True
+
+        async def run(self, channel: object, item: object) -> None:
+            raise OSError("cannot send (already closed?)")
+
+    class DeadChannel:
+        id = 1
+
+    async def main() -> int:
+        pump = _trio_worker.TrioWorkerExec(
+            None,  # type: ignore[arg-type]
+            gateway=None,  # type: ignore[arg-type]
+            strategy=BoomStrategy(),
+        )
+        pump._running = 1
+        pump._idle.clear()
+        await pump._run_exec(DeadChannel(), ())  # type: ignore[arg-type]
+        return pump.active_count()
+
+    # no exception escapes, and the slot is released either way
+    assert trio.run(main) == 0
