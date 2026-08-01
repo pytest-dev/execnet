@@ -96,16 +96,16 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    config = worker.add_mutually_exclusive_group()
-    config.add_argument("--config", metavar="JSON", help="worker config as JSON")
-    config.add_argument(
+    worker.add_argument(
         "--config-fd",
         metavar="FD",
         type=int,
-        help="read the worker config as JSON from FD until EOF",
-    )
-    config.add_argument(
-        "--config-file", metavar="PATH", help="read the worker config as JSON from PATH"
+        help=(
+            "read this transport's local config as JSON from FD until EOF."
+            " Only --protocol-share needs one (the socket blob duplicated"
+            " into us); the worker config itself arrives as the first frame"
+            " on the protocol stream"
+        ),
     )
 
     worker.add_argument(
@@ -160,26 +160,23 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_config(ns: argparse.Namespace) -> dict[str, Any]:
-    """The worker config, from whichever source was named.
+def _load_local_config(ns: argparse.Namespace) -> dict[str, Any]:
+    """The transport's own config, for the one transport that needs one.
 
-    ``--config-fd`` is what a coordinator should use for anything sensitive:
-    a config passed in argv is visible in ``ps`` to every user on the host,
-    and it carries ``env:`` values.
+    Not the worker config -- that arrives as the first frame on the
+    protocol stream, so it is never in argv where ``ps`` and ``/proc``
+    would expose the ``env:`` values it carries.  This is only for material
+    a transport needs *before* a stream can exist: the socket
+    ``share()``-ed into us on Windows, which describes the very connection
+    the worker config would otherwise have to arrive on.
     """
-    if ns.config is not None:
-        raw = ns.config
-    elif ns.config_fd is not None:
-        # read a dup, so ``--config-fd 0`` leaves fd 0 itself open (at EOF).
-        # Closing it would free the slot for the next os.open, and anything
-        # then writing to "stdin" would land in an unrelated file.
-        with os.fdopen(os.dup(ns.config_fd), "r", encoding="utf-8") as stream:
-            raw = stream.read()
-    elif ns.config_file is not None:
-        with open(ns.config_file, encoding="utf-8") as stream:
-            raw = stream.read()
-    else:
-        raise SystemExit("execnet worker: one of --config/--config-fd/--config-file")
+    if ns.config_fd is None:
+        return {}
+    # read a dup, so ``--config-fd 0`` leaves fd 0 itself open (at EOF).
+    # Closing it would free the slot for the next os.open, and anything
+    # then writing to "stdin" would land in an unrelated file.
+    with os.fdopen(os.dup(ns.config_fd), "r", encoding="utf-8") as stream:
+        raw = stream.read()
     config: dict[str, Any] = json.loads(raw)
     return config
 
@@ -197,16 +194,12 @@ def _run_worker(ns: argparse.Namespace) -> None:
         transport = _trio_worker.ShareTransport()
     else:
         transport = _trio_worker.StdioTransport()
-    # The stdio transport owns fd 0/1, so it has to claim them before the
-    # config is read (--config-fd 0 would be the very fd we are moving).
+    # The stdio transport owns fd 0/1, so it has to claim them before
+    # anything else reads them (--config-fd 0 would be the very fd we move).
     transport.prepare()
-    config = _load_config(ns)
     if isinstance(transport, _trio_worker.ShareTransport):
-        # the only transport that cannot exist before the config is read:
-        # its socket was duplicated to our pid, so it travels inside it
-        transport.adopt(config)
+        transport.adopt(_load_local_config(ns))
     _trio_worker.serve_worker(
-        config,
         transport,
         stdin=ns.stdin,
         stdout=ns.stdout,

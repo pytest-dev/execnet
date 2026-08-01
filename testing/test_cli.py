@@ -21,6 +21,7 @@ import pytest
 import execnet
 from execnet import _cli
 from execnet import _provision
+from execnet._message import Message
 
 posix_only = pytest.mark.skipif(
     sys.platform.startswith("win"), reason="needs POSIX fd passing / unix sockets"
@@ -29,7 +30,7 @@ posix_only = pytest.mark.skipif(
 TESTTIMEOUT = 30.0
 
 
-def worker_config(**overrides: object) -> str:
+def worker_config(**overrides: object) -> dict[str, object]:
     config: dict[str, object] = {
         "id": "cli-test-worker",
         "profile": "thread",
@@ -38,7 +39,39 @@ def worker_config(**overrides: object) -> str:
         "coordinator_version": execnet.__version__,
     }
     config.update(overrides)
-    return json.dumps(config)
+    return config
+
+
+def config_frame(**overrides: object) -> bytes:
+    """What a coordinator sends first, on every transport."""
+    return Message(
+        Message.GATEWAY_CONFIG, 0, json.dumps(worker_config(**overrides)).encode()
+    ).pack()
+
+
+def recv_exactly(sock: socket.socket, count: int) -> bytes:
+    chunks = []
+    while count:
+        chunk = sock.recv(count)
+        if not chunk:
+            raise EOFError(f"closed with {count} bytes to go")
+        chunks.append(chunk)
+        count -= len(chunk)
+    return b"".join(chunks)
+
+
+def read_reply(sock: socket.socket) -> dict[str, Any]:
+    """The worker's answer to the config frame: serving, or refusing and why."""
+    msgcode, _channel, length = Message.from_header(recv_exactly(sock, 9))
+    assert msgcode == Message.GATEWAY_CONFIG
+    reply: dict[str, Any] = json.loads(recv_exactly(sock, length))
+    return reply
+
+
+def handshake(sock: socket.socket, **overrides: object) -> dict[str, Any]:
+    """Drive the whole worker handshake the way a coordinator does."""
+    sock.sendall(config_frame(**overrides))
+    return read_reply(sock)
 
 
 class TestInfo:
@@ -80,34 +113,35 @@ class TestVersionSkew:
     """A worker refuses a coordinator it cannot speak the protocol with.
 
     The protocol is unversioned, so a major/minor skew has no defined
-    behaviour.  Refusing at startup -- before ``apply_stdio``, while stderr
-    is still the one the user sees -- is the last moment a reason can reach
-    them; afterwards the coordinator only ever learns EOF.
+    behaviour.  The refusal answers the config frame, so the reason travels
+    back to whoever asked for the gateway instead of only to a stderr that
+    may be pointed anywhere.
     """
 
     def test_the_same_version_is_fine(self) -> None:
         from execnet import _trio_worker
 
-        _trio_worker._check_version(execnet.__version__)
+        assert _trio_worker._version_refusal(execnet.__version__) is None
 
     def test_a_patch_level_difference_is_tolerated(self) -> None:
         from execnet import _trio_worker
 
         major, minor = _trio_worker._rough_version(execnet.__version__)
-        _trio_worker._check_version(f"{major}.{minor}.999")
+        assert _trio_worker._version_refusal(f"{major}.{minor}.999") is None
 
     def test_an_unparsable_version_is_not_second_guessed(self) -> None:
         from execnet import _trio_worker
 
-        _trio_worker._check_version("some-vendored-build")
+        assert _trio_worker._version_refusal("some-vendored-build") is None
 
     def test_a_minor_difference_is_refused(self) -> None:
         from execnet import _trio_worker
 
         major, minor = _trio_worker._rough_version(execnet.__version__)
-        with pytest.raises(SystemExit, match="version mismatch") as excinfo:
-            _trio_worker._check_version(f"{major}.{minor + 1}.0")
-        assert _trio_worker.IGNORE_VERSION_SKEW in str(excinfo.value)
+        refusal = _trio_worker._version_refusal(f"{major}.{minor + 1}.0")
+        assert refusal is not None
+        assert "version mismatch" in refusal
+        assert _trio_worker.IGNORE_VERSION_SKEW in refusal
 
     def test_the_env_override_downgrades_it_to_a_warning(
         self, monkeypatch: pytest.MonkeyPatch, capfd
@@ -116,7 +150,7 @@ class TestVersionSkew:
 
         major, minor = _trio_worker._rough_version(execnet.__version__)
         monkeypatch.setenv(_trio_worker.IGNORE_VERSION_SKEW, "1")
-        _trio_worker._check_version(f"{major}.{minor + 1}.0")
+        assert _trio_worker._version_refusal(f"{major}.{minor + 1}.0") is None
         assert "version mismatch" in capfd.readouterr()[1]
 
     def test_the_override_also_comes_from_the_config_env(self, capfd) -> None:
@@ -125,13 +159,16 @@ class TestVersionSkew:
         from execnet import _trio_worker
 
         major, minor = _trio_worker._rough_version(execnet.__version__)
-        _trio_worker._check_version(
-            f"{major}.{minor + 1}.0", {_trio_worker.IGNORE_VERSION_SKEW: "1"}
+        assert (
+            _trio_worker._version_refusal(
+                f"{major}.{minor + 1}.0", {_trio_worker.IGNORE_VERSION_SKEW: "1"}
+            )
+            is None
         )
         assert "version mismatch" in capfd.readouterr()[1]
 
     @posix_only
-    def test_a_skewed_worker_exits_with_a_reason(self) -> None:
+    def test_a_skewed_worker_says_so_on_the_wire(self) -> None:
         from execnet import _trio_worker
 
         # derived, never spelled out: a literal "impossible" version is only
@@ -142,7 +179,7 @@ class TestVersionSkew:
         major, _ = _trio_worker._rough_version(execnet.__version__)
         skewed = f"{major + 1}.0.0"
         ours, theirs = socket.socketpair()
-        out = subprocess.run(
+        proc = subprocess.Popen(
             [
                 sys.executable,
                 "-m",
@@ -150,22 +187,21 @@ class TestVersionSkew:
                 "worker",
                 "--protocol-fd",
                 str(theirs.fileno()),
-                "--config",
-                worker_config(coordinator_version=skewed),
             ],
             pass_fds=(theirs.fileno(),),
-            capture_output=True,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=TESTTIMEOUT,
-            check=False,
         )
         theirs.close()
         try:
-            assert out.returncode != 0
-            assert "version mismatch" in out.stderr
-            assert ours.recv(1) == b""  # no handshake: the coordinator sees EOF
+            reply = handshake(ours, coordinator_version=skewed)
+            assert reply["ok"] is False
+            assert "version mismatch" in reply["error"]
+            assert _trio_worker.IGNORE_VERSION_SKEW in reply["error"]
         finally:
             ours.close()
+            assert proc.wait(timeout=TESTTIMEOUT) != 0
+            assert "version mismatch" in (proc.stderr.read() if proc.stderr else "")
 
 
 class TestArgumentGrammar:
@@ -175,11 +211,12 @@ class TestArgumentGrammar:
                 ["worker", "--protocol-fd", "3", "--protocol-connect", "unix:/x"]
             )
 
-    def test_config_sources_are_mutually_exclusive(self) -> None:
-        with pytest.raises(SystemExit):
-            _cli._build_parser().parse_args(
-                ["worker", "--config", "{}", "--config-fd", "0"]
-            )
+    def test_there_is_no_way_to_put_a_config_in_argv(self) -> None:
+        # the worker config arrives as a frame; --config-fd is left only for
+        # the Windows share blob, which describes the stream itself
+        for flag in ("--config", "--config-file"):
+            with pytest.raises(SystemExit):
+                _cli._build_parser().parse_args(["worker", flag, "{}"])
 
     @pytest.mark.parametrize(("value", "expected"), [("3", (3,)), ("4,5", (4, 5))])
     def test_protocol_fd_accepts_one_fd_or_a_pair(
@@ -226,14 +263,15 @@ class TestProtocolFd:
                 "worker",
                 "--protocol-fd",
                 str(theirs.fileno()),
-                "--config",
-                worker_config(),
             ],
             pass_fds=(theirs.fileno(),),
         )
         theirs.close()
         try:
-            assert ours.recv(1) == b"1"  # the ready handshake
+            reply = handshake(ours)
+            assert reply["ok"] is True
+            assert reply["pid"] == proc.pid
+            assert reply["profile"] == "thread"
         finally:
             ours.close()
             proc.terminate()
@@ -251,8 +289,6 @@ class TestProtocolFd:
                     "worker",
                     "--protocol-fd",
                     str(read_fd),
-                    "--config",
-                    worker_config(),
                 ],
                 pass_fds=(read_fd,),
                 capture_output=True,
@@ -267,9 +303,26 @@ class TestProtocolFd:
         assert "not a socket" in out.stderr
 
 
-class TestConfigSources:
+class TestConfigDelivery:
+    """The config is a frame on the protocol stream, and nothing else.
+
+    It carries ``env:`` values, so argv is the one place it must never be:
+    ``/proc`` is world-readable on the local machine exactly as ``ps`` is
+    on a remote one.
+    """
+
+    def test_a_worker_needs_no_argv_beyond_its_transport(self) -> None:
+        spec = execnet.XSpec("popen//env:SECRET=hunter2//chdir=/tmp")
+        spec.id = "gw0"
+        from execnet._trio_gateway import popen_worker_argv
+
+        argv = popen_worker_argv(spec, "--protocol-fd", "7")
+        assert argv[-2:] == ["--protocol-fd", "7"]
+        assert not any("hunter2" in token for token in argv)
+        assert not any("chdir" in token for token in argv)
+
     @posix_only
-    def test_config_fd_keeps_it_out_of_argv(self) -> None:
+    def test_the_config_frame_configures_the_worker(self, tmp_path) -> None:
         ours, theirs = socket.socketpair()
         proc = subprocess.Popen(
             [
@@ -279,33 +332,30 @@ class TestConfigSources:
                 "worker",
                 "--protocol-fd",
                 str(theirs.fileno()),
-                "--config-fd",
-                "0",
             ],
             pass_fds=(theirs.fileno(),),
-            stdin=subprocess.PIPE,
         )
         theirs.close()
         try:
-            assert proc.stdin is not None
-            proc.stdin.write(worker_config().encode())
-            proc.stdin.close()
-            assert ours.recv(1) == b"1"
+            reply = handshake(ours, id="configured", chdir=str(tmp_path))
+            assert reply["ok"] is True
         finally:
             ours.close()
             proc.terminate()
             proc.wait(timeout=TESTTIMEOUT)
 
-    def test_config_file(self, tmp_path) -> None:
-        path = tmp_path / "config.json"
-        path.write_text(worker_config())
-        ns = _cli._build_parser().parse_args(["worker", "--config-file", str(path)])
-        assert _cli._load_config(ns)["id"] == "cli-test-worker"
+    def test_config_fd_carries_only_the_share_blob(self, tmp_path) -> None:
+        path = tmp_path / "local.json"
+        path.write_text(json.dumps({"protocol_share": "abc"}))
+        with path.open() as stream:
+            ns = _cli._build_parser().parse_args(
+                ["worker", "--protocol-share", "--config-fd", str(stream.fileno())]
+            )
+            assert _cli._load_local_config(ns) == {"protocol_share": "abc"}
 
-    def test_no_config_source_is_an_error(self) -> None:
+    def test_no_config_fd_means_no_local_config(self) -> None:
         ns = _cli._build_parser().parse_args(["worker"])
-        with pytest.raises(SystemExit, match="--config"):
-            _cli._load_config(ns)
+        assert _cli._load_local_config(ns) == {}
 
 
 class TestTransportSelection:
@@ -464,8 +514,6 @@ class TestListenTransport:
                 "worker",
                 "--protocol-listen",
                 f"unix:{path}",
-                "--config",
-                worker_config(),
             ],
             stdout=subprocess.PIPE,
         )
@@ -477,7 +525,9 @@ class TestListenTransport:
             client.settimeout(TESTTIMEOUT)
             client.connect(path)
             try:
-                assert client.recv(1) == b"1"
+                # a worker that listens is configured like any other: the
+                # coordinator that reaches it sends the config frame
+                assert handshake(client)["ok"] is True
             finally:
                 client.close()
         finally:
@@ -513,16 +563,19 @@ class TestRemoteCommand:
 
     pytestmark = needs_provisioning
 
-    def test_config_is_not_in_the_remote_argv(self) -> None:
+    def test_no_config_reaches_the_remote_argv(self) -> None:
         # env: values are secrets often enough; the remote argv is readable
-        # by every user on that host via ps
-        spec = execnet.XSpec("ssh=host//id=gw0//env:TOKEN=s3cr3t")
+        # by every user on that host via ps.  There is no config here at all
+        # any more -- it arrives as a frame on the connection.
+        spec = execnet.XSpec("ssh=host//id=gw0//env:TOKEN=s3cr3t//chdir=/srv")
         spec.profile = "thread"
         command = _provision.ssh_remote_command(
-            spec, "--protocol-connect", "unix:/tmp/x.sock", config_on_stdin=True
+            spec, "--protocol-connect", "unix:/tmp/x.sock"
         )
         assert "s3cr3t" not in command
-        assert "--config-fd 0" in command
+        assert "chdir" not in command
+        assert "--config" not in command
+        assert command.endswith("--protocol-connect unix:/tmp/x.sock")
 
     def test_launch_command_frames_nothing_in_band(self) -> None:
         spec = execnet.XSpec("ssh=host//id=gw0")
@@ -549,7 +602,7 @@ class TestRemoteCommand:
 class TestSocketWorkerSpawnFailure:
     """A server that cannot start a worker must not leave a coordinator waiting.
 
-    The coordinator connects and blocks for the ``b"1"`` handshake.  Nothing
+    The coordinator connects and blocks for the handshake reply.  Nothing
     else will ever move it, so a failed spawn has to close the connection --
     otherwise one unsupported gateway wedges the whole session, which is what
     ``socket//installvia=`` did on Windows.
@@ -560,27 +613,27 @@ class TestSocketWorkerSpawnFailure:
     ) -> None:
         import trio
 
+        from execnet import _trio_gateway
         from execnet import _trio_host
 
-        def boom(sock: Any, client_config: Any = None) -> Any:
+        def boom(sock: Any) -> Any:
             raise RuntimeError("no worker for you")
 
         monkeypatch.setattr(_trio_host, "_spawn_socket_worker", boom)
 
-        async def main() -> bytes:
+        async def main() -> None:
             ours, theirs = socket.socketpair()
             server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
             client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
             async with client, server:
-                # a coordinator opens with its worker config
-                await client.send_all(worker_config().encode() + b"\n")
                 with pytest.raises(RuntimeError, match="no worker"):
                     await _trio_host.serve_socket_connection(server, reap=False)
-                # the coordinator's end: EOF, not silence
-                with trio.fail_after(5):
-                    return await client.receive_some(1)
+                # the coordinator's end: its handshake ends, and says the
+                # worker went away rather than surfacing a transport error
+                with trio.fail_after(5), pytest.raises(EOFError, match="went away"):
+                    await _trio_gateway.configure_worker(client, None, "socket")
 
-        assert trio.run(main) == b""
+        trio.run(main)
 
     def test_a_host_that_cannot_hand_over_a_socket_refuses_up_front(
         self, monkeypatch: pytest.MonkeyPatch
@@ -613,119 +666,95 @@ class TestSocketWorkerSpawnFailure:
 
 
 class TestSocketWorkerConfig:
-    """What a connecting coordinator may configure on the worker it gets.
+    """The server hands the connection over; it does not read what is on it.
 
-    The server spawns that worker, so the config travels over the
-    connection instead of in argv -- which makes the accepting side a trust
-    boundary: it takes the keys a spec legitimately carries and nothing else.
+    The worker it spawns inherits the accepted socket, so the coordinator's
+    config frame reaches that worker directly.  Nothing about the gateway
+    is the server's to relay, filter, or put in an argv.
     """
 
-    def test_only_whitelisted_keys_survive(self) -> None:
+    def test_the_server_passes_no_config_to_the_worker(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from execnet import _trio_host
+
+        recorded: list[list[str]] = []
+
+        class FakePopen:
+            pid = 4321
+            stdin = None
+
+            def __init__(self, args: list[str], **kwargs: Any) -> None:
+                recorded.append(args)
+
+        monkeypatch.setattr(_provision, "socket_share_required", lambda: False)
+        monkeypatch.setattr(subprocess, "Popen", FakePopen)
+
+        class FakeSocket:
+            def fileno(self) -> int:
+                return 9
+
+        _trio_host._spawn_socket_worker(FakeSocket())
+
+        (argv,) = recorded
+        assert argv[-2:] == ["--protocol-fd", "9"]
+        assert not any(token.startswith("--config") for token in argv)
+
+    def test_a_coordinators_config_reaches_the_spawned_worker(self) -> None:
+        # end to end through a real server: chdir is a config key, and only
+        # the worker can prove it arrived
         import trio
 
         from execnet import _trio_host
 
         async def main() -> dict[str, Any]:
             ours, theirs = socket.socketpair()
-            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
             server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
-            sent: dict[str, Any] = {
-                "chdir": "/tmp",
-                "profile": "gevent",
-                "env": {"A": "b"},
-                # not a coordinator's to set: the share blob is bound to a
-                # pid only the server knows, and argv is the server's own
-                "protocol_share": "bm90LXlvdXJz",
-                "argv": ["rm", "-rf"],
-            }
-            async with client, server:
-                await client.send_all(json.dumps(sent).encode() + b"\n")
-                return await _trio_host._read_worker_config(server)
-
-        config = trio.run(main)
-        assert config == {"chdir": "/tmp", "profile": "gevent", "env": {"A": "b"}}
-
-    def test_protocol_bytes_after_the_line_are_left_alone(self) -> None:
-        # the worker inherits this socket and reads the frames that follow;
-        # reading past the newline here would eat its first messages
-        import trio
-
-        from execnet import _trio_host
-
-        async def main() -> bytes:
-            ours, theirs = socket.socketpair()
-            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
-            server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
-            async with client, server:
-                await client.send_all(b'{"chdir": "/tmp"}\nFIRST-FRAME')
-                await _trio_host._read_worker_config(server)
-                with trio.fail_after(5):
-                    return await server.receive_some(32)
-
-        assert trio.run(main) == b"FIRST-FRAME"
-
-    def test_a_peer_that_sends_no_config_is_dropped(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # a port scan must not hold a server task, nor take the accept loop
-        # down the way a failed spawn does
-        import trio
-
-        from execnet import _trio_host
-
-        monkeypatch.setattr(_trio_host, "CONFIG_LINE_TIMEOUT", 0.2)
-        spawned: list[object] = []
-        monkeypatch.setattr(
-            _trio_host, "_spawn_socket_worker", lambda *args: spawned.append(args)
-        )
-
-        async def main() -> bytes:
-            ours, theirs = socket.socketpair()
-            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
-            server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
-            async with client, server:
-                # returns rather than raising: the caller is an accept loop
+            async with server:
                 await _trio_host.serve_socket_connection(server, reap=False)
-                with trio.fail_after(5):
-                    return await client.receive_some(1)
+            ours.settimeout(TESTTIMEOUT)
+            try:
+                return handshake(ours, id="from-a-server")
+            finally:
+                ours.close()
 
-        assert trio.run(main) == b""
-        assert spawned == []
+        reply = trio.run(main)
+        assert reply["ok"] is True
+        assert reply["profile"] == "thread"
 
 
 class TestShareTransport:
     """The Windows socket handoff. Only ``adopt`` is testable off Windows."""
 
-    def test_adopt_decodes_the_blob_out_of_the_config(self) -> None:
+    def test_adopt_decodes_the_blob_out_of_the_local_config(self) -> None:
         import base64
 
         from execnet import _trio_worker
         from execnet._trio_gateway import SHARE_KEY
 
         transport = _trio_worker.ShareTransport()
-        config = {"id": "gw", SHARE_KEY: base64.b64encode(b"blobby").decode("ascii")}
-        transport.adopt(config)
+        # the local config holds the blob and nothing else: what the worker
+        # *is* comes from the frame that arrives on the shared socket
+        transport.adopt({SHARE_KEY: base64.b64encode(b"blobby").decode("ascii")})
         assert transport._blob == b"blobby"
-        # consumed, so it cannot be mistaken for worker configuration
-        assert SHARE_KEY not in config
 
     def test_adopt_without_a_blob_is_a_clear_error(self) -> None:
         from execnet import _trio_worker
 
         transport = _trio_worker.ShareTransport()
         with pytest.raises(SystemExit, match="protocol_share"):
-            transport.adopt({"id": "gw"})
+            transport.adopt({})
 
     def test_the_cli_accepts_the_flag(self) -> None:
         ns = _cli._build_parser().parse_args(
-            ["worker", "--protocol-share", "--config", "{}"]
+            ["worker", "--protocol-share", "--config-fd", "0"]
         )
         assert ns.protocol_share is True
 
     def test_share_is_exclusive_with_the_other_transports(self) -> None:
         with pytest.raises(SystemExit):
             _cli._build_parser().parse_args(
-                ["worker", "--protocol-share", "--protocol-stdio", "--config", "{}"]
+                ["worker", "--protocol-share", "--protocol-stdio"]
             )
 
 
@@ -733,12 +762,11 @@ class TestShareHandoffWiring:
     """How the share blob gets from coordinator to worker.
 
     ``WSADuplicateSocket`` itself only exists on Windows, but everything
-    around it -- the flag in argv, the config on stdin, the blob inside that
-    config -- is the part that can be wired up wrong, and that is testable
-    anywhere.
+    around it -- the flag in argv, the blob on stdin -- is the part that can
+    be wired up wrong, and that is testable anywhere.
     """
 
-    def test_popen_spawn_puts_the_flag_in_argv_and_the_blob_in_the_config(
+    def test_popen_spawn_puts_the_flag_in_argv_and_the_blob_on_stdin(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         import base64
@@ -785,15 +813,15 @@ class TestShareHandoffWiring:
 
         args = seen["args"]
         assert "--protocol-share" in args
-        # the config cannot be in argv: the blob is not built until we have
-        # a pid, which is only true once the process exists
+        # the blob is not built until we have a pid, which is only true once
+        # the process exists -- so it cannot be in argv even if we wanted it
         assert "--config-fd" in args
-        assert "--config" not in args
-        assert "pass_fds" not in seen["kwargs"]
 
         config = json.loads(b"".join(written))
+        # the blob, and only the blob: everything else about this worker
+        # goes over the socket the blob describes
+        assert list(config) == [SHARE_KEY]
         assert base64.b64decode(config[SHARE_KEY]) == b"dup-for-4321"
-        assert config["id"] == "gw0-worker"
 
     def test_server_side_spawn_shares_the_accepted_socket(
         self, monkeypatch: pytest.MonkeyPatch
@@ -845,4 +873,41 @@ class TestShareHandoffWiring:
         assert "--protocol-share" in seen["args"]
         assert "pass_fds" not in seen["kwargs"]
         config = json.loads(b"".join(written))
+        assert list(config) == [SHARE_KEY]
         assert base64.b64decode(config[SHARE_KEY]) == b"accepted-99"
+
+
+class TestViaConfigPrivacy:
+    """A relaying coordinator never sees the config it is relaying.
+
+    ``via=`` asks one gateway to *spawn* another, so the intermediary
+    decides what to launch -- but not what it is.  The sub's config comes
+    down the tunnel from the coordinator that wants the gateway, which is
+    the only side that has any business holding its ``env:`` values.
+    """
+
+    def test_the_spawn_request_carries_no_config(self) -> None:
+        spec = execnet.XSpec("popen//via=coord//id=gw1//env:TOKEN=s3cr3t//chdir=/srv")
+        request = _provision.spawn_request(spec)
+        assert "config" not in request
+        assert "s3cr3t" not in json.dumps(request)
+        # what provisioning genuinely cannot defer: which environment to build
+        assert request["profile"] == "thread"
+
+    def test_the_sub_is_spawned_without_one(self) -> None:
+        argv, _delivery = _provision.sub_spawn_argv({"profile": "thread"})
+        assert not any(token.startswith("--config") for token in argv)
+
+    def test_env_reaches_a_sub_through_the_tunnel(self) -> None:
+        # end to end: the value never touches the intermediary's argv, and
+        # still arrives in the sub's environment
+        group = execnet.Group()
+        try:
+            group.makegateway("popen//id=coord")
+            sub = group.makegateway("popen//via=coord//env:TUNNELLED=yes")
+            channel = sub.remote_exec(
+                "import os; channel.send(os.environ['TUNNELLED'])"
+            )
+            assert channel.receive(TESTTIMEOUT) == "yes"
+        finally:
+            group.terminate(timeout=TESTTIMEOUT)

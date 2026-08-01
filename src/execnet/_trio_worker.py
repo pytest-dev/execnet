@@ -23,6 +23,8 @@ from ._errors import geterrortext
 from ._execmodel import effective_profile
 from ._execmodel import get_execmodel
 from ._gateway_base import WorkerGateway
+from ._handshake import read_config_frame
+from ._handshake import send_ready_frame
 from ._serialize import loads_internal
 from ._trace import trace
 
@@ -522,6 +524,14 @@ class TrioWorkerExec:
         return self._idle.wait(timeout)
 
 
+def _first(*values: str | None) -> str:
+    """The first disposition actually asked for."""
+    for value in values:
+        if value is not None:
+            return value
+    raise AssertionError("the transport default is never None")
+
+
 def _devnull() -> str:
     try:
         return os.devnull
@@ -687,28 +697,66 @@ async def _serve_async_worker(stream: Any, id: str) -> None:
         nursery.cancel_scope.cancel()
 
 
+class _FdChannel:
+    """Blocking handshake IO over a pipe pair (or a POSIX socket fd)."""
+
+    def __init__(self, read_fd: int, write_fd: int) -> None:
+        self._read_fd = read_fd
+        self._write_fd = write_fd
+
+    def recv(self, max_bytes: int) -> bytes:
+        return os.read(self._read_fd, max_bytes)
+
+    def sendall(self, data: bytes) -> None:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(self._write_fd, view) :]
+
+
+class _SocketChannel:
+    """Blocking handshake IO over a socket object.
+
+    Not ``_FdChannel(sock.fileno(), ...)``: a Windows socket handle is not
+    an ``os.read``-able fd, and the share transport's socket only exists
+    there.
+    """
+
+    def __init__(self, sock: Any) -> None:
+        self._sock = sock
+
+    def recv(self, max_bytes: int) -> bytes:
+        data: bytes = self._sock.recv(max_bytes)
+        return data
+
+    def sendall(self, data: bytes) -> None:
+        self._sock.sendall(data)
+
+
 class Transport(Protocol):
     """How a worker's protocol stream comes into being.
 
-    Split in two because the stdio transport has to claim fd 0/1 *before*
-    anything else touches them (including reading ``--config-fd 0``), while
-    opening the stream itself needs a running trio loop.
+    Three steps, because the stdio transport has to claim fd 0/1 before
+    anything else touches them, the config that decides this worker's
+    *shape* arrives over the stream itself (so it has to be read before
+    there is a loop -- ``profile=trio`` has no side thread to read it on),
+    and only wrapping the result needs a running trio loop.
     """
 
     #: default stdio disposition once this transport is serving
     stdio_defaults: tuple[str, str, str]
 
     def prepare(self) -> None:
-        """Synchronous fd bookkeeping, before the config is read."""
+        """Synchronous fd bookkeeping, before anything reads or writes."""
+
+    def connect(self) -> Any:
+        """Make the byte channel exist; blocking, no loop yet.
+
+        Returns a :class:`~execnet._handshake.BlockingChannel` the config
+        handshake runs over.
+        """
 
     async def open(self) -> Any:
         """The protocol ByteStream, ready for the Message protocol."""
-
-
-async def _send_ready(stream: Any) -> Any:
-    """Write the single handshake byte the coordinator waits for."""
-    await stream.send_all(b"1")
-    return stream
 
 
 class StdioTransport:
@@ -728,12 +776,16 @@ class StdioTransport:
     def prepare(self) -> None:
         self._fds = _dup_protocol_fds()
 
+    def connect(self) -> Any:
+        assert self._fds is not None, "prepare() first"
+        return _FdChannel(*self._fds)
+
     async def open(self) -> Any:
         from ._trio_gateway import staple_fd_stream
 
         assert self._fds is not None, "prepare() first"
         read_fd, write_fd = self._fds
-        return await _send_ready(staple_fd_stream(read_fd, write_fd))
+        return staple_fd_stream(read_fd, write_fd)
 
 
 class ShareTransport:
@@ -742,9 +794,9 @@ class ShareTransport:
     The Windows counterpart of an inherited fd: ``subprocess`` refuses
     ``pass_fds`` there, but ``WSADuplicateSocket`` can duplicate a socket
     into a named pid.  The resulting blob is bound to *us*, so it is inert
-    to anything else that might read it -- and it arrives in the config
-    rather than in argv, because sharing needs our pid and so cannot happen
-    until we have been spawned.
+    to anything else that might read it -- and it cannot travel with the
+    rest of the config, which arrives *through* the socket it describes.
+    That is what ``--config-fd`` is left for.
 
     Like any other socket transport, the worker's stdio stays untouched.
     """
@@ -753,34 +805,39 @@ class ShareTransport:
 
     def __init__(self) -> None:
         self._blob: bytes | None = None
+        self._sock: Any = None
 
     def prepare(self) -> None:
         pass
 
-    def adopt(self, config: dict[str, Any]) -> None:
-        """Take the share blob out of the config, once it has been read."""
+    def adopt(self, local_config: dict[str, Any]) -> None:
+        """Take the share blob out of the transport's local config."""
         import base64
 
         from ._trio_gateway import SHARE_KEY
 
-        raw = config.pop(SHARE_KEY, None)
+        raw = local_config.get(SHARE_KEY)
         if raw is None:
             raise SystemExit(
-                f"execnet worker: --protocol-share needs {SHARE_KEY!r} in the config"
+                f"execnet worker: --protocol-share needs {SHARE_KEY!r}"
+                " in the config given by --config-fd"
             )
         self._blob = base64.b64decode(raw)
 
-    async def open(self) -> Any:
+    def connect(self) -> Any:
         import socket as _socket
 
+        assert self._blob is not None, "adopt() first"
+        self._sock = _socket.fromshare(self._blob)  # type: ignore[attr-defined]
+        return _SocketChannel(self._sock)
+
+    async def open(self) -> Any:
         from . import _trio_host
 
-        assert self._blob is not None, "adopt() first"
-        sock = _socket.fromshare(self._blob)  # type: ignore[attr-defined]  # Windows
         # hand over the socket itself, not its fd: fromshare() already knows
         # what this socket is, and making adopt_socket re-derive that from
         # the bare handle is what PyPy on Windows cannot do
-        return await _trio_host.adopt_socket(sock)
+        return await _trio_host.adopt_socket(self._sock)
 
 
 class FdTransport:
@@ -794,21 +851,25 @@ class FdTransport:
     def prepare(self) -> None:
         pass
 
-    async def open(self) -> Any:
-        from . import _trio_host
-        from ._trio_gateway import staple_fd_stream
-
+    def connect(self) -> Any:
         if len(self.fds) == 2:
-            read_fd, write_fd = self.fds
-            return await _send_ready(staple_fd_stream(read_fd, write_fd))
+            return _FdChannel(*self.fds)
         (fd,) = self.fds
         if not stat.S_ISSOCK(os.fstat(fd).st_mode):
             raise ValueError(
                 f"--protocol-fd {fd} is not a socket; a single fd must be"
                 " bidirectional, use --protocol-fd READFD,WRITEFD for a pipe pair"
             )
-        # adopt_socket sends the handshake itself
-        return await _trio_host.adopt_socket(fd)
+        return _FdChannel(fd, fd)
+
+    async def open(self) -> Any:
+        from . import _trio_host
+        from ._trio_gateway import staple_fd_stream
+
+        if len(self.fds) == 2:
+            read_fd, write_fd = self.fds
+            return staple_fd_stream(read_fd, write_fd)
+        return await _trio_host.adopt_socket(self.fds[0])
 
 
 def parse_address(address: str) -> tuple[str, Any]:
@@ -819,6 +880,11 @@ def parse_address(address: str) -> tuple[str, Any]:
     if not sep or not port.isdigit():
         raise ValueError(f"expected unix:/path or host:port, got {address!r}")
     return "tcp", (host or "localhost", int(port))
+
+
+async def _socket_stream(sock: Any) -> Any:
+    """Wrap an already-connected stdlib socket for the loop."""
+    return trio.SocketStream(trio.socket.from_stdlib_socket(sock))
 
 
 class ConnectTransport:
@@ -833,22 +899,30 @@ class ConnectTransport:
 
     def __init__(self, address: str) -> None:
         self.kind, self.target = parse_address(address)
+        self._sock: Any = None
 
     def prepare(self) -> None:
         pass
 
-    async def open(self) -> Any:
+    def connect(self) -> Any:
+        import socket as _socket
+
         if self.kind == "unix":
-            stream = await trio.open_unix_socket(self.target)
+            sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            sock.connect(self.target)
         else:
-            stream = await trio.open_tcp_stream(*self.target)
-        return await _send_ready(stream)
+            sock = _socket.create_connection(self.target)
+        self._sock = sock
+        return _SocketChannel(sock)
+
+    async def open(self) -> Any:
+        return await _socket_stream(self._sock)
 
 
 class ListenTransport:
     """The worker listens and serves the first coordinator that connects.
 
-    The bound address is printed to stdout as JSON before serving, so a
+    The bound address is printed to stdout as JSON before the accept, so a
     launcher that asked for an ephemeral port can learn which one it got.
     """
 
@@ -856,50 +930,66 @@ class ListenTransport:
 
     def __init__(self, address: str) -> None:
         self.kind, self.target = parse_address(address)
+        self._sock: Any = None
 
     def prepare(self) -> None:
         pass
 
-    async def open(self) -> Any:
+    def connect(self) -> Any:
+        import socket as _socket
+
         if self.kind == "unix":
-            sock = trio.socket.socket(trio.socket.AF_UNIX, trio.socket.SOCK_STREAM)
-            await sock.bind(self.target)
-            sock.listen(1)
-            listeners = [trio.SocketListener(sock)]
+            listener = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            listener.bind(self.target)
             bound: Any = self.target
         else:
             host, port = self.target
-            listeners = await trio.open_tcp_listeners(port, host=host)
-            bound = listeners[0].socket.getsockname()[:2]
+            listener = _socket.create_server((host, port))
+            bound = list(listener.getsockname()[:2])
+        listener.listen(1)
         print(json.dumps({"listening": bound}), flush=True)
-        stream = await listeners[0].accept()
-        for listener in listeners:
-            await listener.aclose()
-        return await _send_ready(stream)
+        try:
+            sock, _peer = listener.accept()
+        finally:
+            listener.close()
+        self._sock = sock
+        return _SocketChannel(sock)
+
+    async def open(self) -> Any:
+        return await _socket_stream(self._sock)
 
 
 def serve_worker(
-    config: dict[str, Any],
     transport: Transport,
     *,
     stdin: str | None = None,
     stdout: str | None = None,
     stderr: str | None = None,
 ) -> None:
-    """Serve one gateway for ``config`` over ``transport``, then exit.
+    """Handshake over ``transport``, serve the one gateway it configures, exit.
 
     ``transport.prepare()`` must already have run (the CLI does it before
-    reading the config, so ``--config-fd 0`` still works under the stdio
-    transport).
+    anything touches fd 0/1).  Everything after that is driven by the
+    coordinator's config frame: it decides this worker's id, profile, wait
+    backend, working directory, environment and stdio -- and a worker that
+    will not serve answers *on the wire*, so the reason reaches the person
+    who asked for the gateway rather than a stderr nobody is reading.
     """
-    # before apply_stdio, so a refusal still reaches the real stderr
-    _check_version(config["coordinator_version"], config.get("env"))
+    channel = transport.connect()
+    config = read_config_frame(channel)
+
+    refusal = _version_refusal(config["coordinator_version"], config.get("env"))
+    if refusal is not None:
+        send_ready_frame(channel, error=refusal)
+        raise SystemExit(f"execnet worker: {refusal}")
+
     _apply_worker_setup(config)
     defaults = transport.stdio_defaults
+    # explicit CLI flags win over the spec's, which win over the transport's
     apply_stdio(
-        stdin=stdin if stdin is not None else defaults[0],
-        stdout=stdout if stdout is not None else defaults[1],
-        stderr=stderr if stderr is not None else defaults[2],
+        stdin=_first(stdin, config.get("stdin"), defaults[0]),
+        stdout=_first(stdout, config.get("stdout"), defaults[1]),
+        stderr=_first(stderr, config.get("stderr"), defaults[2]),
     )
 
     id = config["id"]
@@ -907,6 +997,16 @@ def serve_worker(
     # coordinator still connects.
     profile = effective_profile(config.get("profile") or config["execmodel"])
     wait: WaitBackend = config.get("wait", "thread")
+
+    import execnet
+
+    send_ready_frame(
+        channel,
+        execnet=execnet.__version__,
+        pid=os.getpid(),
+        profile=profile,
+        executable=sys.executable,
+    )
 
     if profile == "trio":
         # pure-async profile: one thread, the loop owns the main thread
@@ -959,18 +1059,20 @@ def _apply_worker_setup(config: dict[str, Any]) -> None:
         os.environ[name] = value
 
 
-def _check_version(
+def _version_refusal(
     coordinator_version: str, env: Mapping[str, str] | None = None
-) -> None:
-    """Refuse a coordinator whose (major/minor) execnet version differs.
+) -> str | None:
+    """Why this worker will not serve that coordinator, or None to proceed.
 
-    A minimal (patch-level) mismatch is tolerated.  For same-interpreter popen
-    the versions are always identical; this guards the remote paths, where the
-    worker runs whatever execnet its own environment has.
+    A (major/minor) execnet difference is refused; a patch-level one is
+    tolerated.  For same-interpreter popen the versions are always
+    identical; this guards the remote paths, where the worker runs whatever
+    execnet its own environment has.
 
     The wire protocol is deliberately unversioned, so a skew has no defined
-    behaviour: it is refused here, at the one moment a reason can still reach
-    the user, rather than surfacing later as an unreadable message.  Set
+    behaviour.  Refusing is the only honest answer, and the reason is
+    returned rather than raised because it goes back over the handshake --
+    the one moment there is still a channel to explain on.  Set
     :data:`IGNORE_VERSION_SKEW` (``popen//env:EXECNET_IGNORE_VERSION_SKEW=1``
     reaches this) to downgrade it to the warning it used to be.
     """
@@ -979,16 +1081,16 @@ def _check_version(
     ours = _rough_version(execnet.__version__)
     theirs = _rough_version(coordinator_version)
     if not (ours and theirs and ours != theirs):
-        return
+        return None
     versions = f"coordinator {coordinator_version}, worker {execnet.__version__}"
     if _skew_ignored(env or {}):
         sys.stderr.write(f"WARNING: execnet version mismatch: {versions}\n")
         sys.stderr.flush()
-        return
-    raise SystemExit(
-        f"execnet worker: version mismatch: {versions}. The protocol is not "
-        "compatible across major/minor versions -- install a matching execnet "
-        f"in this environment, or set {IGNORE_VERSION_SKEW}=1 to continue anyway."
+        return None
+    return (
+        f"version mismatch: {versions}. The protocol is not compatible across "
+        "major/minor versions -- install a matching execnet in that "
+        f"environment, or set {IGNORE_VERSION_SKEW}=1 to continue anyway."
     )
 
 

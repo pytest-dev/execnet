@@ -213,11 +213,13 @@ class TestGeventWorkerProfile:
 def test_provisioning_adds_gevent_requirement() -> None:
     from execnet import XSpec
     from execnet._provision import _extra_with_tokens
-    from execnet._provision import worker_cli_arg
+    from execnet._provision import worker_config
+    from execnet._provision import worker_profile
 
     spec = XSpec("popen//id=g1//execmodel=gevent")
-    config = worker_cli_arg(spec)
-    assert '"wait": "gevent"' in config
-    assert _extra_with_tokens(config) == ["--with", "gevent"]
-    plain = worker_cli_arg(XSpec("popen//id=g2//execmodel=thread"))
-    assert _extra_with_tokens(plain) == []
+    assert worker_config(spec)["wait"] == "gevent"
+    # the one thing a launcher must know before the worker reads its own
+    # config: which environment to build
+    assert _extra_with_tokens(worker_profile(spec)) == ["--with", "gevent"]
+    plain = XSpec("popen//id=g2//execmodel=thread")
+    assert _extra_with_tokens(worker_profile(plain)) == []
