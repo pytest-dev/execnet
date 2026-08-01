@@ -8,8 +8,9 @@ for.
 
 The branch was drafted as 2.2.  It is a major release:
 
-- the launch contract changed — a worker is `execnet worker …`, and no
-  source is bootstrapped over the wire;
+- the launch contract changed — a worker is `execnet worker <transport>`
+  configured by a frame on that transport, and no source is shipped over
+  the wire at all any more (rsync was the last exception);
 - the default transport changed — the protocol is a socket, not the
   worker's stdin/stdout;
 - a worker's stdio now belongs to the code it runs, so remote `print()`
@@ -107,7 +108,9 @@ and add a namespace test pinning the public method set.
 The facade works in a process that uses gevent *without* monkey-patching,
 and its own promise holds there: blocking waits park the calling greenlet.
 It does **not** work once `gevent.monkey` has patched the modules trio
-reaches for from a side thread — verified in every variant:
+reaches for from a side thread — which `TrioHost.start` now refuses
+outright rather than failing somewhere inside trio.  Verified in every
+variant:
 
 | patched | where it dies |
 |---|---|
@@ -116,12 +119,11 @@ reaches for from a side thread — verified in every variant:
 | `patch_all(thread=False, socket=False, select=False)` | `queue.SimpleQueue` is gevent's; `from_thread.run` -> `LoopExit` |
 
 Which is a problem, because a real gevent application usually *does*
-monkey-patch.  `TrioHost.start` now refuses outright in a patched process
-(`_check_gevent_not_patched`, before the thread exists) rather than hanging
-for 30s or failing somewhere inside trio, and the docs no longer imply
-patching is fine, so nothing is silently broken.  But
-"supported for gevent apps" is a bigger claim than "works if you drive
-gevent explicitly", and only one of them is true today.
+monkey-patch.  The refusal is `_check_gevent_not_patched`, before the
+thread exists, and the docs no longer imply patching is fine, so nothing
+is silently broken.  But "supported for gevent apps" is a bigger claim
+than "works if you drive gevent explicitly", and only one of them is true
+today.
 
 **Researched: can the host loop ignore the patches?**  For trio, only at a
 price nobody should pay; for asyncio, it is already free.
@@ -230,13 +232,26 @@ What execnet should own instead, so xdist's version becomes a few calls:
    config instead of reconstructing the layout by convention.  The
    translation is execnet's to give because the remote root is a
    provisioning fact — the caller only knows local paths.
-3. **rsync as a first-class operation.**  `RSync` still works by
-   `remote_exec`-ing `_rsync_remote`'s source and tunnelling data as
-   serialized channel messages.  Since execnet is now always *installed*
-   on the worker, this should follow the pattern the branch established
-   for `GATEWAY_START_SUB` and friends: a protocol-level request served by
-   the worker, with the data plane on a raw channel.  That also gets the
-   async surfaces an `RSync`, which they lack.
+3. **rsync as a first-class operation.**  *Done for the transport half*:
+   `GATEWAY_RSYNC` is a request the worker serves itself
+   (`_rsync_serve.py`), so no source is shipped, no exec slot is claimed,
+   and it works against a `profile=trio` worker.  Still open: the async
+   surfaces have no `RSync` — the driver in `_rsync.py` is sync and
+   blocking, and giving `execnet.trio`/`execnet.aio` one means either an
+   async driver beside it or making the sync one a facade over that.
+
+The shape this has to serve, concretely: provision a uv environment from a
+frozen lockfile, install a wheel of the project under test into it, and
+rsync the parts of the tree that are *not* in that artifact (tests,
+conftest, data files).  Which raises the question the rest turns on —
+**the worker is the test process**, so it has to be running inside the
+environment the project was installed into.  Either that environment is
+built before the worker launches (so lockfile and wheel travel out of
+band, as the execnet wheel does over ssh today), or a bootstrap gateway
+deploys over the protocol and the real gateway is launched afterwards
+against `python=<workspace>/.venv/bin/python`.  The second reuses
+everything that already exists and keeps one transfer path; the first is
+one process instead of two.  Decide this before building any of it.
 
 Open questions, none decided:
 
