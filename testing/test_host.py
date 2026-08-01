@@ -508,3 +508,68 @@ class TestEventLoopGuard:
             [sys.executable, "-c", code], capture_output=True, text=True, check=True
         )
         assert out.stdout.split() == ["False", "False"]
+
+
+class TestGeventPatchedProcess:
+    """A monkey-patched process cannot host the loop, and is told so.
+
+    The stub stands in for ``gevent.monkey`` because the real thing patches
+    the interpreter irreversibly -- and the point of the check is that it
+    reads ``sys.modules``, so a stub exercises exactly what runs.  The real
+    behaviour it stands for was measured in every variant: ``patch_all()``
+    removes ``select.epoll``, ``patch_all(select=False)`` gives trio a
+    gevent socketpair (EBADF), and patching neither still leaves
+    ``queue.SimpleQueue`` gevent's (``LoopExit``).
+    """
+
+    @staticmethod
+    def fake_monkey(*patched: str) -> object:
+        class FakeMonkey:
+            @staticmethod
+            def is_module_patched(name: str) -> bool:
+                return name in patched
+
+        return FakeMonkey()
+
+    def test_start_refuses_and_names_what_was_patched(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(
+            sys.modules, "gevent.monkey", self.fake_monkey("select", "socket")
+        )
+        host = _trio_host.TrioHost(name="execnet-host-patched")
+        with pytest.raises(RuntimeError) as excinfo:
+            host.start()
+        message = str(excinfo.value)
+        assert "gevent has monkey-patched select, socket" in message
+        assert "execnet.gevent" in message
+        # refused before the thread exists, so there is nothing to join
+        assert host._thread is None
+
+    def test_a_group_in_a_patched_process_fails_at_makegateway(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "gevent.monkey", self.fake_monkey("queue"))
+        group = execnet.Group(host=Host(name="execnet-host-patched-group"))
+        try:
+            with pytest.raises(RuntimeError, match="monkey-patched queue"):
+                group.makegateway("popen")
+        finally:
+            group.terminate(timeout=5.0)
+
+    def test_patching_something_else_is_none_of_our_business(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "gevent.monkey", self.fake_monkey("ssl"))
+        host = Host(name="execnet-host-unpatched")
+        group = execnet.Group(host=host)
+        try:
+            assert (
+                group.makegateway("popen")
+                .remote_exec("channel.send(1)")
+                .receive(TESTTIMEOUT)
+                == 1
+            )
+        finally:
+            group.terminate(timeout=5.0)
+            host.close()

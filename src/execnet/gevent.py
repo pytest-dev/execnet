@@ -24,8 +24,9 @@ its own OS thread, and it needs the real ``select`` (for ``epoll``),
 ``socket``, ``thread`` and ``queue``, which ``gevent.monkey`` replaces
 process-wide.  Patching is not what makes this namespace work anyway --
 its waits park the calling greenlet because they wait on a gevent
-primitive, not because the stdlib was swapped underneath them.  A host
-that cannot start in a patched process says so, and names gevent.
+primitive, not because the stdlib was swapped underneath them.  Starting a
+host in a patched process is refused before the loop thread exists, with
+an error naming what was patched.
 """
 
 from __future__ import annotations
