@@ -8,8 +8,6 @@ Sync Channel/Gateway APIs talk to this host via thread-safe queues and
 from __future__ import annotations
 
 import functools
-import itertools
-import json
 import math
 import queue as _queue
 import subprocess
@@ -47,9 +45,9 @@ from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
 from ._trio_gateway import ByteStream
 from ._trio_gateway import RawChannelStream
+from ._trio_gateway import configure_worker
 from ._trio_gateway import open_popen_process
 from ._trio_gateway import provision_sync
-from ._trio_gateway import read_handshake_ack
 from ._trio_gateway import ssh_transport_args
 
 #: bound on how long the endmarker callback may run during host shutdown
@@ -74,7 +72,7 @@ ssh_trio_args = ssh_transport_args
 
 
 async def adopt_socket(sock: int | Any) -> trio.SocketStream:
-    """Worker side: wrap an inherited socket and send the handshake.
+    """Worker side: wrap an inherited socket for the loop.
 
     Takes an fd or an already-built socket.  Rebuilding one from its fd
     makes the constructor *detect* family/type/proto by querying the
@@ -83,16 +81,15 @@ async def adopt_socket(sock: int | Any) -> trio.SocketStream:
     from ``socket.fromshare()``.  A caller holding a real socket should
     hand it over rather than reduce it to an integer first.
 
-    Runs on the Trio host loop.  The coordinator waits for ``b"1"`` before
-    starting the Message protocol; the worker config comes from the CLI.
+    Writes nothing: by the time this runs the handshake is over (it
+    happened on this socket, before there was a loop), and a stray byte
+    here would be read as the start of a frame.
     """
     import socket as _socket
 
     if isinstance(sock, int):
         sock = _socket.socket(fileno=sock)
-    stream = trio.SocketStream(trio.socket.from_stdlib_socket(sock))
-    await stream.send_all(b"1")
-    return stream
+    return trio.SocketStream(trio.socket.from_stdlib_socket(sock))
 
 
 class SyncIOHandle:
@@ -819,7 +816,7 @@ class FacadeAsyncGroup(AsyncGroup):
         # frame can arrive unrouted (we are on the loop: no dispatch races).
         io = RawChannelStream(session._channel_for(channelid))
         coordinator._send(Message.GATEWAY_START_SUB, channelid, dumps_internal(request))
-        await read_handshake_ack(io, "via")
+        await configure_worker(io, spec, "via")
         return io
 
     async def _resolve_socket_address(self, spec: Any) -> tuple[tuple[str, int], str]:
@@ -859,62 +856,19 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
     return gw
 
 
-_socket_worker_counter = itertools.count()
-
-#: worker-config keys a connecting coordinator may set on the worker the
-#: server spawns for it -- the ones a locally spawned worker would get in
-#: its argv.  Everything else is the server's own business, in particular
-#: the ``share`` blob, which is bound to a pid only the server knows.
-CLIENT_CONFIG_KEYS = frozenset(
-    {
-        "id",
-        "profile",
-        "execmodel",
-        "wait",
-        "chdir",
-        "nice",
-        "env",
-        "coordinator_version",
-    }
-)
-#: bounds on the config line, so a connection that is not an execnet
-#: coordinator (a port scan, a stalled peer) cannot hold a server task
-CONFIG_LINE_LIMIT = 1 << 16
-CONFIG_LINE_TIMEOUT = 10.0
-
-
-async def _read_worker_config(stream: trio.SocketStream) -> dict[str, Any]:
-    """Read the coordinator's JSON config line, before the protocol starts.
-
-    Byte at a time: the bytes after the newline are the peer's first
-    protocol frames and belong to the worker that inherits this socket, so
-    over-reading here would eat them.  It is one short line, once per
-    gateway.
-    """
-    buffer = bytearray()
-    with trio.fail_after(CONFIG_LINE_TIMEOUT):
-        while not buffer.endswith(b"\n"):
-            if len(buffer) >= CONFIG_LINE_LIMIT:
-                raise ValueError("worker config line too long")
-            chunk = await stream.receive_some(1)
-            if not chunk:
-                raise EOFError("no worker config before EOF")
-            buffer += chunk
-    config = json.loads(buffer)
-    if not isinstance(config, dict):
-        raise ValueError(f"worker config is not an object: {config!r}")
-    return {key: value for key, value in config.items() if key in CLIENT_CONFIG_KEYS}
-
-
-def _spawn_socket_worker(
-    sock: Any, client_config: dict[str, Any] | None = None
-) -> subprocess.Popen[bytes]:
+def _spawn_socket_worker(sock: Any) -> subprocess.Popen[bytes]:
     """Spawn a worker subprocess serving the accepted socket ``sock``.
 
     POSIX hands the fd over with ``pass_fds``.  Windows has no such thing,
     so the socket is duplicated into the child with ``WSADuplicateSocket``
-    and the blob travels in the config -- which is why the config goes to
-    stdin there: it cannot be built until the child's pid exists.
+    and the blob goes to its stdin: it cannot be built until the child's
+    pid exists.
+
+    Nothing else is passed.  What the worker *is* -- its id, profile,
+    working directory, environment -- comes from the coordinator's config
+    frame, which arrives on the very socket being handed over, so the
+    server is not in the business of relaying, filtering or even reading
+    it.
 
     Takes the socket rather than its fd because ``share()`` needs a stdlib
     socket object, and building one from a bare fd makes the constructor
@@ -922,28 +876,15 @@ def _spawn_socket_worker(
     caller already knows skips that: it is the one difference between this
     path and the popen one, and the popen one works where this did not.
     """
-    import execnet
-
     from . import _provision
     from ._trio_gateway import SHARE_KEY
     from ._trio_gateway import dumps_config
     from ._trio_gateway import share_socket
 
-    config: dict[str, Any] = {
-        "id": "socketworker%d" % next(_socket_worker_counter),
-        "execmodel": "thread",
-        "coordinator_version": execnet.__version__,
-    }
-    # what the coordinator asked for (chdir/nice/env/profile), filtered to
-    # the keys it is allowed to set -- see CLIENT_CONFIG_KEYS
-    config.update(client_config or {})
     argv = [sys.executable, "-m", "execnet", "worker"]
     fd = sock.fileno()
     if not _provision.socket_share_required():
-        return subprocess.Popen(
-            [*argv, "--protocol-fd", str(fd), "--config", json.dumps(config)],
-            pass_fds=[fd],
-        )
+        return subprocess.Popen([*argv, "--protocol-fd", str(fd)], pass_fds=[fd])
 
     import socket as _socket
 
@@ -955,11 +896,11 @@ def _spawn_socket_worker(
         # dropping the view does not close the fd we do not own
         view = _socket.socket(sock.family, sock.type, sock.proto, fileno=fd)
         try:
-            config[SHARE_KEY] = share_socket(view, process.pid)
+            blob = share_socket(view, process.pid)
         finally:
             view.detach()
         assert process.stdin is not None
-        process.stdin.write(dumps_config(config))
+        process.stdin.write(dumps_config({SHARE_KEY: blob}))
         process.stdin.close()
     except BaseException:
         process.kill()
@@ -974,24 +915,11 @@ async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> N
     this task (one-shot / installvia).
 
     A failed spawn closes the connection.  The coordinator is already waiting
-    on the other end for a handshake byte that is never coming, and an EOF is
+    on the other end for a handshake reply that is never coming, and an EOF is
     the only thing that will move it -- without this it waits forever.
-
-    The connection opens with the coordinator's worker config (one JSON
-    line).  A peer that sends none is not an execnet coordinator, so it gets
-    its connection closed rather than a worker -- and, unlike a failed spawn,
-    without taking the server's accept loop down with it.
     """
     try:
-        client_config = await _read_worker_config(stream)
-    except Exception as exc:
-        # not Cancelled: that is the server going down, and it has to travel
-        trace(f"no usable worker config on an accepted connection: {exc!r}")
-        with trio.CancelScope(shield=True), suppress(Exception):
-            await stream.aclose()
-        return
-    try:
-        proc = _spawn_socket_worker(stream.socket, client_config)
+        proc = _spawn_socket_worker(stream.socket)
     except BaseException:
         with trio.CancelScope(shield=True), suppress(Exception):
             await stream.aclose()
@@ -1099,10 +1027,11 @@ async def _start_sub_and_relay(
     frame-native both ways: coordinator payloads arrive verbatim through the
     session's raw channel and go to the sub's stdin unchanged (each payload
     one whole frame), while the sub's stdout runs through a FrameDecoder so
-    every CHANNEL_DATA sent back carries exactly one frame -- except the
-    initial ready byte, which is forwarded on its own for the handshake.
-    A shipped wheel (dev-version ssh sub) is delivered first, over its own
-    connection, so the relayed stream carries protocol bytes only.
+    every CHANNEL_DATA sent back carries exactly one frame.  The sub's own
+    config is the first of those frames, from the coordinator that wants the
+    gateway -- this relay passes it through without reading it.  A shipped
+    wheel (dev-version ssh sub) is delivered first, over its own connection,
+    so the relayed stream carries protocol bytes only.
     """
     from . import _provision
 
@@ -1132,16 +1061,13 @@ async def _start_sub_and_relay(
 
     async def sub_to_coordinator() -> None:
         assert process.stdout is not None
-        ack = bytes(await process.stdout.receive_some(1))
-        if ack:
-            gateway._send(Message.CHANNEL_DATA, channelid, ack)
-            decoder = FrameDecoder()
-            while True:
-                data = bytes(await process.stdout.receive_some(RECEIVE_CHUNK))
-                if not data:
-                    break
-                for message in decoder.feed(data):
-                    gateway._send(Message.CHANNEL_DATA, channelid, message.pack())
+        decoder = FrameDecoder()
+        while True:
+            data = bytes(await process.stdout.receive_some(RECEIVE_CHUNK))
+            if not data:
+                break
+            for message in decoder.feed(data):
+                gateway._send(Message.CHANNEL_DATA, channelid, message.pack())
         with suppress(OSError):
             gateway._send(Message.CHANNEL_CLOSE, channelid)
 

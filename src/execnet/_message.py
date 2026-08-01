@@ -68,6 +68,9 @@ class Message:
     GATEWAY_START_SOCKET = 8
     GATEWAY_START_SUB = 9
     GATEWAY_INFO = 10
+    #: the worker handshake, both directions -- see :mod:`execnet._handshake`.
+    #: Exchanged before either side starts serving, so it is never dispatched.
+    GATEWAY_CONFIG = 11
 
     # message code -> name
     _types: dict[int, str] = {
@@ -82,6 +85,7 @@ class Message:
         GATEWAY_START_SOCKET: "GATEWAY_START_SOCKET",
         GATEWAY_START_SUB: "GATEWAY_START_SUB",
         GATEWAY_INFO: "GATEWAY_INFO",
+        GATEWAY_CONFIG: "GATEWAY_CONFIG",
     }
 
     def __init__(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:

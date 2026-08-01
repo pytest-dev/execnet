@@ -43,26 +43,48 @@ worker starts::
 
     execnet worker  --protocol-stdio | --protocol-fd FD[,FD]
                     | --protocol-connect ADDR | --protocol-listen ADDR
-                    | --protocol-share
-                    --config JSON | --config-fd FD | --config-file PATH
-                    --stdin/--stdout/--stderr DISPOSITION
+                    | --protocol-share [--config-fd FD]
+                    [--stdin/--stdout/--stderr DISPOSITION]
 
 ``ADDR`` is ``unix:/path`` or ``host:port``.  Provisioning emits ``python -m
 execnet worker ...`` for a direct interpreter launch (where the console
 script's location is not knowable) and ``execnet worker ...`` under ``uv
 run``; both are the same CLI.
 
-The **config** (gateway id, worker profile, coordinator version, ``env:``
-values, and for ``--protocol-share`` the socket blob) is JSON.  It travels in
-argv only where argv is private to the machine: a remote argv is readable
-through ``ps`` by every user on that host, so ssh passes it on stdin with
-``--config-fd 0``.  Do not regress that.
+Which is to say: argv names a transport and nothing else.  What the worker
+*is* -- its gateway id, worker profile, working directory, ``nice`` level,
+``env:`` values, stdio disposition -- arrives as the first frame on that
+transport, before the protocol proper begins:
+
+.. code-block:: text
+
+    coordinator --> GATEWAY_CONFIG  {"id": ..., "profile": ..., "env": {...}}
+    worker      --> GATEWAY_CONFIG  {"ok": true, "execnet": ..., "pid": ...}
+                or  GATEWAY_CONFIG  {"ok": false, "error": "version mismatch: ..."}
+
+That keeps the config out of argv everywhere rather than only remotely --
+``/proc`` is world-readable on the local machine exactly as ``ps`` is on a
+remote one, and ``env:`` values are secrets often enough.  It also gives a
+worker that refuses to serve somewhere to say so: the reason reaches
+whoever asked for the gateway instead of a stderr that may be pointed
+anywhere.  Do not regress either property.
+
+The single exception is ``--protocol-share`` on Windows, where the socket
+is duplicated into the worker with ``WSADuplicateSocket``: that blob
+describes the very connection a config frame would arrive on, so it goes to
+the worker's stdin as a one-key JSON object (``--config-fd``).  Nothing
+else may travel that way.
+
+An intermediary never sees a config it is only relaying: a ``via=``
+coordinator is asked to *spawn* a sub-worker, and the sub's config comes
+down the tunnel from the coordinator that wants the gateway.
 
 Naming the transport explicitly is what frees the worker's stdio.  Once the
 protocol has a stream of its own, fd 0/1/2 belong to the code the worker
-runs, and ``--stdin/--stdout/--stderr`` say what to do with them (the
-defaults come from the transport: leave them alone for a socket, close stdin
-and fold stdout onto stderr for stdio).
+runs, and the spec's ``stdin=``/``stdout=``/``stderr=`` keys say what to do
+with them (defaults come from the transport: leave them alone for a socket,
+close stdin and fold stdout onto stderr for stdio).  The matching CLI flags
+override the config, for a worker started by hand.
 
 Two more subcommands round it out: ``execnet server [HOST:PORT] [--once]``
 accepts coordinator connections and hands each to a fresh worker (no code
@@ -85,17 +107,14 @@ How the worker gets its protocol stream, by gateway:
 
 ``popen``, Windows
     a socket duplicated into the child pid with ``socket.share()``, the blob
-    travelling in the config (``--protocol-share``)
+    travelling on the child's stdin (``--protocol-share``)
 
 ``socket=`` / ``installvia=``
     the server accepts the connection, then hands that socket to the worker
-    it spawns, by whichever of the two mechanisms the platform has.  Since
-    the *server* spawns it, the config cannot ride in argv: the coordinator
-    sends it as one JSON line ahead of the protocol, and the server takes
-    the keys a spec legitimately carries (``profile``, ``chdir``, ``nice``,
-    ``env`` …) and none of its own (the share blob is bound to a pid only
-    the server knows).  A connection that sends no config line within ten
-    seconds is closed rather than served -- it is not a coordinator.
+    it spawns, by whichever of the two mechanisms the platform has.  The
+    coordinator's config frame arrives on that same socket, so it reaches
+    the worker directly: the server neither reads nor relays it, and has no
+    configuration of its own to merge in.
 
 ``ssh=`` / ``vagrant_ssh=``
     an ``ssh -R`` forwarded unix socket the worker dials back on (POSIX
@@ -103,8 +122,8 @@ How the worker gets its protocol stream, by gateway:
 
 Windows has no ``pass_fds``, hence ``socket.share()`` (``WSADuplicateSocket``),
 which duplicates into a *named pid* -- and the pid does not exist until the
-child does, which is why the flag is in argv while the blob follows in the
-config.  The blob is bound to that one pid, so it is inert to anything else;
+child does, which is why the flag is in argv while the blob follows on
+stdin.  The blob is bound to that one pid, so it is inert to anything else;
 that beats handle inheritance, which would need ``close_fds=False`` and leak
 every inheritable handle to the child and its grandchildren.
 
@@ -182,8 +201,11 @@ result object instead.
 Inside the worker
 ----------------------
 
-The worker adopts its transport, writes a single ``b"1"`` handshake byte,
-and serves the Message protocol on its own Trio loop.  Where exec'd code
+The worker opens its transport with blocking IO, reads its config frame,
+answers it, and only then builds a Trio loop and serves the Message
+protocol on it.  The handshake happens before the loop deliberately: the
+config is what decides the worker's *shape*, and ``profile=trio`` has no
+side thread to read it on.  Where exec'd code
 runs is the ``profile=`` axis (:ref:`worker profiles <worker-profiles>`),
 implemented as an exec strategy per profile in ``execnet._trio_worker``:
 ``HybridExec`` (main thread while free, pool threads for overflow),
@@ -207,5 +229,5 @@ reply with its address) and ``GATEWAY_START_SUB`` (``via=`` -- spawn a
 sub-worker and relay its protocol over the request channel).  A sub-gateway
 that fails to start must not take its coordinator down with it, and a
 failure that cannot be reported must still close the connection, so the
-requesting side sees EOF instead of waiting for a handshake byte nobody will
-send.
+requesting side sees EOF instead of waiting for a handshake reply nobody
+will send.

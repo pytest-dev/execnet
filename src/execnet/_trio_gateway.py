@@ -48,6 +48,8 @@ from ._errors import RemoteError
 from ._errors import TimeoutError
 from ._exec_source import normalize_exec_source
 from ._execmodel import resolve_profile
+from ._handshake import read_ready
+from ._handshake import send_config
 from ._message import FrameDecoder
 from ._message import Message
 from ._message import gateway_info
@@ -161,11 +163,26 @@ def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
     )
 
 
-async def read_handshake_ack(stream: ByteStream, what: str) -> None:
-    """Wait for the worker's single ``b"1"`` ready byte."""
-    ack = await stream.receive_some(1)
-    if ack != b"1":
-        raise EOFError(f"bad {what} handshake: {ack!r}")
+async def configure_worker(stream: ByteStream, spec: Any, what: str) -> dict[str, Any]:
+    """Configure the worker on ``stream`` and wait until it is serving.
+
+    One ``GATEWAY_CONFIG`` frame out, one back (:mod:`execnet._handshake`).
+    Identical on every transport, which is why nothing a worker needs has
+    to be squeezed into its argv.
+
+    A worker that dies mid-handshake is reported as ``EOFError`` whichever
+    way its transport shows that: a dead peer *resets* a socket where a
+    pipe reaches EOF, and callers here test for EOF.
+    """
+    from . import _provision
+
+    config = _provision.worker_config(spec) if spec is not None else {}
+    try:
+        await send_config(stream, config)
+        return await read_ready(stream, what)
+    except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
+        error = EOFError(f"the worker went away during the {what} handshake: {exc}")
+        raise error from exc
 
 
 async def open_popen_process(args: list[str]) -> trio.Process:
@@ -177,13 +194,17 @@ async def open_popen_process(args: list[str]) -> trio.Process:
 
 
 def popen_module_args(
-    spec: Any, *protocol: str, config_on_stdin: bool = False
+    spec: Any, *protocol: str, local_config_on_stdin: bool = False
 ) -> list[str]:
     """Launch the Trio worker as a module: ``python -m execnet worker``.
 
     No source is sent over the wire; the worker imports the installed execnet +
     trio.  Used for same-interpreter popen and for a ``python=`` interpreter that
     already has execnet (so ``sys.executable`` stays that interpreter).
+
+    Nothing about the gateway is in here: what this worker *is* arrives as
+    the config frame.  ``local_config_on_stdin`` is only the Windows
+    ``share`` blob, which has to exist before the stream does.
     """
     from . import _provision
 
@@ -196,16 +217,13 @@ def popen_module_args(
     if getattr(spec, "dont_write_bytecode", False):
         args.append("-B")
     args += ["-m", "execnet", "worker", *protocol]
-    args += _provision.stdio_tokens(spec)
-    if config_on_stdin:
+    if local_config_on_stdin:
         args += ["--config-fd", "0"]
-    else:
-        args += ["--config", _provision.worker_cli_arg(spec)]
     return args
 
 
 def popen_worker_argv(
-    spec: Any, *protocol: str, config_on_stdin: bool = False
+    spec: Any, *protocol: str, local_config_on_stdin: bool = False
 ) -> list[str]:
     """Argv for a popen worker: direct module launch, or uv-provisioned.
 
@@ -216,9 +234,11 @@ def popen_worker_argv(
 
     if spec.python and not _provision.target_has_execnet(spec.python):
         return _provision.uv_worker_argv(
-            spec, *protocol, config_on_stdin=config_on_stdin
+            spec, *protocol, local_config_on_stdin=local_config_on_stdin
         )
-    return popen_module_args(spec, *protocol, config_on_stdin=config_on_stdin)
+    return popen_module_args(
+        spec, *protocol, local_config_on_stdin=local_config_on_stdin
+    )
 
 
 class RawChannel:
@@ -965,10 +985,9 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     """Spawn an ssh/vagrant worker on the transport ``spec`` resolves to.
 
     ``transport=socket`` forwards a private unix socket to the remote with
-    ``ssh -R`` and lets the worker dial back on it, which leaves ssh's
-    stdin free for the config (so it is not in the remote argv, where every
-    user on that host can read the ``env:`` values) and leaves the worker's
-    stdout and stderr free for the code it runs.
+    ``ssh -R`` and lets the worker dial back on it, which leaves the
+    worker's stdin, stdout and stderr free for the code it runs.  The
+    config travels on the dialled-back connection like everywhere else.
     """
     from . import _provision
 
@@ -986,7 +1005,7 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
             ssh_transport_args if spec.ssh is not None else vagrant_transport_args,
             spec,
         )
-        return await connect_command_worker(args, remoteaddress=remoteaddress)
+        return await connect_command_worker(args, spec, remoteaddress=remoteaddress)
 
     async with _dialback_listener() as (local_sock, listener):
         remote_sock = f"/tmp/execnet-{uuid.uuid4().hex}.sock"
@@ -995,17 +1014,14 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
             spec,
             "--protocol-connect",
             f"unix:{remote_sock}",
-            config_on_stdin=True,
         )
         argv = _ssh_argv(spec, command, forward=(remote_sock, local_sock))
-        # stdout/stderr stay inherited: remote output is the user's now.
-        process = await trio.lowlevel.open_process(argv, stdin=subprocess.PIPE)
+        # stdin closed, stdout/stderr inherited: the remote's stdio is the
+        # user's now, and nothing of ours travels on it.
+        process = await trio.lowlevel.open_process(argv, stdin=subprocess.DEVNULL)
         try:
-            assert process.stdin is not None
-            await process.stdin.send_all(_provision.worker_cli_arg(spec).encode())
-            await process.stdin.aclose()
             stream = await _accept_or_diagnose(listener, process, remoteaddress)
-            await read_handshake_ack(stream, "ssh")
+            await configure_worker(stream, spec, "ssh")
         except BaseException:
             with trio.CancelScope(shield=True), trio.move_on_after(5):
                 process.kill()
@@ -1045,23 +1061,21 @@ async def deliver_remote_wheel(spec: Any, wheel: Any) -> None:
 
 async def connect_command_worker(
     args: list[str],
+    spec: Any = None,
     *,
-    preamble: bytes = b"",
     remoteaddress: str | None = None,
 ) -> tuple[ByteStream, trio.Process]:
-    """Spawn ``args`` and complete the worker ready handshake.
+    """Spawn ``args`` and configure the worker over its stdio.
 
-    ``preamble`` is streamed to the worker's stdin before the handshake
-    (a shipped wheel that the remote receives with ``head -c``).  With a
-    ``remoteaddress``, a handshake EOF plus exit code 255 (ssh could not
+    The stdio transport: the config frame and the protocol share the one
+    stream, which is what a plain ``python -m execnet worker`` reads.  With
+    a ``remoteaddress``, a handshake EOF plus exit code 255 (ssh could not
     reach or authenticate the host) becomes :class:`HostNotFound`.
     """
     process = await open_popen_process(args)
     try:
         stream = staple_process_stream(process)
-        if preamble:
-            await stream.send_all(preamble)
-        await read_handshake_ack(stream, "bootstrap")
+        await configure_worker(stream, spec, "bootstrap")
     except BaseException as exc:
         host_not_found = False
         with trio.CancelScope(shield=True):
@@ -1096,8 +1110,9 @@ async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
     POSIX passes the fd itself.  Windows cannot -- ``subprocess`` refuses
     ``pass_fds`` there -- so the socket is duplicated into the child with
     ``WSADuplicateSocket``.  That needs the child's pid, so it can only
-    happen once the child exists: the flag goes in argv, the blob follows in
-    the config on stdin.
+    happen once the child exists: the flag goes in argv, the blob follows on
+    stdin.  It is the one thing that cannot travel in the config frame,
+    since it describes the very connection that frame would arrive on.
     """
     from . import _provision
 
@@ -1108,14 +1123,14 @@ async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
         return await trio.lowlevel.open_process(args, pass_fds=(theirs.fileno(),))
 
     args = await provision_sync(
-        popen_worker_argv, spec, "--protocol-share", config_on_stdin=True
+        popen_worker_argv, spec, "--protocol-share", local_config_on_stdin=True
     )
     process = await trio.lowlevel.open_process(args, stdin=subprocess.PIPE)
     try:
         assert process.stdin is not None
-        config = _provision.worker_config(spec)
-        config[SHARE_KEY] = share_socket(theirs, process.pid)
-        await process.stdin.send_all(dumps_config(config))
+        await process.stdin.send_all(
+            dumps_config({SHARE_KEY: share_socket(theirs, process.pid)})
+        )
         await process.stdin.aclose()
     except BaseException:
         with trio.CancelScope(shield=True), suppress(Exception):
@@ -1126,7 +1141,7 @@ async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
 
 
 def dumps_config(config: dict[str, Any]) -> bytes:
-    """The worker config as the bytes a ``--config-fd`` worker reads."""
+    """A transport's local config as the bytes a ``--config-fd`` worker reads."""
     import json
 
     return json.dumps(config).encode("utf-8")
@@ -1147,7 +1162,7 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     )
     if transport == "stdio":
         return await connect_command_worker(
-            await provision_sync(popen_worker_argv, spec)
+            await provision_sync(popen_worker_argv, spec), spec
         )
 
     import socket as _socket
@@ -1167,7 +1182,7 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     theirs.close()
     stream = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
     try:
-        await read_handshake_ack(stream, "bootstrap")
+        await configure_worker(stream, spec, "bootstrap")
     except BaseException as exc:
         with trio.CancelScope(shield=True):
             status: int | None = None
@@ -1188,24 +1203,18 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
 async def connect_socket_worker(
     address: tuple[str, int], remoteaddress: str, spec: Any = None
 ) -> ByteStream:
-    """Connect to a running socketserver and complete the ready handshake.
+    """Connect to a running socketserver and configure the worker it spawns.
 
-    The worker is spawned by the *server*, so the config that a locally
-    spawned worker would get in its argv has to travel over the connection
-    instead: one JSON line, ahead of the protocol.  Without it ``profile=``,
-    ``chdir=``, ``nice=`` and ``env:`` on a ``socket=`` spec would be
-    accepted and then quietly dropped.
+    The worker is spawned by the *server* and inherits this connection, so
+    the config frame reaches it exactly as it would any other worker -- the
+    server neither reads it nor needs to know what is in it.
     """
-    from . import _provision
-
     try:
         stream = await trio.open_tcp_stream(*address)
     except OSError as exc:
         raise HostNotFound(remoteaddress) from exc
     try:
-        config = _provision.worker_config(spec) if spec is not None else {}
-        await stream.send_all(dumps_config(config) + b"\n")
-        await read_handshake_ack(stream, "socket")
+        await configure_worker(stream, spec, "socket")
     except BaseException:
         with trio.CancelScope(shield=True), trio.move_on_after(5):
             await stream.aclose()
@@ -1392,7 +1401,9 @@ class AsyncGroup:
             Message.GATEWAY_START_SUB, raw.id, dumps_internal(request)
         )
         stream = RawChannelStream(raw)
-        await read_handshake_ack(stream, "via")
+        # the sub's config goes down the tunnel, so the coordinator relaying
+        # it never sees this spec's env: values
+        await configure_worker(stream, spec, "via")
         return stream
 
     def _gateway_by_id(self, id: str) -> AsyncGateway:

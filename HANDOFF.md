@@ -46,10 +46,11 @@ There is **one protocol engine**, the async-native `AsyncGateway`
 protocol (`Message` framing) is unchanged from 2.1.
 
 **No source is shipped over the wire, ever.**  Workers are launched as
-`execnet worker <transport> <config>`; foreign and remote interpreters are
-uv-provisioned; a dev coordinator builds and ships a wheel.  A major/minor
-version skew is **refused** by the worker before it touches its stdio
-(`_trio_worker._check_version`); `EXECNET_IGNORE_VERSION_SKEW=1` in its
+`execnet worker <transport>` and configured by a frame on it; foreign and
+remote interpreters are uv-provisioned; a dev coordinator builds and ships
+a wheel.  A major/minor version skew is **refused** by the worker as its
+answer to that frame (`_trio_worker._version_refusal`), so the coordinator
+gets the reason rather than an EOF; `EXECNET_IGNORE_VERSION_SKEW=1` in its
 environment or its config `env:` downgrades that to a warning.
 
 ### Four namespaces, one per concurrency library you drive execnet from
@@ -75,12 +76,18 @@ inside a running event loop raise and name `execnet.aio` / `execnet.trio`
 ```
 execnet worker  --protocol-stdio | --protocol-fd FD[,FD]
                 | --protocol-connect ADDR | --protocol-listen ADDR
-                | --protocol-share
-                --config JSON | --config-fd FD | --config-file PATH
-                --stdin/--stdout/--stderr DISPOSITION
+                | --protocol-share [--config-fd FD]
+                [--stdin/--stdout/--stderr DISPOSITION]
 execnet server  [HOST:PORT] [--once]
 execnet info
 ```
+
+Argv names a transport, nothing else.  What the worker *is* — id, profile,
+chdir, nice, `env:`, stdio disposition — arrives as one `GATEWAY_CONFIG`
+frame on that transport, and the worker answers with one
+(`{"ok": true, …}` or `{"ok": false, "error": …}`); see
+`_handshake.py`.  `--config-fd` is left only for the Windows `share` blob,
+which describes the connection the frame would otherwise arrive on.
 
 `ADDR` is `unix:/path` or `host:port`.  Everything that starts a worker
 emits these tokens; there is no second launch path.  `execnet info`
@@ -96,9 +103,9 @@ the code it runs.
 | gateway | handoff |
 |---|---|
 | popen, POSIX | `pass_fds` + `--protocol-fd` (socketpair) |
-| popen, Windows | `socket.share(pid)` + `--protocol-share`, blob in the config |
-| `socket=` / `installvia=` | the same two, server-side; the spec's config travels as a JSON line ahead of the protocol, since the *server* spawns the worker |
-| `ssh=` / `vagrant_ssh=` | `ssh -R` unix socket, worker dials back (`--protocol-connect`) |
+| popen, Windows | `socket.share(pid)` + `--protocol-share`, blob on stdin |
+| `socket=` / `installvia=` | the same two, server-side; the server hands the accepted socket over without reading it, and the coordinator's config frame reaches the worker on it |
+| `ssh=` / `vagrant_ssh=` | `ssh -R` unix socket, worker dials back (`--protocol-connect`); ssh's stdin is closed |
 | `via=` | the sub's stdio, relayed over the coordinator's protocol |
 
 `--protocol-listen` has no user today; it is what a trampoline or a
@@ -137,10 +144,11 @@ shape does not dictate the worker's.
 | file | role |
 |---|---|
 | `_message.py` / `_serialize.py` | wire protocol + sans-IO `FrameDecoder`; serializer (CHANNEL opcode incl. duck-typed `save_AsyncChannel`) |
+| `_handshake.py` | the `GATEWAY_CONFIG` exchange, both directions: blocking for the worker (it runs before there is a loop), async over `ByteStream` for the coordinator |
 | `_channel.py` / `_gateway_base.py` / `_errors.py` | sync `Channel`/`ChannelFactory`; `BaseGateway`/`WorkerGateway`; error types |
 | `_trio_gateway.py` | **the engine**: `ByteStream` Protocol, `RawChannel`/`AsyncChannel`, `AsyncGateway` (outbound queue of `(frame, on_written)`, `_finalize` hook), `AsyncGroup` (all transports, reapers, bounded terminate), `ThreadedFdStream`, stream/argv helpers |
 | `_trio_host.py` | `Host`'s loop thread, `SyncBridgeGateway`, `FacadeAsyncGroup`, `SyncIOHandle`, `RawTunnelStream`, the `GATEWAY_START_*` handlers |
-| `_trio_worker.py` | worker entry, `TrioWorkerExec` + exec strategies, `_prepare_protocol_fds`, `_check_version` |
+| `_trio_worker.py` | worker entry, `TrioWorkerExec` + exec strategies, `_dup_protocol_fds`, the transports (blocking `connect()` + async `open()`), `_version_refusal` |
 | `_boundary.py` / `_portal.py` | the (private) boundary kit: `Wakener`/`Mailbox`/`OneShot`/`Flag`, `LoopPortal` |
 | `_host.py` / `_gateway.py` / `_multi.py` | shared `Host`; sync `Gateway`; sync `Group` + `MultiChannel` |
 | `sync.py` / `trio.py` / `aio.py` / `gevent.py` | the four public namespaces |
@@ -195,8 +203,15 @@ shape does not dictate the worker's.
 **Launch and provisioning**
 
 - No source shipping.  Workers import an installed execnet + trio.
-- The worker config never travels in a remote argv — it carries `env:`
-  values, and `ps` is world-readable.  ssh uses `--config-fd 0`.
+- **The worker config never travels in an argv, local or remote.**  It is a
+  `GATEWAY_CONFIG` frame on the protocol stream, the same on every
+  transport (`_handshake.py`).  It carries `env:` values, and `/proc` is
+  world-readable on the local machine exactly as `ps` is on a remote one.
+  Two properties fall out and are pinned by tests: a `via=` intermediary
+  never sees the config it relays, and a worker that refuses to serve
+  answers *on the wire*, so the reason reaches the caller instead of a
+  stderr that may be pointed anywhere.  The one exception is the Windows
+  `share` blob, which describes the connection the frame would arrive on.
 - **Nothing in `_provision` is called from the loop thread.**  Deciding
   *what* to launch runs subprocesses — an `execnet info` probe of a
   `python=` target (30s timeout) and a dev coordinator's `uv build`

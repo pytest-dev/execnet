@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 
 import pytest
@@ -13,12 +12,14 @@ from execnet import _provision
 released = re.fullmatch(r"\d+\.\d+\.\d+", execnet.__version__) is not None
 
 
-def test_worker_cli_arg_carries_config() -> None:
-    spec = execnet.XSpec("popen//id=gw5//execmodel=thread")
-    config = json.loads(_provision.worker_cli_arg(spec))
+def test_worker_config_carries_what_the_worker_needs() -> None:
+    spec = execnet.XSpec("popen//id=gw5//execmodel=thread//env:TOKEN=s3cr3t")
+    config = _provision.worker_config(spec)
     assert config["id"] == "gw5-worker"
     assert config["execmodel"] == "thread"
     assert config["coordinator_version"] == execnet.__version__
+    # it goes on the wire, never in an argv -- see execnet._handshake
+    assert config["env"] == {"TOKEN": "s3cr3t"}
 
 
 def test_ssh_remote_command_released(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,15 +90,15 @@ def test_vagrant_ssh_argv() -> None:
 def test_sub_spawn_argv_plain_popen() -> None:
     import sys
 
-    argv, delivery = _provision.sub_spawn_argv({"config": "{}"})
+    # no config: the sub is configured by a frame from the coordinator that
+    # asked for it, which never passes through this intermediary
+    argv, delivery = _provision.sub_spawn_argv({"profile": "thread"})
     assert argv == [
         sys.executable,
         "-u",
         "-m",
         "execnet",
         "worker",
-        "--config",
-        "{}",
     ]
     assert delivery is None
 
@@ -158,7 +159,7 @@ class TestExplicitWheel:
 
 def test_sub_spawn_argv_vagrant_released() -> None:
     request = {
-        "config": "{}",
+        "profile": "thread",
         "vagrant_ssh": "default",
         "requirement": "execnet==9.9.9",
     }

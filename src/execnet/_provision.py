@@ -344,10 +344,11 @@ def coordinator_requirement() -> str:
 def worker_config(spec: Any) -> dict[str, Any]:
     """The worker config for ``spec`` (the whole 'spec thing'), as a dict.
 
-    Every launcher (popen, uv, ssh) sends this so the worker config lives in
-    one place rather than scattered positional args.  A launcher may add to
-    it before serializing -- the ``share`` transport puts its duplicated
-    socket here, since that cannot exist until the worker has been spawned.
+    Every launcher builds this and every worker is configured by it,
+    delivered the same way on every transport: one ``GATEWAY_CONFIG`` frame
+    ahead of the protocol (:mod:`execnet._handshake`).  It never goes in
+    argv -- it carries ``env:`` values, and ``/proc`` is world-readable on
+    the local machine just as ``ps`` is on a remote one.
     """
     import execnet
 
@@ -376,48 +377,30 @@ def worker_config(spec: Any) -> dict[str, Any]:
         config["nice"] = int(spec.nice)
     if spec.env:
         config["env"] = spec.env
-    return config
-
-
-def worker_cli_arg(spec: Any) -> str:
-    """:func:`worker_config` serialized for ``--config``/``--config-fd``."""
-    return json.dumps(worker_config(spec))
-
-
-def stdio_tokens(spec: Any) -> list[str]:
-    """``--stdin/--stdout/--stderr`` tokens for whatever ``spec`` asked for.
-
-    A worker inherits the coordinator's stdio by default now that the
-    protocol has a transport of its own, which also means remote code can
-    *consume* the coordinator's stdin.  These keys are how a caller says
-    otherwise, e.g. ``popen//stdin=devnull``.
-    """
-    tokens = []
+    # A worker inherits the coordinator's stdio by default now that the
+    # protocol has a transport of its own, which also means remote code can
+    # *consume* the coordinator's stdin.  These keys are how a caller says
+    # otherwise, e.g. ``popen//stdin=devnull``.
     for name in ("stdin", "stdout", "stderr"):
         value = getattr(spec, name, None)
         if value:
-            tokens += [f"--{name}", value]
-    return tokens
+            config[name] = value
+    return config
 
 
-def _worker_tokens(config: str | None, *protocol: str) -> list[str]:
+def _worker_tokens(*protocol: str, local_config_on_stdin: bool = False) -> list[str]:
     """``python -u -m execnet worker`` tokens for a launch.
 
     The literal ``python`` token is resolved by uv (inside the provisioned
-    environment) or the remote shell.  ``config`` of None means the config
-    arrives on stdin (``--config-fd 0``), which is what remote launches use:
-    a config in argv is visible in ``ps`` to every user on that host, and it
-    carries ``env:`` values.
+    environment) or the remote shell.  No config here: it arrives as the
+    first frame on the protocol stream.  ``local_config_on_stdin`` is only
+    for the Windows ``share`` transport, whose socket blob has to exist
+    before the stream it describes does.
     """
     tokens = ["python", "-u", "-m", "execnet", "worker", *protocol]
-    if config is None:
+    if local_config_on_stdin:
         return [*tokens, "--config-fd", "0"]
-    return [*tokens, "--config", config]
-
-
-def worker_module_tokens(spec: Any, *protocol: str) -> list[str]:
-    """``python -u -m execnet worker`` tokens for ``spec``."""
-    return _worker_tokens(worker_cli_arg(spec), *protocol)
+    return tokens
 
 
 def _uv_tokens(python: str | None) -> list[str]:
@@ -428,31 +411,37 @@ def _uv_tokens(python: str | None) -> list[str]:
     return prefix
 
 
-def _extra_with_tokens(config: str) -> list[str]:
+def _extra_with_tokens(profile: str | None) -> list[str]:
     """Additional ``--with`` requirements the worker env needs.
 
-    Derived from the worker config itself so every uv launcher (popen,
-    ssh, via sub-spawn) provisions the same: the gevent profile / wait
-    backend needs gevent importable in the worker.
+    The one thing a launcher must know about the config before the worker
+    can read it for itself: ``profile=gevent`` needs gevent importable in
+    the environment being provisioned.  Every uv launcher (popen, ssh, via
+    sub-spawn) goes through here so they cannot provision differently.
     """
-    parsed = json.loads(config)
-    if parsed.get("profile") == "gevent" or parsed.get("wait") == "gevent":
+    if profile == "gevent":
         return ["--with", "gevent"]
     return []
 
 
 def uv_worker_argv(
-    spec: Any, *protocol: str, config_on_stdin: bool = False
+    spec: Any, *protocol: str, local_config_on_stdin: bool = False
 ) -> list[str]:
     """``uv run`` argv to launch the Trio worker locally (wheel path is local)."""
-    config = worker_cli_arg(spec)
     return [
         *_uv_tokens(spec.python),
         "--with",
         coordinator_requirement(),
-        *_extra_with_tokens(config),
-        *_worker_tokens(None if config_on_stdin else config, *protocol),
+        *_extra_with_tokens(worker_profile(spec)),
+        *_worker_tokens(*protocol, local_config_on_stdin=local_config_on_stdin),
     ]
+
+
+def worker_profile(spec: Any) -> str:
+    """The profile ``spec``'s worker will run, as provisioning needs it."""
+    from ._execmodel import effective_profile
+
+    return effective_profile(spec.profile or "thread")
 
 
 #: where a shipped wheel lands on the remote, keyed by name (which carries
@@ -489,19 +478,18 @@ def wheel_delivery_command(wheel: Path) -> str:
 
 def _remote_shell_command(
     python: str | None,
-    config: str,
+    profile: str | None,
     *protocol: str,
     requirement: str | None = None,
     wheel: Path | None = None,
-    config_on_stdin: bool = False,
 ) -> str:
     """Remote sh command launching the worker via uv.
 
     ``requirement`` installs from an index; ``wheel`` uses one already
     delivered by :func:`wheel_delivery_command`.
     """
-    worker = _worker_tokens(None if config_on_stdin else config, *protocol)
-    uv = [*_uv_tokens(python), *_extra_with_tokens(config)]
+    worker = _worker_tokens(*protocol)
+    uv = [*_uv_tokens(python), *_extra_with_tokens(profile)]
     if wheel is None:
         assert requirement is not None
         return shlex.join([*uv, "--with", requirement, *worker])
@@ -512,7 +500,7 @@ def _remote_shell_command(
     )
 
 
-def ssh_remote_command(spec: Any, *protocol: str, config_on_stdin: bool = False) -> str:
+def ssh_remote_command(spec: Any, *protocol: str) -> str:
     """Remote shell command launching the worker over ssh.
 
     Released coordinator -> ``uv run --with execnet==<ver> …``.  Dev
@@ -521,14 +509,13 @@ def ssh_remote_command(spec: Any, *protocol: str, config_on_stdin: bool = False)
     """
     import execnet
 
-    config = worker_cli_arg(spec)
-    kwargs: dict[str, Any] = {"config_on_stdin": config_on_stdin}
+    kwargs: dict[str, Any] = {}
     wheel = provisioning_wheel()
     if wheel is None:
         kwargs["requirement"] = f"execnet=={execnet.__version__}"
     else:
         kwargs["wheel"] = wheel
-    return _remote_shell_command(spec.python, config, *protocol, **kwargs)
+    return _remote_shell_command(spec.python, worker_profile(spec), *protocol, **kwargs)
 
 
 def ssh_wheel(spec: Any) -> Path | None:
@@ -581,6 +568,13 @@ def spawn_request(spec: Any) -> dict[str, Any]:
     requirement; a dev build ships its wheel bytes for that coordinator to
     materialize into its local wheel cache.
 
+    The sub's *config* is deliberately not in here.  It reaches the sub as
+    a frame through the tunnel, from the coordinator that wants the
+    gateway, so an intermediary relaying the connection never sees the
+    ``env:`` values travelling through it.  All this carries is what
+    provisioning cannot defer: which interpreter, where, and the profile
+    (a gevent worker needs gevent in the environment being built).
+
     TODO: the wheel is shipped eagerly because only that coordinator can tell
     whether the target interpreter already has execnet; a wheel-on-demand
     round-trip would avoid the transfer in the common provisioned case.
@@ -588,7 +582,7 @@ def spawn_request(spec: Any) -> dict[str, Any]:
     import execnet
 
     request: dict[str, Any] = {
-        "config": worker_cli_arg(spec),
+        "profile": worker_profile(spec),
         "python": spec.python or None,
         "ssh": spec.ssh or None,
         "vagrant_ssh": spec.vagrant_ssh or None,
@@ -643,10 +637,10 @@ def sub_spawn_argv(
     framed into the launch command's stdin.
 
     The sub's protocol is relayed over its stdio by that coordinator, so it always
-    gets the stdio transport.
+    gets the stdio transport -- and its config comes down that tunnel from
+    the coordinator that asked for it, so nothing here has to carry one.
     """
-    config = request["config"]
-    assert isinstance(config, str)
+    profile = request.get("profile")
     python = request.get("python")
     ssh = request.get("ssh")
     vagrant = request.get("vagrant_ssh")
@@ -666,15 +660,20 @@ def sub_spawn_argv(
         delivery: DeliveryStep | None = None
         if wheel is not None:
             delivery = (wrap(wheel_delivery_command(wheel)), wheel.read_bytes())
-            command = _remote_shell_command(python, config, wheel=wheel)
+            command = _remote_shell_command(python, profile, wheel=wheel)
         else:
-            command = _remote_shell_command(python, config, requirement=requirement)
+            command = _remote_shell_command(python, profile, requirement=requirement)
         return wrap(command), delivery
     if python:
         assert isinstance(python, str)
         if target_has_execnet(python):
-            argv = [*shell_split_path(python), "-u", "-m", "execnet", "worker"]
-            return [*argv, "--config", config], None
+            return [
+                *shell_split_path(python),
+                "-u",
+                "-m",
+                "execnet",
+                "worker",
+            ], None
         requirement, _ = _requested_requirement(request)
         if requirement is None or not uv_available():
             raise RuntimeError(
@@ -685,14 +684,7 @@ def sub_spawn_argv(
             *_uv_tokens(python),
             "--with",
             requirement,
-            *_worker_tokens(config),
+            *_extra_with_tokens(profile),
+            *_worker_tokens(),
         ], None
-    return [
-        sys.executable,
-        "-u",
-        "-m",
-        "execnet",
-        "worker",
-        "--config",
-        config,
-    ], None
+    return [sys.executable, "-u", "-m", "execnet", "worker"], None
