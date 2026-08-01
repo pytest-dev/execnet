@@ -225,8 +225,15 @@ ExceptionGroup onto the user's stderr.  That goes for every
 Infrastructure that used to be expressed by ``remote_exec``-ing source is
 now native protocol messages handled on the target's host:
 ``GATEWAY_START_SOCKET`` (``installvia=`` -- bind a one-shot listener and
-reply with its address) and ``GATEWAY_START_SUB`` (``via=`` -- spawn a
-sub-worker and relay its protocol over the request channel).  A sub-gateway
+reply with its address), ``GATEWAY_START_SUB`` (``via=`` -- spawn a
+sub-worker and relay its protocol over the request channel) and
+``GATEWAY_RSYNC`` (receive an rsync into a directory).  rsync was the last
+thing execnet shipped its own source over the wire to do; as a service it
+also claims no exec slot, and works against a ``profile=trio`` worker,
+which rejects sync sources.  Its receiver body stays synchronous and runs
+in a worker thread, reaching its channel through ``trio.from_thread`` --
+rsync is file IO, and threading a loop through every ``lstat`` and
+``chmod`` would buy nothing.  A sub-gateway
 that fails to start must not take its coordinator down with it, and a
 failure that cannot be reported must still close the connection, so the
 requesting side sees EOF instead of waiting for a handshake reply nobody

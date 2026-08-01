@@ -189,6 +189,15 @@ class SyncBridgeGateway(AsyncGateway):
                 handle_start_socket(gateway, message.channelid, message.data)
             elif code == Message.GATEWAY_START_SUB:
                 handle_start_sub(gateway, message.channelid, message.data)
+            elif code == Message.GATEWAY_RSYNC:
+                from ._rsync_serve import serve_rsync_request
+
+                # the request's channel is the *coordinator's* id, which the
+                # sync factory here knows nothing about, so the service runs
+                # on the async channel this session already routes it to
+                self.host.start_soon(
+                    serve_rsync_request, self, message.channelid, message.data
+                )
             else:
                 super()._dispatch(message)
         except (GatewayReceivedTerminate, EOFError):

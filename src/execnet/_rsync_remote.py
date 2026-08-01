@@ -13,13 +13,27 @@ if TYPE_CHECKING:
     from execnet._channel import Channel
 
 
-def serve_rsync(channel: Channel) -> None:
+def serve_rsync(
+    channel: Channel,
+    destdir: str | None = None,
+    options: dict[str, object] | None = None,
+) -> None:
+    """Receive one rsync into ``destdir``.
+
+    The channel is the only thing this needs, so the same body serves both
+    ways it is reached: as a worker-side ``GATEWAY_RSYNC`` handler, which
+    passes the destination in (and is how execnet drives it), and as an
+    exec'd source that reads it off the channel first, which is the shape
+    the pre-3.0 protocol used.
+    """
     import os
     import shutil
     import stat
     from hashlib import md5
 
-    destdir, options = cast("tuple[str, dict[str, object]]", channel.receive())
+    if destdir is None:
+        destdir, options = cast("tuple[str, dict[str, object]]", channel.receive())
+    assert options is not None
     modifiedfiles = []
 
     def remove(path: str) -> None:

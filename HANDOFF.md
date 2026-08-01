@@ -32,8 +32,12 @@ Known flakes, all timing:
 - `test_gateway_status_busy` (numexecuting race) and
   `test_popen_stderr_tracing` (capfd race) keep their `flakytest` marks
   and XPASS when idle — see `handoff-history.md`.
-- `test_info_reports_what_a_coordinator_needs` failed once under `-n 12`
-  (2026-07-31), green in isolation and on rerun; **not diagnosed**.
+- both `TestInfo` tests that shell out to `execnet info`
+  (`test_info_reports_what_a_coordinator_needs`, `test_probe_uses_info`)
+  have failed together once under `-n 12` (2026-07-31, 2026-08-01), green
+  in isolation and on rerun.  Not diagnosed, but they share one cause —
+  spawning that probe subprocess under a loaded machine — rather than
+  being a property of either test.
 
 CI runs pytest-xdist's own suite against this execnet — see
 "The xdist contract" in `ROADMAP-3.0.md`.  That job is the one that
@@ -158,7 +162,8 @@ shape does not dictate the worker's.
 | `sync.py` / `trio.py` / `aio.py` / `gevent.py` | the four public namespaces |
 | `_cli.py` / `_socketserver.py` / `_provision.py` | the CLI, `execnet server`, uv provisioning + argv builders |
 | `_execmodel.py` | `WORKER_PROFILES`, `resolve_profile`, and the deprecated `ExecModel` xdist shim |
-| `_rsync.py` / `_rsync_remote.py` / `_xspec.py` / `_exec_source.py` | rsync, spec parsing, remote_exec source normalization |
+| `_rsync.py` / `_rsync_remote.py` / `_rsync_serve.py` | the rsync driver (coordinator), the receiver body, and the worker-side `GATEWAY_RSYNC` service that runs it in a thread |
+| `_xspec.py` / `_exec_source.py` | spec parsing, remote_exec source normalization |
 | `_trace.py` / `_gevent_support.py` | `EXECNET_DEBUG` tracing; the gevent wait backend's hub plumbing |
 | `__main__.py` / `_version.py` | `python -m execnet` → `_cli.main`; the generated version |
 | `_shim.py` + `gateway*.py`, `multi.py`, `rsync*.py`, `xspec.py` | the deprecated pre-Trio module names, warning and forwarding |
@@ -214,7 +219,11 @@ shape does not dictate the worker's.
 
 **Launch and provisioning**
 
-- No source shipping.  Workers import an installed execnet + trio.
+- No source shipping, with no exceptions left: rsync was the last one, and
+  is now the `GATEWAY_RSYNC` service (`_rsync_serve.py`) rather than a
+  `remote_exec` of the receiver's source.  It also claims no exec slot, and
+  works against a `profile=trio` worker, which rejects sync sources and so
+  could never run the old receiver.
 - **The worker config never travels in an argv, local or remote.**  It is a
   `GATEWAY_CONFIG` frame on the protocol stream, the same on every
   transport (`_handshake.py`).  It carries `env:` values, and `/proc` is

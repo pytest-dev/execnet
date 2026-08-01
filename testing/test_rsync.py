@@ -304,3 +304,43 @@ class TestRSync:
         assert rsync.x == 1
         assert len(list(dest.iterdir())) == 1
         assert len(list(source.iterdir())) == 1
+
+
+class TestRsyncIsAProtocolService:
+    """rsync is served by the worker, not exec'd into it.
+
+    Before 3.0 an rsync target was a ``remote_exec`` of the receiver's
+    source: the last thing execnet shipped its own code over the wire to
+    do, and one that spent an exec slot on infrastructure.
+    """
+
+    def test_it_works_against_a_worker_that_refuses_sync_sources(
+        self, dirs: _dirs, group: execnet.Group
+    ) -> None:
+        # profile=trio runs exec'd sources as tasks and rejects sync ones,
+        # so the old source-shipping receiver could not run there at all
+        gateway = group.makegateway("popen//id=trio-rsync//profile=trio")
+        (dirs.source / "hello.txt").write_text("hi")
+        rsync = RSync(dirs.source, verbose=False)
+        rsync.add_target(gateway, dirs.dest1)
+        rsync.send()
+        assert (dirs.dest1 / "hello.txt").read_text() == "hi"
+
+    def test_it_claims_no_exec_slot(self, dirs: _dirs, gw1: Gateway) -> None:
+        # infrastructure must not compete with the work a worker is for
+        (dirs.source / "hello.txt").write_text("hi")
+        rsync = RSync(dirs.source, verbose=False)
+        rsync.add_target(gw1, dirs.dest1)
+        rsync.send()
+        assert gw1.remote_status().numexecuting == 0
+
+    def test_a_failing_rsync_reports_on_its_channel(
+        self, dirs: _dirs, gw1: Gateway
+    ) -> None:
+        # and does not take the worker down with it: the receiver is a task
+        # on the worker's root nursery
+        rsync = RSync(dirs.source, verbose=False)
+        rsync.add_target(gw1, dirs.dest1 / "nested" / "\0bad")
+        with pytest.raises(execnet.RemoteError):
+            rsync.send()
+        assert gw1.remote_exec("channel.send(1)").receive() == 1

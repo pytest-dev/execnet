@@ -13,7 +13,6 @@ from hashlib import md5
 from queue import Queue
 from typing import Literal
 
-from execnet import _rsync_remote
 from execnet._channel import Channel
 from execnet._gateway import Gateway
 from execnet._gateway_base import BaseGateway
@@ -172,9 +171,8 @@ class RSync:
         def itemcallback(req) -> None:
             self._receivequeue.put((channel, req))
 
-        channel = gateway.remote_exec(_rsync_remote)
+        channel = gateway._request_rsync(str(destdir), options)
         channel.setcallback(itemcallback, endmarker=None)
-        channel.send((str(destdir), options))
         self._channels[channel] = finishedcallback
 
     def _broadcast(self, msg: object) -> None:
