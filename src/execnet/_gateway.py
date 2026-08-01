@@ -137,6 +137,20 @@ class Gateway(BaseGateway):
         )
         return channel
 
+    def _request_rsync(self, destdir: str, options: dict[str, object]) -> Channel:
+        """Open a channel to a worker-side rsync receiver for ``destdir``.
+
+        A native protocol request rather than a ``remote_exec`` of the
+        receiver's source: nothing is shipped over the wire, no exec slot is
+        claimed, and it works against a ``profile=trio`` worker, which
+        rejects sync sources and so could never have run the old one.
+        """
+        channel = self.newchannel()
+        self._send(
+            Message.GATEWAY_RSYNC, channel.id, dumps_internal((destdir, options))
+        )
+        return channel
+
     def remote_init_threads(self, num: int | None = None) -> None:
         """DEPRECATED.  Is currently a NO-OPERATION already."""
         warnings.warn(

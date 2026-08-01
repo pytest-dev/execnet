@@ -571,6 +571,11 @@ class AsyncGateway:
     _exec_handler: Callable[[AsyncGateway, int, bytes], None] | None = None
     #: the exec strategy (for STATUS numexecuting), when serving as a worker
     _task_exec: Any = None
+    #: ``(async_fn, *args) -> None`` spawning a worker-side service task --
+    #: set by whichever worker entry point owns a nursery.  Services are the
+    #: protocol requests a worker serves itself (rsync today), as opposed to
+    #: exec'd code; without one, such a request is rejected.
+    _service_spawn: Callable[..., None] | None = None
 
     def __init__(self, stream: ByteStream, *, id: str, _startcount: int = 1) -> None:
         self._stream = stream
@@ -796,6 +801,10 @@ class AsyncGateway:
             raise GatewayReceivedTerminate(self)
         elif code == Message.CHANNEL_EXEC and self._exec_handler is not None:
             self._exec_handler(self, channelid, message.data)
+        elif code == Message.GATEWAY_RSYNC and self._service_spawn is not None:
+            from ._rsync_serve import serve_rsync_request
+
+            self._service_spawn(serve_rsync_request, self, channelid, message.data)
         elif code == Message.STATUS:
             task_exec = self._task_exec
             status = {
