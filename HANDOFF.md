@@ -200,27 +200,19 @@ shape does not dictate the worker's.
 - **Hand a socket over as a socket, never as an fd.**  Rebuilding one with
   `socket.socket(fileno=fd)` re-derives family/type/proto by querying the
   handle, which PyPy on Windows fails with `WinError 10014`.
-- **A `share()` blob is not a socket yet.**  The child has one only once it
-  calls `fromshare()`, so the sharer must keep its own copy open until then
-  or the child gets `WSAENOTSOCK` (10038) and dies before the handshake —
-  a rare, timing-dependent Windows startup failure that looks like a reset
-  connection on the coordinator (seen on the 3.14/3.15 CI jobs, 2026-08-01).
-  `connect_popen_worker` therefore closes its copy *after* the handshake on
-  Windows and before the handshake everywhere else.  **The server side has
-  the same race and is not fixed**: `serve_socket_connection` closes the
-  accepted socket as soon as the spawn returns, and it cannot see the
-  handshake, which goes to the coordinator.  Closing late instead is not
-  the answer — a server holding the connection open means a dead worker
-  stops being an EOF for the coordinator.  It needs the worker to signal
-  adoption (a marker byte on its stdout, which costs the socket worker its
-  inherited stdout), so it is a design call rather than a patch.
-- Filling in a *missing* spec value is idempotent and fine; rewriting one
-  the caller set is not.  xdist reuses one spec object and re-reads it.
-- Worker teardown ends in `os._exit(0)` because trio's `to_thread` cache
-  uses non-daemon threads.
-- `import execnet` must not import the trio event loop.
-- Keep engine idioms portable — neutral `ByteStream`, sans-IO
-  `FrameDecoder`.  See "What pins us to Trio" in `ROADMAP-3.0.md`.
+- **The Windows `share()` handoff is currently broken on CPython 3.14/3.15**
+  and nobody knows why yet.  The worker's `fromshare()` returns a socket
+  whose handle its own process rejects (`WSAENOTSOCK`, 10038, raised by
+  trio's `setblocking(False)` in `adopt_socket`), so it dies before the
+  handshake; 3.10-3.13 on the same runner are fine, and so is every Linux
+  job.  First seen in CI run 30685861676 (2026-08-01) after weeks of green
+  Windows runs, so treat it as a race that those two jobs' timing exposes
+  rather than a version feature.  **Holding the coordinator's copy of the
+  socket open until the handshake does not fix it** — that theory (the blob
+  is not a socket until the child calls `fromshare()`) was tried and only
+  bought a 20s hang, because a worker that dies while we hold the pair open
+  produces no EOF.  Needs a Windows box or a CI bisect; do not spend another
+  round on a theory that CI can refute in six minutes.
 
 **Failure modes that each cost a debugging round**
 

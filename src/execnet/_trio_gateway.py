@@ -1124,13 +1124,6 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
 
     import socket as _socket
 
-    # Windows hands the socket over by *sharing* it, and a share() blob is
-    # not a socket yet: the child only has one once it calls fromshare().
-    # Closing our copy before that races the child into WSAENOTSOCK, which
-    # it reports by dying without a handshake -- so hold it until the
-    # handshake byte says the child has adopted.  POSIX inherited the fd
-    # itself and needs the opposite: close now, or the pair never ends.
-    shared = _provision.socket_share_required()
     ours, theirs = _socket.socketpair()
     try:
         process = await _spawn_with_socket(spec, theirs)
@@ -1138,21 +1131,29 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
         ours.close()
         theirs.close()
         raise
-    if not shared:
-        theirs.close()
+    # Our copy has to go now, whichever handoff was used: while we hold it,
+    # a worker that dies before the handshake leaves the pair open and the
+    # read below waits forever instead of failing.  (Holding it until the
+    # handshake was tried, as a fix for a Windows share() race -- it fixed
+    # nothing and bought exactly that hang.)
+    theirs.close()
     stream = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
     try:
         await read_handshake_ack(stream, "bootstrap")
-    except BaseException:
+    except BaseException as exc:
         with trio.CancelScope(shield=True):
+            status: int | None = None
             with trio.move_on_after(5):
                 process.kill()
-                await process.wait()
+                status = await process.wait()
             await stream.aclose()
+            if status is not None:
+                # what the worker did with itself is the whole diagnosis
+                # when it never reached the handshake
+                raise EOFError(
+                    f"worker exited with {status} before the handshake: {exc}"
+                ) from exc
         raise
-    finally:
-        if shared:
-            theirs.close()
     return stream, process
 
 

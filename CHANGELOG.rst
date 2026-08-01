@@ -111,11 +111,9 @@ series, once the consumers that need them have released without them.
   ``EXECNET_IGNORE_VERSION_SKEW=1`` in the worker's environment (reachable
   as ``env:EXECNET_IGNORE_VERSION_SKEW=1`` in a spec) downgrades it to the
   old warning.
-* Windows: a ``popen`` coordinator kept its copy of the shared socket open
-  until the worker's handshake. ``socket.share()`` hands over a blob, not a
-  socket -- the child only has one once it calls ``fromshare()`` -- so
-  closing at spawn time raced the child into ``WSAENOTSOCK`` and it died
-  before handshaking, which the coordinator saw as a reset connection.
+* A worker that dies before its handshake now says so with its exit status
+  (``worker exited with N before the handshake``) instead of surfacing as
+  whatever the closed socket looked like.
 * A worker that dies abruptly reports ``EOFError`` on every transport. A
   killed peer *resets* a socket -- Windows reports ``WSAECONNRESET`` --
   where a pipe would simply reach EOF, so the same event used to surface
