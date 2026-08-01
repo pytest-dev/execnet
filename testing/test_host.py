@@ -573,3 +573,48 @@ class TestGeventPatchedProcess:
         finally:
             group.terminate(timeout=5.0)
             host.close()
+
+
+class TestExplicitStart:
+    """Starting is lazy, but not compulsory to leave that way.
+
+    Everything that can go wrong with bringing a loop thread up otherwise
+    goes wrong at an arbitrary later ``makegateway()``, in whatever code
+    path happened to need the first gateway.
+    """
+
+    @staticmethod
+    def threads(name: str) -> int:
+        return host_thread_names().count(name)
+
+    def test_start_brings_the_thread_up_now(self) -> None:
+        host = Host(name="execnet-host-explicit")
+        assert self.threads("execnet-host-explicit") == 0
+        try:
+            assert host.start() is host
+            assert self.threads("execnet-host-explicit") == 1
+            # idempotent: no second thread
+            host.start()
+            assert self.threads("execnet-host-explicit") == 1
+        finally:
+            host.close()
+        assert self.threads("execnet-host-explicit") == 0
+
+    def test_entering_a_host_starts_it(self) -> None:
+        with Host(name="execnet-host-entered") as host:
+            assert self.threads("execnet-host-entered") == 1
+            assert host.running
+        assert self.threads("execnet-host-entered") == 0
+
+    def test_start_is_where_a_broken_environment_shows_up(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # the point of asking early: this is the gevent refusal, raised at
+        # startup instead of at whatever first needed a gateway
+        monkeypatch.setitem(
+            sys.modules,
+            "gevent.monkey",
+            TestGeventPatchedProcess.fake_monkey("socket"),
+        )
+        with pytest.raises(RuntimeError, match="monkey-patched socket"):
+            Host(name="execnet-host-start-fails").start()

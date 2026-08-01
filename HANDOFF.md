@@ -67,7 +67,11 @@ environment or its config `env:` downgrades that to a warning.
 `testing/test_namespaces.py`).
 
 A `Host` is one thread running one Trio loop; there is **one shared host
-per process**, `Group(host=...)` to override.  Blocking calls made from
+per process**, `Group(host=...)` to override.  Starting stays lazy — the
+thread appears at the first gateway — but `Host.start()` is public, and
+entering a `Host` as a context manager calls it, so an application can
+choose where a broken environment (gevent patching, a loop that will not
+come up) reports itself.  Blocking calls made from
 inside a running event loop raise and name `execnet.aio` / `execnet.trio`
 — worker-side channels are exempt, since exec'd code may run its own loop.
 
