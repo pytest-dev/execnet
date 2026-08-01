@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from test_gateway import TESTTIMEOUT
 
 import execnet
 from execnet import Gateway
@@ -264,3 +265,43 @@ class TestMakegateway:
         assert gw.id == "s1"
         assert gw.remote_status()
         group.terminate()
+
+    @pytest.mark.skipif(
+        not _provision.socket_handoff_available(),
+        reason="the server must hand the accepted socket to a worker process",
+    )
+    def test_socket_worker_gets_the_spec(self, tmp_path: Path) -> None:
+        """A ``socket=`` worker is configured by its spec, like any other.
+
+        The server spawns it, so its config cannot ride in argv -- it
+        travels over the connection instead.  Without that these keys were
+        accepted, validated, and then silently dropped.
+        """
+        group = execnet.Group()
+        try:
+            group.makegateway("popen//id=p1")
+            gw = group.makegateway(
+                f"socket//installvia=p1//id=s1//chdir={tmp_path}//env:SPECVAR=here"
+            )
+            channel = gw.remote_exec(
+                "import os; channel.send((os.getcwd(), os.environ.get('SPECVAR')))"
+            )
+            cwd, var = channel.receive(TESTTIMEOUT)
+            assert Path(cwd).resolve() == tmp_path.resolve()
+            assert var == "here"
+        finally:
+            group.terminate(timeout=10)
+
+    @pytest.mark.skipif(
+        not _provision.socket_handoff_available(),
+        reason="the server must hand the accepted socket to a worker process",
+    )
+    def test_socket_worker_honours_the_profile(self) -> None:
+        group = execnet.Group()
+        try:
+            group.makegateway("popen//id=p1")
+            gw = group.makegateway("socket//installvia=p1//id=s1//profile=trio")
+            channel = gw.remote_exec("await channel.send('async')")
+            assert channel.receive(TESTTIMEOUT) == "async"
+        finally:
+            group.terminate(timeout=10)
