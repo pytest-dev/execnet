@@ -11,7 +11,7 @@ This is the doc to read first.  Two companions:
 ## How to work here
 
 ```
-uv run pytest testing/          # 582 passed, 66 skipped
+uv run pytest testing/          # 583 passed, 66 skipped
 uv run pytest testing/ -n 12    # must stay green (~8s)
 uv run pre-commit run -a        # never grep-filter its output
 uv run tox -e docs              # sphinx -W, then doctests all of doc/
@@ -119,9 +119,12 @@ request rather than letting a gateway hang.
 
 `TrioWorkerExec` is a FIFO admission pump delegating to strategy objects
 (`WORKER_EXEC_STRATEGIES`); subinterpreters are a future strategy slot, not
-built.  Admission is **bounded** (`exec_capacity()`, half the trio thread
-limiter) and a request over the line is refused on its channel, not
-queued — reported as `remote_status().execcapacity`.
+built.  Admission is **bounded** for the thread-shaped strategies
+(`exec_capacity()`, half the trio thread limiter) and a request over the
+line is refused on its channel, not queued — reported as
+`remote_status().execcapacity`, `None` where execs are tasks or greenlets
+and cost no thread.  Nothing may wait for an exec by parking a pool
+thread: that spends the budget it is rationing.
 `AsyncGroup.makegateway` defaults workers to `thread` — the coordinator's
 shape does not dictate the worker's.
 

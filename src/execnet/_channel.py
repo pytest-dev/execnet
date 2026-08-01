@@ -327,11 +327,16 @@ class Channel:
             raise error
 
     def send(self, item: object) -> None:
-        """Sends the given item to the other side of the channel,
-        possibly blocking if the sender queue is full.
+        """Sends the given item to the other side of the channel.
 
         The item must be a simple Python type and will be
         copied to the other side by value.
+
+        Returns once the data has reached the OS write, which is not the
+        same as the peer having read it: there is no flow control, so a
+        peer that never receives buffers everything sent to it rather than
+        pushing back.  Sending unboundedly to one is a memory leak in *its*
+        process.
 
         OSError is raised if the write pipe was prematurely closed.
         """

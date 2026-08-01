@@ -132,6 +132,15 @@ class TestVersionSkew:
 
     @posix_only
     def test_a_skewed_worker_exits_with_a_reason(self) -> None:
+        from execnet import _trio_worker
+
+        # derived, never spelled out: a literal "impossible" version is only
+        # impossible until an environment has it.  A wheel built from a
+        # checkout without tags is 0.1.dev1, which is what CI installs -- so
+        # a hardcoded 0.1.2 matched there, the worker started, and this
+        # blocked on its output until the test timed out.
+        major, _ = _trio_worker._rough_version(execnet.__version__)
+        skewed = f"{major + 1}.0.0"
         ours, theirs = socket.socketpair()
         out = subprocess.run(
             [
@@ -142,7 +151,7 @@ class TestVersionSkew:
                 "--protocol-fd",
                 str(theirs.fileno()),
                 "--config",
-                worker_config(coordinator_version="0.1.2"),
+                worker_config(coordinator_version=skewed),
             ],
             pass_fds=(theirs.fileno(),),
             capture_output=True,

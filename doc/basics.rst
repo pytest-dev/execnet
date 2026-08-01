@@ -301,9 +301,9 @@ How many at once
 
 .. versionadded:: 3.0
 
-``thread`` and ``gevent`` execs each need a thread of the worker's thread
-budget, which also has to serve channel callbacks and the worker's own
-protocol work -- so a worker admits **half that budget** in concurrent
+Under ``thread`` each exec needs a thread of the worker's thread budget,
+which also has to serve channel callbacks and the worker's own protocol
+work -- so a worker admits **half that budget** in concurrent
 ``remote_exec`` calls (20, unless the worker changed trio's default
 limiter) and *refuses* the one after that with a ``RemoteError`` naming the
 limit.  ``remote_status().execcapacity`` reports the number.
@@ -311,8 +311,9 @@ limit.  ``remote_status().execcapacity`` reports the number.
 Refusing rather than queueing is deliberate: a request waiting for a thread
 that only a finishing exec can free is indistinguishable, from the
 coordinator, from an exec that hung.  For genuine fan-out use more gateways
--- that is what a ``Group`` is for -- or ``profile=trio``, whose execs are
-tasks on the worker's loop and are not bounded this way.
+-- that is what a ``Group`` is for -- or a profile whose execs are not
+threads.  ``trio`` and ``gevent`` are unbounded here (``execcapacity`` is
+``None``): their execs are tasks and greenlets, and spend no thread.
 
 
 Transports
