@@ -366,6 +366,15 @@ protocol is the expensive version of this.
   a new reason.
 - **Unverified**: whether the socket/`installvia` path works on the Windows
   CI job at all.  Assume any platform CI has not exercised is broken.
+- **The server-side `share()` handoff still races** (the popen one is
+  fixed; see the invariant in `HANDOFF.md`).  `serve_socket_connection`
+  closes the accepted socket when the spawn returns, which can beat the
+  worker's `fromshare()` — and it cannot wait for the handshake, which goes
+  to the coordinator, nor simply close late, which would keep a dead
+  worker's connection open and cost the coordinator its EOF.  The fix is a
+  marker byte from the worker once it has adopted; the price is that a
+  socket worker's stdout becomes a pipe to its server rather than the
+  user's.  Decide before claiming Windows `socket=` works.
 
 ## Suggested order
 

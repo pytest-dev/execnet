@@ -388,6 +388,9 @@ class TrioWorkerExec:
         #: admitted and not yet finished -- the number STATUS reports, and
         #: what admission is capped on
         self._running = 0
+        #: channel ids currently holding one of those slots, so releasing is
+        #: idempotent (it happens at the close, and again when the task ends)
+        self._holding: set[int] = set()
         #: resolved on the loop at the first request (see exec_capacity)
         self._capacity: int | None = None
         self._shutting_down = False
@@ -423,8 +426,22 @@ class TrioWorkerExec:
             self._capacity = exec_capacity()
         return self._capacity
 
-    def _track_finish(self) -> None:
+    def release_slot(self, channelid: int) -> None:
+        """Give back the admission slot ``channelid`` holds, once.
+
+        Called twice on the ordinary path, and the *early* call is the one
+        that matters: from ``_close_finished``, just before the exec's
+        channel close goes out.  That close is how a coordinator learns it
+        may send the next request, so it must not be able to arrive before
+        the slot it frees -- otherwise ``waitclose(); remote_exec()`` on a
+        worker at capacity is refused for a slot that was already gone.
+        The task's own ``finally`` then covers everything that never got as
+        far as closing.
+        """
         with self._lock:
+            if channelid not in self._holding:
+                return
+            self._holding.discard(channelid)
             self._running -= 1
             if self._running == 0:
                 self._idle.set()
@@ -445,6 +462,7 @@ class TrioWorkerExec:
                 full = True
             else:
                 full = False
+                self._holding.add(channel.id)
                 self._running += 1
                 self._idle.clear()
         if full:
@@ -490,7 +508,7 @@ class TrioWorkerExec:
         except BaseException as exc:
             trace(f"exec task for channel {channel.id} failed: {exc!r}")
         finally:
-            self._track_finish()
+            self.release_slot(channel.id)
 
     def integrate_as_primary_thread(self) -> None:
         self.strategy.integrate_as_primary_thread()

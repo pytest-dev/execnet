@@ -76,6 +76,10 @@ series, once the consumers that need them have released without them.
   one anyway -- capping exactly the concurrency the profile exists to
   provide. The wait is a ``trio.Event`` woken from the exec's own thread
   now; same for the main-thread exec under ``profile=thread``.
+* The exec slot is released just before the exec's channel close goes out,
+  not after its task unwinds: that close is what tells a coordinator at
+  capacity it may send the next request, so ``waitclose()`` followed by
+  ``remote_exec()`` must not be refused for a slot that is already free.
 * **An exec that finishes after its connection died no longer takes the
   worker down.** Closing the channel is how an exec reports it finished, and
   a connection that went away first makes that raise; the exception reached
@@ -107,6 +111,11 @@ series, once the consumers that need them have released without them.
   ``EXECNET_IGNORE_VERSION_SKEW=1`` in the worker's environment (reachable
   as ``env:EXECNET_IGNORE_VERSION_SKEW=1`` in a spec) downgrades it to the
   old warning.
+* Windows: a ``popen`` coordinator kept its copy of the shared socket open
+  until the worker's handshake. ``socket.share()`` hands over a blob, not a
+  socket -- the child only has one once it calls ``fromshare()`` -- so
+  closing at spawn time raced the child into ``WSAENOTSOCK`` and it died
+  before handshaking, which the coordinator saw as a reset connection.
 * A worker that dies abruptly reports ``EOFError`` on every transport. A
   killed peer *resets* a socket -- Windows reports ``WSAECONNRESET`` --
   where a pipe would simply reach EOF, so the same event used to surface

@@ -270,7 +270,14 @@ class WorkerGateway(BaseGateway):
         ordinary teardown race (a killed worker, a terminate that outran the
         exec), and there is no longer anyone to raise at.  Letting the OSError
         out lands it in the exec task, whose nursery is the worker's root one.
+
+        The exec's admission slot goes back *first*: this close is also what
+        tells a coordinator at capacity that it may send the next request,
+        and it must not be able to arrive before the slot it frees.
         """
+        execpool = self._execpool
+        if execpool is not None:
+            execpool.release_slot(channel.id)
         try:
             channel.close(error)
         except OSError as exc:
