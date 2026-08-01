@@ -719,7 +719,9 @@ class TestExecCapacity:
             over = gw.remote_exec("channel.send('running')")
             with pytest.raises(RemoteError, match="concurrency limit"):
                 over.receive(TESTTIMEOUT)
-            # and the worker still works once a slot actually frees
+            # and a slot is free the moment its close is observable: the
+            # release happens before that close goes out, so this sequence
+            # cannot be refused for a slot that is already gone
             freed = channels.pop()
             freed.send(None)
             freed.waitclose(TESTTIMEOUT)
@@ -762,6 +764,7 @@ def test_exec_task_contains_its_failure() -> None:
             gateway=None,  # type: ignore[arg-type]
             strategy=BoomStrategy(),
         )
+        pump._holding.add(DeadChannel.id)
         pump._running = 1
         pump._idle.clear()
         await pump._run_exec(DeadChannel(), ())  # type: ignore[arg-type]

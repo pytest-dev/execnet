@@ -1131,17 +1131,28 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
         ours.close()
         theirs.close()
         raise
-    # The child holds its own copy now; ours would keep the pair open.
+    # Our copy has to go now, whichever handoff was used: while we hold it,
+    # a worker that dies before the handshake leaves the pair open and the
+    # read below waits forever instead of failing.  (Holding it until the
+    # handshake was tried, as a fix for a Windows share() race -- it fixed
+    # nothing and bought exactly that hang.)
     theirs.close()
     stream = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
     try:
         await read_handshake_ack(stream, "bootstrap")
-    except BaseException:
+    except BaseException as exc:
         with trio.CancelScope(shield=True):
+            status: int | None = None
             with trio.move_on_after(5):
                 process.kill()
-                await process.wait()
+                status = await process.wait()
             await stream.aclose()
+            if status is not None:
+                # what the worker did with itself is the whole diagnosis
+                # when it never reached the handshake
+                raise EOFError(
+                    f"worker exited with {status} before the handshake: {exc}"
+                ) from exc
         raise
     return stream, process
 
