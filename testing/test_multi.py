@@ -4,10 +4,8 @@ tests for multi channels and gateway Groups
 
 from __future__ import annotations
 
-import gc
-import threading
+import time
 from collections.abc import Callable
-from time import sleep
 
 import pytest
 
@@ -18,7 +16,6 @@ from execnet import XSpec
 from execnet import _provision
 from execnet._channel import Channel
 from execnet._execmodel import ExecModel
-from execnet._multi import safe_terminate
 
 
 class TestMultiChannelAndGateway:
@@ -256,87 +253,31 @@ class TestGroup:
             group.terminate(1.0)
 
 
-@pytest.mark.xfail(reason="active_count() has been broken for some time")
-def test_safe_terminate(execmodel: ExecModel) -> None:
-    if execmodel.backend not in ("thread", "main_thread_only"):
-        pytest.xfail(
-            "execution model %r does not support task count" % execmodel.backend
-        )
-    import threading
+@pytest.mark.timeout(30)
+def test_terminate_kills_a_worker_that_will_not_go(execmodel: ExecModel) -> None:
+    """Regression for #43/#221: termination stays bounded by its timeout.
 
-    active = threading.active_count()
-    l = []
-
-    def term() -> None:
-        sleep(3)
-
-    def kill() -> None:
-        l.append(1)
-
-    safe_terminate(execmodel, 1, [(term, kill)] * 10)
-    assert len(l) == 10
-    sleep(0.1)
-    gc.collect()
-    assert execmodel.active_count() == active  # type: ignore[attr-defined]
-
-
-@pytest.mark.xfail(reason="active_count() has been broken for some time")
-def test_safe_terminate2(execmodel: ExecModel) -> None:
-    if execmodel.backend not in ("thread", "main_thread_only"):
-        pytest.xfail(
-            "execution model %r does not support task count" % execmodel.backend
-        )
-    import threading
-
-    active = threading.active_count()
-    l = []
-
-    def term() -> None:
-        return
-
-    def kill() -> None:
-        l.append(1)
-
-    safe_terminate(execmodel, 3, [(term, kill)] * 10)
-    assert len(l) == 0
-    sleep(0.1)
-    gc.collect()
-    assert threading.active_count() == active
-
-
-@pytest.mark.timeout(5)
-def test_safe_terminate_does_not_hang_when_kill_blocks(
-    execmodel: ExecModel,
-) -> None:
-    """Regression for #43/#221: a stuck kill must not hang terminate forever.
-
-    Before the fix, reply.get() waited without a timeout after termfunc timed
-    out, so a blocking killfunc made Group.terminate() hang indefinitely
-    (seen via pytest-xdist teardown).
+    The worker ignores SIGINT and never returns from its exec, so nothing
+    short of the kill ends it.  ``terminate(timeout)`` must still come back
+    at roughly its own grace -- the bound used to be the thing that broke,
+    and it now lives in ``AsyncGroup._terminate_one`` rather than in the
+    retired ``safe_terminate`` helper.
     """
-    kill_started = threading.Event()
-    release_kill = threading.Event()
-    other_killed: list[int] = []
-
-    def term_slow() -> None:
-        sleep(10)
-
-    def kill_hang() -> None:
-        kill_started.set()
-        release_kill.wait()
-
-    def kill_ok() -> None:
-        other_killed.append(1)
-
-    safe_terminate(
-        execmodel,
-        0.2,
-        [
-            (term_slow, kill_hang),
-            (term_slow, kill_ok),
-        ],
+    group = Group()
+    gw = group.makegateway("popen")
+    channel = gw.remote_exec(
+        """
+        import signal, time
+        try:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+        except ValueError:
+            pass          # not the main thread: the pool thread ignores it too
+        channel.send("blocked")
+        while True:
+            time.sleep(0.1)
+        """
     )
-
-    assert kill_started.is_set()
-    assert other_killed == [1]
-    release_kill.set()
+    assert channel.receive(timeout=10) == "blocked"
+    start = time.monotonic()
+    group.terminate(timeout=1.0)
+    assert time.monotonic() - start < 15

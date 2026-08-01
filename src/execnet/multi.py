@@ -15,7 +15,6 @@ _MOVED = {
     "default_group": "._multi",
     "makegateway": "._multi",
     "set_execmodel": "._multi",
-    "safe_terminate": "._multi",
     "NO_ENDMARKER_WANTED": "._multi",
 }
 

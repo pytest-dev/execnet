@@ -301,7 +301,48 @@ pods maps onto scheduling; and cleanup when the coordinator dies, since a
 cluster needs an owner reference or TTL and cannot rely on `terminate`
 arriving.
 
+## Flow control: the channel has none
+
+A `send` never blocks and a peer never pushes back.  The outbound queue is
+unbounded, and the receiving end's reader drains the socket as fast as it
+can into per-channel buffers that are unbounded too — so a fast producer
+against a slow consumer is not throttled, it is *stored*.  Measured: 500
+MiB sent in 0.33s with no blocking, all of it resident in the consumer's
+mailbox (worker RSS 33 → 533 MiB).  Nothing in the API says so;
+`Channel.send`'s "possibly blocking if the sender queue is full" describes
+2.1's write lock and is now never true.
+
+This is not new — 2.x's receiver thread queued just as eagerly — but the
+async core is where it becomes fixable, and it is the same problem HTTP/2
+and HTTP/3 solved: per-stream and per-connection windows, a `WINDOW_UPDATE`
+equivalent as the consumer drains, and the sender parking when the window
+is exhausted.  What that needs here:
+
+- a credit field in the message header or a new opcode (the protocol is
+  unversioned, so this is a wire change and belongs *before* the ecosystem
+  has more than one implementation of it);
+- the sender's park has to work on all four surfaces — a trio task
+  awaiting, a blocking `send` on a wakener, gevent parking its greenlet;
+- **reporting**, which is the part that makes it worth doing: how much a
+  channel has outstanding, how long a send waited, which peer is the slow
+  one.  A hang that is really a full window must say so.
+
+Decide whether 3.0 ships the header space for it even if the mechanism
+lands later; retrofitting a credit field into a shipped unversioned
+protocol is the expensive version of this.
+
 ## Deferred, and one rejection
+
+- **`execnet.aio` can drop an item when a `receive` is cancelled.**  The
+  module docstring promises the opposite ("no item is consumed and
+  dropped"), and it is right about the common case: the cancel posts a
+  scope cancel to the host, which usually lands before the item is taken.
+  What it does not cover is the cancel arriving *after* the host task
+  produced the item — `_HostBridge.call` then sees `future.cancelled()` and
+  drops the value it is holding.  Fixing it means being able to put the
+  item back at the front of its channel, which the memory channel cannot
+  do; the honest interim is to narrow the docstring.  Same shape as the
+  flow-control work above, and probably wants the same buffer rework.
 
 - **`execnet.anyio`** (the old Phase E) — a coordinator core on anyio with
   an asyncio backend.  Deferred, not cancelled; the portability invariants

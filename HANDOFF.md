@@ -11,7 +11,7 @@ This is the doc to read first.  Two companions:
 ## How to work here
 
 ```
-uv run pytest testing/          # 574 passed, 66 skipped
+uv run pytest testing/          # 582 passed, 66 skipped
 uv run pytest testing/ -n 12    # must stay green (~8s)
 uv run pre-commit run -a        # never grep-filter its output
 uv run tox -e docs              # sphinx -W, then doctests all of doc/
@@ -97,7 +97,7 @@ the code it runs.
 |---|---|
 | popen, POSIX | `pass_fds` + `--protocol-fd` (socketpair) |
 | popen, Windows | `socket.share(pid)` + `--protocol-share`, blob in the config |
-| `socket=` / `installvia=` | the same two, server-side |
+| `socket=` / `installvia=` | the same two, server-side; the spec's config travels as a JSON line ahead of the protocol, since the *server* spawns the worker |
 | `ssh=` / `vagrant_ssh=` | `ssh -R` unix socket, worker dials back (`--protocol-connect`) |
 | `via=` | the sub's stdio, relayed over the coordinator's protocol |
 
@@ -117,10 +117,13 @@ request rather than letting a gateway hang.
 | `gevent` | side thread | a greenlet per `remote_exec` on a main-thread hub | sync | `execnet[gevent]`, auto-added by uv provisioning |
 | ~~`main_thread_only`~~ | deprecated alias for `thread` | | | |
 
-`TrioWorkerExec` is a pure FIFO admission pump delegating to strategy
-objects (`WORKER_EXEC_STRATEGIES`); subinterpreters are a future strategy
-slot, not built.  `AsyncGroup.makegateway` defaults workers to `thread` —
-the coordinator's shape does not dictate the worker's.
+`TrioWorkerExec` is a FIFO admission pump delegating to strategy objects
+(`WORKER_EXEC_STRATEGIES`); subinterpreters are a future strategy slot, not
+built.  Admission is **bounded** (`exec_capacity()`, half the trio thread
+limiter) and a request over the line is refused on its channel, not
+queued — reported as `remote_status().execcapacity`.
+`AsyncGroup.makegateway` defaults workers to `thread` — the coordinator's
+shape does not dictate the worker's.
 
 ### File map (src/execnet/)
 
@@ -163,6 +166,13 @@ the coordinator's shape does not dictate the worker's.
   `portal.run` (KI-deferred) is only for management ops.
 - A killed worker is `EOFError` on every transport — a dead peer *resets*
   a socket where a pipe reaches EOF, and the reader maps that.
+- **Every `host.start_soon` entry point contains its own failures.**  These
+  are tasks on the *root* nursery: an exception leaving one ends `trio.run`
+  and takes the process's gateways with it — and in a worker the
+  ExceptionGroup prints onto the user's stderr, which is theirs since 3.0.
+  `TrioWorkerExec._run_exec` and the socket/via handlers all catch; a new
+  entry point owes the same.  The failure that finds this is dull: an exec
+  closing its channel after the connection went away.
 - **Nothing posted through the portal may raise.**  Trio turns an exception
   from an entry-queue callback into `TrioInternalError` and tears the whole
   run down, so one call losing a race with shutdown takes every gateway in

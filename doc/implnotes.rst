@@ -89,7 +89,13 @@ How the worker gets its protocol stream, by gateway:
 
 ``socket=`` / ``installvia=``
     the server accepts the connection, then hands that socket to the worker
-    it spawns, by whichever of the two mechanisms the platform has
+    it spawns, by whichever of the two mechanisms the platform has.  Since
+    the *server* spawns it, the config cannot ride in argv: the coordinator
+    sends it as one JSON line ahead of the protocol, and the server takes
+    the keys a spec legitimately carries (``profile``, ``chdir``, ``nice``,
+    ``env`` …) and none of its own (the share blob is bound to a pid only
+    the server knows).  A connection that sends no config line within ten
+    seconds is closed rather than served -- it is not a coordinator.
 
 ``ssh=`` / ``vagrant_ssh=``
     an ``ssh -R`` forwarded unix socket the worker dials back on (POSIX
@@ -184,6 +190,15 @@ implemented as an exec strategy per profile in ``execnet._trio_worker``:
 ``GreenletExec`` (gevent hub on the main thread) and ``TaskExec`` (tasks on
 the worker's own loop, for ``profile=trio``, which is the only profile whose
 sources must be async).
+
+Admission is FIFO and bounded (``execnet._trio_worker.exec_capacity``): the
+thread-shaped strategies spend a thread per exec out of the same budget the
+callback pool and the worker's internal ``to_thread`` work draw on, so exec
+gets half of it and a request over the line is refused on its channel.  The
+exec task itself contains whatever it raises -- it is a task on the worker's
+*root* nursery, and an exception leaving it ends ``trio.run`` and prints an
+ExceptionGroup onto the user's stderr.  That goes for every
+``host.start_soon`` entry point; the socket and via handlers do the same.
 
 Infrastructure that used to be expressed by ``remote_exec``-ing source is
 now native protocol messages handled on the target's host:

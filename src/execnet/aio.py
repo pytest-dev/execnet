@@ -20,11 +20,14 @@ operation runs as a task on that host and resolves an asyncio future via
 call.
 
 Cancellation crosses the bridge.  Cancelling an awaited ``receive`` (say
-by ``asyncio.timeout``) cancels the host-side operation too, so no item
-is consumed and dropped.  Operations that must not tear halfway --
-``send``, ``send_eof``, ``aclose``, ``terminate`` -- are shielded
-instead: the ``CancelledError`` reaches you, but the operation still
-completes on the host.
+by ``asyncio.timeout``) cancels the host-side operation too, so normally
+no item is consumed and dropped -- but the cancel can also land in the
+window after the host took an item and before it reaches you, and that
+item is then lost.  Do not cancel a ``receive`` whose item you still need;
+the roadmap tracks closing the window.  Operations that must not tear
+halfway -- ``send``, ``send_eof``, ``aclose``, ``terminate`` -- are
+shielded instead: the ``CancelledError`` reaches you, but the operation
+still completes on the host.
 
 The error types are shared with :mod:`execnet.sync` and
 :mod:`execnet.trio`.  Items you send must already be simple builtin data
@@ -223,8 +226,10 @@ class AsyncChannel:
         received channel reference arrives as an
         :class:`~execnet.aio.AsyncChannel`.
 
-        Cancellable: no item is consumed if the await is cancelled, so
-        ``asyncio.timeout`` is equivalent to passing ``timeout``.
+        Cancellable: the host-side receive is cancelled too, so
+        ``asyncio.timeout`` is nearly equivalent to passing ``timeout``.
+        The exception is a cancel that arrives once the item is already in
+        flight to this coroutine -- it is dropped rather than put back.
         """
         result = await self._bridge.call(self._channel.receive, timeout)
         if isinstance(result, _TrioChannel):
