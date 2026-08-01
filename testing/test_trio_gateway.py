@@ -24,6 +24,7 @@ from execnet._errors import RemoteError
 from execnet._message import Message
 from execnet._serialize import dumps_internal
 from execnet._serialize import loads_internal
+from execnet._trio_gateway import AsyncChannel
 from execnet._trio_gateway import AsyncGateway
 from execnet._trio_gateway import AsyncGroup
 from execnet._trio_gateway import ThreadedFdStream
@@ -377,6 +378,52 @@ class TestAsyncGroup:
                 await gateway.remote_exec("import time\nwhile True: time.sleep(1)")
                 processes = list(group._processes.values())
             assert all(process.returncode is not None for process in processes)
+
+        trio.run(main)
+
+    def test_finished_channels_do_not_accumulate(self) -> None:
+        """A long-lived gateway must not keep one dead channel per exec.
+
+        The sync surface is protected by its weak channel registry; the
+        async ones hold their channels strongly, so a coordinator doing
+        many ``remote_exec``s -- a test run, a pod fleet -- grew for as long
+        as it lived.  Nothing can arrive for a remotely closed id (ids step
+        by two per side and are never reused), so the registry drops it.
+        """
+
+        async def main() -> None:
+            async with AsyncGroup() as group:
+                gateway = await group.makegateway()
+                for _ in range(20):
+                    channel = await gateway.remote_exec("channel.send(42)")
+                    assert await channel.receive() == 42
+                    await channel.wait_closed()
+                assert gateway._channels == {}
+                assert gateway._async_channels == {}
+
+        trio.run(main)
+
+    def test_a_channel_nobody_asked_for_survives_until_it_is_claimed(self) -> None:
+        # the exception to the above: a channel the local side has never
+        # taken exists only in the registry, and a reference passed in a
+        # payload has to find what arrived on it -- not a fresh empty one
+        async def main() -> None:
+            async with gateway_pair() as (left, right):
+                passed = right.open_channel()
+                await passed.send(b"ignored")  # ensure the id is live
+                sender = right.open_channel()
+                # right sends a reference to `passed`, plus data and a close
+                # on it, before left ever looks at that id
+                await sender.send(passed)
+                await passed.send("buffered")
+                await passed.aclose()
+                await trio.testing.wait_all_tasks_blocked()
+
+                receiver = left.open_channel(sender.id)
+                arrived = await receiver.receive()
+                assert isinstance(arrived, AsyncChannel)
+                assert await arrived.receive() == b"ignored"
+                assert await arrived.receive() == "buffered"
 
         trio.run(main)
 
