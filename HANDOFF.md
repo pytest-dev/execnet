@@ -176,6 +176,14 @@ shape does not dictate the worker's.
   callback including the endmarker has run.
 - `Group.terminate(timeout)` never hangs (~2×timeout bound, issues
   #43/#221).
+- **A remotely closed channel leaves the gateway's registry.**  Nothing can
+  arrive for that id again (ids step by two per side and are never reused),
+  so keeping it only grew a long-lived async coordinator by one dead channel
+  per `remote_exec` — the sync surface is protected by its weak registry,
+  `execnet.trio`/`execnet.aio` are not.  The exception is a channel local
+  code has never asked for (`RawChannel._handed_out`): that one exists
+  *only* in the registry, and a passed-channel reference binding late has to
+  find the payloads and the close that arrived on it.
 - Sync blocking waits (send-ack, receive, waitclose, join) stay on
   `threading.Event`/queue so KeyboardInterrupt can interrupt them;
   `portal.run` (KI-deferred) is only for management ops.

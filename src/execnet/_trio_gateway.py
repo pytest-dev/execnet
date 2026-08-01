@@ -262,6 +262,11 @@ class RawChannel:
         self._closed = False  # no more sends (local aclose or remote close)
         self._sent_eof = False
         self._remote_closed = False
+        #: whether local code has ever been handed this channel.  If it has,
+        #: it owns the object and the gateway's registry is only a router;
+        #: if it has not, the registry *is* the only thing holding what
+        #: arrived, and a late binder has to find it there.
+        self._handed_out = False
         self._receive_closed = trio.Event()  # no more payloads will arrive
         self._remote_error: RemoteError | None = None
         self._payload_send, self._payloads = trio.open_memory_channel[bytes](math.inf)
@@ -386,11 +391,19 @@ class RawChannel:
         self._receive_closed.set()
         if not sendonly:
             self._closed = True
-            if self._consumer_close is not None:
-                # Without a consumer the closed channel stays registered:
-                # a passed-channel reference may still bind late and must
-                # find the buffered payloads and this close, not a fresh
-                # empty channel under the same id.
+            # Nothing more can arrive for this id -- the peer closed it, and
+            # ids step by two per side and are never reused -- so the
+            # registry has no routing left to do.  Dropping it here is what
+            # keeps a long-lived gateway from accumulating one dead channel
+            # per remote_exec; the object itself lives as long as whoever
+            # holds it, buffered payloads and all.
+            #
+            # Unless nobody holds it: a channel the local side has never
+            # asked for exists *only* in the registry, and a passed-channel
+            # reference may still bind to it late.  That one has to find the
+            # buffered payloads and this close, not a fresh empty channel
+            # under the same id, so it stays until it is claimed.
+            if self._consumer_close is not None or self._handed_out:
                 self.gateway._forget_channel(self.id)
         self._payload_send.close()
         if self._consumer_close is not None:
@@ -601,7 +614,9 @@ class AsyncGateway:
         if id is None:
             id = self._count
             self._count += 2
-        return self._channel_for(id)
+        channel = self._channel_for(id)
+        channel._handed_out = True
+        return channel
 
     def open_channel(self, id: int | None = None) -> AsyncChannel:
         """Return the serialized channel for ``id``, allocating one if None."""

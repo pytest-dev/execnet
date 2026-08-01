@@ -34,8 +34,8 @@ from typing import Protocol
 from ._message import Message
 
 __all__ = [
-    "ConfigRefused",
     "BlockingChannel",
+    "ConfigRefused",
     "read_config_frame",
     "read_ready",
     "send_config",
@@ -89,7 +89,9 @@ def _read_frame_blocking(channel: BlockingChannel) -> Message:
 
 
 def _config_frame(payload: dict[str, Any]) -> bytes:
-    return Message(Message.GATEWAY_CONFIG, 0, json.dumps(payload).encode("utf-8")).pack()
+    return Message(
+        Message.GATEWAY_CONFIG, 0, json.dumps(payload).encode("utf-8")
+    ).pack()
 
 
 def _decode(message: Message, what: str) -> dict[str, Any]:
@@ -109,7 +111,9 @@ def read_config_frame(channel: BlockingChannel) -> dict[str, Any]:
     return _decode(_read_frame_blocking(channel), "worker config")
 
 
-def send_ready_frame(channel: BlockingChannel, error: str | None = None, **info: Any) -> None:
+def send_ready_frame(
+    channel: BlockingChannel, error: str | None = None, **info: Any
+) -> None:
     """Answer the config frame: serving, or refusing and why."""
     if error is not None:
         channel.sendall(_config_frame({"ok": False, "error": error}))
