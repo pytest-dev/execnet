@@ -93,8 +93,9 @@ monkey-patched either: protocol IO is a Trio loop on its own OS thread and
 needs the real ``select`` (for ``epoll``), ``socket``, ``thread`` and
 ``queue``, which ``gevent.monkey`` replaces process-wide.  You do not need
 patching here -- the waits above park the calling greenlet because they
-wait on a gevent primitive.  A host that cannot start in a patched process
-raises and names gevent.
+wait on a gevent primitive.  Starting a host in a patched process is
+refused up front, with an error naming what was patched, rather than
+failing later somewhere inside trio.
 
 This is about the *caller*.  Whether the worker itself runs greenlets is
 the independent ``profile=gevent`` spec key -- see

@@ -116,9 +116,10 @@ reaches for from a side thread — verified in every variant:
 | `patch_all(thread=False, socket=False, select=False)` | `queue.SimpleQueue` is gevent's; `from_thread.run` -> `LoopExit` |
 
 Which is a problem, because a real gevent application usually *does*
-monkey-patch.  The failure is now immediate and names gevent
-(`TrioHost.start` -> `_startup_hint`) rather than hanging for 30s, and the
-docs no longer imply patching is fine, so nothing is silently broken.  But
+monkey-patch.  `TrioHost.start` now refuses outright in a patched process
+(`_check_gevent_not_patched`, before the thread exists) rather than hanging
+for 30s or failing somewhere inside trio, and the docs no longer imply
+patching is fine, so nothing is silently broken.  But
 "supported for gevent apps" is a bigger claim than "works if you drive
 gevent explicitly", and only one of them is true today.
 

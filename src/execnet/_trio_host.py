@@ -536,19 +536,58 @@ class SyncBridgeGateway(AsyncGateway):
 _GEVENT_SENSITIVE = ("select", "socket", "thread", "queue")
 
 
-def _startup_hint() -> str:
-    """Name gevent when monkey-patching is what kept the loop from starting.
+def gevent_patched_modules() -> list[str]:
+    """Which modules the host loop needs have been monkey-patched by gevent.
 
-    The host loop is a trio program in a side thread, and trio reaches for
-    ``select.epoll``, real sockets and a real ``SimpleQueue`` to talk to it.
-    ``gevent.monkey`` replaces those process-wide, so a patched process
-    fails somewhere inside trio with an error that says nothing about
-    gevent.
+    The host loop is a trio program on its own OS thread, and trio reaches
+    for ``select.epoll``, real sockets, a real ``SimpleQueue`` and real
+    locks to talk to it.  ``gevent.monkey`` replaces those process-wide.
     """
     monkey = sys.modules.get("gevent.monkey")
     if monkey is None:
-        return ""
-    patched = [name for name in _GEVENT_SENSITIVE if monkey.is_module_patched(name)]
+        return []
+    return [name for name in _GEVENT_SENSITIVE if monkey.is_module_patched(name)]
+
+
+def _check_gevent_not_patched() -> None:
+    """Refuse to start a host loop in a monkey-patched process.
+
+    Every patching variant we measured is broken, and each fails somewhere
+    inside trio with an error that says nothing about gevent:
+    ``patch_all()`` removes ``select.epoll`` so the IO manager cannot be
+    built, ``patch_all(select=False)`` makes trio's wakeup socketpair a
+    gevent socket (``EBADF``), and patching neither still leaves
+    ``queue.SimpleQueue`` gevent's, so ``from_thread.run`` raises
+    ``LoopExit``.  Refusing here costs a dict lookup and turns all three
+    into one sentence, before a thread exists to fail on.
+
+    Note this is not what makes :mod:`execnet.gevent` work: that surface's
+    waits park the calling greenlet because they wait on a gevent
+    primitive, not because the stdlib was swapped underneath them.  It
+    works in an unpatched process and is the supported way to drive execnet
+    from a gevent application.
+    """
+    patched = gevent_patched_modules()
+    if not patched:
+        return
+    raise RuntimeError(
+        "the execnet host loop cannot run in this process: gevent has"
+        f" monkey-patched {', '.join(patched)}, and the loop needs the real"
+        " ones (it is a trio program on its own OS thread). execnet supports"
+        " gevent applications that do not monkey-patch these modules --"
+        " execnet.gevent parks the calling greenlet on its blocking waits"
+        " either way, which is what that namespace is for."
+    )
+
+
+def _startup_hint() -> str:
+    """Name gevent when patching is what kept the loop from starting.
+
+    :func:`_check_gevent_not_patched` catches this before the thread
+    starts; this stays for a process that patches *after* that check, and
+    for whatever else ``gevent.monkey`` grows next.
+    """
+    patched = gevent_patched_modules()
     if not patched:
         return ""
     return (
@@ -581,6 +620,7 @@ class TrioHost:
     def start(self) -> None:
         if self._started:
             return
+        _check_gevent_not_patched()
         self._thread = threading.Thread(target=self._run, name=self._name, daemon=True)
         self._thread.start()
         if not self._ready.wait(timeout=30):
