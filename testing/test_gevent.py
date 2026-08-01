@@ -11,6 +11,7 @@ tests run in an unpatched process and so must the facade.
 from __future__ import annotations
 
 import threading
+from contextlib import suppress
 
 import pytest
 
@@ -178,6 +179,35 @@ class TestGeventWorkerProfile:
 
     def test_status_reports_gevent(self, worker_gw) -> None:
         assert worker_gw.remote_status().execmodel == "gevent"
+
+    def test_execs_are_not_rationed_against_the_thread_budget(self, worker_gw) -> None:
+        """Greenlets cost no thread, so nothing caps them at the thread limit.
+
+        The exec-admission bound exists because a thread-shaped exec spends
+        a thread the callbacks and protocol work also need.  A greenlet
+        spends none -- but waiting for one used to park a pool thread, so a
+        gevent worker was rationed to 20 concurrent execs, which is a cap on
+        exactly what the profile is for.
+        """
+        import trio
+
+        from execnet import _trio_worker
+
+        async def thread_bound_capacity() -> int:
+            return _trio_worker.exec_capacity()
+
+        assert worker_gw.remote_status().execcapacity is None
+        wanted = trio.run(thread_bound_capacity) + 5
+        channels = [
+            worker_gw.remote_exec("channel.send('go'); channel.receive()")
+            for _ in range(wanted)
+        ]
+        try:
+            assert [ch.receive(TESTTIMEOUT) for ch in channels] == ["go"] * wanted
+        finally:
+            for ch in channels:
+                with suppress(OSError):
+                    ch.send(None)
 
 
 def test_provisioning_adds_gevent_requirement() -> None:

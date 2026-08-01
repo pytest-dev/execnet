@@ -47,6 +47,8 @@ class PoolExec:
 
     #: whether _run_worker must hand this strategy the process main thread
     needs_primary_thread = False
+    #: whether each concurrent exec occupies a thread of the worker's budget
+    exec_costs_a_thread = True
 
     def __init__(self, gateway: WorkerGateway) -> None:
         self.gateway = gateway
@@ -69,6 +71,28 @@ class PoolExec:
         pass
 
 
+def _thread_signal() -> tuple[trio.Event, Callable[[], None]]:
+    """A loop-side event plus the callable that sets it from a foreign thread.
+
+    Waiting for an exec that runs *elsewhere* -- the main thread, a greenlet
+    -- must not park a pool thread on a ``threading.Event``: that thread is
+    part of the budget exec placement is rationed against, so an exec that
+    costs no thread would still spend one waiting for itself.
+
+    Must be built on the loop (it captures the trio token).
+    """
+    done = trio.Event()
+    token = trio.lowlevel.current_trio_token()
+
+    def signal() -> None:
+        # posted callbacks must not raise, and a loop that ended while the
+        # exec ran leaves nobody to wake
+        with suppress(trio.RunFinishedError):
+            token.run_sync_soon(done.set)
+
+    return done, signal
+
+
 class PrimaryThreadPump:
     """Runs exec requests handed to it on the process main thread.
 
@@ -79,10 +103,14 @@ class PrimaryThreadPump:
 
     #: whether _run_worker must hand this strategy the process main thread
     needs_primary_thread = True
+    #: whether each concurrent exec occupies a thread of the worker's budget
+    #: (see TrioWorkerExec.capacity): the primary one does not, but the
+    #: overflow HybridExec sends to the pool does
+    exec_costs_a_thread = True
 
     def __init__(self, gateway: WorkerGateway) -> None:
         self.gateway = gateway
-        self._primary: Mailbox[tuple[Channel, ExecItem, threading.Event] | None] = (
+        self._primary: Mailbox[tuple[Channel, ExecItem, Callable[[], None]] | None] = (
             Mailbox()
         )
 
@@ -91,9 +119,9 @@ class PrimaryThreadPump:
         return True
 
     async def run(self, channel: Channel, item: ExecItem) -> None:
-        done = threading.Event()
-        self._primary.put((channel, item, done))
-        await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
+        done, signal = _thread_signal()
+        self._primary.put((channel, item, signal))
+        await done.wait()
 
     def released(self) -> None:
         """Hook: the main thread is free again (called on it, before done)."""
@@ -104,14 +132,14 @@ class PrimaryThreadPump:
             task = self._primary.get()
             if task is None:
                 break
-            channel, item, done = task
+            channel, item, signal = task
             try:
                 self.gateway.executetask((channel, item))
             finally:
                 # Release before signalling: the next request should see the
                 # main thread free as early as we can make it.
                 self.released()
-                done.set()
+                signal()
 
     def trigger_shutdown(self) -> None:
         self._primary.put(None)
@@ -186,6 +214,9 @@ class GreenletExec:
     """
 
     needs_primary_thread = True
+    #: greenlets, not threads: concurrent execs here cost the thread budget
+    #: nothing, so they are not rationed against it
+    exec_costs_a_thread = False
 
     def __init__(self, gateway: WorkerGateway) -> None:
         from ._boundary import make_wakener
@@ -193,7 +224,7 @@ class GreenletExec:
         self.gateway = gateway
         # The integrate loop blocks in get() on the hub thread: a gevent
         # wakener parks only its root greenlet, letting exec greenlets run.
-        self._primary: Mailbox[tuple[Channel, ExecItem, threading.Event] | None] = (
+        self._primary: Mailbox[tuple[Channel, ExecItem, Callable[[], None]] | None] = (
             Mailbox(make_wakener("gevent"))
         )
 
@@ -201,19 +232,21 @@ class GreenletExec:
         return True
 
     async def run(self, channel: Channel, item: ExecItem) -> None:
-        done = threading.Event()
-        self._primary.put((channel, item, done))
-        await trio.to_thread.run_sync(done.wait, abandon_on_cancel=True)
+        done, signal = _thread_signal()
+        self._primary.put((channel, item, signal))
+        await done.wait()
 
     def integrate_as_primary_thread(self) -> None:
         """Run the hub on the main thread, spawning a greenlet per exec."""
         import gevent
 
-        def run_exec(channel: Channel, item: ExecItem, done: threading.Event) -> None:
+        def run_exec(
+            channel: Channel, item: ExecItem, signal: Callable[[], None]
+        ) -> None:
             try:
                 self.gateway.executetask((channel, item))
             finally:
-                done.set()
+                signal()
 
         while True:
             task = self._primary.get()
@@ -373,14 +406,19 @@ class TrioWorkerExec:
         with self._lock:
             return self._running
 
-    def capacity(self) -> int:
-        """Concurrent execs this worker admits (loop thread only).
+    def capacity(self) -> int | None:
+        """Concurrent execs this worker admits, or None for unbounded.
 
-        Resolved on first use rather than in ``__init__``, which runs before
-        there is a loop to read the thread limiter from.  Reported by
-        ``remote_status()`` as ``execcapacity``, because a coordinator that
-        just had a request refused wants the number it hit.
+        Only the thread-shaped strategies are rationed: a greenlet exec
+        spends no thread, so bounding it would cap the very thing
+        ``profile=gevent`` exists to provide.  Resolved on first use rather
+        than in ``__init__``, which runs before there is a loop to read the
+        thread limiter from.  Reported by ``remote_status()`` as
+        ``execcapacity``, because a coordinator that just had a request
+        refused wants the number it hit.
         """
+        if not self.strategy.exec_costs_a_thread:
+            return None
         if self._capacity is None:
             self._capacity = exec_capacity()
         return self._capacity
@@ -403,7 +441,7 @@ class TrioWorkerExec:
             if self._shutting_down:
                 channel.close("execution disallowed")
                 return
-            if self._running >= capacity:
+            if capacity is not None and self._running >= capacity:
                 full = True
             else:
                 full = False
@@ -416,7 +454,7 @@ class TrioWorkerExec:
                 " concurrency limit (half its thread budget; the rest serves"
                 " channel callbacks and protocol work). Use more gateways, or"
                 " a profile whose execs are not threads (profile=trio,"
-                " profile=gevent)."
+                " profile=gevent), which are not bounded this way."
             )
             return
         # Already on the Trio host thread (Message handler).

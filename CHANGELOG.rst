@@ -67,8 +67,15 @@ series, once the consumers that need them have released without them.
   Admitting it instead made request 41 wait for a slot only a finishing exec
   could free, which from the coordinator is indistinguishable from a hung
   ``remote_exec``. ``remote_status()`` gained ``execcapacity`` (``None``
-  under ``profile=trio``, whose execs are tasks and are not bounded this
-  way), and ``numexecuting`` now counts what is really running.
+  under ``profile=trio`` and ``profile=gevent``, whose execs are tasks and
+  greenlets and are not bounded this way), and ``numexecuting`` now counts
+  what is really running.
+* **A ``profile=gevent`` worker is no longer limited to as many concurrent
+  execs as it has threads.** Waiting for a greenlet to finish parked a pool
+  thread on a ``threading.Event``, so execs that cost no thread each held
+  one anyway -- capping exactly the concurrency the profile exists to
+  provide. The wait is a ``trio.Event`` woken from the exec's own thread
+  now; same for the main-thread exec under ``profile=thread``.
 * **An exec that finishes after its connection died no longer takes the
   worker down.** Closing the channel is how an exec reports it finished, and
   a connection that went away first makes that raise; the exception reached
