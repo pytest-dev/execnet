@@ -76,10 +76,13 @@ jobs:
       uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.python }}
-        # 3.15 is still a prerelease: without this, setup-python resolves
-        # only released versions and the job dies before it runs anything
-        # ("version '3.15' with architecture 'x64' was not found").
-        allow-prereleases: true
+        # Only for the version that has no release yet: setup-python
+        # otherwise resolves released versions only, and a 3.15 job dies at
+        # setup ("version '3.15' with architecture 'x64' was not found").
+        # Scoped to 3.15 rather than switched on for the matrix, so the
+        # released versions keep testing what users actually install --
+        # move it to the next version when 3.15 ships.
+        allow-prereleases: ${{ matrix.python == '3.15' }}
 
     - name: Install dependencies
       run: pip install tox twine
