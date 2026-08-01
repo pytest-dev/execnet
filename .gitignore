@@ -20,3 +20,4 @@ include/
 .vagrant.d/
 .config/
 .local/
+.claude/settings.local.json

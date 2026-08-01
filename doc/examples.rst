@@ -5,7 +5,9 @@ examples
 .. _`execnet-dev`: http://mail.python.org/mailman/listinfo/execnet-dev
 .. _`execnet-commit`: http://mail.python.org/mailman/listinfo/execnet-commit
 
-Note: all examples with `>>>` prompts are automatically tested.
+Note: the examples with ``>>>`` prompts are run as doctests by ``tox -e
+docs``, except for the few marked ``# doctest: +SKIP``, which need a remote
+account to talk to.
 
 .. toctree::
    :maxdepth: 2
@@ -14,7 +16,6 @@ Note: all examples with `>>>` prompts are automatically tested.
    example/test_group
    example/test_proxy
    example/test_multi
-   example/hybridpython
    example/test_debug
 
 .. toctree::

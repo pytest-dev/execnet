@@ -4,12 +4,13 @@ mostly functional tests of gateways.
 
 from __future__ import annotations
 
+import queue
 import time
 
 import pytest
 
-from execnet.gateway import Gateway
-from execnet.gateway_base import Channel
+from execnet import Gateway
+from execnet._channel import Channel
 
 needs_early_gc = pytest.mark.skipif("not hasattr(sys, 'getrefcount')")
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
@@ -214,8 +215,6 @@ class TestChannelBasicBehaviour:
     def check_channel_callback_stays_active(
         self, gw: Gateway, earlyfree: bool = True
     ) -> Channel | None:
-        if gw.spec.execmodel == "gevent":
-            pytest.xfail("investigate gevent failure")
         # with 'earlyfree==True', this tests the "sendonly" channel state.
         l: list[int] = []
         channel = gw.remote_exec(
@@ -272,14 +271,14 @@ class TestChannelBasicBehaviour:
         assert l[3] == 999
 
     def test_channel_endmarker_callback_error(self, gw: Gateway) -> None:
-        q = gw.execmodel.queue.Queue()
+        q: queue.Queue[object] = queue.Queue()
         channel = gw.remote_exec(
             source="""
             raise ValueError()
         """
         )
         channel.setcallback(q.put, endmarker=999)
-        val = q.get(TESTTIMEOUT)
+        val = q.get(timeout=TESTTIMEOUT)
         assert val == 999
         err = channel._getremoteerror()
         assert err
@@ -305,6 +304,50 @@ class TestChannelBasicBehaviour:
         assert "42" in excinfo.value.formatted
         channel.send(1)
         channel.waitclose()
+
+    @needs_early_gc
+    def test_callback_channel_collected_after_close(self, gw: Gateway) -> None:
+        # A callback channel is kept alive only by its consumer task: while it
+        # is consuming it survives with no user reference, and once the stream
+        # closes and the callback has run the object becomes collectable.
+        import gc
+        import weakref
+
+        received: list[int] = []
+        channel = gw.remote_exec("channel.send(1); channel.send(2)")
+        channel.setcallback(received.append)
+        ref = weakref.ref(channel)
+        del channel  # only the consumer task holds it now
+
+        deadline = time.time() + TESTTIMEOUT
+        while ref() is not None and time.time() < deadline:
+            gc.collect()
+            time.sleep(0.05)
+        assert received == [1, 2]
+        assert ref() is None  # consumer finished -> no strong refs -> reclaimed
+
+    def test_callbacks_run_off_the_loop_thread(self, gw: Gateway) -> None:
+        # A slow callback on one channel must not block delivery to another:
+        # callbacks run in threadpool threads, not inline on the loop.
+        import threading
+
+        release = threading.Event()
+        fast_ran = threading.Event()
+
+        def slow(item: object) -> None:
+            release.wait(TESTTIMEOUT)
+
+        chan_slow = gw.remote_exec("channel.send(1); channel.receive()")
+        chan_fast = gw.remote_exec("channel.send(1)")
+        chan_slow.setcallback(slow)
+        chan_fast.setcallback(lambda item: fast_ran.set())
+
+        # the fast callback fires even while the slow one is still blocking
+        assert fast_ran.wait(TESTTIMEOUT)
+        release.set()
+        chan_slow.send(0)  # let the remote finish and close
+        chan_slow.waitclose(TESTTIMEOUT)
+        chan_fast.waitclose(TESTTIMEOUT)
 
 
 class TestChannelFile:

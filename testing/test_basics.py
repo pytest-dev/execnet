@@ -15,13 +15,15 @@ from typing import Any
 import pytest
 
 import execnet
-from execnet import gateway
-from execnet import gateway_base
-from execnet import gateway_io
-from execnet.gateway_base import ChannelFactory
-from execnet.gateway_base import ExecModel
-from execnet.gateway_base import Message
-from execnet.gateway_base import Popen2IO
+from execnet import _boundary
+from execnet import _errors
+from execnet import _exec_source
+from execnet import _gateway_base
+from execnet import _message
+from execnet import _serialize
+from execnet._channel import ChannelFactory
+from execnet._execmodel import ExecModel
+from execnet._message import Message
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
@@ -29,37 +31,49 @@ skip_win_pypy = pytest.mark.xfail(
 )
 
 
+# The standalone serializer is an internal detail (execnet._serialize),
+# not part of the public API -- see the docs, "Sending objects over a channel".
 @pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])
 class TestSerializeAPI:
     def test_serializer_api(self, val: object) -> None:
-        dumped = execnet.dumps(val)
-        val2 = execnet.loads(dumped)
+        dumped = _serialize.dumps(val)
+        val2 = _serialize.loads(dumped)
         assert val == val2
 
     def test_mmap(self, tmp_path: Path, val: object) -> None:
         mmap = pytest.importorskip("mmap").mmap
         p = tmp_path / "data.bin"
 
-        p.write_bytes(execnet.dumps(val))
+        p.write_bytes(_serialize.dumps(val))
         with p.open("r+b") as f:
             m = mmap(f.fileno(), 0)
-            val2 = execnet.load(m)
+            val2 = _serialize.load(m)
         assert val == val2
 
     def test_bytesio(self, val: object) -> None:
         f = BytesIO()
-        execnet.dump(f, val)
+        _serialize.dump(f, val)
         read = BytesIO(f.getvalue())
-        val2 = execnet.load(read)
+        val2 = _serialize.load(read)
         assert val == val2
 
 
+def test_serializer_not_public() -> None:
+    # dumps/loads/dump/load stay internal to execnet._serialize.  ``dumps``
+    # is still *reachable* as a temporary pytest-xdist shim, but it is not
+    # part of the surface -- see test_namespaces.py.
+    for name in ("loads", "dump", "load"):
+        assert not hasattr(execnet, name), name
+    for name in ("dumps", "loads", "dump", "load"):
+        assert name not in execnet.__all__, name
+
+
 def test_serializer_api_version_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    bchr = gateway_base.bchr
-    monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(1))
-    dumped = execnet.dumps(42)
-    monkeypatch.setattr(gateway_base, "DUMPFORMAT_VERSION", bchr(2))
-    pytest.raises(execnet.DataFormatError, lambda: execnet.loads(dumped))
+    bchr = _serialize.bchr
+    monkeypatch.setattr(_serialize, "DUMPFORMAT_VERSION", bchr(1))
+    dumped = _serialize.dumps(42)
+    monkeypatch.setattr(_serialize, "DUMPFORMAT_VERSION", bchr(2))
+    pytest.raises(execnet.DataFormatError, lambda: _serialize.loads(dumped))
 
 
 def test_errors_on_execnet() -> None:
@@ -68,81 +82,48 @@ def test_errors_on_execnet() -> None:
     assert hasattr(execnet, "DataFormatError")
 
 
-def test_subprocess_interaction(anypython: str) -> None:
-    line = gateway_io.popen_bootstrapline
-    compile(line, "xyz", "exec")
-    args = [str(anypython), "-c", line]
-    popen = subprocess.Popen(
-        args,
-        bufsize=0,
-        universal_newlines=True,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-    )
+def standalone_protocol_source() -> str:
+    """The wire-protocol core as a self-contained script.
 
-    assert popen.stdin is not None
-    assert popen.stdout is not None
-
-    def send(line: str) -> None:
-        assert popen.stdin is not None
-        popen.stdin.write(line)
-        popen.stdin.flush()
-
-    def receive() -> str:
-        assert popen.stdout is not None
-        return popen.stdout.readline()
-
-    try:
-        source = inspect.getsource(read_write_loop) + "read_write_loop()"
-        send(repr(source) + "\n")
-        s = receive()
-        assert s == "ok\n"
-        send("hello\n")
-        s = receive()
-        assert s == "received: hello\n"
-        send("world\n")
-        s = receive()
-        assert s == "received: world\n"
-        send("\n")  # terminate loop
-    finally:
-        popen.stdin.close()
-        popen.stdout.close()
-        popen.wait()
-
-
-def read_write_loop() -> None:
-    sys.stdout.write("ok\n")
-    sys.stdout.flush()
-    while 1:
-        try:
-            line = sys.stdin.readline()
-            if not line.strip():
-                break
-            sys.stdout.write("received: %s" % line)
-            sys.stdout.flush()
-        except (OSError, EOFError):
-            break
+    ``_errors``, ``_message`` and ``_serialize`` are the layers a peer needs
+    to frame and serialize; between them the only runtime execnet imports are
+    of each other, so concatenating their sources -- dropping those imports
+    and keeping a single file-leading future import -- yields a script that
+    runs on any interpreter, which is what these checks verify.  The
+    ``if TYPE_CHECKING:`` imports are left in place; they never execute.
+    """
+    lines = ["from __future__ import annotations\n"]
+    for module in (_errors, _message, _serialize):
+        for line in inspect.getsource(module).splitlines(keepends=True):
+            if line.startswith(("from __future__ import annotations", "from ._")):
+                continue
+            lines.append(line)
+    return "".join(lines)
 
 
 IO_MESSAGE_EXTRA_SOURCE = """
-import sys
-backend = sys.argv[1]
 from io import BytesIO
-import tempfile
-temp_out = BytesIO()
-temp_in = BytesIO()
-io = Popen2IO(temp_out, temp_in, get_execmodel(backend))
+
+class BufIO:
+    def __init__(self):
+        self.buf = BytesIO()
+
+    def write(self, data):
+        self.buf.write(data)
+
+    def read(self, numbytes):
+        data = self.buf.read(numbytes)
+        if len(data) < numbytes:
+            raise EOFError("expected %d bytes" % numbytes)
+        return data
+
 for i, handler in enumerate(Message._types):
     print ("checking", i, handler)
     for data in "hello", "hello".encode('ascii'):
+        io = BufIO()
         msg1 = Message(i, i, dumps(data))
         msg1.to_io(io)
-        x = io.outfile.getvalue()
-        io.outfile.truncate(0)
-        io.outfile.seek(0)
-        io.infile.seek(0)
-        io.infile.write(x)
-        io.infile.seek(0)
+        io.buf.seek(0)
         msg2 = Message.from_io(io)
         assert msg1.channelid == msg2.channelid, (msg1, msg2)
         assert msg1.data == msg2.data, (msg1.data, msg2.data)
@@ -162,11 +143,16 @@ class Checker:
     ) -> subprocess.CompletedProcess[str]:
         self.idx += 1
         check_path = self.path / f"check{self.idx}.py"
-        check_path.write_text(script)
+        # utf-8 explicitly: source is utf-8 by default (PEP 3120), so writing
+        # it in the locale encoding produces a file the interpreter cannot
+        # read back wherever that is not utf-8 -- Windows, where a single
+        # em-dash in the concatenated source was enough to break it.
+        check_path.write_text(script, encoding="utf-8")
         return subprocess.run(
             [self.python, os.fspath(check_path), *extra_args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=True,
             **process_args,
         )
@@ -177,63 +163,15 @@ def checker(anypython: str, tmp_path: Path) -> Checker:
     return Checker(python=anypython, path=tmp_path)
 
 
-def test_io_message(checker: Checker, execmodel: ExecModel) -> None:
-    out = checker.run_check(
-        inspect.getsource(gateway_base) + IO_MESSAGE_EXTRA_SOURCE, execmodel.backend
-    )
-    print(out.stdout)
-    assert "all passed" in out.stdout
-
-
-def test_popen_io(checker: Checker, execmodel: ExecModel) -> None:
-    out = checker.run_check(
-        inspect.getsource(gateway_base)
-        + f"""
-io = init_popen_io(get_execmodel({execmodel.backend!r}))
-io.write(b"hello")
-s = io.read(1)
-assert s == b"x"
-""",
-        input="x",
-    )
-    print(out.stderr)
-    assert "hello" in out.stdout
-
-
-def test_popen_io_readloop(execmodel: ExecModel) -> None:
-    sio = BytesIO(b"test")
-    io = Popen2IO(sio, sio, execmodel)
-    real_read = io._read
-
-    def newread(numbytes: int) -> bytes:
-        if numbytes > 1:
-            numbytes = numbytes - 1
-        return real_read(numbytes)  # type: ignore[no-any-return]
-
-    io._read = newread
-    result = io.read(3)
-    assert result == b"tes"
-
-
-def test_rinfo_source(checker: Checker) -> None:
-    out = checker.run_check(
-        f"""
-class Channel:
-    def send(self, data):
-        assert eval(repr(data), {{}}) == data
-channel = Channel()
-{inspect.getsource(gateway.rinfo_source)}
-print ('all passed')
-"""
-    )
-
+def test_io_message(checker: Checker) -> None:
+    out = checker.run_check(standalone_protocol_source() + IO_MESSAGE_EXTRA_SOURCE)
     print(out.stdout)
     assert "all passed" in out.stdout
 
 
 def test_geterrortext(checker: Checker) -> None:
     out = checker.run_check(
-        inspect.getsource(gateway_base)
+        standalone_protocol_source()
         + """
 class Arg(Exception):
     pass
@@ -252,19 +190,20 @@ except ValueError as exc:
 
 
 @pytest.mark.skipif("not hasattr(os, 'dup')")
-def test_stdouterrin_setnull(
-    execmodel: ExecModel, capfd: pytest.CaptureFixture[str]
-) -> None:
-    # Backup and restore stdin state, and rely on capfd to handle
-    # this for stdout and stderr.
+def test_stdio_disposition_devnull(capfd: pytest.CaptureFixture[str]) -> None:
+    # apply_stdio(devnull) points fd 0/1 at the null device: writes and
+    # reads on them must go nowhere.  Back up and restore the real fds.
+    from execnet import _trio_worker
+
     orig_stdin = sys.stdin
-    orig_stdin_fd = os.dup(0)
+    orig_stdout = sys.stdout
+    orig_fd0 = os.dup(0)
+    orig_fd1 = os.dup(1)
     try:
-        # The returned Popen2IO instance can be garbage collected
-        # prematurely since we don't hold a reference here, but we
-        # tolerate this because it is intended to leave behind a
-        # sane state afterwards.
-        gateway_base.init_popen_io(execmodel)
+        read_fd, write_fd = _trio_worker._dup_protocol_fds()
+        os.close(read_fd)
+        os.close(write_fd)
+        _trio_worker.apply_stdio(stdin="devnull", stdout="devnull")
         os.write(1, b"hello")
         os.read(0, 1)
         out, err = capfd.readouterr()
@@ -272,8 +211,31 @@ def test_stdouterrin_setnull(
         assert not err
     finally:
         sys.stdin = orig_stdin
-        os.dup2(orig_stdin_fd, 0)
-        os.close(orig_stdin_fd)
+        sys.stdout = orig_stdout
+        os.dup2(orig_fd0, 0)
+        os.dup2(orig_fd1, 1)
+        os.close(orig_fd0)
+        os.close(orig_fd1)
+
+
+@pytest.mark.skipif("not hasattr(os, 'dup')")
+def test_stdio_disposition_stdout_to_stderr(capfd: pytest.CaptureFixture[str]) -> None:
+    # The stdio transport's default: remote output lands on stderr rather
+    # than the null device, so it stays visible without touching the wire.
+    from execnet import _trio_worker
+
+    orig_stdout = sys.stdout
+    orig_fd1 = os.dup(1)
+    try:
+        _trio_worker.apply_stdio(stdout="stderr")
+        os.write(1, b"to-stderr")
+        out, err = capfd.readouterr()
+        assert not out
+        assert "to-stderr" in err
+    finally:
+        sys.stdout = orig_stdout
+        os.dup2(orig_fd1, 1)
+        os.close(orig_fd1)
 
 
 class PseudoChannel:
@@ -296,7 +258,7 @@ class PseudoChannel:
 def test_exectask(execmodel: ExecModel) -> None:
     io = BytesIO()
     io.execmodel = execmodel  # type: ignore[attr-defined]
-    gw = gateway_base.WorkerGateway(io, id="something")  # type: ignore[arg-type]
+    gw = _gateway_base.WorkerGateway(io, id="something")  # type: ignore[arg-type]
     ch = PseudoChannel()
     gw.executetask((ch, ("raise ValueError()", None, {})))  # type: ignore[arg-type]
     assert "ValueError" in str(ch._closed[0])
@@ -318,14 +280,110 @@ class TestMessage:
             assert isinstance(repr(msg), str)
 
 
+class TestFrameDecoder:
+    def _messages(self) -> list[Message]:
+        return [
+            Message(Message.CHANNEL_DATA, 1, b"x" * 20),
+            Message(Message.STATUS, 42, b""),
+            Message(Message.CHANNEL_DATA, 7, b"y"),
+        ]
+
+    def test_single_feed_yields_all(self) -> None:
+        decoder = _message.FrameDecoder()
+        blob = b"".join(m.pack() for m in self._messages())
+        got = list(decoder.feed(blob))
+        assert [(m.msgcode, m.channelid, m.data) for m in got] == [
+            (m.msgcode, m.channelid, m.data) for m in self._messages()
+        ]
+        decoder.close()
+
+    @pytest.mark.parametrize("chunksize", [1, 2, 3, 8, 9, 10, 13])
+    def test_adversarial_chunk_splits(self, chunksize: int) -> None:
+        decoder = _message.FrameDecoder()
+        blob = b"".join(m.pack() for m in self._messages())
+        got: list[Message] = []
+        for start in range(0, len(blob), chunksize):
+            got.extend(decoder.feed(blob[start : start + chunksize]))
+        assert [(m.msgcode, m.channelid, m.data) for m in got] == [
+            (m.msgcode, m.channelid, m.data) for m in self._messages()
+        ]
+        decoder.close()
+
+    def test_close_mid_frame_raises(self) -> None:
+        decoder = _message.FrameDecoder()
+        blob = Message(Message.CHANNEL_DATA, 1, b"hello").pack()
+        assert list(decoder.feed(blob[:-2])) == []
+        with pytest.raises(EOFError, match="mid-frame"):
+            decoder.close()
+
+    def test_feed_buffers_even_when_not_iterated(self) -> None:
+        decoder = _message.FrameDecoder()
+        blob = Message(Message.CHANNEL_DATA, 5, b"data").pack()
+        decoder.feed(blob[:4])  # result deliberately not iterated
+        (msg,) = decoder.feed(blob[4:])
+        assert (msg.msgcode, msg.channelid, msg.data) == (
+            Message.CHANNEL_DATA,
+            5,
+            b"data",
+        )
+
+    def test_memory_stream_roundtrip(self) -> None:
+        """Protocol-level: frames sent over a trio memory stream pair arrive
+        intact through the receive_some + FrameDecoder loop."""
+        import trio
+        import trio.testing
+
+        messages = self._messages()
+
+        async def main() -> list[Message]:
+            ours, theirs = trio.testing.memory_stream_pair()
+            received: list[Message] = []
+
+            async def sender() -> None:
+                for m in messages:
+                    await theirs.send_all(m.pack())
+                await theirs.send_eof()
+
+            async def receiver() -> None:
+                decoder = _message.FrameDecoder()
+                while True:
+                    data = await ours.receive_some(4096)
+                    if not data:
+                        decoder.close()
+                        break
+                    received.extend(decoder.feed(data))
+
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(sender)
+                nursery.start_soon(receiver)
+            return received
+
+        received = trio.run(main)
+        assert [(m.msgcode, m.channelid, m.data) for m in received] == [
+            (m.msgcode, m.channelid, m.data) for m in messages
+        ]
+
+
 class TestPureChannel:
     @pytest.fixture
     def fac(self, execmodel: ExecModel) -> ChannelFactory:
         class FakeGateway:
+            _trio_session = None
+            _new_wakener = staticmethod(_boundary.ThreadWakener)
+
+            def _check_usable(self, what: str) -> None:
+                pass
+
             def _trace(self, *args) -> None:
                 pass
 
             def _send(self, *k) -> None:
+                pass
+
+            def _bind_channel(self, channel) -> None:
+                pass
+
+            def _release_channel(self, id) -> None:
                 pass
 
         FakeGateway.execmodel = execmodel  # type: ignore[attr-defined]
@@ -355,13 +413,13 @@ class TestPureChannel:
 
 class TestSourceOfFunction:
     def test_lambda_unsupported(self) -> None:
-        pytest.raises(ValueError, gateway._source_of_function, lambda: 1)
+        pytest.raises(ValueError, _exec_source._source_of_function, lambda: 1)
 
     def test_wrong_prototype_fails(self) -> None:
         def prototype(wrong) -> None:
             pass
 
-        pytest.raises(ValueError, gateway._source_of_function, prototype)
+        pytest.raises(ValueError, _exec_source._source_of_function, prototype)
 
     def test_function_without_known_source_fails(self) -> None:
         # this one won't be able to find the source
@@ -369,7 +427,7 @@ class TestSourceOfFunction:
         exec("def fail(channel): pass", mess, mess)
         print(inspect.getsourcefile(mess["fail"]))
         with pytest.raises(ValueError):
-            gateway._source_of_function(mess["fail"])
+            _exec_source._source_of_function(mess["fail"])
 
     def test_function_with_closure_fails(self) -> None:
         mess: dict[str, Any] = {}
@@ -378,13 +436,13 @@ class TestSourceOfFunction:
             print(mess)
 
         with pytest.raises(ValueError):
-            gateway._source_of_function(closure)
+            _exec_source._source_of_function(closure)
 
     def test_source_of_nested_function(self) -> None:
         def working(channel: object) -> None:
             pass
 
-        send_source = gateway._source_of_function(working).lstrip("\r\n")
+        send_source = _exec_source._source_of_function(working).lstrip("\r\n")
         expected = "def working(channel: object) -> None:\n    pass\n"
         assert send_source == expected
 
@@ -393,7 +451,7 @@ class TestGlobalFinder:
     def check(self, func) -> list[str]:
         src = textwrap.dedent(inspect.getsource(func))
         code = func.__code__
-        return gateway._find_non_builtin_globals(src, code)
+        return _exec_source._find_non_builtin_globals(src, code)
 
     def test_local(self) -> None:
         def f(a, b, c):
@@ -420,7 +478,7 @@ class TestGlobalFinder:
         def func(channel) -> None:
             sys
 
-        pytest.raises(ValueError, gateway._source_of_function, func)
+        pytest.raises(ValueError, _exec_source._source_of_function, func)
 
     def test_method_call(self) -> None:
         # method names are reason
@@ -433,7 +491,7 @@ class TestGlobalFinder:
 
 @skip_win_pypy
 def test_remote_exec_function_with_kwargs(
-    anypython: str, makegateway: Callable[[str], gateway.Gateway]
+    anypython: str, makegateway: Callable[[str], execnet.Gateway]
 ) -> None:
     def func(channel, data) -> None:
         channel.send(data)
@@ -446,17 +504,17 @@ def test_remote_exec_function_with_kwargs(
     assert result == 1
 
 
-def test_remote_exc__no_kwargs(makegateway: Callable[[], gateway.Gateway]) -> None:
+def test_remote_exc__no_kwargs(makegateway: Callable[[], execnet.Gateway]) -> None:
     gw = makegateway()
     with pytest.raises(TypeError):
-        gw.remote_exec(gateway_base, kwarg=1)
+        gw.remote_exec(_message, kwarg=1)
     with pytest.raises(TypeError):
         gw.remote_exec("pass", kwarg=1)
 
 
 @skip_win_pypy
 def test_remote_exec_inspect_stack(
-    makegateway: Callable[[], gateway.Gateway],
+    makegateway: Callable[[], execnet.Gateway],
 ) -> None:
     gw = makegateway()
     ch = gw.remote_exec(

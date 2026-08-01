@@ -9,15 +9,17 @@ import pathlib
 import shutil
 import signal
 import sys
+import time
 from collections.abc import Callable
+from contextlib import suppress
 from textwrap import dedent
 
 import pytest
 
 import execnet
-from execnet import gateway_base
-from execnet import gateway_io
-from execnet.gateway import Gateway
+from execnet import Gateway
+from execnet import RemoteError
+from execnet import _trace
 
 TESTTIMEOUT = 10.0  # seconds
 needs_osdup = pytest.mark.skipif("not hasattr(os, 'dup')")
@@ -169,7 +171,7 @@ class TestBasicGateway:
         ch = gw.remote_exec(remotetest)
         try:
             ch.receive()
-        except execnet.gateway_base.RemoteError as e:
+        except execnet.RemoteError as e:
             assert 'remotetest.py", line 3, in run_me' in str(e)
             assert "ValueError: me" in str(e)
         finally:
@@ -178,7 +180,7 @@ class TestBasicGateway:
         ch = gw.remote_exec(remotetest.run_me)
         try:
             ch.receive()
-        except execnet.gateway_base.RemoteError as e:
+        except execnet.RemoteError as e:
             assert 'remotetest.py", line 3, in run_me' in str(e)
             assert "ValueError: me" in str(e)
         finally:
@@ -269,14 +271,19 @@ class TestBasicGateway:
         assert rinfo.cwd
         assert rinfo.version_info
         assert repr(rinfo)
-        old = gw.remote_exec(
+        chdir = gw.remote_exec(
             """
             import os.path
             cwd = os.getcwd()
             channel.send(os.path.basename(cwd))
             os.chdir('..')
         """
-        ).receive()
+        )
+        old = chdir.receive()
+        # receive() returns when the *send* arrives, and the chdir happens
+        # after it -- so without waiting for the exec to finish, the _rinfo
+        # below races it.  Slower interpreters lose that race.
+        chdir.waitclose(TESTTIMEOUT)
         try:
             rinfo2 = gw._rinfo()
             assert rinfo2.cwd == rinfo.cwd
@@ -285,6 +292,50 @@ class TestBasicGateway:
         finally:
             gw._cache_rinfo = rinfo
             gw.remote_exec("import os ; os.chdir(%r)" % old).waitclose()
+
+    def test_hybrid_primary_then_overflow(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        # classic thread-model shape: the first exec claims the true main
+        # thread; while it is busy, further execs overflow to worker
+        # threads; once released the main thread is claimable again.
+        gw = makegateway("popen//execmodel=thread")
+        report = """
+            import threading
+            channel.send(threading.current_thread() is threading.main_thread())
+            channel.receive()
+        """
+        first = gw.remote_exec(report)
+        assert first.receive(TESTTIMEOUT) is True
+        second = gw.remote_exec(report)
+        assert second.receive(TESTTIMEOUT) is False
+        second.send(None)
+        second.waitclose(TESTTIMEOUT)
+        first.send(None)
+        first.waitclose(TESTTIMEOUT)
+        # the primary slot frees shortly after the exec finishes
+        for _ in range(50):
+            probe = gw.remote_exec(report)
+            on_main = probe.receive(TESTTIMEOUT)
+            probe.send(None)
+            probe.waitclose(TESTTIMEOUT)
+            if on_main:
+                break
+            time.sleep(0.05)
+        assert on_main
+
+    def test__rinfo_while_exec_busy(self, gw: Gateway) -> None:
+        # info is a native protocol request: it must work (and not claim
+        # an exec slot) while an exec occupies the worker -- under
+        # main_thread_only an info-by-remote_exec used to either steal
+        # the main thread or trip the concurrency deadlock guard.
+        channel = gw.remote_exec("channel.send(channel.receive())")
+        try:
+            rinfo = gw._rinfo(update=True)
+            assert rinfo.pid != os.getpid()
+        finally:
+            channel.send("done")
+        assert channel.receive(TESTTIMEOUT) == "done"
 
 
 class TestPopenGateway:
@@ -302,9 +353,9 @@ class TestPopenGateway:
         assert x.lower() == str(tmp_path).lower()
 
     def test_remoteerror_readable_traceback(self, gw: Gateway) -> None:
-        with pytest.raises(gateway_base.RemoteError) as e:
+        with pytest.raises(execnet.RemoteError) as e:
             gw.remote_exec("x y").waitclose()
-        assert "gateway_base" in e.value.formatted
+        assert "_gateway_base" in e.value.formatted
 
     def test_many_popen(self, makegateway: Callable[[str], Gateway]) -> None:
         num = 4
@@ -381,20 +432,19 @@ def test_socket_gw_host_not_found(makegateway: Callable[[str], Gateway]) -> None
 class TestSshPopenGateway:
     gwtype = "ssh"
 
-    def test_sshconfig_config_parsing(
-        self, monkeypatch: pytest.MonkeyPatch, makegateway: Callable[[str], Gateway]
+    def test_ssh_trio_args_include_config(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        l = []
-        monkeypatch.setattr(
-            gateway_io, "Popen2IOMaster", lambda *args, **kwargs: l.append(args[0])
-        )
-        with pytest.raises(AttributeError):
-            makegateway("ssh=xyz//ssh_config=qwe")
+        from execnet import _provision
+        from execnet import _trio_host
 
-        assert len(l) == 1
-        popen_args = l[0]
-        i = popen_args.index("-F")
-        assert popen_args[i + 1] == "qwe"
+        monkeypatch.setattr(
+            _provision, "ssh_remote_command", lambda spec, *a, **kw: "worker-cmd"
+        )
+        args = _trio_host.ssh_trio_args(execnet.XSpec("ssh=xyz//ssh_config=qwe"))
+        assert args[args.index("-F") + 1] == "qwe"
+        assert "xyz" in args
+        assert args[-1] == "worker-cmd"
 
     def test_sshaddress(self, gw: Gateway, specssh: execnet.XSpec) -> None:
         assert gw.remoteaddress == specssh.ssh
@@ -477,9 +527,7 @@ class TestTracing:
         monkeypatch.setenv("EXECNET_DEBUG", "1")
         gw = makegateway("popen")
         #  hack out the debuffilename
-        fn = gw.remote_exec(
-            "import execnet;channel.send(execnet.gateway_base.fn)"
-        ).receive()
+        fn = gw.remote_exec("import execnet;channel.send(execnet._trace.fn)").receive()
         assert isinstance(fn, str)
         workerfile = pathlib.Path(fn)
         assert workerfile.exists()
@@ -509,7 +557,7 @@ class TestTracing:
         gw.exit()
 
     def test_no_tracing_by_default(self):
-        assert gateway_base.trace == gateway_base.notrace, (
+        assert _trace.trace == _trace.notrace, (
             "trace does not to default to empty tracing"
         )
 
@@ -530,57 +578,24 @@ class TestTracing:
     ],
 )
 def test_popen_args(spec: str, expected_args: list[str]) -> None:
-    expected_args = [*expected_args, "-u", "-c", gateway_io.popen_bootstrapline]
-    args = gateway_io.popen_args(execnet.XSpec(spec))
-    assert args == expected_args
+    from execnet import _trio_gateway
+
+    args = _trio_gateway.popen_module_args(execnet.XSpec(spec + "//id=gw0"))
+    assert args[: len(expected_args)] == expected_args
+    assert args[len(expected_args) :][:4] == ["-u", "-m", "execnet", "worker"]
 
 
-@pytest.mark.parametrize(
-    "interleave_getstatus",
-    [
-        pytest.param(True, id="interleave-remote-status"),
-        pytest.param(
-            False,
-            id="no-interleave-remote-status",
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pytest-dev/execnet/issues/123",
-            ),
-        ),
-    ],
-)
-def test_regression_gevent_hangs(
-    group: execnet.Group, interleave_getstatus: bool
+def test_first_remote_exec_claims_the_main_thread(
+    makegateway: Callable[[str], Gateway],
 ) -> None:
-    pytest.importorskip("gevent")
-    gw = group.makegateway("popen//execmodel=gevent")
-
-    print(gw.remote_status())
-
-    def sendback(channel) -> None:
-        channel.send(1234)
-
-    ch = gw.remote_exec(sendback)
-    if interleave_getstatus:
-        print(gw.remote_status())
-    assert ch.receive(timeout=0.5) == 1234
-
-
-def test_assert_main_thread_only(
-    execmodel: gateway_base.ExecModel, makegateway: Callable[[str], Gateway]
-) -> None:
-    if execmodel.backend != "main_thread_only":
-        pytest.skip("can only run with main_thread_only")
-
-    gw = makegateway(f"execmodel={execmodel.backend}//popen")
-
+    # The `thread` profile hands the first request the worker main thread
+    # -- the GUI/signal-safety property `main_thread_only` existed for.
+    # FIFO admission makes that one deterministic; a sequential *re*-exec
+    # races the claim release (see HybridExec), so only the first is
+    # asserted here.
+    gw = makegateway("profile=thread//popen")
     try:
-        # Submit multiple remote_exec requests in quick succession and
-        # assert that all tasks execute in the main thread. It is
-        # necessary to call receive on each channel before the next
-        # remote_exec call, since the channel will raise an error if
-        # concurrent remote_exec requests are submitted as in
-        # test_main_thread_only_concurrent_remote_exec_deadlock.
-        for i in range(10):
+        for _ in range(1):
             ch = gw.remote_exec(
                 """
                     import time, threading
@@ -588,7 +603,6 @@ def test_assert_main_thread_only(
                     channel.send(threading.current_thread() is threading.main_thread())
             """
             )
-
             try:
                 res = ch.receive()
             finally:
@@ -604,45 +618,157 @@ def test_assert_main_thread_only(
         gw.join()
 
 
-def test_main_thread_only_concurrent_remote_exec_deadlock(
-    execmodel: gateway_base.ExecModel, makegateway: Callable[[str], Gateway]
+def test_main_thread_only_is_deprecated_and_overflows(
+    makegateway: Callable[[str], Gateway],
 ) -> None:
-    if execmodel.backend != "main_thread_only":
-        pytest.skip("can only run with main_thread_only")
-
-    gw = makegateway(f"execmodel={execmodel.backend}//popen")
+    # `main_thread_only` now maps to `thread`.  Where it used to refuse a
+    # second concurrent remote_exec with a deadlock error, the request now
+    # overflows to a pool thread -- the first one still gets the main
+    # thread, which is what the profile was for.
+    with pytest.warns(DeprecationWarning, match="main_thread_only"):
+        gw = makegateway("profile=main_thread_only//popen")
     channels = []
     try:
-        # Submit multiple remote_exec requests in quick succession and
-        # assert that MAIN_THREAD_ONLY_DEADLOCK_TEXT is raised if
-        # concurrent remote_exec requests are submitted for the
-        # main_thread_only execmodel (as compensation for the lack of
-        # back pressure in remote_exec calls which do not attempt to
-        # block until the remote main thread is idle).
-        for i in range(2):
+        for _ in range(2):
             channels.append(
                 gw.remote_exec(
                     """
                     import threading
                     channel.send(threading.current_thread() is threading.main_thread())
-                    # Wait forever, ensuring that the deadlock case triggers.
-                    channel.gateway.execmodel.Event().wait()
+                    channel.receive()
             """
                 )
             )
-
-        expected_results = (
-            True,
-            execnet.gateway_base.MAIN_THREAD_ONLY_DEADLOCK_TEXT,
-        )
-        for expected, ch in zip(expected_results, channels, strict=True):
-            try:
-                res = ch.receive()
-            except execnet.RemoteError as e:
-                res = e.formatted
-            assert res == expected
+        # both run: first on the main thread, second on an overflow thread
+        assert [ch.receive(TESTTIMEOUT) for ch in channels] == [True, False]
     finally:
         for ch in channels:
             ch.close()
         gw.exit()
         gw.join()
+
+
+class TestExecCapacity:
+    """A worker admits a bounded number of concurrent execs, and says so.
+
+    Every placement costs a thread from trio's default limiter, and the
+    worker needs threads for channel callbacks and its own protocol work
+    too.  The bound used to be that limiter alone: request 41 was admitted
+    and then waited for a slot only a finishing exec could free, which reads
+    exactly like a hung remote_exec on a channel nobody will ever answer.
+    """
+
+    def test_capacity_is_half_the_thread_budget(self) -> None:
+        import trio
+
+        from execnet import _trio_worker
+
+        async def measure() -> tuple[int, float]:
+            return (
+                _trio_worker.exec_capacity(),
+                trio.to_thread.current_default_thread_limiter().total_tokens,
+            )
+
+        capacity, total = trio.run(measure)
+        assert capacity == max(1, int(total // 2))
+
+    def _worker_capacity(self, gw: Gateway) -> int:
+        # asked over the protocol: exec'd code runs on a thread, where the
+        # trio limiter the number comes from is not readable
+        capacity = gw.remote_status().execcapacity
+        assert isinstance(capacity, int)
+        return capacity
+
+    def test_execs_up_to_capacity_all_run(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        gw = makegateway("popen")
+        channels = []
+        try:
+            capacity = self._worker_capacity(gw)
+            for _ in range(capacity):
+                channels.append(
+                    gw.remote_exec("channel.send('running'); channel.receive()")
+                )
+            # every one of them is placed on a thread, not merely admitted
+            assert [ch.receive(TESTTIMEOUT) for ch in channels] == [
+                "running"
+            ] * capacity
+            assert gw.remote_status().numexecuting == capacity
+        finally:
+            for ch in channels:
+                with suppress(OSError):
+                    ch.send(None)
+            gw.exit()
+            gw.join()
+
+    def test_one_exec_too_many_is_refused_not_hung(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        gw = makegateway("popen")
+        channels = []
+        try:
+            capacity = self._worker_capacity(gw)
+            for _ in range(capacity):
+                channels.append(
+                    gw.remote_exec("channel.send('running'); channel.receive()")
+                )
+            for ch in channels:
+                assert ch.receive(TESTTIMEOUT) == "running"
+            # the one over the line is refused, promptly and with a reason
+            over = gw.remote_exec("channel.send('running')")
+            with pytest.raises(RemoteError, match="concurrency limit"):
+                over.receive(TESTTIMEOUT)
+            # and a slot is free the moment its close is observable: the
+            # release happens before that close goes out, so this sequence
+            # cannot be refused for a slot that is already gone
+            freed = channels.pop()
+            freed.send(None)
+            freed.waitclose(TESTTIMEOUT)
+            assert gw.remote_exec("channel.send(42)").receive(TESTTIMEOUT) == 42
+        finally:
+            for ch in channels:
+                with suppress(OSError):
+                    ch.send(None)
+            gw.exit()
+            gw.join()
+
+
+def test_exec_task_contains_its_failure() -> None:
+    """An exec task must not let anything reach the worker's root nursery.
+
+    ``executetask`` closes the channel when the source returns, and a
+    connection that went away first makes that raise.  Escaping here ends
+    ``trio.run`` and prints an ExceptionGroup onto the user's stderr, which
+    is the worker's own since 3.0.
+    """
+    import trio
+
+    from execnet import _trio_worker
+
+    class BoomStrategy:
+        needs_primary_thread = False
+
+        async def admit(self, channel: object, item: object) -> bool:
+            return True
+
+        async def run(self, channel: object, item: object) -> None:
+            raise OSError("cannot send (already closed?)")
+
+    class DeadChannel:
+        id = 1
+
+    async def main() -> int:
+        pump = _trio_worker.TrioWorkerExec(
+            None,  # type: ignore[arg-type]
+            gateway=None,  # type: ignore[arg-type]
+            strategy=BoomStrategy(),
+        )
+        pump._holding.add(DeadChannel.id)
+        pump._running = 1
+        pump._idle.clear()
+        await pump._run_exec(DeadChannel(), ())  # type: ignore[arg-type]
+        return pump.active_count()
+
+    # no exception escapes, and the slot is released either way
+    assert trio.run(main) == 0

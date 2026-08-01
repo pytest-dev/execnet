@@ -1,8 +1,8 @@
-from execnet import gateway_base
+from execnet import _serialize
 
 
 def test_opcodes() -> None:
-    data = vars(gateway_base.opcode)
+    data = vars(_serialize.opcode)
     computed = {k: v for k, v in data.items() if "__" not in k}
     assert computed == {
         "BUILDTUPLE": b"@",
@@ -18,13 +18,13 @@ def test_opcodes() -> None:
         "NEWDICT": b"J",
         "NEWLIST": b"K",
         "NONE": b"L",
-        "PY2STRING": b"M",
-        "PY3STRING": b"N",
+        # b"M" (py2 str) and b"S" (py2 unicode) are retired along with
+        # Python2 support -- the bytes stay unused rather than reassigned.
+        "STRING": b"N",
         "SET": b"O",
         "SETITEM": b"P",
         "STOP": b"Q",
         "TRUE": b"R",
-        "UNICODE": b"S",
         # added in 1.4
         # causes a regression since it was ordered in
         # between CHANNEL and FALSE as "C" moving the other items

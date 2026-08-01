@@ -14,7 +14,7 @@ multiple gateways::
     >>> group
     <Group ['gw0', 'gw1']>
     >>> list(group)
-    [<Gateway id='gw0' receive-live, thread model, 0 active channels>, <Gateway id='gw1' receive-live, thread model, 0 active channels>]
+    [<Gateway id='gw0' receive-live, thread profile, 0 active channels>, <Gateway id='gw1' receive-live, thread profile, 0 active channels>]
     >>> 'gw0' in group and 'gw1' in group
     True
     >>> group['gw0'] == group[0]
@@ -37,7 +37,7 @@ Pass an ``id=MYNAME`` part to ``group.makegateway``. Example::
     >>> gw = group.makegateway("popen//id=sub1")
     >>> assert gw.id == "sub1"
     >>> group['sub1']
-    <Gateway id='sub1' receive-live, thread model, 0 active channels>
+    <Gateway id='sub1' receive-live, thread profile, 0 active channels>
 
 Getting (auto) IDs before instantiation
 ------------------------------------------------------
@@ -93,18 +93,19 @@ Using Groups to manage a certain type of gateway
 ------------------------------------------------------
 
 Set ``group.defaultspec`` to determine the default gateway
-specification used by ``group.makegateway()``:
+specification used by ``group.makegateway()`` (this one needs a reachable
+ssh account, so it is not run as part of the test suite):
 
     >>> import execnet
     >>> group = execnet.Group()
     >>> group.defaultspec = "ssh=localhost//chdir=mytmp//nice=20"
-    >>> gw = group.makegateway()
+    >>> gw = group.makegateway()                          # doctest: +SKIP
     >>> ch = gw.remote_exec("""
     ...      import os.path
     ...      basename = os.path.basename(os.getcwd())
     ...      channel.send(basename)
-    ... """)
-    >>> ch.receive()
+    ... """)                                              # doctest: +SKIP
+    >>> ch.receive()                                      # doctest: +SKIP
     'mytmp'
 
 This way a Group object becomes kind of a Gateway factory where

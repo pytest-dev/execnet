@@ -1,7 +1,363 @@
-2.2.0 (UNRELEASED)
+3.0.0 (UNRELEASED)
 ------------------
 
+This release rebuilds execnet on an async-native Trio core.  It is a major
+release: a worker is now launched through the ``execnet`` command line
+rather than by bootstrapping source over the wire, the protocol rides a
+socket instead of the worker's stdin/stdout, and a worker's stdio belongs
+to the code it runs.
+
+**pytest-xdist keeps working unmodified.**  The deprecated names that
+released xdist reaches for -- ``execnet.gateway_base.ExecModel``,
+``execnet.dumps``, ``Group(execmodel=...)``, the ``execmodel=`` spec key --
+all still work here; they are scheduled for removal later in the 3.x
+series, once the consumers that need them have released without them.
+
+* New ``execnet`` command line, and it is now the launch contract between a
+  coordinator and the worker process it starts::
+
+    execnet worker  --protocol-stdio | --protocol-fd FD[,FD]
+                    | --protocol-connect ADDR | --protocol-listen ADDR
+                    | --protocol-share
+                    --config JSON | --config-fd FD | --config-file PATH
+                    --stdin/--stdout/--stderr DISPOSITION
+    execnet server  [HOST:PORT] [--once]
+    execnet info
+
+  ``ADDR`` is ``unix:/path`` or ``host:port``. Provisioning emits
+  ``python -m execnet worker ...`` for a direct interpreter launch and
+  ``execnet worker ...`` under ``uv run``; both are the same CLI.
+  ``execnet-socketserver`` still works and forwards to ``execnet server``
+  with a ``DeprecationWarning``. ``execnet info`` reports version, trio
+  availability and supported transports as JSON, and replaces the
+  ``import execnet, trio`` probe used to decide whether a ``python=``
+  interpreter can host a worker directly.
+* The protocol no longer has to be the worker's stdin/stdout. A new
+  ``transport=socket|stdio`` spec key selects, and ``socket`` is the default
+  for every worker execnet spawns itself: an inherited socketpair for
+  ``popen`` on POSIX, and a socket duplicated with ``socket.share()`` on
+  Windows. ``ssh=``/``vagrant_ssh=`` gateways use an ``ssh -R``-forwarded
+  unix socket the worker dials back on, which needs ``AF_UNIX`` and
+  ``StreamLocal`` forwarding, so those stay on ``stdio`` on Windows.
+* **A worker's stdio now belongs to the code it runs.** It used to be
+  redirected to the null device so it could not corrupt the protocol, which
+  meant a remote ``print()`` went nowhere at all. With the socket transport
+  the worker leaves fd 0/1/2 alone entirely; with the stdio transport it
+  closes stdin and folds stdout onto stderr rather than discarding both.
+  Remote output that used to vanish now reaches the coordinator -- and a
+  worker can now also *read* the coordinator's stdin. New ``stdin=``,
+  ``stdout=`` and ``stderr=`` spec keys (``inherit``/``devnull``, plus
+  ``close`` for stdin and ``stderr`` for stdout) override any of it, e.g.
+  ``popen//stdin=devnull``.
+* **The worker config no longer travels in the remote command line** for
+  ssh gateways, which closes an exposure: the config carries ``env:``
+  values, and a remote argv is readable by every user on that host through
+  ``ps``. The socket transport frees ssh's stdin, so the config goes there
+  (``--config-fd 0``) instead.
+* A shipped wheel (dev-version coordinator) is delivered to an ssh remote
+  over its own connection before the worker is launched, and cached there
+  by name. The launch command no longer needs ``head -c <N>`` byte
+  accounting, a ``mktemp`` prelude, or ``exec`` to keep an fd alive, and the
+  protocol stream never carries a payload.
+* **A worker now refuses a ``remote_exec`` past its concurrency limit**
+  instead of admitting one it cannot place. Thread-shaped execs each cost a
+  thread of the worker's budget -- which channel callbacks and its own
+  protocol work also draw on -- so exec takes half of it (20 by default) and
+  the request after that comes back as a ``RemoteError`` naming the limit.
+  Admitting it instead made request 41 wait for a slot only a finishing exec
+  could free, which from the coordinator is indistinguishable from a hung
+  ``remote_exec``. ``remote_status()`` gained ``execcapacity`` (``None``
+  under ``profile=trio`` and ``profile=gevent``, whose execs are tasks and
+  greenlets and are not bounded this way), and ``numexecuting`` now counts
+  what is really running.
+* **A ``profile=gevent`` worker is no longer limited to as many concurrent
+  execs as it has threads.** Waiting for a greenlet to finish parked a pool
+  thread on a ``threading.Event``, so execs that cost no thread each held
+  one anyway -- capping exactly the concurrency the profile exists to
+  provide. The wait is a ``trio.Event`` woken from the exec's own thread
+  now; same for the main-thread exec under ``profile=thread``.
+* The exec slot is released just before the exec's channel close goes out,
+  not after its task unwinds: that close is what tells a coordinator at
+  capacity it may send the next request, so ``waitclose()`` followed by
+  ``remote_exec()`` must not be refused for a slot that is already free.
+* **An exec that finishes after its connection died no longer takes the
+  worker down.** Closing the channel is how an exec reports it finished, and
+  a connection that went away first makes that raise; the exception reached
+  the worker's root nursery, ending ``trio.run`` and printing an
+  ``ExceptionGroup`` onto the user's stderr -- which is the worker's own
+  since this release. The close now tolerates a dead connection, and the
+  exec task contains anything else it raises.
+* **``socket=`` and ``installvia=`` gateways are configured by their spec
+  again.** ``profile=``, ``chdir=``, ``nice=`` and ``env:`` were accepted,
+  validated and then silently dropped: the worker is spawned by the
+  *server*, which built the config itself and never saw the spec. The
+  coordinator now sends its worker config over the connection (one JSON
+  line, before the protocol), and the server takes the keys a spec carries
+  and none of its own. A connection that sends no config line is closed
+  instead of served, without taking the accept loop down with it.
+* ``AsyncGroup`` allocates gateway ids from a counter rather than from the
+  length of its gateway list, which ``terminate()`` empties -- so ``gw0``
+  named two different workers in one session.
+* Removed ``safe_terminate``, unused since termination moved into the async
+  group; the bound it protected (issues #43/#221) is now tested on the real
+  ``Group.terminate()`` path.
+* A worker now **refuses** a coordinator whose major/minor execnet version
+  differs from its own, where it used to print a warning and carry on. The
+  two ends are installed independently now that no source is shipped, and
+  the protocol is unversioned, so a skew has no defined behaviour. The
+  refusal happens before the worker touches its stdio -- the last moment a
+  reason can reach the user, since afterwards the coordinator only ever
+  learns EOF. A patch-level difference is still tolerated, and
+  ``EXECNET_IGNORE_VERSION_SKEW=1`` in the worker's environment (reachable
+  as ``env:EXECNET_IGNORE_VERSION_SKEW=1`` in a spec) downgrades it to the
+  old warning.
+* A worker that dies before its handshake now says so with its exit status
+  (``worker exited with N before the handshake``) instead of surfacing as
+  whatever the closed socket looked like.
+* A worker that dies abruptly reports ``EOFError`` on every transport. A
+  killed peer *resets* a socket -- Windows reports ``WSAECONNRESET`` --
+  where a pipe would simply reach EOF, so the same event used to surface
+  as ``trio.BrokenResourceError`` on one transport and ``EOFError`` on the
+  other. Endmarker callbacks and ``channel._getremoteerror()`` now behave
+  the same either way.
+* ``channel.send()`` and ``channel.receive()`` check for a foreign event
+  loop before they check whether the channel is still open. Calling a
+  blocking API from inside a loop is a caller bug either way, and which of
+  the two errors you got depended on whether the peer had closed yet --
+  so the more useful message lost a race.
+* Whether a socket can be handed to a worker is now settled by *doing* it
+  once -- sharing to our own pid and rebuilding the result -- rather than
+  by looking for ``socket.share``. An implementation with the name but not
+  a working call would otherwise pass the check and fail later, at the
+  point where the only thing left to tell the coordinator is a closed
+  socket. A host that genuinely cannot hand a socket over refuses the
+  request up front instead.
+* A socket gateway that fails to start no longer takes down the gateway it
+  was requested through. It ran as a task on that worker's host, so an
+  unsupported sub-gateway used to cost that coordinator as well.
+* ``execnet server :0`` reported a port nothing was listening on. Binding a
+  wildcard host with an ephemeral port gives *each* address family its own
+  random port, and only the first was reported -- so a client dialling the
+  other family found nothing. Which family comes first is platform
+  dependent, which is why this worked on Linux and not on Windows. All
+  families now share the reported port.
+* A worker that cannot be handed its socket now fails instead of hanging.
+  A ``socket=``/``installvia=`` worker is spawned by the *server*, so a
+  failure there used to leave the coordinator waiting forever on a
+  handshake byte nobody was going to send -- one unsupported gateway could
+  wedge a whole session. A host that cannot hand over a socket at all now
+  refuses the request before replying with an address, which surfaces as a
+  remote error rather than an unexplained wait; and a spawn that fails
+  anyway closes the connection, so the coordinator sees EOF.
+* New ``share`` protocol transport (``execnet worker --protocol-share``)
+  carrying a socket to a worker on Windows, where ``subprocess`` refuses
+  ``pass_fds``. The socket is duplicated into the child with
+  ``socket.share()`` (``WSADuplicateSocket``); because that needs the
+  child's pid, the flag travels in argv and the blob follows in the config
+  on stdin. The blob is bound to that one pid, so it is inert to anything
+  else. This makes ``transport=socket`` the Windows default too, and fixes
+  ``socket=``/``installvia=`` gateways served from a Windows host. A socket
+  is handed over *as a socket* rather than reduced to its handle: rebuilding
+  one from a bare handle makes the constructor re-derive family/type/proto
+  by querying it, which PyPy on Windows cannot do to a handle that came
+  from ``WSADuplicateSocket``.
+* ``transport=socket`` on a gateway that cannot provide it is now an error
+  at ``makegateway`` time naming the platform, instead of a gateway that
+  waits for a worker which was never able to reach back. ssh dial-back
+  needs ``AF_UNIX`` (which CPython does not expose on Windows) and
+  ``StreamLocal`` forwarding (which Win32-OpenSSH does not implement), so
+  ssh gateways there stay on stdio.
+* Fixed Windows workers, which could not start at all: adopting the
+  inherited stdio pipes went through ``trio.lowlevel.FdStream``, which is
+  POSIX-only. Windows has no async equivalent -- trio's Windows pipe streams
+  need OVERLAPPED handles registered with an IOCP, and the stdio a process
+  inherits is an ordinary synchronous pipe -- so those reads and writes now
+  run in the thread pool. This only affects ``transport=stdio``; the socket
+  transport, which is the default, needs no threads.
+* New ``EXECNET_PROVISION_WHEEL`` environment variable naming a prebuilt
+  wheel to provision remote workers from, instead of resolving the
+  coordinator's version from an index or building one from its source tree.
+  This is for testing a built artifact: an execnet installed *from* a
+  distribution has a dev version but no source tree, so it can do neither
+  and every test needing a provisioned worker would skip. Pointing this at
+  the wheel from the same build makes those workers run the artifact under
+  test. Set but not naming an existing ``.whl`` is an error rather than a
+  silent fallback, which would provision something else.
+* ``main_thread_only`` used to *serialize*, so every sequential
+  ``remote_exec`` was guaranteed the worker's main thread. The ``thread``
+  profile it now maps to releases its claim as an exec finishes, a moment
+  after the channel close that lets the coordinator send the next request --
+  so a coordinator that immediately re-execs can rarely land on a pool
+  thread instead. The *first* request always gets the main thread; use the
+  ``trio`` or ``gevent`` profile where placement must never race.
+
+* One namespace per concurrency library you drive execnet from:
+  ``execnet.sync`` (plain threads; the top-level ``execnet.*`` aliases),
+  ``execnet.trio``, ``execnet.aio`` and the new ``execnet.gevent``, whose blocking
+  waits park the calling greenlet instead of its OS thread (needs ``execnet[gevent]``).
+
+  ``execnet.trio`` is the only surface that runs gateways *directly*, as tasks in your
+  own nursery. The others drive a Trio host thread, so their blocking calls now raise
+  when made from inside a running asyncio or trio loop -- naming the namespace to use
+  instead -- rather than stalling that loop. Channels inside a worker are exempt:
+  exec'd code may run its own event loop and talk to its channel from within it.
+* The ``execnet.portal`` namespace is gone. It exposed the ``Wakener`` protocol and the
+  ``Mailbox``/``OneShot``/``LoopPortal`` primitives but not the registry needed to plug
+  a ``Wakener`` in, and execnet does not offer third-party event-loop integration: a new
+  concurrency library gets a namespace of its own, as gevent just did. The primitives
+  are internal again.
+* Gateway groups share one Trio host thread per process instead of starting one each.
+  Pass ``execnet.Host()`` as ``Group(host=...)`` (or ``AsyncGroup(host=...)``) for an
+  isolated loop with deterministic teardown -- ``Host`` is a context manager and joins
+  its thread on exit, where the shared one stops at interpreter exit.
+
+  Closing a host is final, and it *breaks* the groups, gateways and channels it
+  served rather than freeing a resource underneath them: their protocol IO has no
+  loop to run on any more, so channels reach EOF, sends raise, and the group refuses
+  to build new gateways instead of quietly starting a second loop thread that none of
+  its existing gateways are attached to.
+* execnet objects do not survive ``os.fork()``, and now say so instead of blocking.
+  The host's loop thread is not duplicated into the child and the worker connections
+  belong to the parent, but the parent loop's trio token still *accepts* work in the
+  child -- so a forked child using an inherited group, gateway or channel (including
+  the module-level ``execnet.makegateway``) used to wait forever for a reply nobody
+  would send. Every route to the host now checks which process it is in and raises,
+  naming the fork. Recovery is explicit and belongs to the child: build a new
+  ``Host`` and a new ``Group`` on it. A child that asks for the default host gets a
+  fresh one, and it no longer inherits the parent's atexit cleanup.
+* A host loop that cannot start now says why, immediately. It comes up on a thread
+  nobody is watching, so a ``trio.run`` that died at once left the caller waiting
+  out the full 30s start timeout and then raising something generic, with the
+  actual reason only on stderr. The failure is re-raised at the call site, and
+  when ``gevent.monkey`` is what broke it, the message says so.
+* ``execnet.gevent`` requires a process that has **not** monkey-patched. The host
+  loop is a Trio program on its own OS thread and needs the real ``select`` (for
+  ``epoll``), ``socket``, ``thread`` and ``queue``; ``gevent.monkey`` replaces
+  those process-wide. Patching was never what made the namespace work -- its waits
+  park the calling greenlet because they wait on a gevent primitive -- but the
+  documentation implied patching was fine, and it is not.
+* ``execnet.gevent``'s first ``makegateway`` no longer blocks the hub. Starting the
+  group's async side took the blocking portal call that every other management
+  operation on this facade deliberately avoids; it is short enough that the timing
+  test stayed green, which is why it survived.
+* A ``makegateway`` that fails after the worker answered its handshake no longer
+  leaves that worker running. There is a seam between the connect helpers, which
+  each clean up after themselves, and the group taking ownership of the process;
+  a failure in it (a cancellation, realistically) used to leave a worker nothing
+  would ever terminate.
+* ``Group.terminate()`` and ``Gateway.join()`` join the calls that refuse to run
+  inside a running asyncio or trio loop. Both block on the host with no useful
+  bound -- ``join()`` until the worker dies -- which is the stall the guard exists to
+  turn into an error. Terminating a group with nothing in it stays allowed.
+* A spec's ``profile=``/``execmodel=`` value is no longer rewritten in place when it
+  names a deprecated profile. pytest-xdist reuses one ``XSpec`` across gateways and
+  re-reads ``spec.execmodel`` to decide whether it still needs prefixing, so normalizing
+  the value it set made the second use build a spec with a duplicate key -- which broke
+  crashed-worker replacement. The spec keeps what the caller spelled; the mapping happens
+  where the value is consumed.
+* The ``execmodel=`` spec key is now ``profile=``; ``execmodel=`` remains an accepted
+  alias. It always selected the *worker* profile -- where exec'd code runs relative to
+  the worker's protocol loop -- while the local execution model it was named after no
+  longer exists. Accordingly ``Group(execmodel=...)``, ``Group.set_execmodel()``,
+  ``Group.execmodel`` and ``Group.remote_execmodel`` are deprecated in favour of
+  ``Group(profile=...)``, ``Group.set_profile()`` and ``Group.profile``; only the
+  remote default they set has any effect. ``remote_status()`` reports both
+  ``profile`` and ``execmodel``.
+* The ``main_thread_only`` profile is deprecated and now behaves like ``thread``, which
+  already hands the first ``remote_exec`` the worker's real main thread -- the
+  GUI/signal-safety property it was added for in 2.1.0. Its other behaviour is gone:
+  a second concurrent ``remote_exec`` used to close the channel with
+  ``concurrent remote_exec would cause deadlock``, and now runs on a pool thread. That
+  guard was a one-second timeout that reported a merely slow predecessor as a deadlock.
+* The ``wait=`` spec key added earlier in this release cycle is gone. Which primitive a
+  blocking wait parks on describes the *caller*, which is what choosing a namespace
+  already says; a worker's own backend is derived from its profile.
+* ``execnet.aio`` now propagates cancellation. Cancelling an awaited ``receive`` (with
+  ``asyncio.timeout``, say) cancels the host-side operation, where it previously
+  abandoned only the asyncio side and let the operation consume an item that was then
+  discarded. ``send``, ``send_eof``, ``aclose`` and ``terminate`` are shielded instead,
+  so they cannot tear halfway.
+
+  Its classes gained the ``Async`` prefix -- ``AsyncGroup``, ``AsyncGateway``,
+  ``AsyncChannel`` -- matching ``execnet.trio``, and ``AsyncGroup`` can be driven with
+  ``start()``/``aclose()`` from application lifespan hooks instead of ``async with``.
+  ``open_popen_gateway`` is renamed ``open_gateway`` on both async namespaces, since it
+  always accepted any spec.
+* ``execnet.dumps``, the temporary pytest-xdist compatibility shim, no longer warns.
+  xdist reaches it from ``serialize_warning_message`` -- from inside pytest's
+  warning-recording hook, once per warning a *user's* test raises. Warning there put a
+  spurious execnet ``DeprecationWarning`` in that user's warnings summary, attributed to
+  their test, about a probe only xdist can port; and warning on every access made
+  recording one warning record another, unbounded, wedging the run.
+* ``Gateway.remote_init_threads()`` raises a ``DeprecationWarning`` instead of printing
+  to stdout. It has been a no-operation since execnet 1.2.
+
+* The documentation describes what execnet does now: worker profiles instead
+  of threading models, the spec keys (including ``transport=`` and the stdio
+  dispositions), the namespaces, the host thread, the ``execnet`` command
+  line, and a namespace reference for the async surfaces. ``tox -e docs``
+  now also *runs* the doc examples -- they had claimed to be automatically
+  tested while a ``pytest_plugins`` line in a non-top-level conftest made
+  collecting them an error -- and both it and the ``-W`` sphinx build run in
+  CI, where the docs had never been built at all.
+
 * `#380 <https://github.com/pytest-dev/execnet/pull/380>`__: Add support for Python 3.13 and 3.14, and drop EOL 3.8 and 3.9.
+* Trio host-thread Message IO for local ``popen`` + import bootstrap (coordinator and
+  worker). Adds a hard ``trio`` dependency. Disable with ``EXECNET_TRIO_HOST=0``.
+  Other gateway types and greenlet execmodels keep the legacy thread path.
+* Removed ``execnet.script.shell``, an interactive remote prompt that injected its own
+  source into the pre-Trio socket server. The Trio socket server never execs an incoming
+  source line, so the module could no longer work against it.
+* Removed ``execnet.script.quitserver``, which shut a socket server down by sending it
+  ``"raise KeyboardInterrupt"`` to exec. It relied on the same removed handshake.
+* Removed ``execnet.script.loop_socketserver``, a restart loop around a sibling
+  ``socketserver.py`` file. The socket server serves connections in a loop itself
+  (``--once`` opts out), and the sibling-file path never resolved for an installed
+  execnet anyway.
+* Removed ``execnet.script.socketserverservice``, the pywin32 Windows service wrapper.
+  Wrap the ``execnet-socketserver`` console command with a service host such as NSSM
+  instead; the socket gateway example documents how.
+* Moved the socket server to ``execnet._socketserver`` and removed the now empty
+  ``execnet.script`` package. The ``execnet-socketserver`` console command is unchanged
+  and remains the supported way to run it.
+* Removed ``Gateway.reconfigure`` and ``Channel.reconfigure`` along with the
+  ``py2str_as_py3str`` / ``py3str_as_py2str`` arguments of ``gateway_base.loads`` and
+  ``gateway_base.load``. They configured string coercion between Python2 and Python3
+  peers, which execnet can no longer have: ``py2str_as_py3str`` was already unreachable
+  because only a Python2 serializer emits the opcode it gates. The ``RECONFIGURE``
+  message code stays reserved but is no longer sent or handled.
+* The serializer dropped the retired ``PY2STRING`` and ``UNICODE`` opcodes and renamed
+  ``PY3STRING`` to ``STRING``. Values dumped by execnet running on Python2 no longer
+  load. Opcode bytes are unchanged for every type that survives.
+* The supported API is now exactly five namespaces: ``execnet`` (aliases of
+  ``execnet.sync``), ``execnet.sync``, ``execnet.trio``, ``execnet.aio`` and
+  ``execnet.gevent`` -- one per concurrency library you drive execnet from. The
+  pre-Trio modules ``execnet.gateway_base``, ``execnet.gateway``,
+  ``execnet.multi``, ``execnet.rsync``, ``execnet.rsync_remote`` and ``execnet.xspec``
+  were only ever reachable because ``import execnet`` pulled them in transitively; they
+  are now deprecated forwarding shims that warn on attribute access and will be removed
+  in execnet 3.0. Both ``import execnet.gateway_base`` and ``execnet.gateway_base.X``
+  after a plain ``import execnet`` keep working for now. Every name they exposed is
+  available from a public namespace, except the internals listed below.
+* ``gateway_base`` was split into private modules grouped by concern: ``_trace``,
+  ``_errors``, ``_execmodel``, ``_message`` (IO protocols, ``Message``,
+  ``FrameDecoder``), ``_serialize``, ``_channel`` (``Channel``, ``ChannelFactory``,
+  the ``ChannelFile`` adapters) and ``_gateway_base`` (``BaseGateway``,
+  ``WorkerGateway``).
+* Removed ``execnet.loads``, ``execnet.dump`` and ``execnet.load``, and dropped
+  ``execnet.dumps`` from the public surface. The standalone serializer is internal.
+  Added ``execnet.can_send(obj)``, which answers whether a value can cross a channel,
+  for callers that previously probed with ``try: execnet.dumps(x) / except DumpError``.
+  It lives on ``execnet`` only -- the wire contract does not vary by namespace.
+
+  ``execnet.dumps`` itself stays *reachable* for now, warning on access, purely so
+  released ``pytest-xdist`` keeps working; it is absent from ``__all__`` and from
+  ``dir(execnet)``. It is scheduled for removal once xdist ports its probe to
+  ``can_send``.
+* ``execnet.trio`` no longer exports ``ByteStream``, ``RawChannel``,
+  ``RawChannelStream`` or ``serve_gateway``; the raw-channel layer is internal routing
+  detail. No names were added to ``execnet.sync`` or ``execnet.aio``.
+
 
 2.1.2 (2025-11-11)
 ------------------

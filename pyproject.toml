@@ -12,6 +12,9 @@ description = "execnet: rapid multi-Python deployment"
 readme = {"file" = "README.rst", "content-type" = "text/x-rst"}
 license = "MIT"
 requires-python = ">=3.10"
+dependencies = [
+    "trio>=0.32",
+]
 authors = [
     { name = "holger krekel and others" },
 ]
@@ -35,20 +38,39 @@ classifiers = [
     "Topic :: System :: Networking",
 ]
 
+[project.scripts]
+execnet = "execnet._cli:main"
+# deprecated alias for `execnet server`
+execnet-socketserver = "execnet._cli:socketserver_main"
+
 [project.optional-dependencies]
+gevent = [
+    "gevent",
+]
+# what running the test suite needs -- tox installs exactly this, so there
+# is one list rather than two that drift (asyncssh and hypothesis were
+# missing from tox's own list, which failed collection in CI)
 testing = [
-    "pre-commit",
     "pytest>8.0",
     "pytest-timeout",
-    "tox",
-    "hatch",
+    "hypothesis",
+    "asyncssh",
     "uv",
-    "gevent",
 ]
 
 [dependency-groups]
-testing = [
+# the default group: everything a working checkout wants.  Keeping the
+# test requirements here rather than in a separate non-default group means
+# a plain `uv sync` can run the suite.
+dev = [
     "execnet[testing]",
+    "pytest-xdist>=3.8.0",
+    "pre-commit",
+    "tox",
+    "hatch",
+]
+gevent = [
+    "gevent>=26.7.0",
 ]
 
 [project.urls]
@@ -108,8 +130,6 @@ include = [
     "/testing",
     "tox.ini",
 ]
-[tool.uv]
-default-groups = ["testing"]
 [tool.mypy]
 python_version = "3.10"
 mypy_path = ["src"]
@@ -122,8 +142,5 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [[tool.mypy.overrides]]
-module = [
-    "eventlet.*",
-    "gevent.thread.*",
-]
+module = ["asyncssh.*"]
 ignore_missing_imports = true

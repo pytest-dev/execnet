@@ -1,0 +1,223 @@
+"""The execnet.gevent facade: greenlet-parking blocking waits.
+
+Opt-in: requires the ``gevent`` dependency group (``uv sync --group
+gevent``); skipped when gevent is not installed.  Monkey-patching is not
+needed -- the wakener parks the waiting greenlet while the trio host
+thread keeps running the protocol -- and is not supported either: the host
+loop needs the real ``select``/``socket``/``thread``/``queue``, so these
+tests run in an unpatched process and so must the facade.
+"""
+
+from __future__ import annotations
+
+import threading
+from contextlib import suppress
+
+import pytest
+
+gevent = pytest.importorskip("gevent")
+
+import execnet  # noqa: E402
+import execnet.gevent  # noqa: E402
+from execnet import _trio_host  # noqa: E402
+from execnet._boundary import Flag  # noqa: E402
+from execnet._boundary import Mailbox  # noqa: E402
+from execnet._boundary import make_wakener  # noqa: E402
+
+TESTTIMEOUT = 10.0
+
+
+@pytest.fixture
+def gevent_gw():
+    group = execnet.gevent.Group()
+    try:
+        yield group.makegateway("popen")
+    finally:
+        group.terminate(timeout=5.0)
+
+
+class TestGeventWakener:
+    def test_mailbox_wakes_greenlet_from_foreign_thread(self) -> None:
+        box: Mailbox[str] = Mailbox(make_wakener("gevent"))
+        threading.Timer(0.05, box.put, args=["item"]).start()
+        result = gevent.spawn(box.get, 5.0)
+        assert result.get(timeout=TESTTIMEOUT) == "item"
+
+    def test_notify_before_first_wait_is_not_lost(self) -> None:
+        flag = Flag(make_wakener("gevent"))
+        flag.set()
+        assert flag.wait(timeout=1.0)
+
+    def test_wait_parks_greenlet_not_hub(self) -> None:
+        box: Mailbox[str] = Mailbox(make_wakener("gevent"))
+        progressed: list[int] = []
+
+        def other() -> None:
+            for i in range(5):
+                progressed.append(i)
+                gevent.sleep(0.01)
+            box.put("done")
+
+        waiter = gevent.spawn(box.get, 5.0)
+        gevent.spawn(other)
+        # if get() blocked the hub, other() could never run and put()
+        assert waiter.get(timeout=TESTTIMEOUT) == "done"
+        assert progressed == [0, 1, 2, 3, 4]
+
+
+class TestGeventGateway:
+    def test_receive_parks_greenlet_not_hub(self, gevent_gw: execnet.Gateway) -> None:
+        channel = gevent_gw.remote_exec("channel.send(channel.receive())")
+        progressed: list[int] = []
+
+        def other() -> None:
+            for i in range(5):
+                progressed.append(i)
+                gevent.sleep(0.01)
+            # sending from a greenlet blocks-until-written on the
+            # gevent wakener, parking only this greenlet
+            channel.send("hello")
+
+        waiter = gevent.spawn(channel.receive, TESTTIMEOUT)
+        gevent.spawn(other)
+        # if receive() blocked the hub, other() could never send and
+        # the remote echo could never arrive -> this would hang
+        assert waiter.get(timeout=TESTTIMEOUT) == "hello"
+        assert progressed == [0, 1, 2, 3, 4]
+
+    def test_waitclose_and_endmarker(self, gevent_gw: execnet.Gateway) -> None:
+        channel = gevent_gw.remote_exec("channel.send(1)")
+        assert gevent.spawn(channel.receive, TESTTIMEOUT).get(timeout=TESTTIMEOUT) == 1
+        gevent.spawn(channel.waitclose, TESTTIMEOUT).get(timeout=TESTTIMEOUT)
+
+    def test_makegateway_parks_greenlet_not_hub(self) -> None:
+        # management ops (makegateway/terminate) from a greenlet must not
+        # stall the hub: they wait on a OneShot with a gevent wakener.
+        group = execnet.gevent.Group()
+        progressed: list[int] = []
+
+        def other() -> None:
+            for i in range(5):
+                progressed.append(i)
+                gevent.sleep(0.01)
+
+        try:
+            ticker = gevent.spawn(other)
+            maker = gevent.spawn(group.makegateway, "popen")
+            gw = maker.get(timeout=TESTTIMEOUT)
+            channel = gw.remote_exec("channel.send(42)")
+            assert gevent.spawn(channel.receive, TESTTIMEOUT).get(TESTTIMEOUT) == 42
+            ticker.get(timeout=TESTTIMEOUT)
+            assert progressed == [0, 1, 2, 3, 4]
+        finally:
+            gevent.spawn(group.terminate, 5.0).get(timeout=TESTTIMEOUT)
+
+    def test_no_management_op_takes_the_blocking_portal(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # the deterministic half of the test above.  TrioHost.call waits for
+        # arbitrary host-side work with the calling OS thread parked, which
+        # for a gevent caller is the hub and every greenlet on it -- so no
+        # facade path may take it.  Easy to miss for the lazily started async
+        # group, whose wait is short enough that a timing test stays green.
+        # (A bounded scheduling hop -- portal.run_sync, for the setcallback
+        # switch -- is a different thing and stays allowed.)
+        def forbidden(self: object, async_fn: object, *args: object) -> None:
+            raise AssertionError("the gevent facade used the blocking portal.run")
+
+        monkeypatch.setattr(_trio_host.TrioHost, "call", forbidden)
+        group = execnet.gevent.Group()
+        try:
+            gateway = gevent.spawn(group.makegateway, "popen").get(timeout=TESTTIMEOUT)
+            channel = gateway.remote_exec("channel.send(42)")
+            assert gevent.spawn(channel.receive, TESTTIMEOUT).get(TESTTIMEOUT) == 42
+        finally:
+            gevent.spawn(group.terminate, 5.0).get(timeout=TESTTIMEOUT)
+
+
+class TestGeventWorkerProfile:
+    """execmodel=gevent: exec'd code runs as greenlets on the main-thread hub."""
+
+    @pytest.fixture
+    def worker_gw(self):
+        group = execnet.Group()
+        try:
+            yield group.makegateway("popen//execmodel=gevent")
+        finally:
+            group.terminate(timeout=5.0)
+
+    def test_execs_are_greenlets_on_main_thread(self, worker_gw) -> None:
+        report = """
+            import threading
+            channel.send(threading.current_thread() is threading.main_thread())
+            channel.receive()
+        """
+        first = worker_gw.remote_exec(report)
+        second = worker_gw.remote_exec(report)
+        # both run concurrently on the one main thread: greenlets
+        assert first.receive(TESTTIMEOUT) is True
+        assert second.receive(TESTTIMEOUT) is True
+        first.send(None)
+        second.send(None)
+        first.waitclose(TESTTIMEOUT)
+        second.waitclose(TESTTIMEOUT)
+
+    def test_execs_cooperate_via_gevent(self, worker_gw) -> None:
+        # the first exec parks in channel.receive() (gevent wakener) while
+        # the second completes -- with a blocked hub this would deadlock.
+        blocked = worker_gw.remote_exec("channel.send(channel.receive())")
+        side = worker_gw.remote_exec(
+            """
+            import gevent
+            gevent.sleep(0.01)
+            channel.send('side')
+            """
+        )
+        assert side.receive(TESTTIMEOUT) == "side"
+        blocked.send("go")
+        assert blocked.receive(TESTTIMEOUT) == "go"
+
+    def test_status_reports_gevent(self, worker_gw) -> None:
+        assert worker_gw.remote_status().execmodel == "gevent"
+
+    def test_execs_are_not_rationed_against_the_thread_budget(self, worker_gw) -> None:
+        """Greenlets cost no thread, so nothing caps them at the thread limit.
+
+        The exec-admission bound exists because a thread-shaped exec spends
+        a thread the callbacks and protocol work also need.  A greenlet
+        spends none -- but waiting for one used to park a pool thread, so a
+        gevent worker was rationed to 20 concurrent execs, which is a cap on
+        exactly what the profile is for.
+        """
+        import trio
+
+        from execnet import _trio_worker
+
+        async def thread_bound_capacity() -> int:
+            return _trio_worker.exec_capacity()
+
+        assert worker_gw.remote_status().execcapacity is None
+        wanted = trio.run(thread_bound_capacity) + 5
+        channels = [
+            worker_gw.remote_exec("channel.send('go'); channel.receive()")
+            for _ in range(wanted)
+        ]
+        try:
+            assert [ch.receive(TESTTIMEOUT) for ch in channels] == ["go"] * wanted
+        finally:
+            for ch in channels:
+                with suppress(OSError):
+                    ch.send(None)
+
+
+def test_provisioning_adds_gevent_requirement() -> None:
+    from execnet import XSpec
+    from execnet._provision import _extra_with_tokens
+    from execnet._provision import worker_cli_arg
+
+    spec = XSpec("popen//id=g1//execmodel=gevent")
+    config = worker_cli_arg(spec)
+    assert '"wait": "gevent"' in config
+    assert _extra_with_tokens(config) == ["--with", "gevent"]
+    plain = worker_cli_arg(XSpec("popen//id=g2//execmodel=thread"))
+    assert _extra_with_tokens(plain) == []

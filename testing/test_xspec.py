@@ -8,13 +8,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from test_gateway import TESTTIMEOUT
 
 import execnet
+from execnet import Gateway
 from execnet import XSpec
-from execnet.gateway import Gateway
-from execnet.gateway_io import popen_args
-from execnet.gateway_io import ssh_args
-from execnet.gateway_io import vagrant_ssh_args
+from execnet import _provision
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
@@ -64,27 +63,25 @@ class TestXSpec:
     def test_execmodel(self) -> None:
         spec = XSpec("execmodel=thread")
         assert spec.execmodel == "thread"
-        spec = XSpec("execmodel=eventlet")
-        assert spec.execmodel == "eventlet"
+        spec = XSpec("execmodel=main_thread_only")
+        assert spec.execmodel == "main_thread_only"
 
     def test_ssh_options_and_config(self) -> None:
         spec = XSpec("ssh=-p 22100 user@host//python=python3")
-        spec.ssh_config = "/home/user/ssh_config"
-        assert ssh_args(spec)[:6] == ["ssh", "-C", "-F", spec.ssh_config, "-p", "22100"]
+        args = _provision.ssh_argv("-p 22100 user@host", "/home/user/ssh_config", "cmd")
+        assert args[:6] == ["ssh", "-C", "-F", "/home/user/ssh_config", "-p", "22100"]
+        assert spec.ssh is not None
 
     def test_vagrant_options(self) -> None:
-        spec = XSpec("vagrant_ssh=default//python=python3")
-        assert vagrant_ssh_args(spec)[:-1] == ["vagrant", "ssh", "default", "--", "-C"]
+        args = _provision.vagrant_ssh_argv("default", None, "cmd")
+        assert args[:-1] == ["vagrant", "ssh", "default", "--", "-C"]
 
     def test_popen_with_sudo_python(self) -> None:
-        spec = XSpec("popen//python=sudo python3")
-        assert popen_args(spec) == [
-            "sudo",
-            "python3",
-            "-u",
-            "-c",
-            "import sys;exec(eval(sys.stdin.readline()))",
-        ]
+        from execnet import _trio_gateway
+
+        spec = XSpec("popen//python=sudo python3//id=gw0")
+        args = _trio_gateway.popen_module_args(spec)
+        assert args[:6] == ["sudo", "python3", "-u", "-m", "execnet", "worker"]
 
     def test_env(self) -> None:
         xspec = XSpec("popen//env:NAME=value1")
@@ -122,6 +119,16 @@ class TestXSpec:
 class TestMakegateway:
     def test_no_type(self, makegateway: Callable[[str], Gateway]) -> None:
         pytest.raises(ValueError, lambda: makegateway("hello"))
+
+    def test_wait_backend_comes_from_the_facade(
+        self, makegateway: Callable[[str], Gateway]
+    ) -> None:
+        # not a spec key: the blocking surface decides how *it* parks, and
+        # a thread-shaped worker profile parks on threads either way
+        gw = makegateway("popen")
+        assert gw._wait_backend == "thread"
+        channel = gw.remote_exec("channel.send(channel.gateway._wait_backend)")
+        assert channel.receive() == "thread"
 
     @skip_win_pypy
     def test_popen_default(self, makegateway: Callable[[str], Gateway]) -> None:
@@ -247,6 +254,10 @@ class TestMakegateway:
         assert rinfo.cwd == rinfo2.cwd
         assert rinfo.version_info == rinfo2.version_info
 
+    @pytest.mark.skipif(
+        not _provision.socket_handoff_available(),
+        reason="the server must hand the accepted socket to a worker process",
+    )
     def test_socket_installvia(self) -> None:
         group = execnet.Group()
         group.makegateway("popen//id=p1")
@@ -254,3 +265,43 @@ class TestMakegateway:
         assert gw.id == "s1"
         assert gw.remote_status()
         group.terminate()
+
+    @pytest.mark.skipif(
+        not _provision.socket_handoff_available(),
+        reason="the server must hand the accepted socket to a worker process",
+    )
+    def test_socket_worker_gets_the_spec(self, tmp_path: Path) -> None:
+        """A ``socket=`` worker is configured by its spec, like any other.
+
+        The server spawns it, so its config cannot ride in argv -- it
+        travels over the connection instead.  Without that these keys were
+        accepted, validated, and then silently dropped.
+        """
+        group = execnet.Group()
+        try:
+            group.makegateway("popen//id=p1")
+            gw = group.makegateway(
+                f"socket//installvia=p1//id=s1//chdir={tmp_path}//env:SPECVAR=here"
+            )
+            channel = gw.remote_exec(
+                "import os; channel.send((os.getcwd(), os.environ.get('SPECVAR')))"
+            )
+            cwd, var = channel.receive(TESTTIMEOUT)
+            assert Path(cwd).resolve() == tmp_path.resolve()
+            assert var == "here"
+        finally:
+            group.terminate(timeout=10)
+
+    @pytest.mark.skipif(
+        not _provision.socket_handoff_available(),
+        reason="the server must hand the accepted socket to a worker process",
+    )
+    def test_socket_worker_honours_the_profile(self) -> None:
+        group = execnet.Group()
+        try:
+            group.makegateway("popen//id=p1")
+            gw = group.makegateway("socket//installvia=p1//id=s1//profile=trio")
+            channel = gw.remote_exec("await channel.send('async')")
+            assert channel.receive(TESTTIMEOUT) == "async"
+        finally:
+            group.terminate(timeout=10)
