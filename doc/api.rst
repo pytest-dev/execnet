@@ -24,7 +24,7 @@ IO, so calling one from inside a running asyncio or trio event loop raises
 :mod:`execnet.aio` or :mod:`execnet.trio` there.
 
 .. autoclass:: execnet.Host
-   :members: running, close
+   :members: start, running, close
 
 
 .. _execnet-trio:

@@ -102,8 +102,10 @@ def check_not_in_event_loop(what: str) -> None:
 class Host:
     """A Trio event loop on a dedicated thread, shared by gateway groups.
 
-    Starting is lazy: constructing a Host costs nothing, and the thread
-    comes up when a group first needs it.
+    Constructing one costs nothing.  The thread comes up when a group first
+    needs it, or when you ask with :meth:`start` -- which is where an
+    application that would rather not discover a broken environment at its
+    first ``makegateway()`` should ask.
     """
 
     def __init__(
@@ -131,6 +133,24 @@ class Host:
     def running(self) -> bool:
         """Whether this host has a loop thread *in this process*."""
         return self._state() == "running"
+
+    def start(self) -> Self:
+        """Bring the loop thread up now, and return this host.
+
+        Starting is otherwise lazy -- the thread appears when a group first
+        needs it -- which means everything that can go wrong with starting
+        one goes wrong at an arbitrary later ``makegateway()``: a
+        monkey-patched gevent process, a thread that cannot be created, a
+        loop that does not come up within 30s.  Call this where you want to
+        find out, typically once at application startup::
+
+            host = execnet.Host().start()
+
+        Idempotent, and entering a ``Host`` as a context manager does it for
+        you.
+        """
+        self._ensure_started()
+        return self
 
     def _ensure_started(self) -> Any:
         """The started :class:`~execnet._trio_host.TrioHost` (internal)."""
@@ -175,7 +195,10 @@ class Host:
             trio_host.stop(timeout=timeout)
 
     def __enter__(self) -> Self:
-        return self
+        # entering acquires: the block ends by closing the loop thread, so
+        # it should begin by having one -- and by having failed here if it
+        # cannot be had
+        return self.start()
 
     def __exit__(
         self,
