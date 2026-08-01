@@ -21,6 +21,7 @@ unbounded memory channels.
 
 from __future__ import annotations
 
+import functools
 import math
 import os
 import subprocess
@@ -34,6 +35,7 @@ from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
+from typing import TypeVar
 
 import trio
 
@@ -54,6 +56,26 @@ from ._serialize import loads_internal
 from ._trace import trace
 
 RECEIVE_CHUNK = 65536
+
+T = TypeVar("T")
+
+
+async def provision_sync(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Run coordinator-side provisioning work off the loop thread.
+
+    Everything in ``_provision`` that decides *what* to launch may block for
+    a long time: an ``execnet info`` probe of a ``python=`` target runs a
+    subprocess with a 30s timeout, a dev coordinator's ``uv build`` takes
+    seconds on a cold cache, and shipped wheels are read whole off disk.
+    Run inline it stalls the loop -- the caller's own ``trio.run`` for
+    :mod:`execnet.trio`, and for every other surface the *shared* host,
+    which is every gateway in the process including other groups'.
+
+    Not abandoned on cancel: the build populates a wheel cache keyed by
+    version, and a half-written entry there is one every later gateway
+    would pick up.
+    """
+    return await trio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
 
 
 class ByteStream(Protocol):
@@ -952,7 +974,7 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
 
     remoteaddress = spec.ssh or spec.vagrant_ssh
     assert remoteaddress is not None
-    wheel = _provision.ssh_wheel(spec)
+    wheel = await provision_sync(_provision.ssh_wheel, spec)
     if wheel is not None:
         await deliver_remote_wheel(spec, wheel)
 
@@ -960,16 +982,16 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
         spec, available=_provision.ssh_dialback_available()
     )
     if dialback == "stdio":
-        args = (
-            ssh_transport_args(spec)
-            if spec.ssh is not None
-            else vagrant_transport_args(spec)
+        args = await provision_sync(
+            ssh_transport_args if spec.ssh is not None else vagrant_transport_args,
+            spec,
         )
         return await connect_command_worker(args, remoteaddress=remoteaddress)
 
     async with _dialback_listener() as (local_sock, listener):
         remote_sock = f"/tmp/execnet-{uuid.uuid4().hex}.sock"
-        command = _provision.ssh_remote_command(
+        command = await provision_sync(
+            _provision.ssh_remote_command,
             spec,
             "--protocol-connect",
             f"unix:{remote_sock}",
@@ -1080,10 +1102,14 @@ async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
     from . import _provision
 
     if not _provision.socket_share_required():
-        args = popen_worker_argv(spec, "--protocol-fd", str(theirs.fileno()))
+        args = await provision_sync(
+            popen_worker_argv, spec, "--protocol-fd", str(theirs.fileno())
+        )
         return await trio.lowlevel.open_process(args, pass_fds=(theirs.fileno(),))
 
-    args = popen_worker_argv(spec, "--protocol-share", config_on_stdin=True)
+    args = await provision_sync(
+        popen_worker_argv, spec, "--protocol-share", config_on_stdin=True
+    )
     process = await trio.lowlevel.open_process(args, stdin=subprocess.PIPE)
     try:
         assert process.stdin is not None
@@ -1120,7 +1146,9 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
         spec, available=_provision.socket_handoff_available()
     )
     if transport == "stdio":
-        return await connect_command_worker(popen_worker_argv(spec))
+        return await connect_command_worker(
+            await provision_sync(popen_worker_argv, spec)
+        )
 
     import socket as _socket
 
@@ -1359,7 +1387,7 @@ class AsyncGroup:
 
         coordinator = self._gateway_by_id(spec.via)
         raw = coordinator.open_raw_channel()
-        request = _provision.spawn_request(spec)
+        request = await provision_sync(_provision.spawn_request, spec)
         await coordinator._send(
             Message.GATEWAY_START_SUB, raw.id, dumps_internal(request)
         )

@@ -9,6 +9,8 @@ machine, RemoteError propagation, and gateway termination.
 from __future__ import annotations
 
 import os
+import sys
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -375,6 +377,47 @@ class TestAsyncGroup:
                 await gateway.remote_exec("import time\nwhile True: time.sleep(1)")
                 processes = list(group._processes.values())
             assert all(process.returncode is not None for process in processes)
+
+        trio.run(main)
+
+    def test_provisioning_does_not_stall_the_loop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Resolving what to launch must not block the loop it runs on.
+
+        The probe of a ``python=`` target and a dev coordinator's wheel build
+        are subprocesses that take from milliseconds to (probe timeout) 30s.
+        Run inline they stall every gateway the loop serves, which for the
+        shared host is every gateway in the process.
+        """
+        from execnet import _provision
+
+        real = _provision.target_has_execnet
+
+        def slow_probe(python: str) -> bool:
+            time.sleep(0.3)
+            return real(python)
+
+        monkeypatch.setattr(_provision, "target_has_execnet", slow_probe)
+
+        async def main() -> None:
+            ticks = 0
+            stop = trio.Event()
+
+            async def heartbeat() -> None:
+                nonlocal ticks
+                while not stop.is_set():
+                    await trio.sleep(0.01)
+                    ticks += 1
+
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(heartbeat)
+                async with AsyncGroup() as group:
+                    await group.makegateway(f"popen//python={sys.executable}")
+                stop.set()
+            # the probe alone sleeps 0.3s; an inline call would have let
+            # through a couple of ticks at most
+            assert ticks > 10
 
         trio.run(main)
 
