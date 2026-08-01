@@ -553,7 +553,7 @@ class TestSocketWorkerSpawnFailure:
 
         from execnet import _trio_host
 
-        def boom(sock: Any) -> Any:
+        def boom(sock: Any, client_config: Any = None) -> Any:
             raise RuntimeError("no worker for you")
 
         monkeypatch.setattr(_trio_host, "_spawn_socket_worker", boom)
@@ -561,10 +561,12 @@ class TestSocketWorkerSpawnFailure:
         async def main() -> bytes:
             ours, theirs = socket.socketpair()
             server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
+            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
+            # a coordinator opens with its worker config
+            await client.send_all(worker_config().encode() + b"\n")
             with pytest.raises(RuntimeError, match="no worker"):
                 await _trio_host.serve_socket_connection(server, reap=False)
             # the coordinator's end: EOF, not silence
-            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
             with trio.fail_after(5):
                 return await client.receive_some(1)
 
@@ -598,6 +600,84 @@ class TestSocketWorkerSpawnFailure:
         assert code == Message.CHANNEL_CLOSE_ERROR
         assert channelid == 7
         assert "cannot hand an accepted socket" in loads_internal(data)
+
+
+class TestSocketWorkerConfig:
+    """What a connecting coordinator may configure on the worker it gets.
+
+    The server spawns that worker, so the config travels over the
+    connection instead of in argv -- which makes the accepting side a trust
+    boundary: it takes the keys a spec legitimately carries and nothing else.
+    """
+
+    def test_only_whitelisted_keys_survive(self) -> None:
+        import trio
+
+        from execnet import _trio_host
+
+        async def main() -> dict[str, Any]:
+            ours, theirs = socket.socketpair()
+            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
+            server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
+            sent = {
+                "chdir": "/tmp",
+                "profile": "gevent",
+                "env": {"A": "b"},
+                # not a coordinator's to set: the share blob is bound to a
+                # pid only the server knows, and argv is the server's own
+                "protocol_share": "bm90LXlvdXJz",
+                "argv": ["rm", "-rf"],
+            }
+            await client.send_all(json.dumps(sent).encode() + b"\n")
+            return await _trio_host._read_worker_config(server)
+
+        config = trio.run(main)
+        assert config == {"chdir": "/tmp", "profile": "gevent", "env": {"A": "b"}}
+
+    def test_protocol_bytes_after_the_line_are_left_alone(self) -> None:
+        # the worker inherits this socket and reads the frames that follow;
+        # reading past the newline here would eat its first messages
+        import trio
+
+        from execnet import _trio_host
+
+        async def main() -> bytes:
+            ours, theirs = socket.socketpair()
+            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
+            server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
+            await client.send_all(b'{"chdir": "/tmp"}\nFIRST-FRAME')
+            await _trio_host._read_worker_config(server)
+            with trio.fail_after(5):
+                return await server.receive_some(32)
+
+        assert trio.run(main) == b"FIRST-FRAME"
+
+    def test_a_peer_that_sends_no_config_is_dropped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # a port scan must not hold a server task, nor take the accept loop
+        # down the way a failed spawn does
+        import trio
+
+        from execnet import _trio_host
+
+        monkeypatch.setattr(_trio_host, "CONFIG_LINE_TIMEOUT", 0.2)
+        spawned: list[object] = []
+        monkeypatch.setattr(
+            _trio_host, "_spawn_socket_worker", lambda *args: spawned.append(args)
+        )
+
+        async def main() -> bytes:
+            ours, theirs = socket.socketpair()
+            client = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
+            server = trio.SocketStream(trio.socket.from_stdlib_socket(theirs))
+            # returns rather than raising: the caller is an accept loop
+            await _trio_host.serve_socket_connection(server, reap=False)
+            with trio.fail_after(5):
+                return await client.receive_some(1)
+
+        assert trio.run(main) == b""
+        assert spawned == []
 
 
 class TestShareTransport:
