@@ -218,20 +218,18 @@ deployment.  Today xdist does it itself, crudely:
 
 What execnet should own instead, so xdist's version becomes a few calls:
 
-1. **Provision the environment, not just execnet.**  `_provision.py`
-   already builds, caches and ships a wheel of a dev-version *execnet*
-   (`provisioning_wheel`, `wheel_delivery_command`, remote cache under
-   `"$HOME"/.cache/execnet/wheels`) and launches under `uv run --with`.
-   Generalize that to arbitrary requirements, including "a wheel of the
-   project I am running from" — that is the same code path with a
-   different source directory.  Wanted: spec keys along the lines of
-   `with=<requirement>` (repeatable) and `project=<path>`.
-2. **Deploy a workspace, and hand back the mapping.**  One object that
-   rsyncs a set of roots into a remote workspace directory and returns a
-   local→remote path mapping, so the caller can translate paths in its own
-   config instead of reconstructing the layout by convention.  The
-   translation is execnet's to give because the remote root is a
-   provisioning fact — the caller only knows local paths.
+1. **Provision the environment, not just execnet.**  *Done*, as
+   `execnet.Deployment` (`_deploy.py` + the `GATEWAY_DEPLOY` service): a
+   frozen `uv sync` from the project's lockfile, a wheel built here and
+   installed there, and the roots the wheel does not carry.  Not done as
+   spec keys — it is a step *before* a gateway, because the worker is the
+   process that runs the tests and has to be inside the environment
+   already.  Spec keys along the lines of `with=<requirement>` would still
+   be worth having for the simpler "one extra dependency" case.
+2. **Deploy a workspace, and hand back the mapping.**  *Done*:
+   `Deployed.paths` maps each local root to where it landed, and
+   `Deployed.translate()` rewrites a path under one.  Directory roots land
+   as their own basename under the workspace, file roots directly in it.
 3. **rsync as a first-class operation.**  *Done for the transport half*:
    `GATEWAY_RSYNC` is a request the worker serves itself
    (`_rsync_serve.py`), so no source is shipped, no exec slot is claimed,
@@ -240,33 +238,37 @@ What execnet should own instead, so xdist's version becomes a few calls:
    blocking, and giving `execnet.trio`/`execnet.aio` one means either an
    async driver beside it or making the sync one a facade over that.
 
-The shape this has to serve, concretely: provision a uv environment from a
-frozen lockfile, install a wheel of the project under test into it, and
-rsync the parts of the tree that are *not* in that artifact (tests,
-conftest, data files).  Which raises the question the rest turns on —
-**the worker is the test process**, so it has to be running inside the
-environment the project was installed into.  Either that environment is
-built before the worker launches (so lockfile and wheel travel out of
-band, as the execnet wheel does over ssh today), or a bootstrap gateway
-deploys over the protocol and the real gateway is launched afterwards
-against `python=<workspace>/.venv/bin/python`.  The second reuses
-everything that already exists and keeps one transfer path; the first is
-one process instead of two.  Decide this before building any of it.
+**Decided, and built**: the worker is the test process, so it has to be
+running inside the environment the project was installed into — which
+means provisioning happens *before* it, through a gateway of its own.  A
+bootstrap gateway deploys over the protocol, and the workers are launched
+afterwards against `Deployed.spec`.  Everything travels over the gateway's
+own transport, so the same code reaches a container or a pod.
 
-Open questions, none decided:
+Of the open questions, three answered themselves in the building:
 
-- Does the workspace API live on `Group` (one deploy fans out to every
-  gateway, like `HostRSync.add_target_host` does per gateway) or is it a
-  standalone object gateways are added to, as `RSync` is today?
-- Is the mapping a dumb prefix swap, or does it need to survive symlinks,
-  case-insensitive remotes, and roots that overlap?
-- What is the remote workspace root — a per-gateway temp dir, a
-  content-addressed cache keyed like the wheel cache, or caller-supplied?
-  Reuse across gateways on the same host is the whole point on a cluster.
-- Cleanup: who deletes a workspace, and what happens when the coordinator
-  dies without terminating.
-- How much of this is execnet's job at all versus a thin xdist layer over
-  points 1 and 3.  Answer this one first.
+- the deployment is a standalone object a gateway is handed, as `RSync`
+  is, rather than something on `Group` — a `Group` spans hosts, and a
+  deployment is per host;
+- the mapping is a prefix swap over the deployed roots, and refuses a path
+  that is under none of them rather than passing it through (it would
+  otherwise name something real and unrelated on the remote);
+- the workspace is caller-supplied or derived from a `name`, under
+  `~/.cache/execnet/workspaces` expanded *on the host*.  Deployments
+  sharing a name share a workspace, which is what makes the second gateway
+  to a machine cheap.
+
+Still open:
+
+- **Cleanup**: nothing deletes a workspace.  That is deliberate for now —
+  reuse is the point — but a long-lived host accumulates one per name, and
+  a coordinator that dies without terminating leaves it.
+- **Concurrency**: two coordinators deploying the same name to one host at
+  the same time will race in `uv sync`.  A lockfile in the workspace would
+  fix it; nothing does today.
+- **How much is execnet's job** versus a thin xdist layer.  The split as
+  built: execnet owns the environment, the transfer and the mapping; the
+  caller owns which roots matter and how to rewrite its own config.
 
 Doing this well is also what makes the Kubernetes goal tractable — a pod
 is just a remote with no shared filesystem and a short life.

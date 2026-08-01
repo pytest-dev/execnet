@@ -29,6 +29,8 @@ from ._serialize import can_send
 from ._version import version as __version__
 from .sync import Channel
 from .sync import DataFormatError
+from .sync import Deployed
+from .sync import Deployment
 from .sync import DumpError
 from .sync import Gateway
 from .sync import Group
@@ -48,6 +50,8 @@ from .sync import set_profile
 __all__ = [
     "Channel",
     "DataFormatError",
+    "Deployed",
+    "Deployment",
     "DumpError",
     "Gateway",
     "Group",

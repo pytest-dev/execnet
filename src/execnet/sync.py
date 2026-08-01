@@ -7,6 +7,8 @@ into this module.
 """
 
 from ._channel import Channel
+from ._deploy import Deployed
+from ._deploy import Deployment
 from ._errors import DataFormatError
 from ._errors import DumpError
 from ._errors import HostNotFound
@@ -27,6 +29,8 @@ from ._xspec import XSpec
 __all__ = [
     "Channel",
     "DataFormatError",
+    "Deployed",
+    "Deployment",
     "DumpError",
     "Gateway",
     "Group",

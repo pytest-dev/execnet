@@ -163,6 +163,7 @@ shape does not dictate the worker's.
 | `_cli.py` / `_socketserver.py` / `_provision.py` | the CLI, `execnet server`, uv provisioning + argv builders |
 | `_execmodel.py` | `WORKER_PROFILES`, `resolve_profile`, and the deprecated `ExecModel` xdist shim |
 | `_rsync.py` / `_rsync_remote.py` / `_rsync_serve.py` | the rsync driver (coordinator), the receiver body, and the worker-side `GATEWAY_RSYNC` service that runs it in a thread |
+| `_deploy.py` / `_deploy_serve.py` | `Deployment`/`Deployed`: a frozen uv environment, the project's wheel, and the roots the wheel does not carry — driven through a bootstrap gateway, installed by the `GATEWAY_DEPLOY` service |
 | `_xspec.py` / `_exec_source.py` | spec parsing, remote_exec source normalization |
 | `_trace.py` / `_gevent_support.py` | `EXECNET_DEBUG` tracing; the gevent wait backend's hub plumbing |
 | `__main__.py` / `_version.py` | `python -m execnet` → `_cli.main`; the generated version |

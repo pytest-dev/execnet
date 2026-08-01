@@ -80,6 +80,27 @@ async def provision_sync(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     return await trio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
 
 
+def _rsync_service() -> Any:
+    from ._rsync_serve import serve_rsync_request
+
+    return serve_rsync_request
+
+
+def _deploy_service() -> Any:
+    from ._deploy_serve import serve_deploy_request
+
+    return serve_deploy_request
+
+
+#: protocol requests a worker serves *itself*, as opposed to exec'd code:
+#: infrastructure that used to be a remote_exec of execnet's own source.
+#: Imported lazily -- a coordinator never runs any of them.
+_SERVICES: dict[int, Callable[[], Any]] = {
+    Message.GATEWAY_RSYNC: _rsync_service,
+    Message.GATEWAY_DEPLOY: _deploy_service,
+}
+
+
 class ByteStream(Protocol):
     """Neutral bidirectional byte-stream protocol for gateway transports.
 
@@ -801,10 +822,8 @@ class AsyncGateway:
             raise GatewayReceivedTerminate(self)
         elif code == Message.CHANNEL_EXEC and self._exec_handler is not None:
             self._exec_handler(self, channelid, message.data)
-        elif code == Message.GATEWAY_RSYNC and self._service_spawn is not None:
-            from ._rsync_serve import serve_rsync_request
-
-            self._service_spawn(serve_rsync_request, self, channelid, message.data)
+        elif code in _SERVICES and self._service_spawn is not None:
+            self._service_spawn(_SERVICES[code](), self, channelid, message.data)
         elif code == Message.STATUS:
             task_exec = self._task_exec
             status = {
