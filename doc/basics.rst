@@ -396,9 +396,10 @@ The execnet command line
     and forwards here with a ``DeprecationWarning``.
 
 ``execnet info``
-    Print this interpreter's execnet version, trio availability, executable,
-    platform and supported transports as JSON.  A coordinator uses it to
-    decide whether a ``python=`` interpreter can host a worker directly.
+    Print this interpreter's execnet version, trio availability, Python
+    version, executable, platform and supported protocols as JSON.  A
+    coordinator uses it to decide whether a ``python=`` interpreter can host
+    a worker directly.
 
 ``execnet worker ...``
     The launch contract between a coordinator and the worker process it
