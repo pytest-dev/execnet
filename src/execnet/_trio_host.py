@@ -207,6 +207,9 @@ class SyncBridgeGateway(AsyncGateway):
         d = {
             "numchannels": len(gateway._channelfactory._channels),
             "numexecuting": execpool.active_count() if execpool is not None else 0,
+            # how many concurrent execs this worker admits before refusing;
+            # answered here on the loop, where the thread limiter is readable
+            "execcapacity": execpool.capacity() if execpool is not None else 0,
             "profile": gateway.execmodel.backend,
             # legacy key, same value -- pytest-xdist reads it
             "execmodel": gateway.execmodel.backend,
@@ -817,8 +820,54 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
 
 _socket_worker_counter = itertools.count()
 
+#: worker-config keys a connecting coordinator may set on the worker the
+#: server spawns for it -- the ones a locally spawned worker would get in
+#: its argv.  Everything else is the server's own business, in particular
+#: the ``share`` blob, which is bound to a pid only the server knows.
+CLIENT_CONFIG_KEYS = frozenset(
+    {
+        "id",
+        "profile",
+        "execmodel",
+        "wait",
+        "chdir",
+        "nice",
+        "env",
+        "coordinator_version",
+    }
+)
+#: bounds on the config line, so a connection that is not an execnet
+#: coordinator (a port scan, a stalled peer) cannot hold a server task
+CONFIG_LINE_LIMIT = 1 << 16
+CONFIG_LINE_TIMEOUT = 10.0
 
-def _spawn_socket_worker(sock: Any) -> subprocess.Popen[bytes]:
+
+async def _read_worker_config(stream: trio.SocketStream) -> dict[str, Any]:
+    """Read the coordinator's JSON config line, before the protocol starts.
+
+    Byte at a time: the bytes after the newline are the peer's first
+    protocol frames and belong to the worker that inherits this socket, so
+    over-reading here would eat them.  It is one short line, once per
+    gateway.
+    """
+    buffer = bytearray()
+    with trio.fail_after(CONFIG_LINE_TIMEOUT):
+        while not buffer.endswith(b"\n"):
+            if len(buffer) >= CONFIG_LINE_LIMIT:
+                raise ValueError("worker config line too long")
+            chunk = await stream.receive_some(1)
+            if not chunk:
+                raise EOFError("no worker config before EOF")
+            buffer += chunk
+    config = json.loads(buffer)
+    if not isinstance(config, dict):
+        raise ValueError(f"worker config is not an object: {config!r}")
+    return {key: value for key, value in config.items() if key in CLIENT_CONFIG_KEYS}
+
+
+def _spawn_socket_worker(
+    sock: Any, client_config: dict[str, Any] | None = None
+) -> subprocess.Popen[bytes]:
     """Spawn a worker subprocess serving the accepted socket ``sock``.
 
     POSIX hands the fd over with ``pass_fds``.  Windows has no such thing,
@@ -844,6 +893,9 @@ def _spawn_socket_worker(sock: Any) -> subprocess.Popen[bytes]:
         "execmodel": "thread",
         "coordinator_version": execnet.__version__,
     }
+    # what the coordinator asked for (chdir/nice/env/profile), filtered to
+    # the keys it is allowed to set -- see CLIENT_CONFIG_KEYS
+    config.update(client_config or {})
     argv = [sys.executable, "-m", "execnet", "worker"]
     fd = sock.fileno()
     if not _provision.socket_share_required():
@@ -883,9 +935,22 @@ async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> N
     A failed spawn closes the connection.  The coordinator is already waiting
     on the other end for a handshake byte that is never coming, and an EOF is
     the only thing that will move it -- without this it waits forever.
+
+    The connection opens with the coordinator's worker config (one JSON
+    line).  A peer that sends none is not an execnet coordinator, so it gets
+    its connection closed rather than a worker -- and, unlike a failed spawn,
+    without taking the server's accept loop down with it.
     """
     try:
-        proc = _spawn_socket_worker(stream.socket)
+        client_config = await _read_worker_config(stream)
+    except Exception as exc:
+        # not Cancelled: that is the server going down, and it has to travel
+        trace(f"no usable worker config on an accepted connection: {exc!r}")
+        with trio.CancelScope(shield=True), suppress(Exception):
+            await stream.aclose()
+        return
+    try:
+        proc = _spawn_socket_worker(stream.socket, client_config)
     except BaseException:
         with trio.CancelScope(shield=True), suppress(Exception):
             await stream.aclose()

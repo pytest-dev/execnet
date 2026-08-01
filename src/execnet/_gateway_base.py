@@ -249,7 +249,7 @@ class WorkerGateway(BaseGateway):
                 channel._executing = False
                 self._trace("execution finished")
         except KeyboardInterrupt:
-            channel.close(INTERRUPT_TEXT)
+            self._close_finished(channel, INTERRUPT_TEXT)
             raise
         except EOFError:
             self._trace("ignoring EOFError because receiving finished")
@@ -258,6 +258,20 @@ class WorkerGateway(BaseGateway):
             if not channel.gateway._channelfactory.finished:
                 self._trace(f"got exception: {exc!r}")
                 errortext = self._geterrortext(exc)
-                channel.close(errortext)
+                self._close_finished(channel, errortext)
                 return
-        channel.close()
+        self._close_finished(channel)
+
+    def _close_finished(self, channel: Channel, error: str | None = None) -> None:
+        """Close the channel an exec ran on, tolerating a dead connection.
+
+        The close is how the coordinator learns the source finished, so it
+        is attempted always -- but the connection going away first is an
+        ordinary teardown race (a killed worker, a terminate that outran the
+        exec), and there is no longer anyone to raise at.  Letting the OSError
+        out lands it in the exec task, whose nursery is the worker's root one.
+        """
+        try:
+            channel.close(error)
+        except OSError as exc:
+            self._trace("could not close", channel, "after execution:", exc)
