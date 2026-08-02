@@ -27,6 +27,7 @@ from ._channel import ENDMARKER
 from ._channel import NO_ENDMARKER_WANTED
 from ._channel import Endmarker
 from ._errors import GatewayReceivedTerminate
+from ._errors import LoopFinishedError
 from ._errors import RemoteError
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
@@ -257,7 +258,7 @@ class SyncBridgeGateway(AsyncGateway):
         """
         ref = weakref.ref(channel)
         channelid = channel.id
-        with suppress(trio.RunFinishedError):
+        with suppress(LoopFinishedError):
             self.engine.portal.post(self._install_sync_consumer, ref, channelid)
 
     def _install_sync_consumer(self, ref: weakref.ref[Any], channelid: int) -> None:
@@ -297,7 +298,7 @@ class SyncBridgeGateway(AsyncGateway):
 
     def release_channel(self, channelid: int) -> None:
         """Drop the loop-side raw channel for ``channelid`` (best-effort)."""
-        with suppress(trio.RunFinishedError):
+        with suppress(LoopFinishedError):
             self.engine.portal.post(self._forget_channel, channelid)
 
     # -- receiver callbacks: a consumer task per channel --
@@ -370,7 +371,7 @@ class SyncBridgeGateway(AsyncGateway):
 
             def stop() -> None:
                 # thread-safe: end the task's inbox from any thread (local close)
-                with suppress(trio.RunFinishedError, trio.ClosedResourceError):
+                with suppress(LoopFinishedError, trio.ClosedResourceError):
                     self.engine.portal.post(inbox_send.close)
 
             channel._consumer_stop = stop
@@ -456,7 +457,7 @@ class SyncBridgeGateway(AsyncGateway):
             return sync_fn()
         try:
             return portal.run_sync(sync_fn)
-        except trio.RunFinishedError:
+        except LoopFinishedError:
             return sync_fn()
 
     def enqueue_message(self, message: Message) -> None:
@@ -488,7 +489,7 @@ class SyncBridgeGateway(AsyncGateway):
                 # Through the portal even from the engine thread so every
                 # send lands in one global FIFO order.
                 self.engine.portal.post(post)
-            except trio.RunFinishedError:
+            except LoopFinishedError:
                 raise OSError("cannot send (already closed?)") from None
         if ack is None:
             return
@@ -509,7 +510,7 @@ class SyncBridgeGateway(AsyncGateway):
 
         try:
             self.engine.portal.post(post)
-        except trio.RunFinishedError:
+        except LoopFinishedError:
             raise OSError("cannot send (already closed?)") from None
 
     def request_close_write(self) -> None:
@@ -517,7 +518,7 @@ class SyncBridgeGateway(AsyncGateway):
             if self._send_closed:
                 return
             self._send_closed = True
-            with suppress(trio.RunFinishedError):
+            with suppress(LoopFinishedError):
                 # The writer drains queued frames, then signals write-EOF.
                 self.engine.portal.post(self._outbound_send.close)
 

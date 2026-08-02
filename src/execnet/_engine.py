@@ -44,6 +44,16 @@ __all__ = ["ProtocolEngine", "check_not_in_event_loop", "default_engine"]
 #: default cap on concurrent threadpool threads running receiver callbacks
 DEFAULT_CALLBACK_THREADS = 40
 
+#: which async library an engine's loop may be, and where each one lives
+BACKENDS = {
+    "trio": ("._trio_engine", "TrioEngine"),
+    "asyncio": ("._asyncio_engine", "AsyncioEngine"),
+}
+
+#: what an engine is unless asked otherwise.  Trio, because it is the only
+#: one the protocol core runs on today -- see :class:`ProtocolEngine`.
+DEFAULT_BACKEND = "trio"
+
 
 def _running_event_loop() -> str | None:
     """``"asyncio"`` / ``"trio"`` when called from inside one, else None.
@@ -110,15 +120,37 @@ class ProtocolEngine:
     needs it, or when you ask with :meth:`start` -- which is where an
     application that would rather not discover a broken environment at its
     first ``makegateway()`` should ask.
+
+    ``backend`` picks which async library the loop is: ``"trio"`` (the
+    default) or ``"asyncio"``.  **The protocol core only runs on trio
+    today** -- an asyncio engine starts, runs tasks and stops, but refuses
+    to build gateways, because :mod:`execnet._trio_gateway` has not been
+    ported through the seam yet.  It exists so that the seam is a real,
+    tested boundary rather than an intention.  The asyncio backend needs
+    Python 3.11 for ``TaskGroup``; an older interpreter is refused here,
+    when the engine is built.
     """
 
     def __init__(
         self,
         name: str = "execnet-engine",
         callback_threads: int = DEFAULT_CALLBACK_THREADS,
+        *,
+        backend: str = DEFAULT_BACKEND,
     ) -> None:
+        if backend not in BACKENDS:
+            raise ValueError(
+                f"unknown engine backend {backend!r} (known: {sorted(BACKENDS)})"
+            )
+        if backend == "asyncio":
+            # a fact about this interpreter, so it is answerable now rather
+            # than at start(): nothing a caller does later can change it
+            from ._asyncio_engine import check_asyncio_available
+
+            check_asyncio_available()
         self.name = name
         self.callback_threads = callback_threads
+        self.backend = backend
         self._lock = threading.Lock()
         self._trio_engine: Any = None
         self._closed = False
@@ -126,7 +158,7 @@ class ProtocolEngine:
         self._pid: int | None = None
 
     def __repr__(self) -> str:
-        return f"<execnet.ProtocolEngine {self.name!r} {self._state()}>"
+        return f"<execnet.ProtocolEngine {self.name!r} {self.backend} {self._state()}>"
 
     def _state(self) -> str:
         if self._trio_engine is None:
@@ -172,15 +204,37 @@ class ProtocolEngine:
                 # engine that none of the inherited gateways are attached to.
                 raise forked_error(f"{self!r}", self._pid)  # type: ignore[arg-type]
             if self._trio_engine is None:
-                from . import _trio_engine
+                import importlib
 
-                trio_engine = _trio_engine.TrioEngine(
+                module_name, class_name = BACKENDS[self.backend]
+                module = importlib.import_module(module_name, __package__)
+                engine = getattr(module, class_name)(
                     name=self.name, callback_threads=self.callback_threads
                 )
-                trio_engine.start()
+                engine.start()
                 self._pid = os.getpid()
-                self._trio_engine = trio_engine
+                self._trio_engine = engine
             return self._trio_engine
+
+    def _require_core_backend(self, what: str) -> None:
+        """Refuse to build something the protocol core cannot run here.
+
+        The core -- gateways, channels, transports -- is still written
+        against trio directly, so it only runs on a trio engine.  An
+        asyncio engine is a working loop with a working portal and task
+        scope, and that is deliberately all it is until the core is ported
+        through the seam.  Saying so here beats failing somewhere inside
+        trio with a message about a nursery.
+        """
+        if self.backend == "trio":
+            return
+        raise NotImplementedError(
+            f"{what} needs an engine the protocol core runs on, and this one"
+            f" is {self.backend!r}. Only the trio backend can host gateways"
+            " today -- the core has not been ported through the engine seam"
+            " yet. Build the engine without backend= (or with"
+            ' backend="trio") to make gateways on it.'
+        )
 
     def terminate(self, timeout: float | None = None) -> None:
         """Terminate every group this engine serves; the loop stays up.

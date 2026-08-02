@@ -101,6 +101,9 @@ def _startup_hint() -> str:
 class TrioEngine:
     """Dedicated OS thread running ``trio.run`` for protocol IO."""
 
+    #: which async library this engine's loop is; see ``ProtocolEngine``
+    backend = "trio"
+
     def __init__(
         self,
         name: str = "execnet-trio-engine",

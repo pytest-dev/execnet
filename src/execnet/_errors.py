@@ -28,6 +28,17 @@ class HostNotFound(ConnectionError):
     """The remote side of a gateway could not be reached."""
 
 
+class LoopFinishedError(RuntimeError):
+    """Work was handed to a loop that has already finished.
+
+    Backend-neutral on purpose: every route into an engine goes through a
+    :class:`~execnet._portal.Portal`, and the two backends spell this
+    differently (``trio.RunFinishedError``; a plain ``RuntimeError`` from
+    ``call_soon_threadsafe`` on a closed asyncio loop).  Callers catch this
+    one and stay unaware of which engine they are talking to.
+    """
+
+
 class ActiveGroupsWarning(UserWarning):
     """A :class:`~execnet.ProtocolEngine` was closed with groups still live.
 
