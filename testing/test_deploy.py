@@ -253,3 +253,140 @@ class TestDeploy:
             assert pathlib.Path(workspace).is_dir()
         finally:
             shutil.rmtree(workspace, ignore_errors=True)
+
+
+@needs_uv
+@needs_provisioning
+class TestEverySurfaceDeploys:
+    """The same deployment, driven from each namespace that can hold a gateway.
+
+    There is one driver -- ``_deploy._run.deploy_to`` -- and four ways in,
+    which until now only the blocking one was tested through.  The others
+    reach it over their own bridge and had never run at all; ``deploy_all``
+    with more than one target had never run from anywhere, so neither had
+    the concurrency the docstrings promise or the same-engine check that
+    guards it.
+    """
+
+    def test_the_blocking_surface(
+        self, project: pathlib.Path, group: execnet.Group, tmp_path: pathlib.Path
+    ) -> None:
+        deployment = Deployment(project, workspace=str(tmp_path / "ws"))
+        target = deployment.deploy(group.makegateway("popen//id=sync-deploy"))
+        assert target.python != sys.executable
+        assert pathlib.Path(target.python).exists()
+
+    def test_the_trio_facade(
+        self, project: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        import trio
+
+        import execnet.trio
+
+        deployment = Deployment(project, workspace=str(tmp_path / "ws"))
+
+        async def main() -> str:
+            async with execnet.trio.AsyncGroup() as group:
+                gateway = await group.makegateway("popen//id=trio-deploy")
+                target = await execnet.trio.deploy(deployment, gateway)
+                return target.python
+
+        python = trio.run(main)
+        assert python != sys.executable
+        assert pathlib.Path(python).exists()
+
+    def test_the_raw_trio_surface(
+        self, project: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        import trio
+
+        import execnet.raw_trio
+
+        deployment = Deployment(project, workspace=str(tmp_path / "ws"))
+
+        async def main() -> str:
+            async with execnet.raw_trio.open_gateway("popen//id=raw-deploy") as gateway:
+                target = await execnet.raw_trio.deploy(deployment, gateway)
+                return target.python
+
+        python = trio.run(main)
+        assert python != sys.executable
+        assert pathlib.Path(python).exists()
+
+    def test_the_asyncio_surface(
+        self, project: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        import asyncio
+
+        import execnet.aio
+
+        deployment = Deployment(project, workspace=str(tmp_path / "ws"))
+
+        async def main() -> str:
+            async with execnet.aio.AsyncGroup() as group:
+                gateway = await group.makegateway("popen//id=aio-deploy")
+                target = await execnet.aio.deploy(deployment, gateway)
+                return target.python
+
+        python = asyncio.run(main())
+        assert python != sys.executable
+        assert pathlib.Path(python).exists()
+
+
+@needs_uv
+@needs_provisioning
+class TestDeployAll:
+    """Several targets from one staging build, which nothing exercised."""
+
+    def test_each_target_gets_its_own_workspace(
+        self, project: pathlib.Path, group: execnet.Group, tmp_path: pathlib.Path
+    ) -> None:
+        gateways = [group.makegateway(f"popen//id=fan{n}") for n in range(2)]
+        deployments = [
+            Deployment(project, workspace=str(tmp_path / f"ws{n}")) for n in range(2)
+        ]
+        # one deployment object per workspace, but the wheel is built once
+        # per deploy_all call, which is the property under test
+        first = deployments[0].deploy_all(gateways[:1])
+        second = deployments[1].deploy_all(gateways[1:])
+        assert first[0].workspace != second[0].workspace
+        for result in (*first, *second):
+            assert pathlib.Path(result.python).exists()
+
+    def test_one_deployment_reaches_every_gateway(
+        self, project: pathlib.Path, group: execnet.Group, tmp_path: pathlib.Path
+    ) -> None:
+        # the shape a cluster uses: the same workspace name on each machine,
+        # here collapsed onto one machine, so they share a workspace
+        gateways = [group.makegateway(f"popen//id=all{n}") for n in range(3)]
+        deployment = Deployment(project, workspace=str(tmp_path / "shared"))
+        results = deployment.deploy_all(gateways)
+        assert len(results) == len(gateways)
+        assert {result.workspace for result in results} == {str(tmp_path / "shared")}
+
+    def test_deploying_to_no_gateways_is_refused(self, project: pathlib.Path) -> None:
+        with pytest.raises(ValueError, match="no gateways"):
+            Deployment(project).deploy_all([])
+
+    def test_gateways_from_two_engines_are_refused(
+        self, project: pathlib.Path, tmp_path: pathlib.Path
+    ) -> None:
+        # a fan-out is one task awaiting every gateway's channels, so they
+        # have to belong to one engine's run
+        from execnet._engine import ProtocolEngine
+
+        other = ProtocolEngine(name="execnet-engine-deploy-second")
+        one = execnet.Group()
+        two = execnet.Group(engine=other)
+        try:
+            gateways = [
+                one.makegateway("popen//id=e1"),
+                two.makegateway("popen//id=e2"),
+            ]
+            deployment = Deployment(project, workspace=str(tmp_path / "ws"))
+            with pytest.raises(ValueError, match=r"same execnet\.ProtocolEngine"):
+                deployment.deploy_all(gateways)
+        finally:
+            one.terminate(timeout=30.0)
+            two.terminate(timeout=30.0)
+            other.close()
