@@ -360,8 +360,93 @@ class TestAvailability:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(sys, "version_info", (3, 10, 12))
-        with pytest.raises(AsyncLibUnavailable, match="3.11 or newer"):
+        with pytest.raises(AsyncLibUnavailable, match=r"3\.11 or newer"):
             AsyncioAsync()
 
     def test_trio_is_always_available(self) -> None:
         assert TrioAsync().name == "trio"
+
+
+@pytest.mark.skipif(
+    sys.version_info < MIN_ASYNCIO_PYTHON, reason="asyncio backend needs 3.11"
+)
+class TestAsyncioByteStreams:
+    """The other implementation of the core's four-method stream.
+
+    Trio's own stream types satisfy ``ByteStream`` structurally; these are
+    what asyncio needs wrapped, because it hands out a reader and a writer
+    rather than one object.
+    """
+
+    def test_a_socket_pair_round_trips_and_half_closes(self) -> None:
+        import asyncio
+        import socket
+
+        from execnet._aio_io import wrap_socket
+
+        async def main() -> tuple[bytes, bytes]:
+            left_sock, right_sock = socket.socketpair()
+            left = await wrap_socket(left_sock)
+            right = await wrap_socket(right_sock)
+            try:
+                await left.send_all(b"hello")
+                payload = await right.receive_some(64)
+                await left.send_eof()
+                # a half-closed send side reads as EOF, not as an error
+                after_eof = await right.receive_some(64)
+                return payload, after_eof
+            finally:
+                await left.aclose()
+                await right.aclose()
+
+        assert asyncio.run(main()) == (b"hello", b"")
+
+    def test_a_process_stdio_pair_is_one_stream(self) -> None:
+        import asyncio
+
+        from execnet._aio_io import PIPE
+        from execnet._aio_io import open_process
+        from execnet._aio_io import staple_process
+
+        async def main() -> tuple[bytes, int]:
+            process = await open_process(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdout.write(sys.stdin.read().upper())",
+                ],
+                stdin=PIPE,
+                stdout=PIPE,
+            )
+            stream = staple_process(process)
+            await stream.send_all(b"world")
+            await stream.send_eof()
+            return await stream.receive_some(64), await process.wait()
+
+        assert asyncio.run(main()) == (b"WORLD", 0)
+
+    def test_a_broken_stream_speaks_the_core_vocabulary(self) -> None:
+        import asyncio
+        import socket
+
+        from execnet._aio_io import wrap_socket
+        from execnet._async import BrokenResource
+        from execnet._async import ClosedResource
+
+        async def main() -> str:
+            left_sock, right_sock = socket.socketpair()
+            left = await wrap_socket(left_sock)
+            right = await wrap_socket(right_sock)
+            await right.aclose()
+            try:
+                for _ in range(50):  # the reset takes a write or two to surface
+                    await left.send_all(b"x" * 4096)
+            except BrokenResource:
+                return "broken"
+            except ClosedResource:  # pragma: no cover - platform dependent
+                return "broken"
+            finally:
+                await left.aclose()
+            return "no error"
+
+        assert asyncio.run(main()) == "broken"
