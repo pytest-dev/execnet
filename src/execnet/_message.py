@@ -71,12 +71,10 @@ class Message:
     #: the worker handshake, both directions -- see :mod:`execnet._handshake`.
     #: Exchanged before either side starts serving, so it is never dispatched.
     GATEWAY_CONFIG = 11
-    #: "receive an rsync into this directory", served by the worker itself
-    #: on the request's channel -- no source shipping, and no exec slot.
-    GATEWAY_RSYNC = 12
-    #: "build the environment this deployment needs", likewise served by the
-    #: worker -- see :mod:`execnet._deploy_serve`.
-    GATEWAY_DEPLOY = 13
+    #: a request the worker serves *itself* rather than exec'ing: the
+    #: payload names the service and carries its request, and what the name
+    #: means is none of the core's business.  See :mod:`execnet._services`.
+    GATEWAY_SERVICE = 12
 
     # message code -> name
     _types: dict[int, str] = {
@@ -92,8 +90,7 @@ class Message:
         GATEWAY_START_SUB: "GATEWAY_START_SUB",
         GATEWAY_INFO: "GATEWAY_INFO",
         GATEWAY_CONFIG: "GATEWAY_CONFIG",
-        GATEWAY_RSYNC: "GATEWAY_RSYNC",
-        GATEWAY_DEPLOY: "GATEWAY_DEPLOY",
+        GATEWAY_SERVICE: "GATEWAY_SERVICE",
     }
 
     def __init__(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:

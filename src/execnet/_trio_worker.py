@@ -692,8 +692,9 @@ async def _serve_async_worker(stream: Any, id: str) -> None:
         task_exec = TaskExec(gateway, nursery)
         gateway._exec_handler = task_exec.handle_exec
         gateway._task_exec = task_exec
-        # served by this worker itself, so they work here too -- an rsync
-        # is not exec'd code and this profile rejects sync sources
+        # a service is not exec'd code, so it runs here too -- which is the
+        # only reason this profile, which rejects sync sources, can receive
+        # a transfer at all
         gateway._service_spawn = nursery.start_soon
         await nursery.start(gateway._serve)
         await gateway.wait_closed()

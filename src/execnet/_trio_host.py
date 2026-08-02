@@ -24,6 +24,7 @@ from typing import TypeVar
 import trio
 
 from ._boundary import Flag
+from ._boundary import WaitBackend
 from ._channel import ENDMARKER
 from ._channel import NO_ENDMARKER_WANTED
 from ._channel import Endmarker
@@ -40,7 +41,6 @@ from ._portal import OneShot
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 from ._trace import trace
-from ._trio_gateway import _SERVICES
 from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
@@ -154,6 +154,11 @@ class SyncBridgeGateway(AsyncGateway):
         super().__init__(stream, id=id)
         self.sync_gateway = sync_gateway
         self.host = host
+        # Services run as tasks on the host's root nursery.  The request's
+        # channel is the *coordinator's* id, which the sync factory here
+        # knows nothing about, so a service works on the async channel this
+        # session already routes to that id.
+        self._service_spawn = host.start_soon
         self._done_sync: OneShot[None] = OneShot(sync_gateway._new_wakener())
         self._send_closed = False
         self._send_lock = threading.Lock()
@@ -190,13 +195,6 @@ class SyncBridgeGateway(AsyncGateway):
                 handle_start_socket(gateway, message.channelid, message.data)
             elif code == Message.GATEWAY_START_SUB:
                 handle_start_sub(gateway, message.channelid, message.data)
-            elif code in _SERVICES:
-                # the request's channel is the *coordinator's* id, which the
-                # sync factory here knows nothing about, so the service runs
-                # on the async channel this session already routes it to
-                self.host.start_soon(
-                    _SERVICES[code](), self, message.channelid, message.data
-                )
             else:
                 super()._dispatch(message)
         except (GatewayReceivedTerminate, EOFError):
@@ -765,6 +763,32 @@ class TrioHost:
         if self._thread is not None:
             self._thread.join(timeout=timeout)
         self._started = False
+
+
+def host_call(
+    trio_host: TrioHost,
+    wait_backend: WaitBackend,
+    async_fn: Callable[..., Awaitable[T]],
+    *args: Any,
+) -> T:
+    """Run ``async_fn`` on ``trio_host``, parking the way ``wait_backend`` does.
+
+    ``thread`` keeps the KI-deferred ``portal.run`` path.  Any other backend
+    implies the caller may not own its OS thread -- a gevent hub runs every
+    other greenlet on it -- so the work becomes a host task and the wait
+    happens on a ``OneShot`` with that backend's wakener.
+
+    The blocking surfaces all funnel through here: ``Group`` for gateway
+    creation and termination, and the deployment layer for transfers.
+    """
+    if wait_backend == "thread":
+        return trio_host.call(async_fn, *args)
+    from ._boundary import make_wakener
+
+    pending = trio_host.call_pending(
+        async_fn, *args, wakener=make_wakener(wait_backend)
+    )
+    return pending.wait()
 
 
 class _TempIO:

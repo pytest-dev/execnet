@@ -14,12 +14,21 @@ host thread, no blocking calls::
 
     trio.run(main)
 
+Transfers and deployments are awaited here too -- ``await transfer(...)``,
+``await deploy(deployment, gateway)`` -- and a fan-out across gateways runs
+them concurrently.
+
 The error types are shared with the blocking API in :mod:`execnet.sync`.
 Items you send must already be simple builtin data (plus channels); the
 standalone serializer is intentionally not part of the public API --
 ``execnet.can_send`` checks a value before you send it; see ``DumpError``.
 """
 
+from ._deploy import Deployed
+from ._deploy import Deployment
+from ._deploy._async_api import deploy
+from ._deploy._async_api import deploy_all
+from ._deploy._async_api import transfer
 from ._errors import DataFormatError
 from ._errors import DumpError
 from ._errors import HostNotFound
@@ -37,11 +46,16 @@ __all__ = [
     "AsyncGateway",
     "AsyncGroup",
     "DataFormatError",
+    "Deployed",
+    "Deployment",
     "DumpError",
     "HostNotFound",
     "LoadError",
     "RemoteError",
     "TimeoutError",
     "XSpec",
+    "deploy",
+    "deploy_all",
     "open_gateway",
+    "transfer",
 ]

@@ -80,27 +80,6 @@ async def provision_sync(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     return await trio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
 
 
-def _rsync_service() -> Any:
-    from ._rsync_serve import serve_rsync_request
-
-    return serve_rsync_request
-
-
-def _deploy_service() -> Any:
-    from ._deploy_serve import serve_deploy_request
-
-    return serve_deploy_request
-
-
-#: protocol requests a worker serves *itself*, as opposed to exec'd code:
-#: infrastructure that used to be a remote_exec of execnet's own source.
-#: Imported lazily -- a coordinator never runs any of them.
-_SERVICES: dict[int, Callable[[], Any]] = {
-    Message.GATEWAY_RSYNC: _rsync_service,
-    Message.GATEWAY_DEPLOY: _deploy_service,
-}
-
-
 class ByteStream(Protocol):
     """Neutral bidirectional byte-stream protocol for gateway transports.
 
@@ -594,8 +573,9 @@ class AsyncGateway:
     _task_exec: Any = None
     #: ``(async_fn, *args) -> None`` spawning a worker-side service task --
     #: set by whichever worker entry point owns a nursery.  Services are the
-    #: protocol requests a worker serves itself (rsync today), as opposed to
-    #: exec'd code; without one, such a request is rejected.
+    #: protocol requests a worker serves *itself*, as opposed to exec'd
+    #: code -- what each one does is none of this layer's business (see
+    #: :mod:`execnet._services`).  Without a spawner they are rejected.
     _service_spawn: Callable[..., None] | None = None
 
     def __init__(self, stream: ByteStream, *, id: str, _startcount: int = 1) -> None:
@@ -822,8 +802,8 @@ class AsyncGateway:
             raise GatewayReceivedTerminate(self)
         elif code == Message.CHANNEL_EXEC and self._exec_handler is not None:
             self._exec_handler(self, channelid, message.data)
-        elif code in _SERVICES and self._service_spawn is not None:
-            self._service_spawn(_SERVICES[code](), self, channelid, message.data)
+        elif code == Message.GATEWAY_SERVICE and self._service_spawn is not None:
+            self._spawn_service(channelid, message.data)
         elif code == Message.STATUS:
             task_exec = self._task_exec
             status = {
@@ -851,6 +831,28 @@ class AsyncGateway:
                 channelid,
                 dumps_internal(f"unsupported message on async gateway: {message!r}"),
             )
+
+    def _spawn_service(self, channelid: int, data: bytes) -> None:
+        """Run the service a ``GATEWAY_SERVICE`` request names (loop thread).
+
+        Resolution failures are reported on the request's channel: a
+        coordinator asking for a service this worker does not have is
+        usually a version skew, and it should hear that rather than an
+        unexplained close.
+        """
+        assert self._service_spawn is not None
+        from . import _services
+
+        name, request = loads_internal(data)
+        try:
+            handler = _services.resolve(name)
+        except LookupError as exc:
+            self._trace("rejecting unknown service", name)
+            self._send_nowait(
+                Message.CHANNEL_CLOSE_ERROR, channelid, dumps_internal(str(exc))
+            )
+            return
+        self._service_spawn(handler, self, channelid, request)
 
     def _channel_for(self, id: int) -> RawChannel:
         try:
