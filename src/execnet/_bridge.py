@@ -41,6 +41,7 @@ from typing import TypeVar
 
 import trio
 
+from ._errors import LoopFinishedError
 from ._trio_gateway import AsyncGroup as _TrioGroup
 
 if TYPE_CHECKING:
@@ -285,11 +286,11 @@ class EngineBridge:
 
         try:
             self._engine.portal.post(spawn)
-        except trio.RunFinishedError:
+        except LoopFinishedError:
             raise RuntimeError("the execnet engine is not running") from None
 
         def cancel_engine_side() -> None:
-            with suppress(trio.RunFinishedError):
+            with suppress(LoopFinishedError):
                 self._engine.portal.post(scope.cancel)
 
         result: T = await carrier.wait(shield=shield, on_cancel=cancel_engine_side)

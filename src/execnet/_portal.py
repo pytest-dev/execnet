@@ -1,10 +1,15 @@
 """Cross-thread / cross-loop communication primitives — the boundary kit.
 
-Internal.  A :class:`LoopPortal` is a handle to a running trio loop that
-foreign threads use to run functions on the loop or push work into it (the
-consumer -> loop direction).  Because each direction only needs the
-*receiving* loop's token, two trio loops in two threads can communicate by
-holding each other's portal.
+Internal.  A portal is a handle to a running loop that foreign threads use
+to run functions on it or push work into it (the consumer -> loop
+direction).  Because each direction only needs the *receiving* loop's
+handle, two loops in two threads can communicate by holding each other's
+portal.
+
+There is one portal per engine backend -- :class:`LoopPortal` for trio,
+:class:`AsyncioPortal` for asyncio -- with the same four operations and the
+same failure vocabulary, so nothing above them has to know which loop it is
+talking to.
 
 The loop -> consumer direction never blocks the loop and never knows who
 is listening: the loop fires a :class:`Wakener`, a single thread-safe
@@ -32,9 +37,17 @@ from ._boundary import Mailbox
 from ._boundary import OneShot
 from ._boundary import ThreadWakener
 from ._boundary import Wakener
+from ._errors import LoopFinishedError
 from ._errors import forked_error
 
-__all__ = ["LoopPortal", "Mailbox", "OneShot", "ThreadWakener", "Wakener"]
+__all__ = [
+    "AsyncioPortal",
+    "LoopPortal",
+    "Mailbox",
+    "OneShot",
+    "ThreadWakener",
+    "Wakener",
+]
 
 T = TypeVar("T")
 
@@ -72,24 +85,111 @@ class LoopPortal:
     def run(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
         """Run ``await async_fn(*args)`` on the loop, blocking this thread."""
         self._check_process()
-        return trio.from_thread.run(async_fn, *args, trio_token=self._token)
+        try:
+            return trio.from_thread.run(async_fn, *args, trio_token=self._token)
+        except trio.RunFinishedError as exc:
+            raise LoopFinishedError(str(exc)) from None
 
     def run_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
         """Run ``sync_fn(*args)`` on the loop, blocking this thread."""
         self._check_process()
-        return trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
+        try:
+            return trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
+        except trio.RunFinishedError as exc:
+            raise LoopFinishedError(str(exc)) from None
 
     def post(self, sync_fn: Callable[..., object], *args: Any) -> None:
         """Schedule ``sync_fn(*args)`` on the loop without waiting.
 
         Thread-safe and callable from the loop thread itself; all posts run
         in strict FIFO order (``TrioToken.run_sync_soon``).  Raises
-        ``trio.RunFinishedError`` once the loop has shut down, and
-        :class:`~execnet._errors.ForkedResourceError` in a forked child.
+        :class:`~execnet._errors.LoopFinishedError` once the loop has shut
+        down, and :class:`~execnet._errors.ForkedResourceError` in a forked
+        child.
 
         ``sync_fn`` must not raise: trio turns an exception from an
         entry-queue callback into ``TrioInternalError`` and tears the whole
         loop down, taking every gateway in the process with it.
         """
         self._check_process()
-        self._token.run_sync_soon(sync_fn, *args)
+        try:
+            self._token.run_sync_soon(sync_fn, *args)
+        except trio.RunFinishedError as exc:
+            raise LoopFinishedError(str(exc)) from None
+
+
+class AsyncioPortal:
+    """The same handle for an asyncio loop.
+
+    Constructed on the loop's own thread, like :class:`LoopPortal`, and
+    offering the same four operations with the same failure vocabulary.
+
+    Where trio distinguishes "run a coroutine" from "run a sync function",
+    asyncio has only the former, so :meth:`run_sync` wraps.  Both go through
+    ``run_coroutine_threadsafe``, which -- unlike ``call_soon_threadsafe``
+    -- gives back a future to block on.
+    """
+
+    def __init__(self) -> None:
+        import asyncio
+
+        self._asyncio = asyncio
+        self._loop = asyncio.get_running_loop()
+        self._pid = os.getpid()
+
+    def is_loop_thread(self) -> bool:
+        """Whether the calling thread is running this portal's loop."""
+        try:
+            return self._asyncio.get_running_loop() is self._loop
+        except RuntimeError:
+            return False
+
+    def _check_process(self) -> None:
+        """Refuse a loop that lives in another process (see :class:`LoopPortal`)."""
+        if self._pid != os.getpid():
+            raise forked_error("the execnet engine loop", self._pid)
+
+    def _submit(self, coro: Any) -> Any:
+        try:
+            return self._asyncio.run_coroutine_threadsafe(coro, self._loop)
+        except RuntimeError as exc:  # loop closed between the check and here
+            coro.close()
+            raise LoopFinishedError(str(exc)) from None
+
+    def run(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
+        """Run ``await async_fn(*args)`` on the loop, blocking this thread."""
+        self._check_process()
+        if self.is_loop_thread():
+            raise RuntimeError(
+                "this is a blocking function; call it from a thread that is"
+                " not running this loop"
+            )
+        result: T = self._submit(async_fn(*args)).result()
+        return result
+
+    def run_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
+        """Run ``sync_fn(*args)`` on the loop, blocking this thread."""
+
+        async def call() -> T:
+            return sync_fn(*args)
+
+        return self.run(call)
+
+    def post(self, sync_fn: Callable[..., object], *args: Any) -> None:
+        """Schedule ``sync_fn(*args)`` on the loop without waiting.
+
+        Thread-safe and callable from the loop thread itself; all posts run
+        in FIFO order.  Raises
+        :class:`~execnet._errors.LoopFinishedError` once the loop has shut
+        down, and :class:`~execnet._errors.ForkedResourceError` in a forked
+        child.
+
+        ``sync_fn`` must not raise: an exception here reaches the loop's
+        exception handler, which by default only logs -- so a failure would
+        be silently swallowed rather than reported to whoever was waiting.
+        """
+        self._check_process()
+        try:
+            self._loop.call_soon_threadsafe(sync_fn, *args)
+        except RuntimeError as exc:
+            raise LoopFinishedError(str(exc)) from None
