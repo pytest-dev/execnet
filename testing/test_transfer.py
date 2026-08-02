@@ -19,7 +19,7 @@ import pytest
 import trio
 
 import execnet
-import execnet.trio
+import execnet.raw_trio
 from execnet import _services
 from execnet._deploy._manifest import Entry
 from execnet._deploy._manifest import walk
@@ -186,7 +186,7 @@ class TestServiceThreadBudget:
             from execnet._deploy._transfer import transfer_tree
             from execnet._services import ServiceTarget
 
-            async with execnet.trio.open_gateway("popen") as gateway:
+            async with execnet.raw_trio.open_gateway("popen") as gateway:
                 target = ServiceTarget(gateway)
                 async with trio.open_nursery() as nursery:
                     for index in range(12):
@@ -321,7 +321,7 @@ class TestTrioSurface:
         # the reason the driver is async: N hosts should cost one transfer,
         # not N of them
         async def main() -> None:
-            async with execnet.trio.AsyncGroup() as group:
+            async with execnet.raw_trio.AsyncGroup() as group:
                 gateways = [await group.makegateway("popen") for _ in range(3)]
                 destinations = [str(tmp_path / f"dest{n}") for n in range(3)]
                 from execnet._deploy._transfer import transfer_tree_to_all
@@ -346,9 +346,11 @@ class TestTrioSurface:
             (source / f"file{index}.bin").write_bytes(os.urandom(200_000))
 
         async def main() -> None:
-            async with execnet.trio.open_gateway("popen") as gateway:
+            async with execnet.raw_trio.open_gateway("popen") as gateway:
                 with trio.move_on_after(0.05):
-                    await execnet.trio.transfer(gateway, source, str(tmp_path / "dest"))
+                    await execnet.raw_trio.transfer(
+                        gateway, source, str(tmp_path / "dest")
+                    )
                 channel = await gateway.remote_exec("channel.send(1)")
                 assert await channel.receive() == 1
 

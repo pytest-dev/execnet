@@ -49,10 +49,9 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypeVar
 
-import trio
-
 from ._bridge import AsyncioBridge
 from ._bridge import AsyncioCarrier
+from ._bridge import EngineGroup
 from ._bridge import start_engine
 from ._deploy import Deployed
 from ._deploy import Deployment
@@ -67,7 +66,6 @@ from ._errors import RemoteError
 from ._errors import TimeoutError
 from ._trio_gateway import AsyncChannel as _TrioChannel
 from ._trio_gateway import AsyncGateway as _TrioGateway
-from ._trio_gateway import AsyncGroup as _TrioGroup
 from ._xspec import XSpec
 
 if TYPE_CHECKING:
@@ -95,28 +93,6 @@ __all__ = [
 ]
 
 T = TypeVar("T")
-
-
-class _EngineGroup(_TrioGroup):
-    """Trio AsyncGroup living as a task on the engine nursery."""
-
-    def __init__(self, termination_timeout: float, engine: Any) -> None:
-        super().__init__(termination_timeout)
-        self.engine = engine
-        self.shutdown = trio.Event()
-        self.finished = trio.Event()
-
-    async def run(self, task_status: trio.TaskStatus[_EngineGroup]) -> None:
-        # registered for exactly this task's lifetime, so closing the engine
-        # knows what it is about to take down
-        self.engine._register_group(self)
-        try:
-            async with self:
-                task_status.started(self)
-                await self.shutdown.wait()
-        finally:
-            self.engine._forget_group(self)
-            self.finished.set()
 
 
 class AsyncChannel:
@@ -251,7 +227,7 @@ class AsyncGroup:
         self._termination_timeout = termination_timeout
         self._engine = default_engine() if engine is None else engine
         self._bridge: AsyncioBridge | None = None
-        self._group: _EngineGroup | None = None
+        self._group: EngineGroup | None = None
 
     def __repr__(self) -> str:
         state = "running" if self._group is not None else "idle"
@@ -269,10 +245,10 @@ class AsyncGroup:
         trio_engine = await start_engine(self._engine, AsyncioCarrier())
         bridge = AsyncioBridge(trio_engine)
 
-        async def start_group() -> _EngineGroup:
+        async def start_group() -> EngineGroup:
             # runs on the engine loop
-            group = _EngineGroup(self._termination_timeout, trio_engine)
-            started: _EngineGroup = await trio_engine.start_task(group.run)
+            group = EngineGroup(self._termination_timeout, trio_engine)
+            started: EngineGroup = await trio_engine.start_task(group.run)
             return started
 
         self._bridge = bridge
@@ -344,12 +320,10 @@ async def deploy_all(
     deployment: Deployment, gateways: Sequence[AsyncGateway]
 ) -> list[Deployed]:
     """Deploy to every gateway at once, concurrently on the engine."""
+    from ._bridge import targets_for_bridge
     from ._deploy import _async_api
 
-    if not gateways:
-        raise ValueError("no gateways to deploy to")
-    bridge = gateways[0]._bridge
-    targets = [gateway._target() for gateway in gateways]
+    bridge, targets = targets_for_bridge(gateways)
     return await bridge.call(
         functools.partial(_async_api.deploy_all, deployment, targets)
     )

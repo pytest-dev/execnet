@@ -49,8 +49,8 @@ async def gateway_pair() -> AsyncIterator[tuple[AsyncGateway, AsyncGateway]]:
 def test_payload_boundaries_are_preserved() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, right):
-            sender = left.open_raw_channel()
-            receiver = right.open_raw_channel(sender.id)
+            sender = left._open_raw_channel()
+            receiver = right._open_raw_channel(sender.id)
             await sender.send_bytes(b"first payload")
             await sender.send_bytes(b"second")
             assert await receiver.receive_bytes() == b"first payload"
@@ -62,8 +62,8 @@ def test_payload_boundaries_are_preserved() -> None:
 def test_send_eof_makes_peer_sendonly() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, right):
-            sender = left.open_raw_channel()
-            receiver = right.open_raw_channel(sender.id)
+            sender = left._open_raw_channel()
+            receiver = right._open_raw_channel(sender.id)
             await sender.send_bytes(b"data")
             await sender.send_eof()
             assert await receiver.receive_bytes() == b"data"
@@ -81,8 +81,8 @@ def test_send_eof_makes_peer_sendonly() -> None:
 def test_close_drains_then_blocks_both_directions() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, right):
-            sender = left.open_raw_channel()
-            receiver = right.open_raw_channel(sender.id)
+            sender = left._open_raw_channel()
+            receiver = right._open_raw_channel(sender.id)
             await sender.send_bytes(b"x")
             await sender.aclose()
             # payloads sent before the close still drain
@@ -100,8 +100,8 @@ def test_close_drains_then_blocks_both_directions() -> None:
 def test_close_with_error_raises_remote_error() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, right):
-            sender = left.open_raw_channel()
-            receiver = right.open_raw_channel(sender.id)
+            sender = left._open_raw_channel()
+            receiver = right._open_raw_channel(sender.id)
             await sender.aclose(error="boom happened")
             with pytest.raises(RemoteError, match="boom happened"):
                 await receiver.receive_bytes()
@@ -112,8 +112,8 @@ def test_close_with_error_raises_remote_error() -> None:
 def test_async_iteration_yields_payloads_until_eof() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, right):
-            sender = left.open_raw_channel()
-            receiver = right.open_raw_channel(sender.id)
+            sender = left._open_raw_channel()
+            receiver = right._open_raw_channel(sender.id)
             payloads = [b"a", b"bb", b"ccc"]
             for payload in payloads:
                 await sender.send_bytes(payload)
@@ -126,7 +126,7 @@ def test_async_iteration_yields_payloads_until_eof() -> None:
 def test_terminate_closes_peer_cleanly() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, right):
-            channel = right.open_raw_channel()
+            channel = right._open_raw_channel()
             await left.terminate()
             await right.wait_closed()
             assert right._error is None
@@ -139,7 +139,7 @@ def test_terminate_closes_peer_cleanly() -> None:
 def test_status_reply_travels_on_raw_channel() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, _right):
-            channel = left.open_raw_channel()
+            channel = left._open_raw_channel()
             await left._send(Message.STATUS, channel.id)
             status = loads_internal(await channel.receive_bytes())
             assert status["execmodel"] == "trio"
@@ -154,7 +154,7 @@ def test_status_reply_travels_on_raw_channel() -> None:
 def test_unsupported_message_is_rejected_with_remote_error() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, _right):
-            channel = left.open_raw_channel()
+            channel = left._open_raw_channel()
             await left._send(
                 Message.CHANNEL_EXEC,
                 channel.id,
@@ -169,12 +169,12 @@ def test_unsupported_message_is_rejected_with_remote_error() -> None:
 def test_send_after_gateway_close_raises() -> None:
     async def main() -> None:
         async with gateway_pair() as (left, _right):
-            channel = left.open_raw_channel()
+            channel = left._open_raw_channel()
             await left.aclose()
             with pytest.raises(OSError, match="cannot send"):
                 await channel.send_bytes(b"x")
             with pytest.raises(OSError, match="already closed"):
-                left.open_raw_channel()
+                left._open_raw_channel()
 
     trio.run(main)
 
@@ -185,7 +185,7 @@ def test_peer_disappearing_surfaces_eof_error() -> None:
         async with trio.open_nursery() as nursery:
             right = AsyncGateway(right_stream, id="right", _startcount=2)
             await nursery.start(right._serve)
-            channel = right.open_raw_channel()
+            channel = right._open_raw_channel()
             # peer vanishes without a termination message
             await left_stream.aclose()
             await right.wait_closed()

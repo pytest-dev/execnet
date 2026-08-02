@@ -476,7 +476,7 @@ class SyncBridgeGateway(AsyncGateway):
 
         def post() -> None:
             try:
-                self.enqueue_frame(frame, ack.set if ack is not None else None)
+                self._enqueue_frame(frame, ack.set if ack is not None else None)
             except OSError as exc:
                 if ack is not None:
                     ack.set(exc)
@@ -505,7 +505,7 @@ class SyncBridgeGateway(AsyncGateway):
 
         def post() -> None:
             with suppress(OSError):
-                self.enqueue_frame(frame)
+                self._enqueue_frame(frame)
 
         try:
             self.engine.portal.post(post)

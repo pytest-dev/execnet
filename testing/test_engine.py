@@ -460,6 +460,24 @@ class TestEngineShutdownContract:
         assert len(errors) == 1
         assert "own loop thread" in str(errors[0])
 
+    def test_closing_from_inside_another_event_loop_still_stops(self) -> None:
+        # the shutdown request is *posted* to the loop rather than run on it:
+        # portal.run_sync refuses a caller that is itself inside a trio run
+        # ("this is a blocking function"), which is where an async
+        # application closes its engine from.  That refusal used to be
+        # swallowed, leaving the thread running for the rest of the process.
+        engine = ProtocolEngine(name="execnet-engine-closed-from-a-loop")
+        engine.start()
+
+        async def main() -> None:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", execnet.ActiveGroupsWarning)
+                engine.close(timeout=10.0)
+
+        trio.run(main)
+        assert not engine.running
+        assert "execnet-engine-closed-from-a-loop" not in engine_thread_names()
+
     def test_a_thread_that_does_not_join_is_reported(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -469,7 +487,7 @@ class TestEngineShutdownContract:
         engine = ProtocolEngine(name="execnet-engine-wedged")
         trio_engine = engine.start()._ensure_started()
         monkeypatch.setattr(
-            type(trio_engine.portal), "run_sync", lambda self, fn, *args: None
+            type(trio_engine.portal), "post", lambda self, fn, *args: None
         )
 
         try:

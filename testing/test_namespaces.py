@@ -20,11 +20,12 @@ import pytest
 
 import execnet
 import execnet.aio
+import execnet.raw_trio
 import execnet.sync
 import execnet.trio
 
 #: the only modules that may be reachable without a leading underscore
-PUBLIC_NAMESPACES = ("aio", "gevent", "sync", "trio")
+PUBLIC_NAMESPACES = ("aio", "gevent", "raw_trio", "sync", "trio")
 
 #: those importable without an optional dependency (execnet.gevent needs gevent)
 ALWAYS_IMPORTABLE = tuple(n for n in PUBLIC_NAMESPACES if n != "gevent")
@@ -77,28 +78,28 @@ def test_no_unexpected_public_modules() -> None:
 def test_trio_namespace_exposes_async_core() -> None:
     from execnet import _trio_gateway
 
-    assert execnet.trio.AsyncGroup is _trio_gateway.AsyncGroup
-    assert execnet.trio.AsyncGateway is _trio_gateway.AsyncGateway
-    assert execnet.trio.AsyncChannel is _trio_gateway.AsyncChannel
-    assert execnet.trio.open_gateway is _trio_gateway.open_gateway
+    assert execnet.raw_trio.AsyncGroup is _trio_gateway.AsyncGroup
+    assert execnet.raw_trio.AsyncGateway is _trio_gateway.AsyncGateway
+    assert execnet.raw_trio.AsyncChannel is _trio_gateway.AsyncChannel
+    assert execnet.raw_trio.open_gateway is _trio_gateway.open_gateway
     # error types are shared with the sync surface; the standalone serializer
     # is intentionally not exposed on any public namespace
-    assert execnet.trio.RemoteError is execnet.RemoteError
-    assert not hasattr(execnet.trio, "dumps")
+    assert execnet.raw_trio.RemoteError is execnet.RemoteError
+    assert not hasattr(execnet.raw_trio, "dumps")
 
 
 def test_trio_namespace_hides_raw_plumbing() -> None:
     # the raw-channel/stream layer is internal routing detail: reachable from
     # execnet._trio_gateway, not advertised on the public namespace
     for name in ("ByteStream", "RawChannel", "RawChannelStream", "serve_gateway"):
-        assert name not in execnet.trio.__all__, name
+        assert name not in execnet.raw_trio.__all__, name
 
 
 def test_can_send_lives_only_on_the_top_level() -> None:
     assert execnet.can_send({"a": [1, 2.0, b"x", None, (True, frozenset({3}))]})
     assert not execnet.can_send(object())
     # the wire contract does not vary by surface, so it is not mirrored
-    for namespace in (execnet.sync, execnet.trio, execnet.aio):
+    for namespace in (execnet.sync, execnet.raw_trio, execnet.trio, execnet.aio):
         assert "can_send" not in namespace.__all__, namespace.__name__
 
 
@@ -143,13 +144,13 @@ def test_boundary_kit_is_private() -> None:
 
 
 def test_lazy_submodule_attribute_access() -> None:
-    # After ``import execnet`` alone, execnet.trio is reachable as an
+    # After ``import execnet`` alone, execnet.raw_trio is reachable as an
     # attribute (PEP 562) without having been imported.
     out = subprocess.run(
         [
             sys.executable,
             "-c",
-            "import execnet; print(execnet.trio.AsyncGroup.__name__)",
+            "import execnet; print(execnet.raw_trio.AsyncGroup.__name__)",
         ],
         capture_output=True,
         text=True,
