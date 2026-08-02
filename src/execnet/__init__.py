@@ -27,6 +27,7 @@ from typing import Any
 
 from ._serialize import can_send
 from ._version import version as __version__
+from .sync import ActiveGroupsWarning
 from .sync import Channel
 from .sync import DataFormatError
 from .sync import Deployed
@@ -49,6 +50,7 @@ from .sync import set_profile
 from .sync import transfer
 
 __all__ = [
+    "ActiveGroupsWarning",
     "Channel",
     "DataFormatError",
     "Deployed",

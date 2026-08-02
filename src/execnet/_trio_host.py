@@ -622,10 +622,18 @@ class FacadeAsyncGroup(AsyncGroup):
         return (host_str, int(port_str)), spec.socket
 
     async def run(self, task_status: trio.TaskStatus[FacadeAsyncGroup]) -> None:
-        """Own the group nursery as a engine task until :attr:`shutdown`."""
-        async with self:
-            task_status.started(self)
-            await self.shutdown.wait()
+        """Own the group nursery as an engine task until :attr:`shutdown`.
+
+        Registered with the engine for exactly this task's lifetime, so
+        closing the engine knows what it is about to take down.
+        """
+        self.engine._register_group(self)
+        try:
+            async with self:
+                task_status.started(self)
+                await self.shutdown.wait()
+        finally:
+            self.engine._forget_group(self)
 
 
 def makegateway_trio(group: Group, spec: Any) -> Gateway:

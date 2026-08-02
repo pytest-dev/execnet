@@ -14,6 +14,7 @@ import select
 import signal
 import sys
 import threading
+import warnings
 from collections.abc import Callable
 
 import pytest
@@ -237,14 +238,19 @@ class TestFork:
 
 
 class TestEngineDestruction:
-    """Closing a engine breaks what it served -- loudly, and without hanging.
+    """Closing an engine breaks what it served -- loudly, and without hanging.
 
     A gateway's protocol IO lives on the engine loop, so stopping that loop
     is not a resource being freed underneath a working object: it ends the
     connection.  Every operation that needs the loop must say so at the
     call site rather than hang, deliver nothing silently, or quietly start
     a second loop thread that none of the existing gateways are on.
+
+    Each of these closes with a group still live, which is what the warning
+    is for; the contract around that is :class:`TestEngineShutdownContract`.
     """
+
+    pytestmark = pytest.mark.filterwarnings("ignore::execnet.ActiveGroupsWarning")
 
     def test_close_breaks_the_channels_it_served(self) -> None:
         engine = ProtocolEngine(name="execnet-engine-broken-channel")
@@ -340,6 +346,146 @@ class TestEngineDestruction:
             channel.receive(TESTTIMEOUT)
         channel.waitclose(TESTTIMEOUT)
         group.terminate(timeout=5.0)
+
+
+class TestEngineShutdownContract:
+    """What closing does about the groups still running on it.
+
+    Breaking them and walking away was the old behaviour, and it left real
+    worker processes behind: nothing else was going to reap them once the
+    loop that spoke to them was gone.  So closing terminates -- and says so,
+    because doing it at close time is doing the caller's job at the moment
+    they can least act on the result.  :meth:`ProtocolEngine.terminate` is
+    the half to call while they still can.
+    """
+
+    def test_close_terminates_live_groups_and_warns(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-terminating-close")
+        group = execnet.Group(engine=engine)
+        gateway = group.makegateway("popen")
+        pid = gateway.remote_exec("import os; channel.send(os.getpid())").receive(
+            TESTTIMEOUT
+        )
+
+        with pytest.warns(execnet.ActiveGroupsWarning, match="still running"):
+            engine.close()
+
+        # the worker is gone, not orphaned: the whole point of terminating
+        assert not _process_alive(pid)
+        group.terminate(timeout=5.0)
+
+    def test_the_warning_names_what_is_still_running(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-named-in-warning")
+        group = execnet.Group(engine=engine)
+        group.makegateway("popen//id=stillhere")
+
+        with pytest.warns(execnet.ActiveGroupsWarning, match="stillhere"):
+            engine.close()
+        group.terminate(timeout=5.0)
+
+    def test_terminate_drains_without_closing(self) -> None:
+        # the deliberate half: workers reaped, engine still usable, and the
+        # group can be rebuilt on it afterwards
+        engine = ProtocolEngine(name="execnet-engine-drained")
+        group = execnet.Group(engine=engine)
+        gateway = group.makegateway("popen")
+        pid = gateway.remote_exec("import os; channel.send(os.getpid())").receive(
+            TESTTIMEOUT
+        )
+
+        engine.terminate(timeout=5.0)
+
+        assert not _process_alive(pid)
+        assert engine.running
+        group.terminate(timeout=5.0)
+        second = execnet.Group(engine=engine)
+        try:
+            channel = second.makegateway("popen").remote_exec("channel.send(7)")
+            assert channel.receive(TESTTIMEOUT) == 7
+        finally:
+            second.terminate(timeout=5.0)
+            engine.close()
+
+    def test_a_drained_engine_closes_quietly(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-quiet-close")
+        group = execnet.Group(engine=engine)
+        group.makegateway("popen")
+        group.terminate(timeout=5.0)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", execnet.ActiveGroupsWarning)
+            engine.close()
+
+    def test_terminating_an_idle_engine_is_a_no_op(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-never-started")
+        engine.terminate()
+        assert not engine.running
+        # and it is still usable afterwards, unlike close()
+        group = execnet.Group(engine=engine)
+        try:
+            assert (
+                group.makegateway("popen")
+                .remote_exec("channel.send(1)")
+                .receive(TESTTIMEOUT)
+                == 1
+            )
+        finally:
+            group.terminate(timeout=5.0)
+            engine.close()
+
+    def test_closing_an_idle_engine_is_final_and_quiet(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-idle-close")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", execnet.ActiveGroupsWarning)
+            engine.close()
+        with pytest.raises(RuntimeError, match="was closed"):
+            engine.start()
+
+    def test_closing_from_the_loop_thread_is_refused(self) -> None:
+        # it would park the loop waiting for work only that loop can run
+        engine = ProtocolEngine(name="execnet-engine-self-close")
+        trio_engine = engine.start()._ensure_started()
+        errors: list[BaseException] = []
+
+        def close_from_the_loop() -> None:
+            try:
+                engine.close()
+            except BaseException as exc:
+                errors.append(exc)
+
+        try:
+            trio_engine.call_sync(close_from_the_loop)
+        finally:
+            engine.close()
+        assert len(errors) == 1
+        assert "own loop thread" in str(errors[0])
+
+    def test_a_thread_that_does_not_join_is_reported(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # a wedged loop is a leaked thread; close() used to return as though
+        # it had stopped one
+        engine = ProtocolEngine(name="execnet-engine-wedged")
+        engine.start()
+
+        monkeypatch.setattr(threading.Thread, "join", lambda self, timeout=None: None)
+        with pytest.warns(execnet.ActiveGroupsWarning, match="did not stop"):
+            engine.close(timeout=0.01)
+
+
+def _process_alive(pid: int) -> bool:
+    """Whether ``pid`` is still a live process (not a zombie)."""
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    if not sys.platform.startswith("linux"):  # pragma: no cover - linux CI
+        return True
+    try:
+        with open(f"/proc/{pid}/stat") as stat:
+            return stat.read().rsplit(") ", 1)[1].split()[0] != "Z"
+    except OSError:
+        return False
 
 
 class TestPostedCallbacks:
