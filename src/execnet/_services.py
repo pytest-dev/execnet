@@ -154,11 +154,13 @@ class ServiceTarget:
 
     async def request(self, name: str, request: Any) -> Any:
         """One request, one reply, channel closed."""
-        import trio  # local: importing execnet must not load an event loop
+        # local import: importing execnet must not load an event loop
+        from ._async import current_async
 
+        aio = current_async()
         channel = await self.open(name, request)
         try:
             return await channel.receive()
         finally:
-            with trio.CancelScope(shield=True):
+            with aio.shielded():
                 await channel.aclose()

@@ -246,11 +246,14 @@ async def unix_listener(path: str) -> AsyncioListener:
 
 
 async def open_tcp_stream(host: str, port: int) -> AsyncioByteStream:
-    """Connect to ``host:port``."""
-    try:
-        reader, writer = await asyncio.open_connection(host, port)
-    except Exception as exc:
-        raise _translate(exc) from None
+    """Connect to ``host:port``.
+
+    A failure to *connect* is left as the ``OSError`` it is, rather than
+    translated to a stream error: it means the host could not be reached,
+    which is what the caller turns into ``HostNotFound``.  Translation is
+    for a stream that broke after it was established.
+    """
+    reader, writer = await asyncio.open_connection(host, port)
     return AsyncioByteStream(reader, writer)
 
 

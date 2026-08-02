@@ -106,6 +106,10 @@ class TrioAsync:
     def fail_after(self, seconds: float) -> Any:
         return self._trio.fail_after(seconds)
 
+    def cancel_scope(self) -> Any:
+        """A scope some *other* task can cancel; see :meth:`AsyncioAsync.cancel_scope`."""
+        return self._trio.CancelScope()
+
     async def to_thread(
         self,
         fn: Callable[..., T],
@@ -275,6 +279,17 @@ class AsyncioAsync:
     def fail_after(self, seconds: float) -> Any:
         return _Deadline(self._asyncio, seconds, raising=True)
 
+    def cancel_scope(self) -> Any:
+        """A scope some *other* task can cancel.
+
+        The one place the core needs cancellation it can *aim*, rather than
+        a deadline or a shield: the bridge cancels an engine-side operation
+        when the caller awaiting it goes away.  On asyncio that is the
+        task's own cancellation, which is why the scope has to be entered by
+        the task it will cancel.
+        """
+        return _Deadline(self._asyncio, None, raising=False)
+
     async def to_thread(
         self,
         fn: Callable[..., T],
@@ -377,6 +392,9 @@ class _Limiter:
 class _Deadline:
     """``move_on_after`` / ``fail_after`` as a *synchronous* context manager.
 
+    Also stands in for ``trio.CancelScope`` when built without a deadline:
+    the two differ only in what pulls the trigger.
+
     ``asyncio.timeout`` is an async context manager, which would make every
     deadline in the core read differently from trio's.  Nothing it does on
     entry or exit actually needs to await, so this does the same work
@@ -390,7 +408,9 @@ class _Deadline:
     cancel is also in flight and must not be eaten.
     """
 
-    def __init__(self, asyncio_module: Any, seconds: float, *, raising: bool) -> None:
+    def __init__(
+        self, asyncio_module: Any, seconds: float | None, *, raising: bool
+    ) -> None:
         self._asyncio = asyncio_module
         self._seconds = seconds
         self._raising = raising
@@ -408,9 +428,16 @@ class _Deadline:
     def __enter__(self) -> Self:
         self._task = self._asyncio.current_task()
         self._cancelling = self._task.cancelling()
-        loop = self._asyncio.get_running_loop()
-        self._handle = loop.call_later(self._seconds, self._fire)
+        if self._seconds is not None:
+            loop = self._asyncio.get_running_loop()
+            self._handle = loop.call_later(self._seconds, self._fire)
         return self
+
+    def cancel(self) -> None:
+        """Cancel this scope from another task (or from this one)."""
+        self._expired = True
+        if self._task is not None:
+            self._task.cancel()
 
     def __exit__(
         self,
@@ -418,7 +445,8 @@ class _Deadline:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool:
-        self._handle.cancel()
+        if self._handle is not None:
+            self._handle.cancel()
         if not self._expired or exc_type is None:
             return False
         if not issubclass(exc_type, self._asyncio.CancelledError):
@@ -549,6 +577,10 @@ class _InboxSender:
             raise ClosedResource("inbox is closed")
         self._shared.queue.put_nowait(item)
 
+    async def send(self, item: Any) -> None:
+        """The awaitable form; never actually waits, the queue is unbounded."""
+        self.send_nowait(item)
+
     def close(self) -> None:
         if self._shared.closed:
             return
@@ -577,6 +609,15 @@ class _InboxReceiver:
 
     async def receive(self) -> Any:
         return self._unwrap(await self._shared.queue.get())
+
+    def __aiter__(self) -> _InboxReceiver:
+        return self
+
+    async def __anext__(self) -> Any:
+        try:
+            return await self.receive()
+        except EndOfChannel:
+            raise StopAsyncIteration from None
 
 
 #: the end-of-inbox marker; a private object so no payload can be mistaken for it

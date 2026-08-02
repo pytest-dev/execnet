@@ -26,8 +26,7 @@ from collections.abc import Sequence
 from hashlib import md5
 from typing import TYPE_CHECKING
 
-import trio
-
+from .._async import current_async
 from ._manifest import Filter
 from ._manifest import Manifest
 from ._manifest import Wanted
@@ -54,9 +53,10 @@ async def snapshot(
     source: str | os.PathLike[str], filter: Filter | None = None
 ) -> Manifest:
     """Walk ``source`` once, off the loop, for however many targets follow."""
-    return await trio.to_thread.run_sync(
+    manifest: Manifest = await current_async().to_thread(
         functools.partial(walk, os.fspath(source), filter)
     )
+    return manifest
 
 
 def _read_body(
@@ -102,6 +102,7 @@ async def send_manifest(
     waiting on this conversation and would otherwise sit mid-tree with no
     way to learn that nobody is coming back.
     """
+    aio = current_async()
     source = os.fspath(source)
     channel = await target.open(SERVICE, {"destination": destination, "delete": delete})
     try:
@@ -109,7 +110,7 @@ async def send_manifest(
         wanted = Wanted.load(await channel.receive())
         for path in wanted.paths:
             local = os.path.join(source, *path.split("/"))
-            body = await trio.to_thread.run_sync(
+            body = await aio.to_thread(
                 _read_body, local, path, wanted.checksums.get(path), progress
             )
             if body is None:
@@ -126,7 +127,7 @@ async def send_manifest(
         if reply != "done":
             raise OSError(f"transfer to {destination} ended with {reply!r}")
     finally:
-        with trio.CancelScope(shield=True):
+        with aio.shielded():
             await channel.aclose()
 
 
@@ -166,9 +167,9 @@ async def transfer_tree_to_all(
             target, manifest, source, destination, delete=delete, progress=progress
         )
         return
-    async with trio.open_nursery() as nursery:
+    async with current_async().task_scope() as scope:
         for target, destination in targets:
-            nursery.start_soon(
+            scope.start_soon(
                 functools.partial(
                     send_manifest,
                     target,

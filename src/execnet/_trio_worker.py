@@ -15,10 +15,9 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
 
-import trio
-
 from ._boundary import Mailbox
 from ._boundary import WaitBackend
+from ._errors import LoopFinishedError
 from ._errors import geterrortext
 from ._execmodel import effective_profile
 from ._execmodel import get_execmodel
@@ -61,7 +60,9 @@ class PoolExec:
         return True
 
     async def run(self, channel: Channel, item: ExecItem) -> None:
-        await trio.to_thread.run_sync(
+        from ._async import current_async
+
+        await current_async().to_thread(
             self.gateway.executetask,
             (channel, item),
             abandon_on_cancel=True,
@@ -74,7 +75,7 @@ class PoolExec:
         pass
 
 
-def _thread_signal() -> tuple[trio.Event, Callable[[], None]]:
+def _thread_signal() -> tuple[Any, Callable[[], None]]:
     """A loop-side event plus the callable that sets it from a foreign thread.
 
     Waiting for an exec that runs *elsewhere* -- the main thread, a greenlet
@@ -82,18 +83,34 @@ def _thread_signal() -> tuple[trio.Event, Callable[[], None]]:
     part of the budget exec placement is rationed against, so an exec that
     costs no thread would still spend one waiting for itself.
 
-    Must be built on the loop (it captures the trio token).
+    Must be built on the loop (it captures a portal into it).
     """
-    done = trio.Event()
-    token = trio.lowlevel.current_trio_token()
+    from ._async import current_async
+
+    aio = current_async()
+    done = aio.event()
+    portal = _loop_portal()
 
     def signal() -> None:
         # posted callbacks must not raise, and a loop that ended while the
         # exec ran leaves nobody to wake
-        with suppress(trio.RunFinishedError):
-            token.run_sync_soon(done.set)
+        with suppress(LoopFinishedError):
+            portal.post(done.set)
 
     return done, signal
+
+
+def _loop_portal() -> Any:
+    """A portal into the loop this is called on, whichever library it is."""
+    from ._async import current_async
+
+    if current_async().name == "trio":
+        from ._portal import LoopPortal
+
+        return LoopPortal()
+    from ._portal import AsyncioPortal
+
+    return AsyncioPortal()
 
 
 class PrimaryThreadPump:
@@ -277,11 +294,14 @@ class TaskExec:
     thread of the process, and receive an ``AsyncChannel``.  Sources must
     be async: a plain function or a source string without top-level
     ``await`` is rejected before it can starve the loop.  Gateway
-    termination cancels running exec tasks (``trio.Cancelled`` inside the
+    termination cancels running exec tasks (a cancellation inside the
     source).
     """
 
-    def __init__(self, gateway: Any, nursery: trio.Nursery) -> None:
+    def __init__(self, gateway: Any, nursery: Any) -> None:
+        from ._async import current_async
+
+        self._aio = current_async()
         self.gateway = gateway
         self.nursery = nursery
         self._running = 0
@@ -332,7 +352,7 @@ class TaskExec:
                     )
                     return
                 await result
-        except trio.Cancelled:
+        except self._aio.Cancelled:
             raise
         except EOFError:
             trace("ignoring EOFError from async exec")
@@ -358,7 +378,9 @@ def exec_capacity() -> int:
 
     Must be called on the loop (the limiter is a trio run-local).
     """
-    total = trio.to_thread.current_default_thread_limiter().total_tokens
+    from ._async import current_async
+
+    total = current_async().thread_budget()
     return max(1, int(total // 2))
 
 
@@ -399,9 +421,17 @@ class TrioWorkerExec:
         self._shutting_down = False
         self._idle = threading.Event()
         self._idle.set()
-        self._pending_send: trio.MemorySendChannel[tuple[Channel, ExecItem]]
-        self._pending_recv: trio.MemoryReceiveChannel[tuple[Channel, ExecItem]]
-        self._pending_send, self._pending_recv = trio.open_memory_channel(float("inf"))
+        # Built on the main thread rather than on the loop, so the
+        # vocabulary comes from the engine rather than from "which loop am
+        # I in".  Without one -- a pump built in isolation, as the tests do
+        # -- fall back to the loop that is running.
+        from ._async import current_async
+        from ._async import for_backend
+
+        self._aio = (
+            for_backend(engine.backend) if engine is not None else current_async()
+        )
+        self._pending_send, self._pending_recv = self._aio.queue()
         self._pump_started = False
 
     @property
@@ -506,7 +536,7 @@ class TrioWorkerExec:
         """
         try:
             await self.strategy.run(channel, item)
-        except trio.Cancelled:
+        except self._aio.Cancelled:
             raise
         except BaseException as exc:
             trace(f"exec task for channel {channel.id} failed: {exc!r}")
@@ -691,7 +721,10 @@ async def _serve_async_worker(stream: Any, id: str) -> None:
     from ._trio_gateway import AsyncGateway
 
     gateway = AsyncGateway(stream, id=id, _startcount=2)
-    async with trio.open_nursery() as nursery:
+    from ._async import current_async
+
+    aio = current_async()
+    async with aio.task_scope() as nursery:
         task_exec = TaskExec(gateway, nursery)
         gateway._exec_handler = task_exec.handle_exec
         gateway._task_exec = task_exec
@@ -891,7 +924,9 @@ def parse_address(address: str) -> tuple[str, Any]:
 
 async def _socket_stream(sock: Any) -> Any:
     """Wrap an already-connected stdlib socket for the loop."""
-    return trio.SocketStream(trio.socket.from_stdlib_socket(sock))
+    from ._async import current_async
+
+    return await current_async().wrap_socket(sock)
 
 
 class ConnectTransport:
@@ -966,6 +1001,43 @@ class ListenTransport:
         return await _socket_stream(self._sock)
 
 
+#: pure-async worker profiles: the profile *names the library* the exec'd
+#: source may import and await, which is why there is one per library
+#: rather than one "async" that follows whatever the worker happens to run.
+ASYNC_PROFILES = {"trio": "trio", "asyncio": "asyncio"}
+
+
+def run_loop(backend: str, async_fn: Any) -> None:
+    """Run ``async_fn`` as the whole program, on ``backend``."""
+    if backend == "trio":
+        import trio
+
+        trio.run(async_fn)
+        return
+    import asyncio
+
+    asyncio.run(async_fn())
+
+
+def build_engine(name: str) -> Any:
+    """The engine a worker serves its protocol on.
+
+    Mirrors the coordinator's choice (:func:`execnet._engine.pick_backend`):
+    trio when it is installed and gevent has not patched the world underneath
+    it, asyncio otherwise.
+    """
+    from ._engine import pick_backend
+
+    backend = pick_backend()
+    if backend == "trio":
+        from . import _trio_engine
+
+        return _trio_engine.TrioEngine(name=name)
+    from . import _asyncio_engine
+
+    return _asyncio_engine.AsyncioEngine(name=name)
+
+
 def serve_worker(
     transport: Transport,
     *,
@@ -1015,17 +1087,16 @@ def serve_worker(
         executable=sys.executable,
     )
 
-    if profile == "trio":
-        # pure-async profile: one thread, the loop owns the main thread
+    if profile in ASYNC_PROFILES:
+        # pure-async profile: one thread, the loop owns the main thread, and
+        # the profile names the library the exec'd source may use
         async def main() -> None:
             await _serve_async_worker(await transport.open(), id)
 
-        trio.run(main)
+        run_loop(ASYNC_PROFILES[profile], main)
         os._exit(0)
 
-    from . import _trio_engine
-
-    engine = _trio_engine.TrioEngine(name=f"execnet-trio-worker-{id}")
+    engine = build_engine(name=f"execnet-worker-{id}")
     engine.start()
     io = engine.call(transport.open)
     _run_worker(engine, io, id, get_execmodel(profile), wait)

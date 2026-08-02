@@ -14,16 +14,19 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 import warnings
 from typing import Any
 
 import pytest
 
 import execnet
+from execnet import _trio_engine
 from execnet._asyncio_engine import MIN_PYTHON
 from execnet._asyncio_engine import AsyncioEngine
 from execnet._engine import BACKENDS
 from execnet._engine import ProtocolEngine
+from execnet._engine import pick_backend
 from execnet._errors import ForkedResourceError
 from execnet._errors import LoopFinishedError
 from execnet._trio_engine import TrioEngine
@@ -169,21 +172,49 @@ class TestTheContract:
         assert not engine.running
 
 
-class TestOnlyTrioHostsTheCore:
-    """The asyncio engine is a loop, not yet a place gateways can live."""
+class TestEitherBackendHostsTheCore:
+    """Gateways live on whichever loop the engine happens to be."""
 
     @pytest.mark.skipif(
         sys.version_info < MIN_PYTHON, reason="asyncio engine needs 3.11"
     )
-    def test_a_group_on_an_asyncio_engine_says_what_is_missing(self) -> None:
-        engine = ProtocolEngine(backend="asyncio", name="execnet-engine-unported")
+    def test_a_group_on_an_asyncio_engine_works(self) -> None:
+        engine = ProtocolEngine(backend="asyncio", name="execnet-engine-aio-core")
+        group = execnet.Group(engine=engine)
         try:
-            with pytest.raises(NotImplementedError, match="has not been ported"):
-                execnet.Group(engine=engine).makegateway("popen")
+            gateway = group.makegateway("popen")
+            channel = gateway.remote_exec("channel.send(channel.receive() * 2)")
+            channel.send(21)
+            assert channel.receive(TESTTIMEOUT) == 42
+            assert engine._ensure_started().backend == "asyncio"
         finally:
+            group.terminate(timeout=10.0)
             engine.close(timeout=10.0)
 
-    def test_a_group_on_a_trio_engine_does_not(self) -> None:
+    @pytest.mark.skipif(
+        sys.version_info < MIN_PYTHON, reason="asyncio engine needs 3.11"
+    )
+    def test_channels_and_callbacks_work_on_asyncio(self) -> None:
+        engine = ProtocolEngine(backend="asyncio", name="execnet-engine-aio-channels")
+        group = execnet.Group(engine=engine)
+        try:
+            gateway = group.makegateway("popen")
+            channel = gateway.remote_exec("for i in range(4): channel.send(i * 2)")
+            assert [channel.receive(TESTTIMEOUT) for _ in range(4)] == [0, 2, 4, 6]
+
+            seen: list[object] = []
+            other = gateway.remote_exec("channel.send('via callback')")
+            other.setcallback(seen.append, endmarker="END")
+            other.waitclose(TESTTIMEOUT)
+            deadline = time.monotonic() + TESTTIMEOUT
+            while "END" not in seen and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert seen == ["via callback", "END"]
+        finally:
+            group.terminate(timeout=10.0)
+            engine.close(timeout=10.0)
+
+    def test_a_group_on_a_trio_engine_works_too(self) -> None:
         engine = ProtocolEngine(backend="trio", name="execnet-engine-ported")
         group = execnet.Group(engine=engine)
         try:
@@ -195,20 +226,44 @@ class TestOnlyTrioHostsTheCore:
 
 
 class TestBackendSelection:
-    def test_the_default_is_trio(self) -> None:
-        assert ProtocolEngine().backend == "trio"
+    def test_an_unasked_backend_stays_open_until_the_loop_starts(self) -> None:
+        # gevent can patch the world after the engine object exists, and that
+        # is what the choice turns on, so it cannot be settled any earlier
+        assert ProtocolEngine().backend is None
+
+    def test_trio_is_preferred_when_it_is_installed(self) -> None:
+        from execnet import _engine as engine_module
+
+        if engine_module.pick_backend() != "trio":
+            pytest.skip("this run pins a backend")
+        assert pick_backend() == "trio"
         engine = ProtocolEngine(name="execnet-engine-default-backend")
         try:
             assert isinstance(engine.start()._ensure_started(), TrioEngine)
         finally:
             engine.close(timeout=10.0)
 
+    def test_a_patched_process_falls_back_to_asyncio(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # the one environment the trio engine has to refuse is exactly the
+        # one asyncio does not care about, so execnet.gevent works there
+        pytest.importorskip("gevent")
+        monkeypatch.setattr(
+            _trio_engine, "gevent_patched_modules", lambda: ["select", "socket"]
+        )
+        if sys.version_info >= MIN_PYTHON:
+            assert pick_backend() == "asyncio"
+        else:
+            assert pick_backend() == "trio"  # it will refuse, and say why
+
     def test_an_unknown_backend_is_refused_at_construction(self) -> None:
         with pytest.raises(ValueError, match="unknown engine backend"):
             ProtocolEngine(backend="curio")
 
     def test_the_repr_names_the_backend(self) -> None:
-        assert "trio" in repr(ProtocolEngine())
+        assert "asyncio" in repr(ProtocolEngine(backend="asyncio"))
+        assert "auto" in repr(ProtocolEngine())
 
     @pytest.mark.skipif(
         sys.version_info < MIN_PYTHON, reason="asyncio engine needs 3.11"
