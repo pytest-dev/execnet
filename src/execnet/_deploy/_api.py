@@ -90,14 +90,24 @@ class Deployment:
     Provisioning has to happen *before* the process that runs the tests
     exists, because that process has to be running inside the environment
     the project was installed into.  So a deployment is driven through a
-    gateway of its own and the workers come afterwards::
+    gateway of its own, and the workers come afterwards.
 
-        bootstrap = group.makegateway("ssh=host")
-        target = execnet.Deployment(".", roots=["testing"]).deploy(bootstrap)
-        bootstrap.exit()
+    Usually that gateway then stays as the host the workers are spawned
+    *through*: one connection per machine, and the test workers are local
+    children of it rather than N more connections::
 
-        for _ in range(4):
-            group.makegateway(f"ssh=host//{target.spec}")
+        host = group.makegateway("ssh=host//id=h1")
+        target = execnet.Deployment(".", roots=["testing"]).deploy(host)
+
+        for index in range(4):
+            group.makegateway(f"via=h1//{target.spec}//id=w{index}")
+
+    Deploying and running are ordered rather than concurrent, which is
+    also what keeps them off each other: the transfer is done with that
+    host's loop before it starts relaying for anybody.
+
+    For several machines, :meth:`deploy_all` puts one deployment on each
+    at once; each of those hosts then spawns its own workers.
 
     ``project`` is a directory with a ``pyproject.toml`` and a ``uv.lock``
     -- the lockfile is what makes the remote environment reproducible, and
@@ -156,9 +166,10 @@ class Deployment:
     def deploy(self, gateway: Gateway) -> Deployed:
         """Deploy through ``gateway``; blocks until the host is ready.
 
-        The gateway is used and left alone -- it is not the one that will
-        run anything.  Start the workers afterwards, against
-        :attr:`Deployed.spec`.
+        The gateway is used and left as it was -- it is not the one that
+        will run anything.  Start the workers afterwards against
+        :attr:`Deployed.spec`, usually as ``via=`` children of this same
+        gateway.
         """
         return self.deploy_all([gateway])[0]
 
@@ -167,7 +178,9 @@ class Deployment:
 
         One result per gateway, in order.  The wheel is built once and the
         hosts are worked on concurrently, which is the difference between
-        deploying to a cluster and deploying to a cluster N times.
+        deploying to a cluster and deploying to a cluster N times.  One
+        gateway per *machine* is the shape this is for -- the workers on
+        each are spawned through it afterwards, not deployed to.
         """
         from ._facade import run_blocking
         from ._run import deploy_to

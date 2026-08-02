@@ -207,10 +207,15 @@ process that runs the tests, it has to already be inside the environment
 the project was installed into.  So provisioning is its own gateway, and
 the workers come after it::
 
-    bootstrap = group.makegateway("ssh=host")
-    target = execnet.Deployment(project=".", roots=["testing"]).deploy(bootstrap)
-    bootstrap.exit()
-    worker = group.makegateway(f"ssh=host//{target.spec}")
+    host = group.makegateway("ssh=host//id=h1")
+    target = execnet.Deployment(project=".", roots=["testing"]).deploy(host)
+    worker = group.makegateway(f"via=h1//{target.spec}//id=w0")
+
+That gateway usually stays on as the ``via`` host the workers are spawned
+through -- one connection per machine, with the test workers as its local
+children -- so deploying and running are ordered rather than concurrent,
+and the transfer is finished with that host's loop before it starts
+relaying for anyone.
 
 Three steps in the one order that works: a frozen environment
 (``uv sync --frozen`` from the project's own lockfile, so the remote

@@ -33,7 +33,14 @@ A worker on a machine that shares no filesystem with the coordinator needs
 the project before it can run anything -- and because a worker *is* the
 process that runs the tests, it has to already be inside the environment
 the project was installed into.  Provisioning therefore happens through a
-gateway of its own, and the workers come afterwards.
+gateway of its own, and the workers come afterwards -- usually spawned
+*through* that same gateway, so there is one connection per machine::
+
+    host = group.makegateway("ssh=host//id=h1")
+    target = execnet.Deployment(".", roots=["testing"]).deploy(host)
+
+    for index in range(4):
+        group.makegateway(f"via=h1//{target.spec}//id=w{index}")
 
 .. autofunction:: execnet.transfer
 
