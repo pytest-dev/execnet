@@ -1,7 +1,7 @@
 """The blocking execnet API.
 
 A facade over the trio-native core in :mod:`execnet.trio`: gateways run
-their protocol IO on a dedicated Trio host thread while this surface
+their protocol IO on a :class:`~execnet.ProtocolEngine` while this surface
 blocks the calling thread.  The top-level ``execnet.*`` names are aliases
 into this module.
 """
@@ -17,7 +17,7 @@ from ._errors import LoadError
 from ._errors import RemoteError
 from ._errors import TimeoutError
 from ._gateway import Gateway
-from ._host import Host
+from ._engine import ProtocolEngine
 from ._multi import Group
 from ._multi import MultiChannel
 from ._multi import default_group
@@ -35,10 +35,10 @@ __all__ = [
     "DumpError",
     "Gateway",
     "Group",
-    "Host",
     "HostNotFound",
     "LoadError",
     "MultiChannel",
+    "ProtocolEngine",
     "RSync",
     "RemoteError",
     "TimeoutError",

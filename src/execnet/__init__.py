@@ -14,7 +14,7 @@ One namespace per concurrency library you drive execnet from:
 * :mod:`execnet.gevent` — the blocking API with greenlet-parking waits.
 
 :mod:`execnet.trio` is the only one that runs gateways *directly* as tasks
-in your own nursery.  The other three drive a shared Trio host thread, so
+in your own nursery.  The other three drive a shared ProtocolEngine, so
 their blocking calls must not be made from inside a running event loop.
 
 ``can_send`` sits here rather than on any one of them: the wire-format
@@ -34,7 +34,7 @@ from .sync import Deployment
 from .sync import DumpError
 from .sync import Gateway
 from .sync import Group
-from .sync import Host
+from .sync import ProtocolEngine
 from .sync import HostNotFound
 from .sync import LoadError
 from .sync import MultiChannel
@@ -56,10 +56,10 @@ __all__ = [
     "DumpError",
     "Gateway",
     "Group",
-    "Host",
     "HostNotFound",
     "LoadError",
     "MultiChannel",
+    "ProtocolEngine",
     "RSync",
     "RemoteError",
     "TimeoutError",

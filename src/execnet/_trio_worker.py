@@ -379,11 +379,11 @@ class TrioWorkerExec:
 
     def __init__(
         self,
-        host: _trio_host.TrioHost,
+        engine: _trio_host.TrioEngine,
         gateway: WorkerGateway,
         strategy: Any,
     ) -> None:
-        self.host = host
+        self.engine = engine
         self.gateway = gateway
         self.strategy = strategy
         self._lock = threading.Lock()
@@ -449,7 +449,7 @@ class TrioWorkerExec:
                 self._idle.set()
 
     def schedule(self, channel: Channel, sourcetask: bytes) -> None:
-        """Called from the session dispatch on the Trio host thread.
+        """Called from the session dispatch on the Trio engine thread.
 
         Must not block: admission checks and exec run in a nursery task.
         """
@@ -477,17 +477,17 @@ class TrioWorkerExec:
                 " profile=gevent), which are not bounded this way."
             )
             return
-        # Already on the Trio host thread (Message handler).
+        # Already on the Trio engine thread (Message handler).
         if not self._pump_started:
             self._pump_started = True
-            self.host.start_soon(self._pump)
+            self.engine.start_soon(self._pump)
         self._pending_send.send_nowait((channel, item))
 
     async def _pump(self) -> None:
         """Admit queued exec requests in FIFO order, then run each as a task."""
         async for channel, item in self._pending_recv:
             if await self.strategy.admit(channel, item):
-                self.host.start_soon(self._run_exec, channel, item)
+                self.engine.start_soon(self._run_exec, channel, item)
 
     async def _run_exec(self, channel: Channel, item: ExecItem) -> None:
         """Run one admitted request, containing whatever it does.
@@ -500,7 +500,7 @@ class TrioWorkerExec:
         the source returns, and a connection that went away in the meantime
         makes that raise.  There is nobody left to tell, so trace and stop.
 
-        Every ``host.start_soon`` entry point owes the loop this containment;
+        Every ``engine.start_soon`` entry point owes the loop this containment;
         the socket and via handlers in ``_trio_host`` do the same.
         """
         try:
@@ -614,7 +614,7 @@ class _WorkerIOStub:
 
 
 def _build_worker_gateway(
-    host: _trio_host.TrioHost,
+    engine: _trio_host.TrioEngine,
     id: str,
     model: ExecModel,
     wait: WaitBackend = "thread",
@@ -633,7 +633,7 @@ def _build_worker_gateway(
             f"(known: {sorted(WORKER_EXEC_STRATEGIES)})"
         ) from None
     strategy = strategy_factory(gateway)
-    trio_exec = TrioWorkerExec(host, gateway, strategy)
+    trio_exec = TrioWorkerExec(engine, gateway, strategy)
     # Duck-type as the exec pool for STATUS / _terminate_execution.
     gateway._execpool = trio_exec
     gateway._trio_exec = trio_exec
@@ -641,21 +641,21 @@ def _build_worker_gateway(
 
 
 def _run_worker(
-    host: _trio_host.TrioHost,
+    engine: _trio_host.TrioEngine,
     io: Any,
     id: str,
     model: ExecModel,
     wait: WaitBackend = "thread",
 ) -> None:
     """Attach ``io`` as the gateway session and serve until shutdown."""
-    gateway, trio_exec = _build_worker_gateway(host, id, model, wait)
+    gateway, trio_exec = _build_worker_gateway(engine, id, model, wait)
 
     async def _start() -> _trio_host.SyncBridgeGateway:
         # The bridge attaches itself to the gateway before serving starts,
         # so inbound messages can reply through gateway._send right away.
-        return await host.start_session(gateway, io)
+        return await engine.start_session(gateway, io)
 
-    host.call(_start)
+    engine.call(_start)
 
     try:
         if trio_exec.needs_primary_thread:
@@ -666,7 +666,7 @@ def _run_worker(
         # Match WorkerGateway.serve(): swallow in the worker.
         trace("swallowing keyboardinterrupt, serve finished")
     finally:
-        host.stop(timeout=5.0)
+        engine.stop(timeout=5.0)
         # Trio's to_thread cache uses non-daemon threads that would otherwise
         # keep this disposable worker process alive after serve returns.
         os._exit(0)
@@ -1022,10 +1022,10 @@ def serve_worker(
 
     from . import _trio_host
 
-    host = _trio_host.TrioHost(name=f"execnet-trio-worker-{id}")
-    host.start()
-    io = host.call(transport.open)
-    _run_worker(host, io, id, get_execmodel(profile), wait)
+    engine = _trio_host.TrioEngine(name=f"execnet-trio-worker-{id}")
+    engine.start()
+    io = engine.call(transport.open)
+    _run_worker(engine, io, id, get_execmodel(profile), wait)
 
 
 def _rough_version(version: str) -> tuple[int, ...]:

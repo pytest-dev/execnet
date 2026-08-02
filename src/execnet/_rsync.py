@@ -100,7 +100,7 @@ class RSync:
         targets, self._targets = self._targets, []
         run_blocking([target[0] for target in targets], self._send, targets)
 
-    # -- the async half, run on the gateways' host --
+    # -- the async half, run on the gateways' engine --
 
     async def _send(
         self, targets: Sequence[_Target], service_targets: Sequence[ServiceTarget]

@@ -119,7 +119,7 @@ class Channel:
         (including the endmarker) has run.
 
         The pool the callbacks run on is shared and bounded (40 threads by
-        default, ``Host(callback_threads=...)``).  A callback may block --
+        default, ``ProtocolEngine(callback_threads=...)``).  A callback may block --
         that is the point of running it off the loop -- but callbacks that
         block on *each other*, directly or through a queue only another
         callback drains, can occupy the whole pool and stall every channel in
