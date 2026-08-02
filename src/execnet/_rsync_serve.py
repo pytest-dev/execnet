@@ -53,7 +53,7 @@ class _ThreadChannel:
         return trio.from_thread.run(self._channel.receive)
 
 
-async def serve_rsync_request(gateway: Any, channelid: int, data: bytes) -> None:
+async def serve_rsync_request(gateway: Any, channelid: int, request: Any) -> None:
     """Serve one ``GATEWAY_RSYNC`` request; a task on the worker's loop.
 
     Contains its own failures like every other ``start_soon`` entry point:
@@ -62,11 +62,9 @@ async def serve_rsync_request(gateway: Any, channelid: int, data: bytes) -> None
     The coordinator is waiting on this channel, so a failure closes it with
     the reason and surfaces at its ``waitclose()``.
     """
-    from ._serialize import loads_internal
-
     channel = gateway.open_channel(channelid)
     try:
-        destdir, options = loads_internal(data)
+        destdir, options = request
         # the receiver only ever calls send/receive on it, which is the
         # whole of what _ThreadChannel provides
         sync_view = cast("Channel", _ThreadChannel(channel))

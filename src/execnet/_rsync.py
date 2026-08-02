@@ -13,9 +13,14 @@ from hashlib import md5
 from queue import Queue
 from typing import Literal
 
+from execnet import _services
 from execnet._channel import Channel
 from execnet._gateway import Gateway
 from execnet._gateway_base import BaseGateway
+from execnet._message import Message
+
+#: the service name the worker serves this conversation under
+SERVICE = "rsync.legacy"
 
 
 class RSync:
@@ -171,7 +176,16 @@ class RSync:
         def itemcallback(req) -> None:
             self._receivequeue.put((channel, req))
 
-        channel = gateway._request_rsync(str(destdir), options)
+        # the generic service seam: a sync channel of our own, and one
+        # frame naming what should run on it.  Sync all the way down --
+        # this driver blocks the calling thread, which is the whole reason
+        # the layer in execnet._deploy exists beside it.
+        channel = gateway.newchannel()
+        gateway._send(
+            Message.GATEWAY_SERVICE,
+            channel.id,
+            _services.request_frame(SERVICE, (str(destdir), options)),
+        )
         channel.setcallback(itemcallback, endmarker=None)
         self._channels[channel] = finishedcallback
 

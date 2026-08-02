@@ -9,6 +9,7 @@ into this module.
 from ._channel import Channel
 from ._deploy import Deployed
 from ._deploy import Deployment
+from ._deploy import transfer
 from ._errors import DataFormatError
 from ._errors import DumpError
 from ._errors import HostNotFound
@@ -46,4 +47,5 @@ __all__ = [
     "makegateway",
     "set_execmodel",
     "set_profile",
+    "transfer",
 ]

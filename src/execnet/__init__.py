@@ -46,6 +46,7 @@ from .sync import default_group
 from .sync import makegateway
 from .sync import set_execmodel
 from .sync import set_profile
+from .sync import transfer
 
 __all__ = [
     "Channel",
@@ -69,6 +70,7 @@ __all__ = [
     "makegateway",
     "set_execmodel",
     "set_profile",
+    "transfer",
 ]
 
 

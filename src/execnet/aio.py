@@ -44,6 +44,7 @@ import types
 from collections.abc import AsyncIterator
 from collections.abc import Awaitable
 from collections.abc import Callable
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from contextlib import suppress
 from typing import TYPE_CHECKING
@@ -52,6 +53,8 @@ from typing import TypeVar
 
 import trio
 
+from ._deploy import Deployed
+from ._deploy import Deployment
 from ._errors import DataFormatError
 from ._errors import DumpError
 from ._errors import HostNotFound
@@ -73,6 +76,8 @@ __all__ = [
     "AsyncGateway",
     "AsyncGroup",
     "DataFormatError",
+    "Deployed",
+    "Deployment",
     "DumpError",
     "Host",
     "HostNotFound",
@@ -81,7 +86,10 @@ __all__ = [
     "TimeoutError",
     "XSpec",
     "default_host",
+    "deploy",
+    "deploy_all",
     "open_gateway",
+    "transfer",
 ]
 
 T = TypeVar("T")
@@ -296,6 +304,12 @@ class AsyncGateway:
         """Send GATEWAY_TERMINATE to the peer, then close this side."""
         await self._bridge.call(self._gateway.terminate, shield=True)
 
+    def _target(self) -> Any:
+        """This gateway as a service target (transfers, deployments)."""
+        from ._services import ServiceTarget
+
+        return ServiceTarget(self._gateway)
+
 
 class AsyncGroup:
     """asyncio-native gateway group served on a Trio host thread.
@@ -418,6 +432,43 @@ def _set_future_result(future: asyncio.Future[Any], value: Any) -> None:
 def _set_future_error(future: asyncio.Future[Any], error: BaseException) -> None:
     if not future.cancelled():
         future.set_exception(error)
+
+
+async def transfer(
+    gateway: AsyncGateway,
+    source: str | Any,
+    destination: str,
+    **options: Any,
+) -> None:
+    """Copy a tree to ``destination`` on ``gateway``; see :mod:`execnet.trio`."""
+    from ._deploy import _async_api
+
+    await gateway._bridge.call(
+        functools.partial(
+            _async_api.transfer, gateway._target(), source, destination, **options
+        )
+    )
+
+
+async def deploy(deployment: Deployment, gateway: AsyncGateway) -> Deployed:
+    """Deploy through ``gateway`` and return where everything landed."""
+    results = await deploy_all(deployment, [gateway])
+    return results[0]
+
+
+async def deploy_all(
+    deployment: Deployment, gateways: Sequence[AsyncGateway]
+) -> list[Deployed]:
+    """Deploy to every gateway at once, concurrently on the host."""
+    from ._deploy import _async_api
+
+    if not gateways:
+        raise ValueError("no gateways to deploy to")
+    bridge = gateways[0]._bridge
+    targets = [gateway._target() for gateway in gateways]
+    return await bridge.call(
+        functools.partial(_async_api.deploy_all, deployment, targets)
+    )
 
 
 @asynccontextmanager

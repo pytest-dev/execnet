@@ -99,21 +99,10 @@ class Group:
         return self._host._ensure_started()
 
     def host_call(self, trio_host: Any, async_fn: Any, *args: Any) -> Any:
-        """Run ``async_fn`` on the host, parking the way this facade parks.
+        """Run ``async_fn`` on the host, parking the way this facade parks."""
+        from ._trio_host import host_call
 
-        ``wait=thread`` keeps the KI-deferred ``portal.run`` path.  Any other
-        backend implies the caller may not own its OS thread -- a gevent hub
-        runs every other greenlet on it -- so the work becomes a host task
-        and the wait happens on a OneShot with this facade's wakener.
-        """
-        if self._wait_backend == "thread":
-            return trio_host.call(async_fn, *args)
-        from ._boundary import make_wakener
-
-        pending = trio_host.call_pending(
-            async_fn, *args, wakener=make_wakener(self._wait_backend)
-        )
-        return pending.wait()
+        return host_call(trio_host, self._wait_backend, async_fn, *args)
 
     def _ensure_async_group(self) -> Any:
         """The FacadeAsyncGroup owning the async side, running on the host."""

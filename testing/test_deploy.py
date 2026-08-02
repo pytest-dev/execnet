@@ -16,12 +16,30 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
 import execnet
 from execnet import _provision
 from execnet._deploy import Deployment
+from execnet._deploy._api import DEFAULT_WORKSPACE_ROOT
+
+
+def _deploy_request(
+    gateway: execnet.Gateway, request: dict[str, Any]
+) -> dict[str, Any]:
+    """One raw deploy-service round trip, for tests that need a step alone."""
+    from execnet._deploy._facade import run_blocking
+    from execnet._deploy._run import SERVICE
+
+    async def run(targets: Any) -> Any:
+        return await targets[0].request(SERVICE, request)
+
+    reply: dict[str, Any] = run_blocking([gateway], run)
+    return reply
+
 
 TESTTIMEOUT = 300.0
 
@@ -65,7 +83,7 @@ def project(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
 
 
 @pytest.fixture
-def group() -> execnet.Group:
+def group() -> Iterator[execnet.Group]:
     group = execnet.Group()
     try:
         yield group
@@ -79,11 +97,11 @@ class TestDeploymentInputs:
         # there is nothing frozen to install, and resolving on the remote
         # would silently deploy something else
         (tmp_path / "pyproject.toml").write_text(PYPROJECT)
-        with pytest.raises(ValueError, match="uv.lock"):
+        with pytest.raises(ValueError, match=r"uv\.lock"):
             Deployment(tmp_path)
 
     def test_a_directory_without_a_project_is_refused(self, tmp_path) -> None:
-        with pytest.raises(ValueError, match="pyproject.toml"):
+        with pytest.raises(ValueError, match=r"pyproject\.toml"):
             Deployment(tmp_path)
 
     def test_a_missing_root_is_refused(self, project) -> None:
@@ -178,9 +196,8 @@ class TestDeploy:
         # and leaves the gateway usable: the step is a task on the worker's
         # root nursery, so it has to contain what it raises
         gateway = group.makegateway("popen//id=deploy-failure")
-        channel = gateway._request_deploy({"step": "nonsense"})
         with pytest.raises(execnet.RemoteError, match="unknown deployment step"):
-            channel.receive(TESTTIMEOUT)
+            _deploy_request(gateway, {"step": "nonsense"})
         assert gateway.remote_exec("channel.send(1)").receive(TESTTIMEOUT) == 1
 
     def test_the_default_workspace_is_the_hosts_cache(
@@ -188,9 +205,17 @@ class TestDeploy:
     ) -> None:
         # named, not given: the path is expanded on the *host*, where the
         # home directory in question is -- the coordinator cannot know it
-        deployment = Deployment(project, name="execnet-deploy-default")
         gateway = group.makegateway("popen//id=deploy-default")
-        workspace = deployment._prepare(gateway)
+        reply = _deploy_request(
+            gateway,
+            {
+                "step": "prepare",
+                "workspace": None,
+                "root": DEFAULT_WORKSPACE_ROOT,
+                "name": "execnet-deploy-default",
+            },
+        )
+        workspace = str(reply["workspace"])
         try:
             assert workspace.endswith("/execnet-deploy-default")
             assert "~" not in workspace
