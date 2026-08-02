@@ -107,7 +107,9 @@ nitpick_ignore = [
     ("py:class", "execnet._trio_gateway.ByteStream"),
     ("py:class", "execnet._trio_gateway.RawChannel"),
     ("py:class", "execnet._xspec.XSpec"),
-    ("py:class", "execnet.aio._HostBridge"),
+    ("py:class", "XSpec"),
+    ("py:class", "execnet._bridge.AsyncioBridge"),
+    ("py:class", "execnet._bridge.TrioBridge"),
 ]
 
 # -- Options for HTML output --------------------------------------------------

@@ -163,40 +163,54 @@ Provisioning the worker environment
 
 .. _uv: https://docs.astral.sh/uv/
 
-The Trio host thread
+The protocol engine
 ----------------------
 
-Protocol IO is a Trio program.  :mod:`execnet.trio` runs it in the caller's
-own nursery; every other surface has no loop to put it on, so it runs on a
-``Host``: one OS thread running ``trio.run``, shared per process
-(``execnet._host.Host`` -> ``execnet._trio_host.TrioHost``).  ``execnet._host``
-deliberately does not ``import trio``, so ``import execnet`` does not load the
-event loop machinery.
+Protocol IO is a Trio program.  :mod:`execnet.raw_trio` runs it in the
+caller's own nursery; every other surface puts it on a ``ProtocolEngine``:
+one OS thread running ``trio.run``, shared per process
+(``execnet._engine.ProtocolEngine`` -> ``execnet._trio_engine.TrioEngine``).
+``execnet._engine`` deliberately does not ``import trio``, so ``import
+execnet`` does not load the event loop machinery.  ``_trio_engine`` is the
+loop; ``_trio_host`` is the routing layer that runs on it (the sync bridge,
+the facade group, socket and via handling).
 
-Blocking calls cross into it through ``execnet._portal`` and park on a
-wakener from ``execnet._boundary`` -- which is what makes
-:mod:`execnet.gevent` possible: same host, same tasks, a different primitive
-to park on.  Calling a blocking API from inside a running asyncio or trio
-loop would stall that loop, so it raises instead.
+Callers cross into it through ``execnet._portal``.  The blocking surfaces
+park on a wakener from ``execnet._boundary`` -- which is what makes
+:mod:`execnet.gevent` possible: same engine, same tasks, a different
+primitive to park on -- and would stall a running event loop, so they raise
+there instead.  :mod:`execnet.trio` and :mod:`execnet.aio` instead await a
+``Carrier`` from ``execnet._bridge``, one implementation per caller loop
+over an identical engine half.
 
-Sends from a non-host thread wait until the frame is written, so an abrupt
-``os._exit`` cannot drop queued data.  Sends from the host thread itself
-(inside a receiver callback) only enqueue, to avoid deadlocking the writer
-task.  ``setcallback`` runs its callback on a bounded thread pool rather than
-on the loop: a consumer task per channel keeps that channel's order strict
-while a slow callback blocks nothing but its own thread.  The pool is shared
-by every channel in the process and bounded (``Host(callback_threads=...)``,
-40 by default), so callbacks that wait on *each other* can fill it and stall
-the rest; work that waits belongs on a thread of its own.
+Nothing outside ``_trio_engine`` touches the root nursery:
+``TrioEngine.start_task`` is the single door, so every long-lived task is
+one the engine can account for when it shuts down.  It keeps a list of the
+groups running on it for the same reason -- ``close()`` terminates them
+rather than leaving their workers behind, and warns that it had to.
 
-The host itself is not a resource that can be taken away quietly.  Closing
+Sends from a thread that is not the engine's wait until the frame is
+written, so an abrupt ``os._exit`` cannot drop queued data.  Sends from the
+engine thread itself (inside a receiver callback) only enqueue, to avoid
+deadlocking the writer task.  ``setcallback`` runs its callback on a bounded
+thread pool rather than on the loop: a consumer task per channel keeps that
+channel's order strict while a slow callback blocks nothing but its own
+thread.  The pool is shared by every channel in the process and bounded
+(``ProtocolEngine(callback_threads=...)``, 40 by default), so callbacks that
+wait on *each other* can fill it and stall the rest; work that waits belongs
+on a thread of its own.
+
+The engine itself is not a resource that can be taken away quietly.  Closing
 it is final, and a fork leaves every inherited object dead in the child --
 both raise, because the alternative is a wait on a loop that will never run
 again (``execnet._errors.ForkedResourceError``).  For the same reason
 nothing scheduled with ``portal.post`` may raise: trio turns an exception in
 an entry-queue callback into a ``TrioInternalError`` that ends the whole
 run, so a call that loses a race with shutdown reports through its own
-result object instead.
+result object instead.  ``TrioEngine.stop`` posts its shutdown request for
+the mirror-image reason: ``portal.run_sync`` refuses a caller that is itself
+inside a trio run, which is exactly where an async application closes its
+engine from.
 
 Deploying a project
 ----------------------
@@ -207,15 +221,15 @@ process that runs the tests, it has to already be inside the environment
 the project was installed into.  So provisioning is its own gateway, and
 the workers come after it::
 
-    host = group.makegateway("ssh=host//id=h1")
-    target = execnet.Deployment(project=".", roots=["testing"]).deploy(host)
+    machine = group.makegateway("ssh=host//id=h1")
+    target = execnet.Deployment(project=".", roots=["testing"]).deploy(machine)
     worker = group.makegateway(f"via=h1//{target.spec}//id=w0")
 
-That gateway usually stays on as the ``via`` host the workers are spawned
-through -- one connection per machine, with the test workers as its local
-children -- so deploying and running are ordered rather than concurrent,
-and the transfer is finished with that host's loop before it starts
-relaying for anyone.
+That gateway usually stays on as the ``via`` coordinator the workers are
+spawned through -- one connection per machine, with the test workers as its
+local children -- so deploying and running are ordered rather than
+concurrent, and the transfer is finished with before it starts relaying for
+anyone.
 
 Three steps in the one order that works: a frozen environment
 (``uv sync --frozen`` from the project's own lockfile, so the remote
@@ -228,10 +242,10 @@ Both halves travel over the gateway's own protocol, as ``transfer`` and
 ``deploy`` services.  No second connection and no second set of
 credentials, which is what lets the same code reach a container or a pod.
 
-The driver is async and runs on the host, so the blocking API is a facade
-that parks the way its surface parks and ``execnet.trio``/``execnet.aio``
-get the same operations awaited directly.  It also means a fan-out is
-concurrent: one wheel build, one task per host.  A transfer sends one
+The driver is async and runs on the engine, so the blocking API is a facade
+that parks the way its surface parks, and every other surface awaits the
+same operations over its own bridge.  It also means a fan-out is
+concurrent: one wheel build, one task per machine.  A transfer sends one
 manifest of the whole tree rather than a message per directory, the target
 replies with what it is missing (plus a digest for anything whose size
 matches but whose timestamp does not, which is what makes re-sending an
@@ -271,10 +285,10 @@ gets half of it and a request over the line is refused on its channel.  The
 exec task itself contains whatever it raises -- it is a task on the worker's
 *root* nursery, and an exception leaving it ends ``trio.run`` and prints an
 ExceptionGroup onto the user's stderr.  That goes for every
-``host.start_soon`` entry point; the socket and via handlers do the same.
+``engine.start_soon`` entry point; the socket and via handlers do the same.
 
 Infrastructure that used to be expressed by ``remote_exec``-ing source is
-now protocol messages handled on the target's host: ``GATEWAY_START_SOCKET``
+now protocol messages handled on the target's engine: ``GATEWAY_START_SOCKET``
 (``installvia=`` -- bind a one-shot listener and reply with its address),
 ``GATEWAY_START_SUB`` (``via=`` -- spawn a sub-worker and relay its
 protocol over the request channel), and ``GATEWAY_SERVICE``.
