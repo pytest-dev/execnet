@@ -330,7 +330,9 @@ class TestTrioSurface:
                 await transfer_tree_to_all(
                     [
                         (ServiceTarget(gateway), destination)
-                        for gateway, destination in zip(gateways, destinations)
+                        for gateway, destination in zip(
+                            gateways, destinations, strict=True
+                        )
                     ],
                     tree,
                 )

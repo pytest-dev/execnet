@@ -78,11 +78,14 @@ def _link_target(root: str, target: str) -> tuple[str, bool]:
     """
     if not os.path.isabs(target):
         return target, False
-    if os.path.__name__ == "ntpath" and target.startswith("\\\\?\\"):
+    if (
+        os.path.__name__ == "ntpath"
+        and target.startswith("\\\\?\\")
         # Windows readlink gives an extended path for absolute links, and
         # relpath refuses to mix extended and non-extended
-        if not root.startswith("\\\\?\\"):
-            root = "\\\\?\\" + root
+        and not root.startswith("\\\\?\\")
+    ):
+        root = "\\\\?\\" + root
     try:
         relative = os.path.relpath(target, root)
     except ValueError:  # different drives on Windows

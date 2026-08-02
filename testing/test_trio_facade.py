@@ -10,9 +10,8 @@ expose stays unexposed.
 
 from __future__ import annotations
 
-import trio
-
 import pytest
+import trio
 
 import execnet.raw_trio
 import execnet.trio
@@ -192,7 +191,7 @@ class TestItRunsOnTheEngine:
                 channel = await gateway.remote_exec(
                     "for i in range(3): channel.send(i)"
                 )
-                time.sleep(0.3)  # noqa: ASYNC251 - deliberately stalling the loop
+                time.sleep(0.3)
                 assert [await channel.receive() for _ in range(3)] == [0, 1, 2]
 
         run(main)
@@ -294,7 +293,7 @@ class TestDeploymentValidation:
                     await one.makegateway("popen"),
                     await two.makegateway("popen"),
                 ]
-                with pytest.raises(ValueError, match="same execnet.ProtocolEngine"):
+                with pytest.raises(ValueError, match=r"same execnet\.ProtocolEngine"):
                     await execnet.trio.deploy_all(
                         Deployment.__new__(Deployment), gateways
                     )
