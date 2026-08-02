@@ -9,6 +9,7 @@ errors are raised whichever surface you drive a gateway from.
 
 from __future__ import annotations
 
+import builtins
 import os
 import sys
 import traceback
@@ -51,6 +52,44 @@ class ActiveGroupsWarning(UserWarning):
     A ``UserWarning`` rather than a ``ResourceWarning`` on purpose: the
     latter is ignored by default, and something that quietly kills worker
     processes should not be quiet.
+    """
+
+
+class ChannelClosed(OSError):
+    """This channel is finished; the gateway may well be fine.
+
+    Sending to a channel closed from either end, or otherwise using one that
+    has nothing left to do.  An ``OSError``, because that is what execnet has
+    always meant by "gone" and what callers already catch -- pytest-xdist
+    swallows exactly this around its shutdown send.
+    """
+
+
+class GatewayGone(OSError, EOFError):
+    """The connection is finished; nothing on it will work again.
+
+    Two bases on purpose.  ``OSError`` is what execnet has always meant by
+    "gone", and ``EOFError`` is what a broken connection has always surfaced
+    as -- documented behaviour rather than an accident, so a type that meant
+    only one of them would take something away.  Both spellings catch this,
+    and callers who want the distinction now have it.
+
+    (The ``EOFError`` base is the one part of this that is a compatibility
+    accommodation; see the follow-up in ROADMAP-3.0.md.)
+    """
+
+
+class ExecnetStateError(RuntimeError):
+    """This call cannot be made in the state, or the place, you made it.
+
+    A bug in the calling code rather than anything to do with the
+    connection: closing a channel from inside its own ``remote_exec``,
+    receiving from a channel that has a callback registered, using a group
+    that was never started, blocking on an engine from its own loop thread.
+
+    Deliberately **not** an ``OSError``.  That distinction is the point:
+    something retrying on connection loss should not also be retrying on its
+    own mistake, which is what a single type made it do.
     """
 
 
@@ -127,8 +166,18 @@ class RemoteError(Exception):
                 sys.stderr.write(f"[{os.getpid()}] Warning: unhandled {self!r}\n")
 
 
-class TimeoutError(IOError):
-    """Exception indicating that a timeout was reached."""
+class TimeoutError(builtins.TimeoutError):
+    """Nothing arrived within the time allowed.
+
+    Derived from the *builtin* ``TimeoutError``, which shadowing it without
+    subclassing had quietly prevented: ``except TimeoutError:`` -- the
+    obvious spelling, and the one every asyncio caller reaches for, since
+    ``asyncio.TimeoutError`` has *been* the builtin since 3.11 -- used to
+    catch nothing at all here, and only ``except OSError`` worked.
+
+    The builtin is itself an ``OSError``, so this widens what catches it and
+    narrows nothing.
+    """
 
 
 class DataFormatError(Exception):

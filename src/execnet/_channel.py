@@ -22,6 +22,9 @@ from typing import overload
 
 from ._boundary import Flag
 from ._boundary import Mailbox
+from ._errors import ChannelClosed
+from ._errors import ExecnetStateError
+from ._errors import GatewayGone
 from ._errors import RemoteError
 from ._errors import TimeoutError
 from ._message import Message
@@ -261,7 +264,9 @@ class Channel:
         be done explicitly.
         """
         if self._executing:
-            raise OSError("cannot explicitly close channel within remote_exec")
+            raise ExecnetStateError(
+                "cannot explicitly close channel within remote_exec"
+            )
         if self._closed:
             self.gateway._trace(self, "ignoring redundant call to close()")
         if not self._closed:
@@ -346,7 +351,7 @@ class Channel:
         # should not depend on it
         self.gateway._check_usable("channel.send()")
         if self.isclosed():
-            raise OSError(f"cannot send to {self!r}")
+            raise ChannelClosed(f"cannot send to {self!r}")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
     def receive(self, timeout: float | None = None) -> Any:
@@ -363,7 +368,7 @@ class Channel:
         self.gateway._check_usable("channel.receive()")
         mailbox = self._mailbox
         if mailbox is None:
-            raise OSError("cannot receive(), channel has receiver callback")
+            raise ExecnetStateError("cannot receive(), channel has receiver callback")
         x = mailbox.get(timeout)
         if x is ENDMARKER:
             mailbox.put(x)  # for other receivers
@@ -410,7 +415,7 @@ class ChannelFactory:
         """Create a new Channel with 'id' (or create new id if None)."""
         with self._writelock:
             if self.finished:
-                raise OSError(f"connection already closed: {self.gateway}")
+                raise GatewayGone(f"connection already closed: {self.gateway}")
             if id is None:
                 id = self.count
                 self.count += 2
@@ -425,7 +430,7 @@ class ChannelFactory:
         """Reserve a fresh channel id without creating a Channel object."""
         with self._writelock:
             if self.finished:
-                raise OSError(f"connection already closed: {self.gateway}")
+                raise GatewayGone(f"connection already closed: {self.gateway}")
             id = self.count
             self.count += 2
             return id

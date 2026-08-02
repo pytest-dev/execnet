@@ -44,8 +44,11 @@ from ._deploy import Deployment
 from ._deploy._async_api import deploy
 from ._deploy._async_api import deploy_all
 from ._deploy._async_api import transfer
+from ._errors import ChannelClosed
 from ._errors import DataFormatError
 from ._errors import DumpError
+from ._errors import ExecnetStateError
+from ._errors import GatewayGone
 from ._errors import HostNotFound
 from ._errors import LoadError
 from ._errors import RemoteError
@@ -60,10 +63,13 @@ __all__ = [
     "AsyncChannel",
     "AsyncGateway",
     "AsyncGroup",
+    "ChannelClosed",
     "DataFormatError",
     "Deployed",
     "Deployment",
     "DumpError",
+    "ExecnetStateError",
+    "GatewayGone",
     "HostNotFound",
     "LoadError",
     "RemoteError",

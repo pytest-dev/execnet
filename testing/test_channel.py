@@ -9,6 +9,7 @@ import time
 
 import pytest
 
+from execnet import ExecnetStateError
 from execnet import Gateway
 from execnet._channel import Channel
 
@@ -167,7 +168,7 @@ class TestChannelBasicBehaviour:
             """
         )
         channel.setcallback(callback=l.append)
-        pytest.raises(IOError, channel.receive)
+        pytest.raises(ExecnetStateError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 3
         assert l[:2] == [42, 13]
@@ -185,7 +186,7 @@ class TestChannelBasicBehaviour:
         x = channel.receive()
         assert x == 42
         channel.setcallback(callback=l.append)
-        pytest.raises(IOError, channel.receive)
+        pytest.raises(ExecnetStateError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 2
         assert l[0] == 13
@@ -263,7 +264,7 @@ class TestChannelBasicBehaviour:
             """
         )
         channel.setcallback(l.append, 999)
-        pytest.raises(IOError, channel.receive)
+        pytest.raises(ExecnetStateError, channel.receive)
         channel.waitclose(TESTTIMEOUT)
         assert len(l) == 4
         assert l[:2] == [42, 13]

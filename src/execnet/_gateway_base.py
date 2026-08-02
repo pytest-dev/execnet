@@ -30,6 +30,7 @@ from ._channel import ChannelFactory
 from ._channel import Endmarker
 from ._errors import INTERRUPT_TEXT
 from ._errors import ForkedResourceError
+from ._errors import GatewayGone
 from ._errors import geterrortext
 from ._errors import sysex
 from ._message import IO
@@ -153,7 +154,7 @@ class BaseGateway:
                 raise
             except (OSError, ValueError) as e:
                 self._trace("failed to send", message, e)
-                raise OSError("cannot send (already closed?)") from e
+                raise GatewayGone("cannot send (already closed?)") from e
             return
         try:
             message.to_io(self._io)
@@ -161,7 +162,7 @@ class BaseGateway:
         except (OSError, ValueError) as e:
             self._trace("failed to send", message, e)
             # ValueError might be because the IO is already closed
-            raise OSError("cannot send (already closed?)") from e
+            raise GatewayGone("cannot send (already closed?)") from e
 
     def _send_nonblocking(self, msgcode: int, channelid: int = 0) -> None:
         """Best-effort send that never waits (used during GC).

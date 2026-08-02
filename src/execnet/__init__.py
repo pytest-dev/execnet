@@ -32,11 +32,14 @@ from ._serialize import can_send
 from ._version import version as __version__
 from .sync import ActiveGroupsWarning
 from .sync import Channel
+from .sync import ChannelClosed
 from .sync import DataFormatError
 from .sync import Deployed
 from .sync import Deployment
 from .sync import DumpError
+from .sync import ExecnetStateError
 from .sync import Gateway
+from .sync import GatewayGone
 from .sync import Group
 from .sync import HostNotFound
 from .sync import LoadError
@@ -55,11 +58,14 @@ from .sync import transfer
 __all__ = [
     "ActiveGroupsWarning",
     "Channel",
+    "ChannelClosed",
     "DataFormatError",
     "Deployed",
     "Deployment",
     "DumpError",
+    "ExecnetStateError",
     "Gateway",
+    "GatewayGone",
     "Group",
     "HostNotFound",
     "LoadError",
