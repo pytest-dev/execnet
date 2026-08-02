@@ -58,7 +58,7 @@ def run_blocking(
             " event loop. Gateways from one Group always share an engine."
         )
 
-    from .._trio_host import engine_call
+    from .._trio_engine import engine_call
 
     targets = targets_for(gateways)
     return engine_call(  # type: ignore[no-any-return]

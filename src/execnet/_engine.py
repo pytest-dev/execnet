@@ -169,9 +169,9 @@ class ProtocolEngine:
                 # engine that none of the inherited gateways are attached to.
                 raise forked_error(f"{self!r}", self._pid)  # type: ignore[arg-type]
             if self._trio_engine is None:
-                from . import _trio_host
+                from . import _trio_engine
 
-                trio_engine = _trio_host.TrioEngine(
+                trio_engine = _trio_engine.TrioEngine(
                     name=self.name, callback_threads=self.callback_threads
                 )
                 trio_engine.start()

@@ -19,7 +19,7 @@ gevent = pytest.importorskip("gevent")
 
 import execnet  # noqa: E402
 import execnet.gevent  # noqa: E402
-from execnet import _trio_host  # noqa: E402
+from execnet import _trio_engine  # noqa: E402
 from execnet._boundary import Flag  # noqa: E402
 from execnet._boundary import Mailbox  # noqa: E402
 from execnet._boundary import make_wakener  # noqa: E402
@@ -126,7 +126,7 @@ class TestGeventGateway:
         def forbidden(self: object, async_fn: object, *args: object) -> None:
             raise AssertionError("the gevent facade used the blocking portal.run")
 
-        monkeypatch.setattr(_trio_host.TrioEngine, "call", forbidden)
+        monkeypatch.setattr(_trio_engine.TrioEngine, "call", forbidden)
         group = execnet.gevent.Group()
         try:
             gateway = gevent.spawn(group.makegateway, "popen").get(timeout=TESTTIMEOUT)

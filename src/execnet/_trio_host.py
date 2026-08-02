@@ -14,7 +14,6 @@ import subprocess
 import sys
 import threading
 import weakref
-from collections.abc import Awaitable
 from collections.abc import Callable
 from contextlib import suppress
 from typing import TYPE_CHECKING
@@ -24,7 +23,6 @@ from typing import TypeVar
 import trio
 
 from ._boundary import Flag
-from ._boundary import WaitBackend
 from ._channel import ENDMARKER
 from ._channel import NO_ENDMARKER_WANTED
 from ._channel import Endmarker
@@ -32,15 +30,14 @@ from ._errors import GatewayReceivedTerminate
 from ._errors import RemoteError
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
-from ._engine import DEFAULT_CALLBACK_THREADS
 from ._message import FrameDecoder
 from ._message import Message
 from ._message import gateway_info
-from ._portal import LoopPortal
 from ._portal import OneShot
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 from ._trace import trace
+from ._trio_engine import TrioEngine
 from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
@@ -330,7 +327,7 @@ class SyncBridgeGateway(AsyncGateway):
         """
 
         def switch() -> None:
-            if not self.engine.is_engine_thread():
+            if not self.engine._on_engine_thread():
                 # run_on_loop fell back to running us inline: the loop is
                 # gone, so no consumer task can ever drain this channel.
                 # Fail before touching the channel -- a half-switched channel
@@ -409,7 +406,7 @@ class SyncBridgeGateway(AsyncGateway):
         local close, or a raising callback) the endmarker fires and ``done``
         is set -- which is what ``waitclose()`` waits on.
         """
-        limiter = self.engine.callback_limiter
+        limiter = self.engine._limiter
         try:
             async for data in inbox:
                 try:
@@ -535,260 +532,20 @@ class SyncBridgeGateway(AsyncGateway):
         return not self._done_sync.is_set()
 
 
-#: modules trio's cross-thread machinery needs the real versions of
-_GEVENT_SENSITIVE = ("select", "socket", "thread", "queue")
+async def start_session(
+    engine: TrioEngine, gateway: BaseGateway, io: ByteStream
+) -> SyncBridgeGateway:
+    """Serve ``gateway`` over ``io`` as a task on ``engine``.
 
-
-def gevent_patched_modules() -> list[str]:
-    """Which modules the engine loop needs have been monkey-patched by gevent.
-
-    The engine loop is a trio program on its own OS thread, and trio reaches
-    for ``select.epoll``, real sockets, a real ``SimpleQueue`` and real
-    locks to talk to it.  ``gevent.monkey`` replaces those process-wide.
+    A function rather than a :class:`TrioEngine` method because the session
+    it builds belongs to this layer: the engine offers a nursery to start
+    long-lived tasks on and stays ignorant of what they are.
     """
-    monkey = sys.modules.get("gevent.monkey")
-    if monkey is None:
-        return []
-    return [name for name in _GEVENT_SENSITIVE if monkey.is_module_patched(name)]
-
-
-def _check_gevent_not_patched() -> None:
-    """Refuse to start a engine loop in a monkey-patched process.
-
-    Every patching variant we measured is broken, and each fails somewhere
-    inside trio with an error that says nothing about gevent:
-    ``patch_all()`` removes ``select.epoll`` so the IO manager cannot be
-    built, ``patch_all(select=False)`` makes trio's wakeup socketpair a
-    gevent socket (``EBADF``), and patching neither still leaves
-    ``queue.SimpleQueue`` gevent's, so ``from_thread.run`` raises
-    ``LoopExit``.  Refusing here costs a dict lookup and turns all three
-    into one sentence, before a thread exists to fail on.
-
-    Note this is not what makes :mod:`execnet.gevent` work: that surface's
-    waits park the calling greenlet because they wait on a gevent
-    primitive, not because the stdlib was swapped underneath them.  It
-    works in an unpatched process and is the supported way to drive execnet
-    from a gevent application.
-    """
-    patched = gevent_patched_modules()
-    if not patched:
-        return
-    raise RuntimeError(
-        "the execnet engine loop cannot run in this process: gevent has"
-        f" monkey-patched {', '.join(patched)}, and the loop needs the real"
-        " ones (it is a trio program on its own OS thread). execnet supports"
-        " gevent applications that do not monkey-patch these modules --"
-        " execnet.gevent parks the calling greenlet on its blocking waits"
-        " either way, which is what that namespace is for."
+    session = SyncBridgeGateway(
+        io, id=str(gateway.id), sync_gateway=gateway, engine=engine
     )
-
-
-def _startup_hint() -> str:
-    """Name gevent when patching is what kept the loop from starting.
-
-    :func:`_check_gevent_not_patched` catches this before the thread
-    starts; this stays for a process that patches *after* that check, and
-    for whatever else ``gevent.monkey`` grows next.
-    """
-    patched = gevent_patched_modules()
-    if not patched:
-        return ""
-    return (
-        f" -- gevent has monkey-patched {', '.join(patched)}, and the engine loop"
-        " needs the real ones. execnet.gevent supports a process that uses"
-        " gevent without monkey-patching these modules; its blocking waits"
-        " park the calling greenlet either way."
-    )
-
-
-class TrioEngine:
-    """Dedicated OS thread running ``trio.run`` for protocol IO."""
-
-    def __init__(
-        self,
-        name: str = "execnet-trio-engine",
-        callback_threads: int = DEFAULT_CALLBACK_THREADS,
-    ) -> None:
-        self._name = name
-        self._callback_threads = callback_threads
-        self._thread: threading.Thread | None = None
-        self._portal: LoopPortal | None = None
-        self._nursery: trio.Nursery | None = None
-        self._ready = threading.Event()
-        self._shutdown: trio.Event | None = None
-        self._started = False
-        self._callback_limiter: trio.CapacityLimiter | None = None
-        self._startup_error: BaseException | None = None
-
-    def start(self) -> None:
-        if self._started:
-            return
-        _check_gevent_not_patched()
-        self._thread = threading.Thread(target=self._run, name=self._name, daemon=True)
-        self._thread.start()
-        if not self._ready.wait(timeout=30):
-            raise RuntimeError("TrioEngine failed to start within 30s")
-        error = self._startup_error
-        if error is not None:
-            raise RuntimeError(
-                f"the execnet engine loop could not start: {error!r}{_startup_hint()}"
-            ) from error
-        self._started = True
-
-    @property
-    def portal(self) -> LoopPortal:
-        if self._portal is None:
-            raise RuntimeError("TrioEngine is not running")
-        return self._portal
-
-    @property
-    def callback_limiter(self) -> trio.CapacityLimiter:
-        """Bound on concurrent threadpool threads running receiver callbacks."""
-        if self._callback_limiter is None:
-            raise RuntimeError("TrioEngine is not running")
-        return self._callback_limiter
-
-    def is_engine_thread(self) -> bool:
-        return self._portal is not None and self._portal.is_loop_thread()
-
-    def _run(self) -> None:
-        try:
-            trio.run(self._main)
-        except BaseException as exc:
-            if self._ready.is_set():
-                # the loop was up and died later: nobody is waiting on us,
-                # so let the thread report it the loud way
-                raise
-            # start() is blocked on _ready and would otherwise wait out the
-            # full timeout and raise something generic, with the actual
-            # reason only on stderr
-            self._startup_error = exc
-            self._ready.set()
-
-    async def _main(self) -> None:
-        self._portal = LoopPortal()
-        self._shutdown = trio.Event()
-        self._callback_limiter = trio.CapacityLimiter(self._callback_threads)
-        try:
-            async with trio.open_nursery() as nursery:
-                self._nursery = nursery
-                self._ready.set()
-                await self._shutdown.wait()
-                nursery.cancel_scope.cancel()
-        finally:
-            self._nursery = None
-
-    def call(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
-        return self.portal.run(async_fn, *args)
-
-    def call_pending(
-        self,
-        async_fn: Callable[..., Awaitable[T]],
-        *args: Any,
-        wakener: Any = None,
-    ) -> OneShot[T]:
-        """Run ``async_fn`` as a engine task, resolving a :class:`OneShot`.
-
-        The non-blocking counterpart of :meth:`call` for consumers that
-        must not block their OS thread (a gevent hub: waiting on the
-        OneShot with a gevent wakener parks only the calling greenlet).
-        Unlike ``portal.run`` the wait is KeyboardInterrupt-interruptible.
-        """
-        result: OneShot[T] = OneShot(wakener)
-
-        async def runner() -> None:
-            try:
-                value = await async_fn(*args)
-            except trio.Cancelled:
-                if not result.is_set():
-                    result.set_error(RuntimeError("trio engine was shut down"))
-                raise
-            except BaseException as exc:
-                result.set_error(exc)
-            else:
-                result.set(value)
-
-        def spawn() -> None:
-            # Posted callbacks must not raise: trio turns an exception from
-            # an entry-queue callback into TrioInternalError and tears the
-            # whole loop down, taking every gateway in the process with it.
-            # An engine that shut down between the post and here is exactly the
-            # failure this call already reports as a value.
-            try:
-                self.start_soon(runner)
-            except BaseException as exc:
-                error = RuntimeError("trio engine was shut down")
-                error.__cause__ = exc
-                if not result.is_set():
-                    result.set_error(error)
-
-        self.portal.post(spawn)
-        return result
-
-    def call_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
-        return self.portal.run_sync(sync_fn, *args)
-
-    def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
-        """Schedule a task on the root nursery (must be called on the engine thread)."""
-        if not self.is_engine_thread():
-            raise RuntimeError("start_soon requires the Trio engine thread")
-        if self._nursery is None:
-            raise RuntimeError("TrioEngine nursery is not available")
-        self._nursery.start_soon(async_fn, *args)
-
-    async def start_session(
-        self, gateway: BaseGateway, io: ByteStream
-    ) -> SyncBridgeGateway:
-        """Serve ``gateway`` over ``io`` as a task on the root nursery."""
-        if self._nursery is None:
-            raise RuntimeError("TrioEngine nursery is not available")
-        session = SyncBridgeGateway(
-            io, id=str(gateway.id), sync_gateway=gateway, engine=self
-        )
-        await self._nursery.start(session._serve)
-        return session
-
-    def stop(self, timeout: float | None = 5.0) -> None:
-        if not self._started or self._portal is None or self._shutdown is None:
-            return
-
-        def _set() -> None:
-            assert self._shutdown is not None
-            self._shutdown.set()
-
-        try:
-            self._portal.run_sync(_set)
-        except Exception:
-            pass
-        if self._thread is not None:
-            self._thread.join(timeout=timeout)
-        self._started = False
-
-
-def engine_call(
-    trio_engine: TrioEngine,
-    wait_backend: WaitBackend,
-    async_fn: Callable[..., Awaitable[T]],
-    *args: Any,
-) -> T:
-    """Run ``async_fn`` on ``trio_engine``, parking the way ``wait_backend`` does.
-
-    ``thread`` keeps the KI-deferred ``portal.run`` path.  Any other backend
-    implies the caller may not own its OS thread -- a gevent hub runs every
-    other greenlet on it -- so the work becomes a engine task and the wait
-    happens on a ``OneShot`` with that backend's wakener.
-
-    The blocking surfaces all funnel through here: ``Group`` for gateway
-    creation and termination, and the deployment layer for transfers.
-    """
-    if wait_backend == "thread":
-        return trio_engine.call(async_fn, *args)
-    from ._boundary import make_wakener
-
-    pending = trio_engine.call_pending(
-        async_fn, *args, wakener=make_wakener(wait_backend)
-    )
-    return pending.wait()
+    await engine.start_task(session._serve)
+    return session
 
 
 class _TempIO:

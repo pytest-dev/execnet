@@ -26,12 +26,12 @@ from ._boundary import WaitBackend
 from ._channel import NO_ENDMARKER_WANTED
 from ._channel import Channel
 from ._channel import Endmarker
-from ._execmodel import ExecModel
-from ._execmodel import get_execmodel
-from ._execmodel import resolve_profile
 from ._engine import ProtocolEngine
 from ._engine import check_not_in_event_loop
 from ._engine import default_engine
+from ._execmodel import ExecModel
+from ._execmodel import get_execmodel
+from ._execmodel import resolve_profile
 from ._trace import trace
 from ._xspec import XSpec
 
@@ -100,7 +100,7 @@ class Group:
 
     def engine_call(self, trio_engine: Any, async_fn: Any, *args: Any) -> Any:
         """Run ``async_fn`` on the engine, parking the way this facade parks."""
-        from ._trio_host import engine_call
+        from ._trio_engine import engine_call
 
         return engine_call(trio_engine, self._wait_backend, async_fn, *args)
 
@@ -113,7 +113,7 @@ class Group:
 
             async def _start() -> Any:
                 async_group = _trio_host.FacadeAsyncGroup(self, engine)
-                return await engine._nursery.start(async_group.run)
+                return await engine.start_task(async_group.run)
 
             self._async_group = self.engine_call(engine, _start)
         return self._async_group
@@ -282,9 +282,7 @@ class Group:
         self.terminate(timeout=1.0)
         if self._async_group is not None:
             with suppress(Exception):
-                self._engine._ensure_started().call_sync(
-                    self._async_group.shutdown.set
-                )
+                self._engine._ensure_started().call_sync(self._async_group.shutdown.set)
             self._async_group = None
 
     def terminate(self, timeout: float | None = None) -> None:

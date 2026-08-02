@@ -34,10 +34,10 @@ from .sync import Deployment
 from .sync import DumpError
 from .sync import Gateway
 from .sync import Group
-from .sync import ProtocolEngine
 from .sync import HostNotFound
 from .sync import LoadError
 from .sync import MultiChannel
+from .sync import ProtocolEngine
 from .sync import RemoteError
 from .sync import RSync
 from .sync import TimeoutError

@@ -20,16 +20,18 @@ import pytest
 import trio
 
 import execnet
-from execnet import _trio_host
-from execnet._errors import ForkedResourceError
+from execnet import _trio_engine
 from execnet._engine import ProtocolEngine
 from execnet._engine import default_engine
+from execnet._errors import ForkedResourceError
 
 TESTTIMEOUT = 30.0
 
 
 def engine_thread_names() -> list[str]:
-    return [t.name for t in threading.enumerate() if t.name.startswith("execnet-engine")]
+    return [
+        t.name for t in threading.enumerate() if t.name.startswith("execnet-engine")
+    ]
 
 
 class TestSharedEngine:
@@ -83,7 +85,7 @@ class TestSharedEngine:
         async def boom(self: object) -> None:
             raise RuntimeError("no event loop for you")
 
-        monkeypatch.setattr(_trio_host.TrioEngine, "_main", boom)
+        monkeypatch.setattr(_trio_engine.TrioEngine, "_main", boom)
         engine = ProtocolEngine(name="execnet-engine-doomed")
         with pytest.raises(RuntimeError, match="could not start") as excinfo:
             execnet.Group(engine=engine).makegateway("popen")
@@ -346,7 +348,7 @@ class TestPostedCallbacks:
     Trio turns an exception from an entry-queue callback into a
     TrioInternalError and tears the whole run down -- so one call losing a
     race with shutdown would take every gateway in the process with it, and
-    tell the user to file a trio bug.  A engine that is already going away is
+    tell the user to file a trio bug.  An engine that is already going away is
     an ordinary failure of that one call.
     """
 
@@ -364,7 +366,7 @@ class TestPostedCallbacks:
         nursery, trio_engine._nursery = trio_engine._nursery, None
         try:
             # the window between the root nursery closing and the run ending
-            pending = trio_engine.call_pending(never)
+            pending = trio_engine._call_pending(never)
             with pytest.raises(RuntimeError, match="shut down"):
                 pending.wait(TESTTIMEOUT)
         finally:
@@ -390,7 +392,9 @@ class TestPostedCallbacks:
                         await gateway.remote_exec("channel.send(1)")
                 finally:
                     trio_engine._nursery = nursery
-                assert trio_engine._thread is not None and trio_engine._thread.is_alive()
+                assert (
+                    trio_engine._thread is not None and trio_engine._thread.is_alive()
+                )
                 channel = await gateway.remote_exec("channel.send(7)")
                 assert await channel.receive() == 7
 
@@ -537,7 +541,7 @@ class TestGeventPatchedProcess:
         monkeypatch.setitem(
             sys.modules, "gevent.monkey", self.fake_monkey("select", "socket")
         )
-        engine = _trio_host.TrioEngine(name="execnet-engine-patched")
+        engine = _trio_engine.TrioEngine(name="execnet-engine-patched")
         with pytest.raises(RuntimeError) as excinfo:
             engine.start()
         message = str(excinfo.value)
@@ -550,7 +554,9 @@ class TestGeventPatchedProcess:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(sys.modules, "gevent.monkey", self.fake_monkey("queue"))
-        group = execnet.Group(engine=ProtocolEngine(name="execnet-engine-patched-group"))
+        group = execnet.Group(
+            engine=ProtocolEngine(name="execnet-engine-patched-group")
+        )
         try:
             with pytest.raises(RuntimeError, match="monkey-patched queue"):
                 group.makegateway("popen")
