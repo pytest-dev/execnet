@@ -152,6 +152,56 @@ def _request(gateway: execnet.Gateway, name: str, request: object) -> Callable[[
     return call
 
 
+class TestServiceThreadBudget:
+    """Services must not eat the budget exec placement rations.
+
+    ``exec_capacity`` claims half the worker's thread pool and reasons
+    about leaving the rest to "the machinery that has to keep running while
+    execs are in flight".  Services are that machinery and were not in the
+    accounting: unbounded, 25 concurrent transfers held 25 threads and
+    pushed a 5ms ``remote_exec`` out to 3.1 seconds.
+    """
+
+    def test_service_bodies_are_bounded_to_a_quarter_of_the_pool(self) -> None:
+        from execnet._deploy.serve import service_limiter
+
+        async def main() -> None:
+            default = trio.to_thread.current_default_thread_limiter().total_tokens
+            limiter = service_limiter()
+            assert limiter.total_tokens == max(1, int(default // 4))
+            # cached per run, so every service body shares the one bound
+            assert service_limiter() is limiter
+
+        trio.run(main)
+
+    def test_a_worker_stays_responsive_under_concurrent_transfers(
+        self, tmp_path
+    ) -> None:
+        source = tmp_path / "source"
+        source.mkdir()
+        for index in range(8):
+            (source / f"f{index}.bin").write_bytes(b"x" * 400_000)
+
+        async def main() -> None:
+            from execnet._deploy._transfer import transfer_tree
+            from execnet._services import ServiceTarget
+
+            async with execnet.trio.open_gateway("popen") as gateway:
+                target = ServiceTarget(gateway)
+                async with trio.open_nursery() as nursery:
+                    for index in range(12):
+                        nursery.start_soon(
+                            transfer_tree, target, source, str(tmp_path / f"d{index}")
+                        )
+                    await trio.sleep(0.2)
+                    # an exec still gets placed while they run
+                    channel = await gateway.remote_exec("channel.send(1)")
+                    with trio.fail_after(30):
+                        assert await channel.receive() == 1
+
+        trio.run(main)
+
+
 class TestTransfer:
     def test_a_tree_arrives(self, tree, tmp_path, group) -> None:
         gateway = group.makegateway("popen")

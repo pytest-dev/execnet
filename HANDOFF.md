@@ -232,6 +232,13 @@ shape does not dictate the worker's.
   service is a `register()` call on both ends, in or out of tree; there is
   a test (`test_the_core_does_not_name_any_feature`) that greps the core
   for the features built on it, prose included.
+- **Service bodies are bounded to a quarter of the worker's thread pool**
+  (`_deploy/serve.service_limiter`).  `exec_capacity` claims half and
+  reasons about leaving the rest to "the machinery that has to keep running
+  while execs are in flight" — services are that machinery, and were not in
+  that accounting.  Unbounded they starve it: measured, 25 concurrent
+  transfers held 25 threads and pushed a 5ms `remote_exec` out to 3.1s.  A
+  deployment with many roots does exactly that to its own worker.
 - **A service channel's id comes from the sync factory on a coordinator.**
   The sync `ChannelFactory` and the `AsyncGateway` counter both hand out
   odd ids and *will* collide — `ServiceTarget.from_sync` allocates from the

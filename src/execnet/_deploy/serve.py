@@ -52,6 +52,30 @@ class _ThreadChannel:
         return trio.from_thread.run(self._channel.receive)
 
 
+#: how much of the worker's thread pool service bodies may hold at once.
+#: A quarter of it, because ``exec_capacity`` already claims half and
+#: reasons explicitly about leaving "the rest to the machinery that has to
+#: keep running while execs are in flight" -- services are that machinery,
+#: and they were not in that accounting.  Unbounded, they are not: 25
+#: concurrent transfers held 25 threads and pushed a 5ms ``remote_exec``
+#: out to 3.1 seconds, and a deployment with many roots does exactly that
+#: to its own worker.
+_LIMITER: trio.lowlevel.RunVar[trio.CapacityLimiter] = trio.lowlevel.RunVar(
+    "execnet_service_limiter"
+)
+
+
+def service_limiter() -> trio.CapacityLimiter:
+    """The bound on concurrent service bodies (per run; call on the loop)."""
+    try:
+        return _LIMITER.get()
+    except LookupError:
+        total = trio.to_thread.current_default_thread_limiter().total_tokens
+        limiter = trio.CapacityLimiter(max(1, int(total // 4)))
+        _LIMITER.set(limiter)
+        return limiter
+
+
 async def _serve(handler: Any, gateway: Any, channelid: int, request: Any) -> None:
     """Run one service body in a thread, reporting on its channel.
 
@@ -63,7 +87,11 @@ async def _serve(handler: Any, gateway: Any, channelid: int, request: Any) -> No
     channel = gateway.open_channel(channelid)
     try:
         await trio.to_thread.run_sync(
-            handler, _ThreadChannel(channel), request, abandon_on_cancel=True
+            handler,
+            _ThreadChannel(channel),
+            request,
+            abandon_on_cancel=True,
+            limiter=service_limiter(),
         )
     except trio.Cancelled:
         raise
