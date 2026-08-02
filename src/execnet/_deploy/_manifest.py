@@ -27,9 +27,9 @@ class Entry(NamedTuple):
     """One path in a manifest.
 
     ``mode`` is the raw ``st_mode``.  For a file ``mtime``/``size`` are its
-    own; for a link ``target`` is what it points at, and for a *relative*
-    link inside the tree that target is rewritten to be relative to the
-    tree root, so it survives landing somewhere else.
+    own; for a link ``target`` is what it points at, rebased onto the tree
+    root when it was an absolute path pointing inside it (see
+    :func:`_link_target`).
     """
 
     path: str
@@ -64,26 +64,30 @@ class Manifest(NamedTuple):
 Filter = Callable[[str], bool]
 
 
-def _relative_link(root: str, path: str, target: str) -> tuple[str, bool]:
-    """A link's target, made relative to ``root`` when it points inside it.
+def _link_target(root: str, target: str) -> tuple[str, bool]:
+    """A link's target as it should be recreated, and whether it was rebased.
 
-    A link pointing within the tree should still point within the tree
-    after the tree moves; one pointing outside is copied verbatim, whether
-    or not the other end exists over there.
+    A *relative* link is left exactly as it is: being relative is what
+    makes it survive the move, and rewriting it would turn a link that
+    means "my neighbour" into one naming a particular directory.
+
+    An *absolute* link is rebased when it points inside the tree, so it
+    points inside the copy rather than back at the original.  One pointing
+    anywhere else is copied verbatim, whether or not the other end exists
+    over there.
     """
+    if not os.path.isabs(target):
+        return target, False
     if os.path.__name__ == "ntpath" and target.startswith("\\\\?\\"):
         # Windows readlink gives an extended path for absolute links, and
         # relpath refuses to mix extended and non-extended
         if not root.startswith("\\\\?\\"):
             root = "\\\\?\\" + root
-    absolute = target if os.path.isabs(target) else os.path.join(os.path.dirname(path), target)
     try:
-        relative = os.path.relpath(absolute, root)
+        relative = os.path.relpath(target, root)
     except ValueError:  # different drives on Windows
         return target, False
-    if relative == os.curdir or relative == os.pardir:
-        return target, False
-    if relative.startswith(os.pardir + os.sep):
+    if relative in (os.curdir, os.pardir) or relative.startswith(os.pardir + os.sep):
         return target, False
     return relative.replace(os.sep, "/"), True
 
@@ -118,11 +122,9 @@ def walk(root: str, filter: Filter | None = None) -> Manifest:
                     continue
                 visit(child, f"{relative}/{name}" if relative else name)
         elif stat.S_ISREG(st.st_mode):
-            entries.append(
-                Entry(relative, "file", st.st_mode, st.st_mtime, st.st_size)
-            )
+            entries.append(Entry(relative, "file", st.st_mode, st.st_mtime, st.st_size))
         elif stat.S_ISLNK(st.st_mode):
-            target, internal = _relative_link(root, path, os.readlink(path))
+            target, internal = _link_target(root, os.readlink(path))
             entries.append(
                 Entry(relative, "link", st.st_mode, target=target, internal=internal)
             )

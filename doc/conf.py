@@ -99,8 +99,11 @@ nitpick_ignore = [
     ("py:class", "execnet._channel.ChannelFileWrite"),
     ("py:class", "execnet._gateway.Gateway"),
     # `from __future__ import annotations` leaves a TYPE_CHECKING-only name
-    # exactly as it was written, so this is the same class as the line above
+    # exactly as it was written, so these are the private types above
     ("py:class", "Gateway"),
+    ("py:class", "Filter"),
+    ("py:class", "Progress"),
+    ("py:class", "ServiceTarget"),
     ("py:class", "execnet._trio_gateway.ByteStream"),
     ("py:class", "execnet._trio_gateway.RawChannel"),
     ("py:class", "execnet._xspec.XSpec"),

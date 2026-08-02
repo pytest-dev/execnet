@@ -66,9 +66,7 @@ async def deploy(
     return results[0]
 
 
-async def deploy_all(
-    deployment: Deployment, gateways: Sequence[Any]
-) -> list[Deployed]:
+async def deploy_all(deployment: Deployment, gateways: Sequence[Any]) -> list[Deployed]:
     """Deploy to every gateway at once; one result each, in order.
 
     The wheel is built once and the hosts are worked on concurrently --

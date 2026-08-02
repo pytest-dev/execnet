@@ -162,8 +162,10 @@ shape does not dictate the worker's.
 | `sync.py` / `trio.py` / `aio.py` / `gevent.py` | the four public namespaces |
 | `_cli.py` / `_socketserver.py` / `_provision.py` | the CLI, `execnet server`, uv provisioning + argv builders |
 | `_execmodel.py` | `WORKER_PROFILES`, `resolve_profile`, and the deprecated `ExecModel` xdist shim |
-| `_rsync.py` / `_rsync_remote.py` / `_rsync_serve.py` | the rsync driver (coordinator), the receiver body, and the worker-side `GATEWAY_RSYNC` service that runs it in a thread |
-| `_deploy.py` / `_deploy_serve.py` | `Deployment`/`Deployed`: a frozen uv environment, the project's wheel, and the roots the wheel does not carry — driven through a bootstrap gateway, installed by the `GATEWAY_DEPLOY` service |
+| `_services.py` | the service seam: `GATEWAY_SERVICE` requests, a name→import-string registry resolved lazily, and `ServiceTarget` (the one thing the surfaces disagree about — where a channel id comes from) |
+| `_deploy/` | transfers and deployments, built entirely on that seam. `_manifest` (walk a tree, compare two), `_transfer` (the async driver), `_run` (staging + the deploy steps), `serve` (both worker halves), `_api`/`_async_api`/`_facade` (the three surfaces) |
+| `_rsync.py` | the deprecated `RSync`, now a thin adapter over the same transfer |
+| `_rsync_remote.py` | dead: the pre-3.0 receiver, kept only so `execnet.rsync_remote` still resolves |
 | `_xspec.py` / `_exec_source.py` | spec parsing, remote_exec source normalization |
 | `_trace.py` / `_gevent_support.py` | `EXECNET_DEBUG` tracing; the gevent wait backend's hub plumbing |
 | `__main__.py` / `_version.py` | `python -m execnet` → `_cli.main`; the generated version |
@@ -221,10 +223,20 @@ shape does not dictate the worker's.
 **Launch and provisioning**
 
 - No source shipping, with no exceptions left: rsync was the last one, and
-  is now the `GATEWAY_RSYNC` service (`_rsync_serve.py`) rather than a
-  `remote_exec` of the receiver's source.  It also claims no exec slot, and
-  works against a `profile=trio` worker, which rejects sync sources and so
-  could never run the old receiver.
+  is now the `transfer` service rather than a `remote_exec` of the
+  receiver's source.  Services claim no exec slot and work against a
+  `profile=trio` worker, which rejects sync sources and so could never run
+  the old receiver.
+- **The protocol core names no feature.**  One `GATEWAY_SERVICE` opcode,
+  and `_services._REGISTRY` maps a name to an import string.  Adding a
+  service is a `register()` call on both ends, in or out of tree; there is
+  a test (`test_the_core_does_not_name_any_feature`) that greps the core
+  for the features built on it, prose included.
+- **A service channel's id comes from the sync factory on a coordinator.**
+  The sync `ChannelFactory` and the `AsyncGateway` counter both hand out
+  odd ids and *will* collide — `ServiceTarget.from_sync` allocates from the
+  factory, as the via transport does.  Getting this wrong gives two
+  channels one id, which looks like arbitrary protocol corruption.
 - **The worker config never travels in an argv, local or remote.**  It is a
   `GATEWAY_CONFIG` frame on the protocol stream, the same on every
   transport (`_handshake.py`).  It carries `env:` values, and `/proc` is

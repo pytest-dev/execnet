@@ -54,8 +54,6 @@ _REGISTRY: dict[str, str] = {
     # the file transfer and the deployment steps built on it
     "transfer": "execnet._deploy.serve:receive_transfer",
     "deploy": "execnet._deploy.serve:run_deploy_step",
-    # the pre-3.0 rsync conversation, kept for the deprecated execnet.RSync
-    "rsync.legacy": "execnet._rsync_serve:serve_rsync_request",
 }
 
 

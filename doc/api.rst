@@ -26,11 +26,28 @@ IO, so calling one from inside a running asyncio or trio event loop raises
 .. autoclass:: execnet.Host
    :members: start, running, close
 
+Getting a project onto a host
+------------------------------------------------------------------------------
+
+A worker on a machine that shares no filesystem with the coordinator needs
+the project before it can run anything -- and because a worker *is* the
+process that runs the tests, it has to already be inside the environment
+the project was installed into.  Provisioning therefore happens through a
+gateway of its own, and the workers come afterwards.
+
+.. autofunction:: execnet.transfer
+
 .. autoclass:: execnet.Deployment
-   :members: deploy
+   :members: deploy, deploy_all
 
 .. autoclass:: execnet.Deployed
    :members: spec, translate, workspace, python, paths
+
+:class:`execnet.RSync` still works and is what pytest-xdist uses, but it is
+deprecated in favour of :func:`execnet.transfer`: it is now a thin adapter
+over the same transfer, and only its optional ``callback`` behaves
+differently (it is handed the gateway rather than a channel, and reports a
+file when it is sent rather than when the far side confirms it).
 
 
 .. _execnet-trio:
@@ -51,6 +68,13 @@ execnet.trio -- trio-native
 
 .. autofunction:: execnet.trio.open_gateway
 
+Transfers and deployments are awaited here rather than blocking, and a
+fan-out across gateways runs concurrently:
+
+.. autofunction:: execnet.trio.transfer
+.. autofunction:: execnet.trio.deploy
+.. autofunction:: execnet.trio.deploy_all
+
 
 .. _execnet-aio:
 
@@ -69,6 +93,9 @@ execnet.aio -- asyncio-native
    :members: send, receive, send_eof, aclose, wait_closed, isclosed
 
 .. autofunction:: execnet.aio.open_gateway
+.. autofunction:: execnet.aio.transfer
+.. autofunction:: execnet.aio.deploy
+.. autofunction:: execnet.aio.deploy_all
 
 
 .. _execnet-gevent:

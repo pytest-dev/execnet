@@ -230,13 +230,11 @@ What execnet should own instead, so xdist's version becomes a few calls:
    `Deployed.paths` maps each local root to where it landed, and
    `Deployed.translate()` rewrites a path under one.  Directory roots land
    as their own basename under the workspace, file roots directly in it.
-3. **rsync as a first-class operation.**  *Done for the transport half*:
-   `GATEWAY_RSYNC` is a request the worker serves itself
-   (`_rsync_serve.py`), so no source is shipped, no exec slot is claimed,
-   and it works against a `profile=trio` worker.  Still open: the async
-   surfaces have no `RSync` — the driver in `_rsync.py` is sync and
-   blocking, and giving `execnet.trio`/`execnet.aio` one means either an
-   async driver beside it or making the sync one a facade over that.
+3. **rsync as a first-class operation.**  *Done.*  `execnet.transfer` (and
+   the `transfer` service behind it) replaces it: async-native, host-run,
+   concurrent across targets, and available on all four surfaces.  The
+   deprecated `RSync` is a ~50-line adapter over the same driver, so there
+   is one implementation; it goes when pytest-xdist stops subclassing it.
 
 **Decided, and built**: the worker is the test process, so it has to be
 running inside the environment the project was installed into — which
@@ -260,6 +258,10 @@ Of the open questions, three answered themselves in the building:
 
 Still open:
 
+- **Flow control**, unchanged and now visible in one place: the transfer's
+  chunk loop bounds the memory a single file costs, but a fast sender
+  still outruns a slow receiver into its buffers.  When the credit scheme
+  below lands, that loop is where it plugs in.
 - **Cleanup**: nothing deletes a workspace.  That is deliberate for now —
   reuse is the point — but a long-lived host accumulates one per name, and
   a coordinator that dies without terminating leaves it.
