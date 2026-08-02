@@ -31,10 +31,10 @@ class HostNotFound(ConnectionError):
 class ForkedResourceError(OSError):
     """An execnet object was inherited by ``os.fork()`` and is dead here.
 
-    Nothing execnet builds survives a fork: the host's loop thread is not
+    Nothing execnet builds survives a fork: the engine's loop thread is not
     duplicated into the child, and the worker connections belong to the
     parent that opened them.  Rather than let the child block forever on a
-    loop that will never run again, every route to the host checks which
+    loop that will never run again, every route to the engine checks which
     process it is in and raises this.
 
     An ``OSError`` because that is what execnet already means by "this
@@ -44,7 +44,7 @@ class ForkedResourceError(OSError):
     through.
 
     Recovery is explicit and belongs to the child: build a new
-    :class:`~execnet.Host` and a new ``Group`` on it.
+    :class:`~execnet.ProtocolEngine` and a new ``Group`` on it.
     """
 
 
@@ -52,9 +52,10 @@ def forked_error(what: str, origin_pid: int) -> ForkedResourceError:
     """The :class:`ForkedResourceError` for using ``what`` after a fork."""
     return ForkedResourceError(
         f"{what} belongs to pid {origin_pid} and this is pid {os.getpid()}:"
-        " execnet objects do not survive os.fork() -- the host's loop thread"
+        " execnet objects do not survive os.fork() -- the engine's loop thread"
         " is not duplicated into the child, and the worker connections stay"
-        " with the parent. Build a new Host and a new Group in the child."
+        " with the parent. Build a new ProtocolEngine and a new Group in the"
+        " child."
     )
 
 
@@ -91,7 +92,7 @@ class RemoteError(Exception):
     def warn(self) -> None:
         if self.formatted != INTERRUPT_TEXT:
             # A best-effort diagnostic that must not raise: it runs for a
-            # channel nobody kept a reference to, which can be on the host
+            # channel nobody kept a reference to, which can be on the engine
             # loop (a close replayed to a late-bound consumer) and as late
             # as interpreter shutdown, where stderr may already be closed.
             # An exception on the loop ends the run for every gateway.

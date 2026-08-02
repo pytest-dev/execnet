@@ -10,6 +10,7 @@ from typing import TypeVar
 import pytest
 
 import execnet.aio
+from execnet._engine import default_engine
 
 T = TypeVar("T")
 
@@ -172,10 +173,10 @@ def test_group_start_and_aclose_explicitly() -> None:
     run(main())
 
 
-def test_groups_share_the_default_host() -> None:
+def test_groups_share_the_default_engine() -> None:
     async def main() -> None:
         async with execnet.aio.AsyncGroup() as a, execnet.aio.AsyncGroup() as b:
-            assert a.host is b.host
-            assert a.host is execnet.aio.default_host()
+            assert a.engine is b.engine
+            assert a.engine is default_engine()
 
     run(main())

@@ -10,7 +10,8 @@ calling *greenlet* rather than its OS thread::
     channel = gateway.remote_exec("channel.send(6 * 7)")
     print(channel.receive())          # parks this greenlet, not the hub
 
-Protocol IO runs on the shared Trio host thread as it does for every
+Protocol IO runs on the shared :class:`~execnet.ProtocolEngine` as it does
+for every
 blocking surface; the difference is only which primitive a waiter parks
 on, so a slow ``receive`` no longer stalls the whole hub.  Requires
 gevent (``execnet[gevent]``).
@@ -19,13 +20,13 @@ This is about the *caller*: the worker's own shape is the ``profile=``
 spec key, and ``profile=gevent`` is an independent choice.
 
 Importing this module monkey-patches nothing, and **the process it runs in
-must not have monkey-patched either**: the host loop is a Trio program on
+must not have monkey-patched either**: the engine loop is a Trio program on
 its own OS thread, and it needs the real ``select`` (for ``epoll``),
 ``socket``, ``thread`` and ``queue``, which ``gevent.monkey`` replaces
 process-wide.  Patching is not what makes this namespace work anyway --
 its waits park the calling greenlet because they wait on a gevent
 primitive, not because the stdlib was swapped underneath them.  Starting a
-host in a patched process is refused before the loop thread exists, with
+an engine in a patched process is refused before the loop thread exists, with
 an error naming what was patched.
 """
 
@@ -44,7 +45,7 @@ from ._multi import MultiChannel
 from ._xspec import XSpec
 from .sync import Channel
 from .sync import Gateway
-from .sync import Host
+from .sync import ProtocolEngine
 from .sync import RSync
 
 __all__ = [
@@ -53,10 +54,10 @@ __all__ = [
     "DumpError",
     "Gateway",
     "Group",
-    "Host",
     "HostNotFound",
     "LoadError",
     "MultiChannel",
+    "ProtocolEngine",
     "RSync",
     "RemoteError",
     "TimeoutError",

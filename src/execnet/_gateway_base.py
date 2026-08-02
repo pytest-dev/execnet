@@ -66,7 +66,7 @@ class BaseGateway:
 
             raise forked_error(what, self._pid)
         if self._guard_event_loop:
-            from ._host import check_not_in_event_loop
+            from ._engine import check_not_in_event_loop
 
             check_not_in_event_loop(what)
 
@@ -74,7 +74,7 @@ class BaseGateway:
         self.execmodel = io.execmodel
         self._io = io
         self.id = id
-        #: pid this gateway's connection (and its host loop) belongs to
+        #: pid this gateway's connection (and its engine loop) belongs to
         self._pid = os.getpid()
         self._channelfactory = ChannelFactory(self, _startcount)
         # globals may be NONE at process-termination

@@ -67,7 +67,7 @@ class LoopPortal:
         sits here rather than on each of them.
         """
         if self._pid != os.getpid():
-            raise forked_error("the execnet host loop", self._pid)
+            raise forked_error("the execnet engine loop", self._pid)
 
     def run(self, async_fn: Callable[..., Awaitable[T]], *args: Any) -> T:
         """Run ``await async_fn(*args)`` on the loop, blocking this thread."""

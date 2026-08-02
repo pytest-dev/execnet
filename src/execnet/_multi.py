@@ -29,9 +29,9 @@ from ._channel import Endmarker
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
 from ._execmodel import resolve_profile
-from ._host import Host
-from ._host import check_not_in_event_loop
-from ._host import default_host
+from ._engine import ProtocolEngine
+from ._engine import check_not_in_event_loop
+from ._engine import default_engine
 from ._trace import trace
 from ._xspec import XSpec
 
@@ -55,16 +55,16 @@ class Group:
         xspecs: Iterable[XSpec | str | None] = (),
         profile: str | None = None,
         *,
-        host: Host | None = None,
+        engine: ProtocolEngine | None = None,
         execmodel: str | None = None,
     ) -> None:
         """Initialize a group and make gateways as specified.
 
         ``profile`` is the default worker profile for gateways created
-        without an explicit ``profile=`` in their spec.  ``host`` is the
-        Trio host thread to serve this group's protocol IO on; it defaults
-        to the process-wide one.  ``execmodel`` is the deprecated spelling
-        of ``profile`` (pytest-xdist still passes it).
+        without an explicit ``profile=`` in their spec.  ``engine`` is the
+        :class:`~execnet.ProtocolEngine` to serve this group's protocol IO
+        on; it defaults to the process-wide one.  ``execmodel`` is the
+        deprecated spelling of ``profile`` (pytest-xdist still passes it).
         """
         if execmodel is not None:
             if profile is not None:
@@ -83,7 +83,7 @@ class Group:
         self._gateways_to_join: list[Gateway] = []
         #: pid this group belongs to; a fork does not carry its gateways over
         self._pid = os.getpid()
-        self._host = default_host() if host is None else host
+        self._engine = default_engine() if engine is None else engine
         self._async_group: Any = None
         self.set_profile("thread" if profile is None else profile)
         for xspec in xspecs:
@@ -91,31 +91,31 @@ class Group:
         atexit.register(self._cleanup_atexit)
 
     @property
-    def host(self) -> Host:
-        """The Trio host thread this group's protocol IO runs on."""
-        return self._host
+    def engine(self) -> ProtocolEngine:
+        """The :class:`~execnet.ProtocolEngine` this group's IO runs on."""
+        return self._engine
 
-    def _ensure_trio_host(self) -> Any:
-        return self._host._ensure_started()
+    def _ensure_trio_engine(self) -> Any:
+        return self._engine._ensure_started()
 
-    def host_call(self, trio_host: Any, async_fn: Any, *args: Any) -> Any:
-        """Run ``async_fn`` on the host, parking the way this facade parks."""
-        from ._trio_host import host_call
+    def engine_call(self, trio_engine: Any, async_fn: Any, *args: Any) -> Any:
+        """Run ``async_fn`` on the engine, parking the way this facade parks."""
+        from ._trio_host import engine_call
 
-        return host_call(trio_host, self._wait_backend, async_fn, *args)
+        return engine_call(trio_engine, self._wait_backend, async_fn, *args)
 
     def _ensure_async_group(self) -> Any:
-        """The FacadeAsyncGroup owning the async side, running on the host."""
+        """The FacadeAsyncGroup owning the async side, on the engine."""
         if self._async_group is None:
             from . import _trio_host
 
-            host = self._ensure_trio_host()
+            engine = self._ensure_trio_engine()
 
             async def _start() -> Any:
-                async_group = _trio_host.FacadeAsyncGroup(self, host)
-                return await host._nursery.start(async_group.run)
+                async_group = _trio_host.FacadeAsyncGroup(self, engine)
+                return await engine._nursery.start(async_group.run)
 
-            self._async_group = self.host_call(host, _start)
+            self._async_group = self.engine_call(engine, _start)
         return self._async_group
 
     @property
@@ -272,8 +272,8 @@ class Group:
         self._gateways_to_join.append(gateway)
 
     def _cleanup_atexit(self) -> None:
-        # The host is shared and stops itself at exit; a group only owns
-        # its gateways and the async group task running on that host.
+        # The engine is shared and stops itself at exit; a group only owns
+        # its gateways and the async group task running on that engine.
         if self._pid != os.getpid():
             # a forked child inherited this registration along with a group
             # whose gateways are the parent's to terminate, not ours
@@ -282,7 +282,9 @@ class Group:
         self.terminate(timeout=1.0)
         if self._async_group is not None:
             with suppress(Exception):
-                self._host._ensure_started().call_sync(self._async_group.shutdown.set)
+                self._engine._ensure_started().call_sync(
+                    self._async_group.shutdown.set
+                )
             self._async_group = None
 
     def terminate(self, timeout: float | None = None) -> None:
@@ -296,8 +298,8 @@ class Group:
         attempts.
         """
         if self or self._gateways_to_join:
-            # blocks on the host (termination grace, then joins), so it has
-            # the same event-loop problem as makegateway() and receive()
+            # blocks on the engine (termination grace, then joins), so it
+            # has the same event-loop problem as makegateway() and receive()
             check_not_in_event_loop("Group.terminate()")
         while self or self._gateways_to_join:
             # A coordinator is held back from this pass: a tunneled gateway
@@ -319,17 +321,17 @@ class Group:
                 # each with a GATEWAY_TERMINATE + timeout grace, then kill;
                 # bounded at roughly twice the timeout (issues #43 / #221).
                 try:
-                    self._host_terminate(timeout)
+                    self._engine_terminate(timeout)
                 except Exception as exc:
                     trace("group terminate error:", exc)
             for gw in self._gateways_to_join:
                 gw.join()
             self._gateways_to_join[:] = []
 
-    def _host_terminate(self, timeout: float | None) -> None:
+    def _engine_terminate(self, timeout: float | None) -> None:
         """Terminate the async group, parking the way this facade parks."""
-        trio_host = self._host._ensure_started()
-        self.host_call(trio_host, self._async_group.terminate, timeout)
+        trio_engine = self._engine._ensure_started()
+        self.engine_call(trio_engine, self._async_group.terminate, timeout)
 
     def remote_exec(
         self,

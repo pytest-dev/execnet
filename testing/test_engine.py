@@ -1,9 +1,9 @@
-"""The Trio host thread: sharing, explicit override, and loop-misuse guards.
+"""The protocol engine: sharing, explicit override, and loop-misuse guards.
 
-``execnet.trio`` runs gateways directly in the caller's own nursery; every
-other surface drives a :class:`execnet.Host`.  One is shared per process,
-and blocking on it from inside a running event loop is an error rather
-than a hang.
+``execnet.raw_trio`` runs gateways directly in the caller's own nursery;
+every other surface drives a :class:`execnet.ProtocolEngine`.  One is
+shared per process, and blocking on it from inside a running event loop is
+an error rather than a hang.
 """
 
 from __future__ import annotations
@@ -22,28 +22,28 @@ import trio
 import execnet
 from execnet import _trio_host
 from execnet._errors import ForkedResourceError
-from execnet._host import Host
-from execnet._host import default_host
+from execnet._engine import ProtocolEngine
+from execnet._engine import default_engine
 
 TESTTIMEOUT = 30.0
 
 
-def host_thread_names() -> list[str]:
-    return [t.name for t in threading.enumerate() if t.name.startswith("execnet-host")]
+def engine_thread_names() -> list[str]:
+    return [t.name for t in threading.enumerate() if t.name.startswith("execnet-engine")]
 
 
-class TestSharedHost:
-    def test_groups_share_the_default_host(self) -> None:
+class TestSharedEngine:
+    def test_groups_share_the_default_engine(self) -> None:
         a = execnet.Group()
         b = execnet.Group()
-        assert a.host is b.host is default_host()
+        assert a.engine is b.engine is default_engine()
 
     def test_many_groups_run_one_thread(self) -> None:
         groups = [execnet.Group() for _ in range(3)]
         try:
             for group in groups:
                 group.makegateway("popen")
-            assert len(host_thread_names()) == 1
+            assert len(engine_thread_names()) == 1
             for group in groups:
                 channel = group[0].remote_exec("channel.send(1)")
                 assert channel.receive(TESTTIMEOUT) == 1
@@ -51,28 +51,28 @@ class TestSharedHost:
             for group in groups:
                 group.terminate(timeout=5.0)
 
-    def test_explicit_host_is_isolated_and_closes(self) -> None:
-        host = Host(name="execnet-host-isolated")
-        group = execnet.Group(host=host)
-        assert group.host is host
-        assert group.host is not default_host()
+    def test_explicit_engine_is_isolated_and_closes(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-isolated")
+        group = execnet.Group(engine=engine)
+        assert group.engine is engine
+        assert group.engine is not default_engine()
         try:
             gateway = group.makegateway("popen")
             channel = gateway.remote_exec("channel.send(6 * 7)")
             assert channel.receive(TESTTIMEOUT) == 42
-            assert "execnet-host-isolated" in host_thread_names()
+            assert "execnet-engine-isolated" in engine_thread_names()
         finally:
             group.terminate(timeout=5.0)
-        host.close()
-        assert not host.running
-        assert "execnet-host-isolated" not in host_thread_names()
+        engine.close()
+        assert not engine.running
+        assert "execnet-engine-isolated" not in engine_thread_names()
 
-    def test_host_context_manager_closes(self) -> None:
-        with Host(name="execnet-host-ctx") as host:
-            group = execnet.Group(host=host)
+    def test_engine_context_manager_closes(self) -> None:
+        with ProtocolEngine(name="execnet-engine-ctx") as engine:
+            group = execnet.Group(engine=engine)
             group.makegateway("popen")
             group.terminate(timeout=5.0)
-        assert not host.running
+        assert not engine.running
 
     def test_a_loop_that_cannot_start_says_why(
         self, monkeypatch: pytest.MonkeyPatch
@@ -83,18 +83,18 @@ class TestSharedHost:
         async def boom(self: object) -> None:
             raise RuntimeError("no event loop for you")
 
-        monkeypatch.setattr(_trio_host.TrioHost, "_main", boom)
-        host = Host(name="execnet-host-doomed")
+        monkeypatch.setattr(_trio_host.TrioEngine, "_main", boom)
+        engine = ProtocolEngine(name="execnet-engine-doomed")
         with pytest.raises(RuntimeError, match="could not start") as excinfo:
-            execnet.Group(host=host).makegateway("popen")
+            execnet.Group(engine=engine).makegateway("popen")
         assert "no event loop for you" in str(excinfo.value)
 
     def test_starting_is_lazy(self) -> None:
-        host = Host(name="execnet-host-lazy")
-        execnet.Group(host=host)
+        engine = ProtocolEngine(name="execnet-engine-lazy")
+        execnet.Group(engine=engine)
         # constructing a group must not cost a thread
-        assert not host.running
-        assert "execnet-host-lazy" not in host_thread_names()
+        assert not engine.running
+        assert "execnet-engine-lazy" not in engine_thread_names()
 
 
 def run_in_fork(child: Callable[[], list[str]], timeout: float = 20.0) -> list[str]:
@@ -137,29 +137,29 @@ def run_in_fork(child: Callable[[], list[str]], timeout: float = 20.0) -> list[s
 class TestFork:
     """Nothing execnet builds survives a fork, and it says so.
 
-    The host's loop thread is not duplicated into the child and the worker
+    The engine's loop thread is not duplicated into the child and the worker
     connections belong to the parent, so every inherited object is dead
     there.  Dead has to mean "raises and names the fork": the token of the
     parent's loop still *accepts* work in the child, so without a check the
     child waits forever for a reply nobody will send.  Recovery is the
-    child's to make explicitly, by building a new host and group.
+    child's to make explicitly, by building a new engine and group.
     """
 
     def test_a_new_group_in_the_child_works(self) -> None:
-        # the recovery path: default_host() hands a child its own Host
-        default_host()._ensure_started()
+        # the recovery path: default_engine() hands a child its own Engine
+        default_engine()._ensure_started()
 
         def child() -> list[str]:
             problems = []
-            if default_host().running:
-                problems.append("the inherited default host claims to run here")
+            if default_engine().running:
+                problems.append("the inherited default engine claims to run here")
             group = execnet.Group()
             gateway = group.makegateway("popen")
             got = gateway.remote_exec("channel.send(3)").receive(TESTTIMEOUT)
             if got != 3:
                 problems.append(f"a fresh group returned {got!r}")
-            if not group.host.running:
-                problems.append("the child's own host is not running")
+            if not group.engine.running:
+                problems.append("the child's own engine is not running")
             group.terminate(timeout=5.0)
             return problems
 
@@ -234,10 +234,10 @@ class TestFork:
         group.terminate(timeout=5.0)
 
 
-class TestHostDestruction:
-    """Closing a host breaks what it served -- loudly, and without hanging.
+class TestEngineDestruction:
+    """Closing a engine breaks what it served -- loudly, and without hanging.
 
-    A gateway's protocol IO lives on the host loop, so stopping that loop
+    A gateway's protocol IO lives on the engine loop, so stopping that loop
     is not a resource being freed underneath a working object: it ends the
     connection.  Every operation that needs the loop must say so at the
     call site rather than hang, deliver nothing silently, or quietly start
@@ -245,14 +245,14 @@ class TestHostDestruction:
     """
 
     def test_close_breaks_the_channels_it_served(self) -> None:
-        host = Host(name="execnet-host-broken-channel")
-        group = execnet.Group(host=host)
+        engine = ProtocolEngine(name="execnet-engine-broken-channel")
+        group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
         channel = gateway.remote_exec("while 1: channel.send(channel.receive() + 1)")
         channel.send(1)
         assert channel.receive(TESTTIMEOUT) == 2
 
-        host.close()
+        engine.close()
 
         assert not gateway.hasreceiver()
         with pytest.raises(EOFError):
@@ -264,12 +264,12 @@ class TestHostDestruction:
         group.terminate(timeout=5.0)
 
     def test_close_breaks_the_gateways_it_served(self) -> None:
-        host = Host(name="execnet-host-broken-gateway")
-        group = execnet.Group(host=host)
+        engine = ProtocolEngine(name="execnet-engine-broken-gateway")
+        group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
         assert gateway.remote_exec("channel.send(1)").receive(TESTTIMEOUT) == 1
 
-        host.close()
+        engine.close()
 
         with pytest.raises(OSError):
             gateway.newchannel()
@@ -280,56 +280,56 @@ class TestHostDestruction:
         group.terminate(timeout=5.0)
 
     def test_close_breaks_the_group_and_starts_no_second_loop(self) -> None:
-        host = Host(name="execnet-host-broken-group")
-        group = execnet.Group(host=host)
+        engine = ProtocolEngine(name="execnet-engine-broken-group")
+        group = execnet.Group(engine=engine)
         group.makegateway("popen")
 
-        host.close()
+        engine.close()
 
-        assert not host.running
+        assert not engine.running
         with pytest.raises(RuntimeError, match="was closed"):
             group.makegateway("popen")
         # the failed attempt must not have resurrected a loop thread: the
         # group's existing gateways could never be attached to it
-        assert not host.running
-        assert "execnet-host-broken-group" not in host_thread_names()
+        assert not engine.running
+        assert "execnet-engine-broken-group" not in engine_thread_names()
         # cleaning up a broken group still returns
         group.terminate(timeout=5.0)
 
-    def test_closing_is_final_even_for_an_unused_host(self) -> None:
-        host = Host(name="execnet-host-unused")
-        host.close()
+    def test_closing_is_final_even_for_an_unused_engine(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-unused")
+        engine.close()
         with pytest.raises(RuntimeError, match="was closed"):
-            execnet.Group(host=host).makegateway("popen")
+            execnet.Group(engine=engine).makegateway("popen")
 
-    def test_aio_group_on_a_closed_host_raises(self) -> None:
-        host = Host(name="execnet-host-closed-aio")
-        host.close()
+    def test_aio_group_on_a_closed_engine_raises(self) -> None:
+        engine = ProtocolEngine(name="execnet-engine-closed-aio")
+        engine.close()
 
         async def main() -> None:
             with pytest.raises(RuntimeError, match="was closed"):
-                await execnet.aio.AsyncGroup(host=host).start()
+                await execnet.aio.AsyncGroup(engine=engine).start()
 
         asyncio.run(main())
 
     def test_setcallback_after_close_fails_without_wedging_the_channel(self) -> None:
-        # the consumer task runs on the host loop, so with the loop gone
+        # the consumer task runs on the engine loop, so with the loop gone
         # there is nothing to attach to -- but the failure must land on the
         # caller, not on the channel: a half-switched channel drops what it
         # had buffered, refuses receive(), and makes waitclose() wait for a
         # consumer that will never run
-        host = Host(name="execnet-host-late-callback")
-        group = execnet.Group(host=host)
+        engine = ProtocolEngine(name="execnet-engine-late-callback")
+        group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
         channel = gateway.remote_exec("channel.send(1); channel.send(2)")
         assert channel.receive(TESTTIMEOUT) == 1
         # everything the worker sent has arrived and is buffered by now
         channel.waitclose(TESTTIMEOUT)
 
-        host.close()
+        engine.close()
 
         received: list[object] = []
-        with pytest.raises(OSError, match="host loop"):
+        with pytest.raises(OSError, match="engine loop"):
             channel.setcallback(received.append, endmarker="END")
         assert received == []
         # untouched: the buffered item is still there, then EOF
@@ -346,60 +346,60 @@ class TestPostedCallbacks:
     Trio turns an exception from an entry-queue callback into a
     TrioInternalError and tears the whole run down -- so one call losing a
     race with shutdown would take every gateway in the process with it, and
-    tell the user to file a trio bug.  A host that is already going away is
+    tell the user to file a trio bug.  A engine that is already going away is
     an ordinary failure of that one call.
     """
 
     def test_a_call_racing_shutdown_reports_instead_of_killing_the_loop(
         self,
     ) -> None:
-        host = Host(name="execnet-host-late-call")
-        group = execnet.Group(host=host)
+        engine = ProtocolEngine(name="execnet-engine-late-call")
+        group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
-        trio_host = host._ensure_started()
+        trio_engine = engine._ensure_started()
 
         async def never() -> None:  # pragma: no cover - never spawned
             raise AssertionError("should not run")
 
-        nursery, trio_host._nursery = trio_host._nursery, None
+        nursery, trio_engine._nursery = trio_engine._nursery, None
         try:
             # the window between the root nursery closing and the run ending
-            pending = trio_host.call_pending(never)
+            pending = trio_engine.call_pending(never)
             with pytest.raises(RuntimeError, match="shut down"):
                 pending.wait(TESTTIMEOUT)
         finally:
-            trio_host._nursery = nursery
+            trio_engine._nursery = nursery
 
-        assert trio_host._thread is not None and trio_host._thread.is_alive()
+        assert trio_engine._thread is not None and trio_engine._thread.is_alive()
         assert gateway.remote_exec("channel.send(7)").receive(TESTTIMEOUT) == 7
         group.terminate(timeout=5.0)
-        host.close()
+        engine.close()
 
     def test_an_aio_call_racing_shutdown_reports_instead_of_killing_the_loop(
         self,
     ) -> None:
-        host = Host(name="execnet-host-late-aio-call")
+        engine = ProtocolEngine(name="execnet-engine-late-aio-call")
 
         async def main() -> None:
-            async with execnet.aio.AsyncGroup(host=host) as group:
+            async with execnet.aio.AsyncGroup(engine=engine) as group:
                 gateway = await group.makegateway("popen")
-                trio_host = host._ensure_started()
-                nursery, trio_host._nursery = trio_host._nursery, None
+                trio_engine = engine._ensure_started()
+                nursery, trio_engine._nursery = trio_engine._nursery, None
                 try:
                     with pytest.raises(RuntimeError, match="shut down"):
                         await gateway.remote_exec("channel.send(1)")
                 finally:
-                    trio_host._nursery = nursery
-                assert trio_host._thread is not None and trio_host._thread.is_alive()
+                    trio_engine._nursery = nursery
+                assert trio_engine._thread is not None and trio_engine._thread.is_alive()
                 channel = await gateway.remote_exec("channel.send(7)")
                 assert await channel.receive() == 7
 
         asyncio.run(main())
-        host.close()
+        engine.close()
 
 
 class TestEventLoopGuard:
-    """Blocking on the host from inside a running loop must not hang."""
+    """Blocking on the engine from inside a running loop must not hang."""
 
     def test_makegateway_inside_asyncio_raises(self) -> None:
         async def main() -> None:
@@ -436,7 +436,7 @@ class TestEventLoopGuard:
             group.terminate(timeout=5.0)
 
     def test_terminate_and_join_inside_asyncio_raise(self) -> None:
-        # both block on the host with no bound worth waiting out: join()
+        # both block on the engine with no bound worth waiting out: join()
         # until the worker dies, terminate() for the whole grace
         group = execnet.Group()
         try:
@@ -499,7 +499,7 @@ class TestEventLoopGuard:
         # neither; it goes through sys.modules first
         code = (
             "import sys, execnet;"
-            " execnet._host.check_not_in_event_loop('x');"
+            " execnet._engine.check_not_in_event_loop('x');"
             " print('asyncio' in sys.modules, 'trio' in sys.modules)"
         )
         import subprocess
@@ -511,7 +511,7 @@ class TestEventLoopGuard:
 
 
 class TestGeventPatchedProcess:
-    """A monkey-patched process cannot host the loop, and is told so.
+    """A monkey-patched process cannot engine the loop, and is told so.
 
     The stub stands in for ``gevent.monkey`` because the real thing patches
     the interpreter irreversibly -- and the point of the check is that it
@@ -537,20 +537,20 @@ class TestGeventPatchedProcess:
         monkeypatch.setitem(
             sys.modules, "gevent.monkey", self.fake_monkey("select", "socket")
         )
-        host = _trio_host.TrioHost(name="execnet-host-patched")
+        engine = _trio_host.TrioEngine(name="execnet-engine-patched")
         with pytest.raises(RuntimeError) as excinfo:
-            host.start()
+            engine.start()
         message = str(excinfo.value)
         assert "gevent has monkey-patched select, socket" in message
         assert "execnet.gevent" in message
         # refused before the thread exists, so there is nothing to join
-        assert host._thread is None
+        assert engine._thread is None
 
     def test_a_group_in_a_patched_process_fails_at_makegateway(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(sys.modules, "gevent.monkey", self.fake_monkey("queue"))
-        group = execnet.Group(host=Host(name="execnet-host-patched-group"))
+        group = execnet.Group(engine=ProtocolEngine(name="execnet-engine-patched-group"))
         try:
             with pytest.raises(RuntimeError, match="monkey-patched queue"):
                 group.makegateway("popen")
@@ -561,8 +561,8 @@ class TestGeventPatchedProcess:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(sys.modules, "gevent.monkey", self.fake_monkey("ssl"))
-        host = Host(name="execnet-host-unpatched")
-        group = execnet.Group(host=host)
+        engine = ProtocolEngine(name="execnet-engine-unpatched")
+        group = execnet.Group(engine=engine)
         try:
             assert (
                 group.makegateway("popen")
@@ -572,7 +572,7 @@ class TestGeventPatchedProcess:
             )
         finally:
             group.terminate(timeout=5.0)
-            host.close()
+            engine.close()
 
 
 class TestExplicitStart:
@@ -585,26 +585,26 @@ class TestExplicitStart:
 
     @staticmethod
     def threads(name: str) -> int:
-        return host_thread_names().count(name)
+        return engine_thread_names().count(name)
 
     def test_start_brings_the_thread_up_now(self) -> None:
-        host = Host(name="execnet-host-explicit")
-        assert self.threads("execnet-host-explicit") == 0
+        engine = ProtocolEngine(name="execnet-engine-explicit")
+        assert self.threads("execnet-engine-explicit") == 0
         try:
-            assert host.start() is host
-            assert self.threads("execnet-host-explicit") == 1
+            assert engine.start() is engine
+            assert self.threads("execnet-engine-explicit") == 1
             # idempotent: no second thread
-            host.start()
-            assert self.threads("execnet-host-explicit") == 1
+            engine.start()
+            assert self.threads("execnet-engine-explicit") == 1
         finally:
-            host.close()
-        assert self.threads("execnet-host-explicit") == 0
+            engine.close()
+        assert self.threads("execnet-engine-explicit") == 0
 
-    def test_entering_a_host_starts_it(self) -> None:
-        with Host(name="execnet-host-entered") as host:
-            assert self.threads("execnet-host-entered") == 1
-            assert host.running
-        assert self.threads("execnet-host-entered") == 0
+    def test_entering_an_engine_starts_it(self) -> None:
+        with ProtocolEngine(name="execnet-engine-entered") as engine:
+            assert self.threads("execnet-engine-entered") == 1
+            assert engine.running
+        assert self.threads("execnet-engine-entered") == 0
 
     def test_start_is_where_a_broken_environment_shows_up(
         self, monkeypatch: pytest.MonkeyPatch
@@ -617,4 +617,4 @@ class TestExplicitStart:
             TestGeventPatchedProcess.fake_monkey("socket"),
         )
         with pytest.raises(RuntimeError, match="monkey-patched socket"):
-            Host(name="execnet-host-start-fails").start()
+            ProtocolEngine(name="execnet-engine-start-fails").start()

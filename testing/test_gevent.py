@@ -115,8 +115,9 @@ class TestGeventGateway:
     def test_no_management_op_takes_the_blocking_portal(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # the deterministic half of the test above.  TrioHost.call waits for
-        # arbitrary host-side work with the calling OS thread parked, which
+        # the deterministic half of the test above.  TrioEngine.call waits
+        # for arbitrary engine-side work with the calling OS thread parked,
+        # which
         # for a gevent caller is the hub and every greenlet on it -- so no
         # facade path may take it.  Easy to miss for the lazily started async
         # group, whose wait is short enough that a timing test stays green.
@@ -125,7 +126,7 @@ class TestGeventGateway:
         def forbidden(self: object, async_fn: object, *args: object) -> None:
             raise AssertionError("the gevent facade used the blocking portal.run")
 
-        monkeypatch.setattr(_trio_host.TrioHost, "call", forbidden)
+        monkeypatch.setattr(_trio_host.TrioEngine, "call", forbidden)
         group = execnet.gevent.Group()
         try:
             gateway = gevent.spawn(group.makegateway, "popen").get(timeout=TESTTIMEOUT)
