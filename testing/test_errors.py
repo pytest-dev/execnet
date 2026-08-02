@@ -68,9 +68,7 @@ class TestTimeoutErrorIsTheBuiltin:
     """
 
     @pytest.mark.parametrize("catcher", [builtins.TimeoutError, OSError, IOError])
-    def test_it_is_caught_by_every_spelling(
-        self, catcher: type[BaseException]
-    ) -> None:
+    def test_it_is_caught_by_every_spelling(self, catcher: type[BaseException]) -> None:
         with pytest.raises(catcher):
             raise execnet.TimeoutError("nothing arrived")
 

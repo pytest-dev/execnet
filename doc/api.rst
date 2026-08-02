@@ -227,12 +227,26 @@ Errors
 ==============================================================================
 
 The same types are raised by every namespace, and are re-exported from each
-of them.
+of them.  They answer three different questions, and it is worth catching
+the one you mean:
 
-.. autoexception:: execnet.ActiveGroupsWarning
+**Did the other side fail?**
+
 .. autoexception:: execnet.RemoteError
-.. autoexception:: execnet.TimeoutError
+
+**Is the connection gone?**  All of these are ``OSError`` subclasses, so
+``except OSError`` catches every reason at once.
+
+.. autoexception:: execnet.GatewayGone
+.. autoexception:: execnet.ChannelClosed
 .. autoexception:: execnet.HostNotFound
+.. autoexception:: execnet.TimeoutError
+
+**Did the call itself go wrong?**
+
+.. autoexception:: execnet.ExecnetStateError
 .. autoexception:: execnet.DataFormatError
 .. autoexception:: execnet.DumpError
 .. autoexception:: execnet.LoadError
+
+.. autoexception:: execnet.ActiveGroupsWarning
