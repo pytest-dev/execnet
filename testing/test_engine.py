@@ -464,13 +464,23 @@ class TestEngineShutdownContract:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # a wedged loop is a leaked thread; close() used to return as though
-        # it had stopped one
+        # it had stopped one.  Wedged for real here: the shutdown request
+        # never reaches the loop, so the thread genuinely outlives close().
         engine = ProtocolEngine(name="execnet-engine-wedged")
-        engine.start()
+        trio_engine = engine.start()._ensure_started()
+        monkeypatch.setattr(
+            type(trio_engine.portal), "run_sync", lambda self, fn, *args: None
+        )
 
-        monkeypatch.setattr(threading.Thread, "join", lambda self, timeout=None: None)
-        with pytest.warns(execnet.ActiveGroupsWarning, match="did not stop"):
-            engine.close(timeout=0.01)
+        try:
+            with pytest.warns(execnet.ActiveGroupsWarning, match="did not stop"):
+                engine.close(timeout=0.01)
+            assert trio_engine._thread is not None
+            assert trio_engine._thread.is_alive()
+        finally:
+            monkeypatch.undo()
+            trio_engine._started = True  # close() cleared it; really stop now
+            trio_engine.stop(timeout=5.0)
 
 
 def _process_alive(pid: int) -> bool:

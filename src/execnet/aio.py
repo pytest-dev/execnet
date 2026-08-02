@@ -38,11 +38,9 @@ see ``DumpError``.
 
 from __future__ import annotations
 
-import asyncio
 import functools
 import types
 from collections.abc import AsyncIterator
-from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Sequence
 from contextlib import asynccontextmanager
@@ -53,6 +51,9 @@ from typing import TypeVar
 
 import trio
 
+from ._bridge import AsyncioBridge
+from ._bridge import AsyncioCarrier
+from ._bridge import start_engine
 from ._deploy import Deployed
 from ._deploy import Deployment
 from ._engine import ProtocolEngine
@@ -96,91 +97,6 @@ __all__ = [
 T = TypeVar("T")
 
 
-class _EngineBridge:
-    """Await trio-native coroutines on a engine from asyncio."""
-
-    def __init__(self, trio_engine: Any) -> None:
-        self._engine = trio_engine
-
-    async def call(
-        self,
-        async_fn: Callable[..., Awaitable[T]],
-        *args: Any,
-        shield: bool = False,
-    ) -> T:
-        """Run ``async_fn`` on the engine and await its result.
-
-        Unless ``shield``, cancelling the await cancels the engine-side
-        operation too, so a cancelled ``receive`` does not consume an item
-        that nobody will ever see.
-        """
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future[T] = loop.create_future()
-        # Built here rather than inside the task: the cancel post can
-        # otherwise overtake the task's first step, and cancelling a scope
-        # nobody has entered yet still cancels it once entered.
-        scope = trio.CancelScope()
-
-        def resolve(result: Any, error: BaseException | None) -> None:
-            if future.cancelled():
-                return
-            if error is not None:
-                future.set_exception(error)
-            else:
-                future.set_result(result)
-
-        def post_result(result: Any, error: BaseException | None) -> None:
-            # The asyncio loop may already be gone at interpreter/test
-            # teardown; the result is undeliverable then.
-            with suppress(RuntimeError):
-                loop.call_soon_threadsafe(resolve, result, error)
-
-        async def runner() -> None:
-            try:
-                with scope:
-                    result = await async_fn(*args)
-            except trio.Cancelled:
-                # engine shutdown: the nursery cancel must propagate
-                post_result(None, RuntimeError("execnet aio engine was shut down"))
-                raise
-            except BaseException as exc:
-                post_result(None, exc)
-                return
-            if scope.cancelled_caught:
-                # cancelled by us -- the awaiter is already gone
-                return
-            post_result(result, None)
-
-        def spawn() -> None:
-            # Posted callbacks must not raise: trio turns an exception from
-            # an entry-queue callback into TrioInternalError and tears the
-            # whole engine loop down, taking every other group with it.  A
-            # engine that shut down between the post and here resolves the
-            # future instead, like every other engine-side failure.
-            try:
-                self._engine.start_soon(runner)
-            except BaseException as exc:
-                error = RuntimeError("execnet aio engine was shut down")
-                error.__cause__ = exc
-                post_result(None, error)
-
-        try:
-            self._engine.portal.post(spawn)
-        except trio.RunFinishedError:
-            raise RuntimeError("execnet aio group is not running") from None
-
-        if shield:
-            # The engine-side work runs to completion either way; shielding
-            # keeps a cancelled caller from abandoning a half-done send.
-            return await asyncio.shield(future)
-        try:
-            return await future
-        except asyncio.CancelledError:
-            with suppress(trio.RunFinishedError):
-                self._engine.portal.post(scope.cancel)
-            raise
-
-
 class _EngineGroup(_TrioGroup):
     """Trio AsyncGroup living as a task on the engine nursery."""
 
@@ -209,7 +125,7 @@ class AsyncChannel:
     RemoteError = RemoteError
     TimeoutError = TimeoutError
 
-    def __init__(self, bridge: _EngineBridge, channel: _TrioChannel) -> None:
+    def __init__(self, bridge: AsyncioBridge, channel: _TrioChannel) -> None:
         self._bridge = bridge
         self._channel = channel
 
@@ -275,7 +191,7 @@ class AsyncChannel:
 class AsyncGateway:
     """asyncio facade over a trio-native gateway."""
 
-    def __init__(self, bridge: _EngineBridge, gateway: _TrioGateway) -> None:
+    def __init__(self, bridge: AsyncioBridge, gateway: _TrioGateway) -> None:
         self._bridge = bridge
         self._gateway = gateway
 
@@ -334,7 +250,7 @@ class AsyncGroup:
     ) -> None:
         self._termination_timeout = termination_timeout
         self._engine = default_engine() if engine is None else engine
-        self._bridge: _EngineBridge | None = None
+        self._bridge: AsyncioBridge | None = None
         self._group: _EngineGroup | None = None
 
     def __repr__(self) -> str:
@@ -350,8 +266,8 @@ class AsyncGroup:
         """Bring the engine up and start the group task on it."""
         if self._group is not None:
             raise RuntimeError(f"{self!r} is already started")
-        trio_engine = await _start_engine(self._engine)
-        bridge = _EngineBridge(trio_engine)
+        trio_engine = await start_engine(self._engine, AsyncioCarrier())
+        bridge = AsyncioBridge(trio_engine)
 
         async def start_group() -> _EngineGroup:
             # runs on the engine loop
@@ -400,43 +316,6 @@ class AsyncGroup:
             raise RuntimeError(f"{self!r} is not started")
         gateway = await bridge.call(group.makegateway, spec)
         return AsyncGateway(bridge, gateway)
-
-
-async def _start_engine(engine: ProtocolEngine) -> Any:
-    """Start ``engine`` without blocking the asyncio loop or its executor.
-
-    ``ProtocolEngine._ensure_started`` blocks until the loop is ready, so it
-    runs on a throwaway thread whose completion is posted back to the
-    loop -- never on the default executor, which belongs to the caller's
-    application.
-    """
-    if engine.running:
-        return engine._ensure_started()
-    import threading
-
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[Any] = loop.create_future()
-
-    def start() -> None:
-        try:
-            trio_engine = engine._ensure_started()
-        except BaseException as exc:
-            loop.call_soon_threadsafe(_set_future_error, future, exc)
-        else:
-            loop.call_soon_threadsafe(_set_future_result, future, trio_engine)
-
-    threading.Thread(target=start, name="execnet-engine-start", daemon=True).start()
-    return await future
-
-
-def _set_future_result(future: asyncio.Future[Any], value: Any) -> None:
-    if not future.cancelled():
-        future.set_result(value)
-
-
-def _set_future_error(future: asyncio.Future[Any], error: BaseException) -> None:
-    if not future.cancelled():
-        future.set_exception(error)
 
 
 async def transfer(
