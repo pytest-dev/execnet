@@ -39,8 +39,6 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypeVar
 
-import trio
-
 from ._async import current_async
 from ._async import for_backend
 from ._errors import LoopFinishedError
@@ -75,13 +73,14 @@ class EngineGroup(_TrioGroup):
         self.shutdown = self._aio.event()
         self.finished = self._aio.event()
 
-    async def run(self, task_status: trio.TaskStatus[EngineGroup]) -> None:
+    async def run(self, task_status: Any = None) -> None:
         # registered for exactly this task's lifetime, so closing the engine
         # knows what it is about to take down
         self.engine._register_group(self)
         try:
             async with self:
-                task_status.started(self)
+                if task_status is not None:
+                    task_status.started(self)
                 await self.shutdown.wait()
         finally:
             self.engine._forget_group(self)
@@ -192,6 +191,9 @@ class TrioCarrier(Carrier):
     """
 
     def __init__(self) -> None:
+        import trio
+
+        self._trio = trio
         self._token = trio.lowlevel.current_trio_token()
         self._done = trio.Event()
         self._result: Any = None
@@ -208,7 +210,7 @@ class TrioCarrier(Carrier):
                 self._give_up(result, error)
 
         # the caller's run may already be over; nothing to deliver to then
-        with suppress(trio.RunFinishedError):
+        with suppress(self._trio.RunFinishedError):
             self._token.run_sync_soon(deliver)
 
     def _take(self) -> Any:
@@ -218,12 +220,12 @@ class TrioCarrier(Carrier):
 
     async def wait(self, *, shield: bool, on_cancel: Callable[[], None]) -> Any:
         if shield:
-            with trio.CancelScope(shield=True):
+            with self._trio.CancelScope(shield=True):
                 await self._done.wait()
             return self._take()
         try:
             await self._done.wait()
-        except trio.Cancelled:
+        except self._trio.Cancelled:
             # trio delivers the cancel at the checkpoint even when the event
             # is already set, so a result that arrived first is sitting right
             # here unclaimed; one that has not arrived is salvaged by the

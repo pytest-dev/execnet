@@ -12,8 +12,13 @@ description = "execnet: rapid multi-Python deployment"
 readme = {"file" = "README.rst", "content-type" = "text/x-rst"}
 license = "MIT"
 requires-python = ">=3.10"
+# Nothing on Python 3.11+, where the asyncio engine runs the protocol.
+# Below that there is no ``asyncio.TaskGroup`` and trio is the only engine,
+# so it stays required there; 3.10 reaches end of life in October 2026 and
+# this line goes with it.  ``execnet[trio]`` asks for trio anywhere, and it
+# is preferred whenever it is installed -- see ``execnet._engine``.
 dependencies = [
-    "trio>=0.32",
+    "trio>=0.32; python_version < '3.11'",
 ]
 authors = [
     { name = "holger krekel and others" },
@@ -47,6 +52,9 @@ execnet-socketserver = "execnet._cli:socketserver_main"
 gevent = [
     "gevent",
 ]
+trio = [
+    "trio>=0.32",
+]
 # what running the test suite needs -- tox installs exactly this, so there
 # is one list rather than two that drift (asyncssh and hypothesis were
 # missing from tox's own list, which failed collection in CI)
@@ -56,6 +64,8 @@ testing = [
     "hypothesis",
     "asyncssh",
     "uv",
+    # the suite runs against both engines, so it needs trio on every Python
+    "trio>=0.32",
 ]
 
 [dependency-groups]

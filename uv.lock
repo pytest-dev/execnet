@@ -383,7 +383,7 @@ wheels = [
 name = "execnet"
 source = { editable = "." }
 dependencies = [
-    { name = "trio" },
+    { name = "trio", marker = "python_full_version < '3.11'" },
 ]
 
 [package.optional-dependencies]
@@ -395,7 +395,11 @@ testing = [
     { name = "hypothesis" },
     { name = "pytest" },
     { name = "pytest-timeout" },
+    { name = "trio" },
     { name = "uv" },
+]
+trio = [
+    { name = "trio" },
 ]
 
 [package.dev-dependencies]
@@ -417,10 +421,12 @@ requires-dist = [
     { name = "hypothesis", marker = "extra == 'testing'" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">8.0" },
     { name = "pytest-timeout", marker = "extra == 'testing'" },
-    { name = "trio", specifier = ">=0.32" },
+    { name = "trio", marker = "python_full_version < '3.11'", specifier = ">=0.32" },
+    { name = "trio", marker = "extra == 'testing'", specifier = ">=0.32" },
+    { name = "trio", marker = "extra == 'trio'", specifier = ">=0.32" },
     { name = "uv", marker = "extra == 'testing'" },
 ]
-provides-extras = ["gevent", "testing"]
+provides-extras = ["gevent", "testing", "trio"]
 
 [package.metadata.requires-dev]
 dev = [

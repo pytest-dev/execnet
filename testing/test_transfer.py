@@ -163,14 +163,20 @@ class TestServiceThreadBudget:
     """
 
     def test_service_bodies_are_bounded_to_a_quarter_of_the_pool(self) -> None:
+        from execnet._async import current_async
         from execnet._deploy.serve import service_limiter
 
+        class FakeGateway:
+            """Only what the limiter needs: the loop's vocabulary."""
+
         async def main() -> None:
-            default = trio.to_thread.current_default_thread_limiter().total_tokens
-            limiter = service_limiter()
-            assert limiter.total_tokens == max(1, int(default // 4))
-            # cached per run, so every service body shares the one bound
-            assert service_limiter() is limiter
+            gateway = FakeGateway()
+            gateway._aio = current_async()  # type: ignore[attr-defined]
+            budget = gateway._aio.thread_budget()  # type: ignore[attr-defined]
+            limiter = service_limiter(gateway)
+            assert limiter.total_tokens == max(1, budget // 4)
+            # kept on the gateway, so every service body shares the one bound
+            assert service_limiter(gateway) is limiter
 
         trio.run(main)
 
