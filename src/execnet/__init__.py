@@ -9,13 +9,16 @@ One namespace per concurrency library you drive execnet from:
 * :mod:`execnet.sync` — the blocking API for plain threads; the top-level
   ``execnet.*`` names below are aliases into it.
 * :mod:`execnet.trio` — the trio-native API, awaited inside your own
-  ``trio.run``.
+  ``trio.run``, with protocol IO on a shared engine.
+* :mod:`execnet.raw_trio` — execnet embedded in your own trio run: the
+  gateways are tasks in your nursery and there is no engine at all.
 * :mod:`execnet.aio` — the asyncio-native API.
 * :mod:`execnet.gevent` — the blocking API with greenlet-parking waits.
 
-:mod:`execnet.trio` is the only one that runs gateways *directly* as tasks
-in your own nursery.  The other three drive a shared ProtocolEngine, so
-their blocking calls must not be made from inside a running event loop.
+:mod:`execnet.raw_trio` is the only one that runs gateways *directly* as
+tasks in your own nursery; the others put protocol IO on a shared
+:class:`ProtocolEngine`, and the two blocking ones must therefore not be
+called from inside a running event loop.
 
 ``can_send`` sits here rather than on any one of them: the wire-format
 contract is the same whichever surface you drive a gateway from.
@@ -83,6 +86,7 @@ __all__ = [
 _LAZY_MODULES = (
     "aio",
     "gevent",
+    "raw_trio",
     "trio",
     "gateway",
     "gateway_base",

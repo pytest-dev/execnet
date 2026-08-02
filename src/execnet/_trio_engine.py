@@ -305,7 +305,12 @@ class TrioEngine:
             self._shutdown.set()
 
         try:
-            self._portal.run_sync(_set)
+            # posted rather than run: ``portal.run_sync`` refuses a caller
+            # that is itself inside a trio run ("this is a blocking
+            # function"), which is exactly where an async application closes
+            # its engine from.  Nothing is lost by not waiting for the
+            # callback -- the join below is the real wait.
+            self._portal.post(_set)
         except Exception:
             pass
         joined = True

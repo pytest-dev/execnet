@@ -13,7 +13,7 @@ import pytest
 import trio as trio_lib
 
 import execnet
-import execnet.trio
+import execnet.raw_trio
 from execnet import Gateway
 from execnet import _provision
 
@@ -133,7 +133,7 @@ def test_execmodel_is_an_accepted_alias_for_profile(
 
 def test_trio_native_coordinator() -> None:
     async def main() -> None:
-        async with execnet.trio.AsyncGroup() as group:
+        async with execnet.raw_trio.AsyncGroup() as group:
             gateway = await group.makegateway("popen//profile=trio")
             channel = await gateway.remote_exec(
                 "await channel.send(await channel.receive() * 2)"
@@ -149,7 +149,7 @@ def test_async_coordinator_defaults_to_a_thread_worker() -> None:
     # An async coordinator does not imply an async worker: the worker's
     # shape is its own choice, so the default stays the thread profile.
     async def main() -> None:
-        async with execnet.trio.AsyncGroup() as group:
+        async with execnet.raw_trio.AsyncGroup() as group:
             gateway = await group.makegateway("popen")
             channel = await gateway.remote_exec(
                 "import threading;"

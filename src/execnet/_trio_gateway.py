@@ -608,7 +608,7 @@ class AsyncGateway:
     def _trace(self, *msg: object) -> None:
         trace(self.id, *msg)
 
-    def open_raw_channel(self, id: int | None = None) -> RawChannel:
+    def _open_raw_channel(self, id: int | None = None) -> RawChannel:
         """Return the raw channel for ``id``, allocating a fresh id if None.
 
         An explicit id attaches to a channel the peer references (e.g. an id
@@ -626,7 +626,7 @@ class AsyncGateway:
 
     def open_channel(self, id: int | None = None) -> AsyncChannel:
         """Return the serialized channel for ``id``, allocating one if None."""
-        raw = self.open_raw_channel(id)
+        raw = self._open_raw_channel(id)
         try:
             return self._async_channels[raw.id]
         except KeyError:
@@ -875,7 +875,7 @@ class AsyncGateway:
         except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
             raise OSError("cannot send (already closed?)") from exc
 
-    def enqueue_frame(
+    def _enqueue_frame(
         self,
         frame: bytes,
         on_written: Callable[[BaseException | None], None] | None = None,
@@ -894,7 +894,7 @@ class AsyncGateway:
     def _send_nowait(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
         """Enqueue a frame from a dispatch handler (sync, inline on the loop)."""
         with suppress(OSError):
-            self.enqueue_frame(Message(msgcode, channelid, data).pack())
+            self._enqueue_frame(Message(msgcode, channelid, data).pack())
 
     def _finish_channels(self) -> None:
         for channel in list(self._channels.values()):
@@ -1440,7 +1440,7 @@ class AsyncGroup:
         from . import _provision
 
         coordinator = self._gateway_by_id(spec.via)
-        raw = coordinator.open_raw_channel()
+        raw = coordinator._open_raw_channel()
         request = await provision_sync(_provision.spawn_request, spec)
         await coordinator._send(
             Message.GATEWAY_START_SUB, raw.id, dumps_internal(request)

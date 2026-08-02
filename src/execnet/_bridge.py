@@ -33,12 +33,15 @@ from __future__ import annotations
 import threading
 from collections.abc import Awaitable
 from collections.abc import Callable
+from collections.abc import Sequence
 from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypeVar
 
 import trio
+
+from ._trio_gateway import AsyncGroup as _TrioGroup
 
 if TYPE_CHECKING:
     from ._engine import ProtocolEngine
@@ -48,6 +51,36 @@ T = TypeVar("T")
 
 #: what a call reports when the engine went away underneath it
 ENGINE_GONE = "the execnet engine was shut down"
+
+
+class EngineGroup(_TrioGroup):
+    """A trio-native group owned by the engine rather than by a caller.
+
+    This is the structural difference between a facade and
+    :mod:`execnet.raw_trio`.  There the group's nursery is on the caller's
+    stack, so its gateways cannot outlive the ``async with`` that made
+    them.  Here the group is itself a long-lived task on the engine, parked
+    on :attr:`shutdown`, so a gateway is a handle the caller can hold, pass
+    around, and close from wherever it likes.
+    """
+
+    def __init__(self, termination_timeout: float, engine: TrioEngine) -> None:
+        super().__init__(termination_timeout)
+        self.engine = engine
+        self.shutdown = trio.Event()
+        self.finished = trio.Event()
+
+    async def run(self, task_status: trio.TaskStatus[EngineGroup]) -> None:
+        # registered for exactly this task's lifetime, so closing the engine
+        # knows what it is about to take down
+        self.engine._register_group(self)
+        try:
+            async with self:
+                task_status.started(self)
+                await self.shutdown.wait()
+        finally:
+            self.engine._forget_group(self)
+            self.finished.set()
 
 
 class Carrier:
@@ -223,6 +256,29 @@ class AsyncioBridge(EngineBridge):
 
 class TrioBridge(EngineBridge):
     carrier = TrioCarrier
+
+
+def targets_for_bridge(gateways: Sequence[Any]) -> tuple[EngineBridge, list[Any]]:
+    """One bridge and one service target per gateway, or a clear error.
+
+    A fan-out is a single task awaiting every gateway's channels, so they
+    all have to belong to one engine's run: a trio task cannot await a
+    channel that belongs to another.  The blocking surface has always
+    checked this (``execnet._deploy._facade.run_blocking``); the facades
+    used to take the first gateway's bridge and hope, which turned a
+    two-engine mistake into a cross-run await rather than a sentence.
+    """
+    if not gateways:
+        raise ValueError("no gateways to work on")
+    bridges = {id(gateway._bridge): gateway._bridge for gateway in gateways}
+    if len(bridges) > 1:
+        raise ValueError(
+            "all gateways must be served by the same execnet.ProtocolEngine:"
+            " one driver task cannot reach channels belonging to another"
+            " event loop. Gateways from one AsyncGroup always share an engine."
+        )
+    bridge: EngineBridge = next(iter(bridges.values()))
+    return bridge, [gateway._target() for gateway in gateways]
 
 
 async def start_engine(engine: ProtocolEngine, carrier: Carrier) -> Any:

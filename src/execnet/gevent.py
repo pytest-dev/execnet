@@ -45,14 +45,19 @@ from ._multi import Group as _SyncGroup
 from ._multi import MultiChannel
 from ._xspec import XSpec
 from .sync import Channel
+from .sync import Deployed
+from .sync import Deployment
 from .sync import Gateway
 from .sync import ProtocolEngine
 from .sync import RSync
+from .sync import transfer
 
 __all__ = [
     "ActiveGroupsWarning",
     "Channel",
     "DataFormatError",
+    "Deployed",
+    "Deployment",
     "DumpError",
     "Gateway",
     "Group",
@@ -66,6 +71,7 @@ __all__ = [
     "XSpec",
     "default_group",
     "makegateway",
+    "transfer",
 ]
 
 
