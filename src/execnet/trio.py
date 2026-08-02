@@ -27,13 +27,13 @@ nursery, no hop, exact cancellation -- and your loop *is* the protocol
 loop, with everything that implies.  It is the right choice when execnet
 is the only thing your loop does.
 
-**Cancellation is where the two genuinely differ.**  Cancelling an awaited
-``receive`` here cancels the engine-side receive too, so normally no item
-is consumed and dropped -- but the cancel can land in the window after the
-engine took an item and before it reaches you, and that item is then lost.
-Under :mod:`execnet.raw_trio` there is no such window.  Do not cancel a
-``receive`` whose item you still need.  Operations that must not tear in
-half -- ``send``, ``send_eof``, ``aclose``, ``terminate`` -- are shielded:
+**Cancellation crosses the bridge, and loses nothing.**  Cancelling an
+awaited ``receive`` cancels the engine-side receive too; if the cancel
+lands after the engine already took an item, that item is kept and handed
+to your next ``receive`` rather than dropped.  So a cancelled receive
+consumes nothing here either, which is what :mod:`execnet.raw_trio` gets
+from having no bridge at all.  Operations that must not tear in half --
+``send``, ``send_eof``, ``aclose``, ``terminate`` -- are shielded instead:
 the wait is uncancellable and returns once the operation is done.
 
 This surface is deliberately a *subset* of :mod:`execnet.raw_trio`.  The
@@ -105,6 +105,10 @@ __all__ = [
 ]
 
 
+#: distinguishes "no salvaged item" from a salvaged ``None``
+_NOTHING = object()
+
+
 class AsyncChannel:
     """trio facade over a channel served on the engine."""
 
@@ -114,6 +118,11 @@ class AsyncChannel:
     def __init__(self, bridge: TrioBridge, channel: _TrioChannel) -> None:
         self._bridge = bridge
         self._channel = channel
+        #: an item the engine produced for a receive that was cancelled
+        #: before it could be taken.  At most one: the engine-side receive
+        #: that produced it has finished, so nothing else was consumed
+        #: behind it and the next receive is still in order.
+        self._salvaged: Any = _NOTHING
 
     @property
     def id(self) -> int:
@@ -142,16 +151,24 @@ class AsyncChannel:
         received channel reference arrives as an
         :class:`~execnet.trio.AsyncChannel`.
 
-        Cancellable: the engine-side receive is cancelled too, so
-        ``trio.move_on_after`` is nearly equivalent to passing ``timeout``.
-        The exception is a cancel that arrives once the item is already in
-        flight to this task -- it is dropped rather than put back.  Under
-        :mod:`execnet.raw_trio` that window does not exist.
+        Cancellable, and equivalent to passing ``timeout``: the engine-side
+        receive is cancelled too, and an item the engine had already taken
+        when the cancel landed is kept for the next call rather than
+        dropped.  Cancelling a receive never costs you an item.
         """
-        result = await self._bridge.call(self._channel.receive, timeout)
+        if self._salvaged is not _NOTHING:
+            result, self._salvaged = self._salvaged, _NOTHING
+        else:
+            result = await self._bridge.call(
+                self._channel.receive, timeout, salvage=self._stash
+            )
         if isinstance(result, _TrioChannel):
             return AsyncChannel(self._bridge, result)
         return result
+
+    def _stash(self, item: Any) -> None:
+        """Keep an item whose receive was cancelled before it arrived."""
+        self._salvaged = item
 
     async def send_eof(self) -> None:
         """Signal that no more items follow (peer keeps its send side)."""

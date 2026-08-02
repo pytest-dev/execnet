@@ -180,3 +180,40 @@ def test_groups_share_the_default_engine() -> None:
             assert a.engine is default_engine()
 
     run(main())
+
+
+def test_an_item_taken_as_the_cancel_lands_comes_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancelled receive never costs an item; see testing/test_bridge.py.
+
+    The window is forced rather than raced for: the cancel is queued ahead
+    of the engine's delivery on a FIFO loop, so the receiving task is
+    cancelled with the item already produced and one callback away.
+    """
+    from execnet import _bridge
+
+    async def main() -> None:
+        async with execnet.aio.open_gateway() as gateway:
+            channel = await gateway.remote_exec(
+                "channel.receive()\nfor i in range(3): channel.send(i)"
+            )
+            await channel.send("go")
+
+            loop = asyncio.get_running_loop()
+            holder: list[Any] = []
+            real = _bridge.AsyncioCarrier.resolve
+
+            def hooked(self: object, result: object, error: object) -> None:
+                loop.call_soon_threadsafe(holder[0].cancel)
+                real(self, result, error)  # type: ignore[arg-type]
+
+            monkeypatch.setattr(_bridge.AsyncioCarrier, "resolve", hooked)
+            holder.append(asyncio.ensure_future(channel.receive()))
+            with pytest.raises(asyncio.CancelledError):
+                await holder[0]
+            monkeypatch.undo()
+
+            assert [await channel.receive() for _ in range(3)] == [0, 1, 2]
+
+    run(main())
