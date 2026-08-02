@@ -35,8 +35,11 @@ from __future__ import annotations
 import gevent  # noqa: F401  -- fail at import time when gevent is missing
 
 from ._errors import ActiveGroupsWarning
+from ._errors import ChannelClosed
 from ._errors import DataFormatError
 from ._errors import DumpError
+from ._errors import ExecnetStateError
+from ._errors import GatewayGone
 from ._errors import HostNotFound
 from ._errors import LoadError
 from ._errors import RemoteError
@@ -55,11 +58,14 @@ from .sync import transfer
 __all__ = [
     "ActiveGroupsWarning",
     "Channel",
+    "ChannelClosed",
     "DataFormatError",
     "Deployed",
     "Deployment",
     "DumpError",
+    "ExecnetStateError",
     "Gateway",
+    "GatewayGone",
     "Group",
     "HostNotFound",
     "LoadError",

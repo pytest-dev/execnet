@@ -12,8 +12,11 @@ from ._deploy import Deployment
 from ._deploy import transfer
 from ._engine import ProtocolEngine
 from ._errors import ActiveGroupsWarning
+from ._errors import ChannelClosed
 from ._errors import DataFormatError
 from ._errors import DumpError
+from ._errors import ExecnetStateError
+from ._errors import GatewayGone
 from ._errors import HostNotFound
 from ._errors import LoadError
 from ._errors import RemoteError
@@ -31,11 +34,14 @@ from ._xspec import XSpec
 __all__ = [
     "ActiveGroupsWarning",
     "Channel",
+    "ChannelClosed",
     "DataFormatError",
     "Deployed",
     "Deployment",
     "DumpError",
+    "ExecnetStateError",
     "Gateway",
+    "GatewayGone",
     "Group",
     "HostNotFound",
     "LoadError",

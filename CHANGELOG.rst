@@ -191,6 +191,33 @@ series, once the consumers that need them have released without them.
   thread instead. The *first* request always gets the main thread; use the
   ``trio`` or ``gevent`` profile where placement must never race.
 
+* **Exceptions say which of three things went wrong**, so a caller can act on
+  the answer rather than string-match it: the other side failed
+  (``RemoteError``), the connection is gone (``OSError`` and its subclasses),
+  or the call itself was wrong (``ExecnetStateError``). Those last two used to
+  be the same type, so anything retrying on connection loss was also retrying
+  on its own bugs.
+
+  ``execnet.TimeoutError`` now derives from the **builtin** ``TimeoutError``.
+  It shadowed it without subclassing it, so the obvious ``except
+  TimeoutError:`` caught nothing and only ``except OSError`` worked -- and
+  since 3.11 ``asyncio.TimeoutError`` *is* the builtin, so async callers'
+  instincts were actively wrong. The builtin is an ``OSError``, so this widens
+  what catches it and narrows nothing.
+
+  New: ``ChannelClosed`` (this channel is finished) and ``GatewayGone`` (the
+  connection is), both ``OSError`` subclasses so everything catching ``OSError``
+  keeps working -- pytest-xdist swallows exactly that around its shutdown send.
+  ``GatewayGone`` is *also* an ``EOFError``, because that is how a broken
+  connection has always surfaced; the distinction becomes available without
+  anything ceasing to be caught.
+
+  One deliberate break: two channel operations raised ``OSError`` for API
+  misuse -- closing a channel inside its own ``remote_exec``, and calling
+  ``receive()`` on a channel that has a callback registered. Both are
+  ``ExecnetStateError`` now, which is a ``RuntimeError`` and *not* an
+  ``OSError``. That is the point of the split.
+
 * One namespace per concurrency library you drive execnet from:
   ``execnet.sync`` (plain threads; the top-level ``execnet.*`` aliases),
   ``execnet.trio``, ``execnet.aio``, the new ``execnet.gevent``, whose blocking

@@ -233,8 +233,11 @@ def test_shim_rejects_unknown_attribute(shim: str) -> None:
 #: data because the failure mode is a namespace silently missing one, not a
 #: namespace getting one wrong.
 COMMON_NAMES = (
+    "ChannelClosed",
     "DataFormatError",
     "DumpError",
+    "ExecnetStateError",
+    "GatewayGone",
     "HostNotFound",
     "LoadError",
     "RemoteError",
