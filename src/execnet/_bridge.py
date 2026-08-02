@@ -42,6 +42,7 @@ from typing import TypeVar
 import trio
 
 from ._async import current_async
+from ._async import for_backend
 from ._errors import LoopFinishedError
 from ._trio_gateway import AsyncGroup as _TrioGroup
 
@@ -241,8 +242,11 @@ class EngineBridge:
     #: the caller-side carrier this bridge's surface waits on
     carrier: type[Carrier]
 
-    def __init__(self, trio_engine: TrioEngine) -> None:
-        self._engine = trio_engine
+    def __init__(self, engine: TrioEngine) -> None:
+        self._engine = engine
+        # the engine's vocabulary, not the caller's: everything below runs
+        # on the engine loop
+        self._aio = for_backend(engine.backend)
 
     async def call(
         self,
@@ -262,13 +266,13 @@ class EngineBridge:
         """
         carrier = self.carrier()
         carrier.set_salvage(salvage)
-        scope = trio.CancelScope()
+        scope = self._aio.cancel_scope()
 
         async def runner() -> None:
             try:
                 with scope:
                     result = await async_fn(*args)
-            except trio.Cancelled:
+            except self._aio.Cancelled:
                 # engine shutdown: the nursery cancel must propagate
                 carrier.resolve(None, RuntimeError(ENGINE_GONE))
                 raise

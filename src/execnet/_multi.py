@@ -109,7 +109,6 @@ class Group:
         if self._async_group is None:
             from . import _trio_host
 
-            self._engine._require_core_backend(f"{self!r}")
             engine = self._ensure_trio_engine()
 
             async def _start() -> Any:

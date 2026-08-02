@@ -258,7 +258,6 @@ class AsyncGroup:
         """Bring the engine up and start the group task on it."""
         if self._group is not None:
             raise RuntimeError(f"{self!r} is already started")
-        self._engine._require_core_backend(f"{self!r}")
         trio_engine = await start_engine(self._engine, AsyncioCarrier())
         bridge = AsyncioBridge(trio_engine)
 

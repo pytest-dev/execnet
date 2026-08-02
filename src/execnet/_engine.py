@@ -24,6 +24,7 @@ load the event loop machinery: the real
 from __future__ import annotations
 
 import atexit
+import importlib.util
 import os
 import sys
 import threading
@@ -50,9 +51,40 @@ BACKENDS = {
     "asyncio": ("._asyncio_engine", "AsyncioEngine"),
 }
 
-#: what an engine is unless asked otherwise.  Trio, because it is the only
-#: one the protocol core runs on today -- see :class:`ProtocolEngine`.
-DEFAULT_BACKEND = "trio"
+
+def pick_backend() -> str:
+    """Which async library to run a loop on, given this process.
+
+    Trio when it is installed, because it is what execnet is tested most
+    against -- *unless* ``gevent.monkey`` has patched the modules trio's
+    cross-thread machinery needs, which is a process-wide fact trio cannot
+    work around and asyncio does not care about.  So the one environment
+    where the trio engine has to refuse is exactly the one where asyncio
+    takes over, and :mod:`execnet.gevent` works in a patched process for
+    the first time.
+
+    Resolved when a loop is started rather than when the engine object is
+    built: patching can happen after construction, which is why an
+    unspecified backend cannot be settled any earlier.  An *explicit*
+    ``backend=`` is checked at construction, since that only depends on the
+    interpreter.
+    """
+    from ._trio_engine import gevent_patched_modules
+
+    trio_usable = importlib.util.find_spec("trio") is not None
+    if trio_usable and not gevent_patched_modules():
+        return "trio"
+    if sys.version_info >= (3, 11):
+        return "asyncio"
+    if trio_usable:
+        # patched, on a Python with no TaskGroup: trio will refuse when it
+        # starts, and say why, which is a better message than anything here
+        return "trio"
+    raise RuntimeError(
+        "execnet needs an async library to run its protocol on: trio is not"
+        " installed and this interpreter is older than 3.11, which is where"
+        " the asyncio engine starts. Install execnet[trio]."
+    )
 
 
 def _running_event_loop() -> str | None:
@@ -136,9 +168,9 @@ class ProtocolEngine:
         name: str = "execnet-engine",
         callback_threads: int = DEFAULT_CALLBACK_THREADS,
         *,
-        backend: str = DEFAULT_BACKEND,
+        backend: str | None = None,
     ) -> None:
-        if backend not in BACKENDS:
+        if backend is not None and backend not in BACKENDS:
             raise ValueError(
                 f"unknown engine backend {backend!r} (known: {sorted(BACKENDS)})"
             )
@@ -148,6 +180,8 @@ class ProtocolEngine:
             from ._asyncio_engine import check_asyncio_available
 
             check_asyncio_available()
+        #: None until started: an unspecified backend depends on whether
+        #: gevent has patched the world, which can still change
         self.name = name
         self.callback_threads = callback_threads
         self.backend = backend
@@ -158,7 +192,12 @@ class ProtocolEngine:
         self._pid: int | None = None
 
     def __repr__(self) -> str:
-        return f"<execnet.ProtocolEngine {self.name!r} {self.backend} {self._state()}>"
+        backend = self.backend or "auto"
+        return f"<execnet.ProtocolEngine {self.name!r} {backend} {self._state()}>"
+
+    @property
+    def _chosen_backend(self) -> str:
+        return self.backend if self.backend is not None else pick_backend()
 
     def _state(self) -> str:
         if self._trio_engine is None:
@@ -206,7 +245,7 @@ class ProtocolEngine:
             if self._trio_engine is None:
                 import importlib
 
-                module_name, class_name = BACKENDS[self.backend]
+                module_name, class_name = BACKENDS[self._chosen_backend]
                 module = importlib.import_module(module_name, __package__)
                 engine = getattr(module, class_name)(
                     name=self.name, callback_threads=self.callback_threads
@@ -215,26 +254,6 @@ class ProtocolEngine:
                 self._pid = os.getpid()
                 self._trio_engine = engine
             return self._trio_engine
-
-    def _require_core_backend(self, what: str) -> None:
-        """Refuse to build something the protocol core cannot run here.
-
-        The core -- gateways, channels, transports -- is still written
-        against trio directly, so it only runs on a trio engine.  An
-        asyncio engine is a working loop with a working portal and task
-        scope, and that is deliberately all it is until the core is ported
-        through the seam.  Saying so here beats failing somewhere inside
-        trio with a message about a nursery.
-        """
-        if self.backend == "trio":
-            return
-        raise NotImplementedError(
-            f"{what} needs an engine the protocol core runs on, and this one"
-            f" is {self.backend!r}. Only the trio backend can host gateways"
-            " today -- the core has not been ported through the engine seam"
-            " yet. Build the engine without backend= (or with"
-            ' backend="trio") to make gateways on it.'
-        )
 
     def terminate(self, timeout: float | None = None) -> None:
         """Terminate every group this engine serves; the loop stays up.

@@ -105,8 +105,7 @@ class RSync:
     async def _send(
         self, targets: Sequence[_Target], service_targets: Sequence[ServiceTarget]
     ) -> None:
-        import trio
-
+        from execnet._async import current_async
         from execnet._deploy._transfer import snapshot
 
         # walked once, whatever the number of targets -- as it always was
@@ -114,9 +113,9 @@ class RSync:
         if len(targets) == 1:
             await self._send_one(manifest, targets[0], service_targets[0])
             return
-        async with trio.open_nursery() as nursery:
+        async with current_async().task_scope() as scope:
             for target, service_target in zip(targets, service_targets, strict=True):
-                nursery.start_soon(self._send_one, manifest, target, service_target)
+                scope.start_soon(self._send_one, manifest, target, service_target)
 
     async def _send_one(
         self, manifest: Manifest, target: _Target, service_target: ServiceTarget

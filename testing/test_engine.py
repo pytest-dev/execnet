@@ -87,7 +87,7 @@ class TestSharedEngine:
             raise RuntimeError("no event loop for you")
 
         monkeypatch.setattr(_trio_engine.TrioEngine, "_main", boom)
-        engine = ProtocolEngine(name="execnet-engine-doomed")
+        engine = ProtocolEngine(name="execnet-engine-doomed", backend="trio")
         with pytest.raises(RuntimeError, match="could not start") as excinfo:
             execnet.Group(engine=engine).makegateway("popen")
         assert "no event loop for you" in str(excinfo.value)
@@ -266,10 +266,14 @@ class TestEngineDestruction:
 
     What :meth:`ProtocolEngine.close` does *about* that -- terminate first,
     and say so -- is :class:`TestEngineShutdownContract`.
+
+    Pinned to the trio engine: *which* error a torn-down channel reports is
+    the one place the two backends still differ, and this suite asserts the
+    exact one.  See ROADMAP-3.0.md.
     """
 
     def test_close_breaks_the_channels_it_served(self) -> None:
-        engine = ProtocolEngine(name="execnet-engine-broken-channel")
+        engine = ProtocolEngine(name="execnet-engine-broken-channel", backend="trio")
         group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
         channel = gateway.remote_exec("while 1: channel.send(channel.receive() + 1)")
@@ -288,7 +292,7 @@ class TestEngineDestruction:
         group.terminate(timeout=5.0)
 
     def test_close_breaks_the_gateways_it_served(self) -> None:
-        engine = ProtocolEngine(name="execnet-engine-broken-gateway")
+        engine = ProtocolEngine(name="execnet-engine-broken-gateway", backend="trio")
         group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
         assert gateway.remote_exec("channel.send(1)").receive(TESTTIMEOUT) == 1
@@ -304,7 +308,7 @@ class TestEngineDestruction:
         group.terminate(timeout=5.0)
 
     def test_close_breaks_the_group_and_starts_no_second_loop(self) -> None:
-        engine = ProtocolEngine(name="execnet-engine-broken-group")
+        engine = ProtocolEngine(name="execnet-engine-broken-group", backend="trio")
         group = execnet.Group(engine=engine)
         group.makegateway("popen")
 
@@ -336,7 +340,7 @@ class TestEngineDestruction:
         # caller, not on the channel: a half-switched channel drops what it
         # had buffered, refuses receive(), and makes waitclose() wait for a
         # consumer that will never run
-        engine = ProtocolEngine(name="execnet-engine-late-callback")
+        engine = ProtocolEngine(name="execnet-engine-late-callback", backend="trio")
         group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
         channel = gateway.remote_exec("channel.send(1); channel.send(2)")
@@ -529,6 +533,9 @@ def _process_alive(pid: int) -> bool:
 class TestPostedCallbacks:
     """Work posted to the loop must never raise *on* the loop.
 
+    Pinned to the trio engine: these reach into its nursery to build the
+    window between "the root scope closed" and "the run ended".
+
     Trio turns an exception from an entry-queue callback into a
     TrioInternalError and tears the whole run down -- so one call losing a
     race with shutdown would take every gateway in the process with it, and
@@ -539,7 +546,7 @@ class TestPostedCallbacks:
     def test_a_call_racing_shutdown_reports_instead_of_killing_the_loop(
         self,
     ) -> None:
-        engine = ProtocolEngine(name="execnet-engine-late-call")
+        engine = ProtocolEngine(name="execnet-engine-late-call", backend="trio")
         group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
         trio_engine = engine._ensure_started()
@@ -564,7 +571,7 @@ class TestPostedCallbacks:
     def test_an_aio_call_racing_shutdown_reports_instead_of_killing_the_loop(
         self,
     ) -> None:
-        engine = ProtocolEngine(name="execnet-engine-late-aio-call")
+        engine = ProtocolEngine(name="execnet-engine-late-aio-call", backend="trio")
 
         async def main() -> None:
             async with execnet.aio.AsyncGroup(engine=engine) as group:
@@ -734,18 +741,31 @@ class TestGeventPatchedProcess:
         # refused before the thread exists, so there is nothing to join
         assert engine._thread is None
 
-    def test_a_group_in_a_patched_process_fails_at_makegateway(
+    def test_a_group_in_a_patched_process_runs_on_asyncio(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The trio engine cannot run here and says so; asyncio does not care
+        # what gevent patched, so an unasked-for backend falls through to it
+        # and execnet.gevent works in the environment its users actually
+        # have.  Only an *explicit* backend="trio" still refuses.
+        monkeypatch.setitem(sys.modules, "gevent.monkey", self.fake_monkey("queue"))
+        engine = ProtocolEngine(name="execnet-engine-patched-group")
+        group = execnet.Group(engine=engine)
+        try:
+            channel = group.makegateway("popen").remote_exec("channel.send(1)")
+            assert channel.receive(TESTTIMEOUT) == 1
+            assert engine._ensure_started().backend == "asyncio"
+        finally:
+            group.terminate(timeout=5.0)
+            engine.close(timeout=10.0)
+
+    def test_an_explicit_trio_engine_still_refuses_when_patched(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(sys.modules, "gevent.monkey", self.fake_monkey("queue"))
-        group = execnet.Group(
-            engine=ProtocolEngine(name="execnet-engine-patched-group")
-        )
-        try:
-            with pytest.raises(RuntimeError, match="monkey-patched queue"):
-                group.makegateway("popen")
-        finally:
-            group.terminate(timeout=5.0)
+        engine = ProtocolEngine(name="execnet-engine-patched-trio", backend="trio")
+        with pytest.raises(RuntimeError, match="monkey-patched queue"):
+            engine.start()
 
     def test_patching_something_else_is_none_of_our_business(
         self, monkeypatch: pytest.MonkeyPatch
@@ -800,11 +820,13 @@ class TestExplicitStart:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # the point of asking early: this is the gevent refusal, raised at
-        # startup instead of at whatever first needed a gateway
+        # startup instead of at whatever first needed a gateway.  It takes an
+        # explicit backend= now, since an unasked-for one falls back to
+        # asyncio rather than refusing.
         monkeypatch.setitem(
             sys.modules,
             "gevent.monkey",
             TestGeventPatchedProcess.fake_monkey("socket"),
         )
         with pytest.raises(RuntimeError, match="monkey-patched socket"):
-            ProtocolEngine(name="execnet-engine-start-fails").start()
+            ProtocolEngine(name="execnet-engine-start-fails", backend="trio").start()

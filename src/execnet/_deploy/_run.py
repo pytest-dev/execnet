@@ -17,8 +17,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import trio
-
+from .._async import current_async
 from . import _transfer
 
 if TYPE_CHECKING:
@@ -117,9 +116,9 @@ async def deploy_one(
     # then each directory root -- separate trees, so separate walks, but
     # nothing makes them wait for each other
     directories = [root for root in deployment.roots if root.is_dir()]
-    async with trio.open_nursery() as nursery:
+    async with current_async().task_scope() as scope:
         for root in directories:
-            nursery.start_soon(
+            scope.start_soon(
                 functools.partial(
                     _transfer.transfer_tree,
                     target,
@@ -150,7 +149,7 @@ async def deploy_to(
     results: list[Deployed | None] = [None] * len(targets)
     with tempfile.TemporaryDirectory(prefix="execnet-deploy-") as directory:
         staging = Path(directory)
-        wheels = await trio.to_thread.run_sync(stage, deployment, staging)
+        wheels = await current_async().to_thread(stage, deployment, staging)
 
         async def one(index: int, target: ServiceTarget) -> None:
             results[index] = await deploy_one(deployment, target, staging, wheels)
@@ -158,9 +157,9 @@ async def deploy_to(
         if len(targets) == 1:
             await one(0, targets[0])
         else:
-            async with trio.open_nursery() as nursery:
+            async with current_async().task_scope() as scope:
                 for index, target in enumerate(targets):
-                    nursery.start_soon(one, index, target)
+                    scope.start_soon(one, index, target)
     deployed = [result for result in results if result is not None]
     assert len(deployed) == len(targets)
     return deployed
