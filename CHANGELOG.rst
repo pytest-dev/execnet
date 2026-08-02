@@ -215,6 +215,22 @@ series, once the consumers that need them have released without them.
   a ``Wakener`` in, and execnet does not offer third-party event-loop integration: a new
   concurrency library gets a namespace of its own, as gevent just did. The primitives
   are internal again.
+* A cancelled ``receive`` on ``execnet.trio`` or ``execnet.aio`` no longer eats an
+  item. The bridge cancels the engine-side receive, but the two race: if the engine
+  had already taken an item, it used to be dropped, which was the one place a facade
+  behaved worse than ``execnet.raw_trio``. Such a value is now kept and returned by
+  the next ``receive``, in order, so a cancelled receive consumes nothing whichever
+  way the race went.
+* ``ProtocolEngine`` takes a ``backend=``: ``"trio"`` (the default) or ``"asyncio"``
+  on Python 3.11 or newer, which is refused rather than backported below that. The
+  two meet the same contract -- start, a portal, one door to the root task scope, the
+  group registry, a stop that joins -- and are tested against the same suite.
+
+  **Only the trio engine can host gateways.** The protocol core is still written
+  against trio directly, so a group built on an asyncio engine is refused with a
+  message saying what is missing. The backend exists so that the boundary between
+  execnet and the async library under it is a tested one rather than an intention.
+
 * Gateway groups share one ``execnet.ProtocolEngine`` per process -- one OS thread
   running a loop -- instead of starting a thread each. Pass an explicit one as
   ``Group(engine=...)`` (or ``AsyncGroup(engine=...)``) for an isolated loop with

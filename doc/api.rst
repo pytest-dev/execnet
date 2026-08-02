@@ -134,9 +134,10 @@ difference is where the gateways live, and it is not a detail:
      - owned by the engine; a handle you can store and close from
        anywhere
    * - Cancelling ``receive``
-     - exact -- no item is ever taken and dropped
-     - cancels the engine-side receive too, but an item taken in the
-       window before it reaches you is lost
+     - exact -- the item is never taken at all
+     - cancels the engine-side receive too; an item taken before the
+       cancel landed is kept for your next ``receive``, so nothing is lost
+       either way
    * - ``shield``\ ed calls
      - not applicable -- there is nothing to shield across
      - ``send``, ``send_eof``, ``aclose``, ``terminate``: the wait is

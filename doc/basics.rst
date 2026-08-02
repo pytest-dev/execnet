@@ -411,6 +411,12 @@ cannot be reopened, and a group whose engine went away needs a new engine
 and a new group rather than quietly getting a second loop thread that none
 of its gateways are attached to.
 
+The loop is trio by default.  ``ProtocolEngine(backend="asyncio")`` builds
+one on asyncio instead, on Python 3.11 or newer -- but only the trio engine
+can host gateways today, and an asyncio one says so when you try.  It
+exists so that the boundary between execnet and the async library under it
+is a tested one; see :doc:`implnotes` for what remains.
+
 ``os.fork()`` is the same situation arriving by surprise: the loop thread is
 not duplicated into the child and the worker connections belong to the
 parent, so every group, gateway and channel the child inherits is dead there

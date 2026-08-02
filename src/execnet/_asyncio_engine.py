@@ -28,15 +28,14 @@ semantics the core is written against, and emulating them on 3.10 would
 mean maintaining a second, worse implementation for a release that reaches
 end of life in October 2026.  Older Pythons keep the trio engine.
 
-``mypy`` type-checks this project at its floor, 3.10, where the names this
-module is built on do not exist -- hence the ignores on them.  They are the
-only ones here, and they go away when the floor reaches 3.11.
+``mypy`` and ``ruff`` check this project at its floor, 3.10, where the names
+this module is built on do not exist -- hence the ignores on them.  They are
+the only ones here, and they go away when the floor reaches 3.11.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import threading
 from collections.abc import Awaitable
@@ -212,7 +211,7 @@ class AsyncioEngine:
                     await self._shutdown.wait()
                     # the asyncio spelling of nursery.cancel_scope.cancel()
                     raise _Shutdown
-            except BaseExceptionGroup as group:  # type: ignore[name-defined]
+            except BaseExceptionGroup as group:  # type: ignore[name-defined]  # noqa: F821
                 # split by type, not subgroup(predicate): a predicate is
                 # offered the *group* as well as its leaves, so
                 # ``not isinstance(exc, _Shutdown)`` matches the group

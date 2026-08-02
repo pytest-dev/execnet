@@ -189,6 +189,36 @@ one the engine can account for when it shuts down.  It keeps a list of the
 groups running on it for the same reason -- ``close()`` terminates them
 rather than leaving their workers behind, and warns that it had to.
 
+That door is also what makes the engine swappable.  ``_asyncio_engine``
+meets the same contract on ``asyncio.TaskGroup`` (Python 3.11+, refused
+below that rather than backported), and ``ProtocolEngine(backend=...)``
+picks between them; the portals raise a backend-neutral
+``LoopFinishedError`` so nothing above has to know which loop it holds.
+The protocol core is *not* ported: ``_trio_gateway`` still uses nurseries,
+cancel scopes and memory channels directly, so an asyncio engine refuses to
+build gateways instead of failing somewhere inside trio.  What is proved so
+far is the layer below the core -- the loop, the portal, the task scope --
+which is the part a port would otherwise have to invent.
+
+Cancellation is the reason that port is not as expensive as it looks.  Trio
+is level-triggered, so cleanup inside a cancelled scope needs an explicit
+shield, and there are nineteen of those; asyncio is edge-triggered, and
+cleanup after catching ``CancelledError`` simply runs -- measurably so,
+including under a ``TaskGroup`` aborting, ``asyncio.timeout`` and
+``wait_for``, none of which cancel a second time.
+
+Almost nothing crosses a cancel in the first place.  Every bridge call is
+shielded except ``receive``, ``wait_closed``, ``remote_exec``,
+``makegateway``, ``transfer`` and ``deploy_all``, and only on the two async
+facades -- the blocking surfaces have no cancellation model, and
+``raw_trio`` has no bridge.  ``receive(timeout=...)`` does not cross either:
+the deadline is enforced engine-side.  Of the crossings, only ``receive``
+could lose anything, and it no longer does: the carrier hands a value
+nobody is left to take to a *salvage* the call names, and
+``AsyncChannel.receive`` keeps a one-slot pushback that the next call
+drains.  So cancellation *precision* is not load-bearing anywhere, which is
+what makes a backend with weaker cancellation an option at all.
+
 Sends from a thread that is not the engine's wait until the frame is
 written, so an abrupt ``os._exit`` cannot drop queued data.  Sends from the
 engine thread itself (inside a receiver callback) only enqueue, to avoid
