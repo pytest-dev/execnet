@@ -27,10 +27,13 @@ import atexit
 import os
 import sys
 import threading
+import warnings
+from contextlib import suppress
 from types import TracebackType
 from typing import TYPE_CHECKING
 from typing import Any
 
+from ._errors import ActiveGroupsWarning
 from ._errors import forked_error
 
 if TYPE_CHECKING:
@@ -179,21 +182,79 @@ class ProtocolEngine:
                 self._trio_engine = trio_engine
             return self._trio_engine
 
-    def close(self, timeout: float | None = 5.0) -> None:
-        """Stop the loop and join the thread.
+    def terminate(self, timeout: float | None = None) -> None:
+        """Terminate every group this engine serves; the loop stays up.
 
-        Gateways served by this engine must already be terminated; closing
-        does not terminate them for you -- it *breaks* them, along with
-        their groups and channels: their protocol IO no longer has a loop
-        to run on.  Closing is final, so a group whose engine went away
-        fails loudly instead of quietly resurrecting a second loop thread
-        that none of its gateways are attached to.
+        Each group's own bounded contract applies -- termination frame,
+        grace period, then kill -- and the groups go concurrently, so this
+        takes about ``timeout`` however many there are.  A no-op on an
+        engine with no loop thread: there is nothing running to terminate.
+
+        This is the half of :meth:`close` you can call while there is still
+        somewhere to report a stuck worker to.  Afterwards the engine is
+        still usable, and new groups can be built on it.
         """
+        trio_engine = self._trio_engine
+        if trio_engine is None or not self.running:
+            return
+        self._check_not_engine_thread("terminate()")
+        trio_engine.call(trio_engine.terminate_groups, timeout)
+
+    def close(self, timeout: float | None = 5.0) -> None:
+        """Terminate what is still running, then stop the loop and join.
+
+        Groups still live at close time are terminated for you and warned
+        about (:class:`~execnet._errors.ActiveGroupsWarning`) -- their
+        workers are real processes, and leaving them behind because the
+        loop went away is never what anybody wanted.  Doing it yourself is
+        still better: see :meth:`terminate`.
+
+        What closing cannot do is keep those groups usable.  Their protocol
+        IO no longer has a loop to run on, so they, their gateways and their
+        channels are finished with it.  Closing is final -- for an engine
+        that never started, too -- so a group whose engine went away fails
+        loudly instead of quietly resurrecting a second loop thread that
+        none of its gateways are attached to.
+
+        ``timeout`` bounds both halves: the termination grace, and then the
+        join.  A thread that does not join is warned about rather than
+        passed over in silence.
+        """
+        trio_engine = self._trio_engine
+        if trio_engine is not None and self.running:
+            self._check_not_engine_thread("close()")
+            live = trio_engine.live_groups()
+            if live:
+                warnings.warn(
+                    f"{self!r} was closed with {live} still running: closing"
+                    " terminates them, because the alternative is leaving"
+                    " their worker processes behind. Terminate the groups"
+                    " (or the engine) while you can still act on the result.",
+                    ActiveGroupsWarning,
+                    stacklevel=2,
+                )
+                with suppress(Exception):
+                    trio_engine.call(trio_engine.terminate_groups, timeout)
         with self._lock:
             trio_engine, self._trio_engine = self._trio_engine, None
             self._closed = True
-        if trio_engine is not None:
-            trio_engine.stop(timeout=timeout)
+        if trio_engine is not None and not trio_engine.stop(timeout=timeout):
+            warnings.warn(
+                f"{self!r} did not stop within {timeout}s: its thread is still"
+                " running, and whatever wedged the loop is still holding it.",
+                ActiveGroupsWarning,
+                stacklevel=2,
+            )
+
+    def _check_not_engine_thread(self, what: str) -> None:
+        """Refuse an operation that would have the loop wait for itself."""
+        trio_engine = self._trio_engine
+        if trio_engine is not None and trio_engine._on_engine_thread():
+            raise RuntimeError(
+                f"{what} was called from {self!r}'s own loop thread, where it"
+                " would wait for that loop to finish work it is itself"
+                " running. Call it from the thread that owns the engine."
+            )
 
     def __enter__(self) -> Self:
         # entering acquires: the block ends by closing the loop thread, so
@@ -239,6 +300,12 @@ def default_engine() -> ProtocolEngine:
 def _close_default_atexit() -> None:
     engine = _default
     if engine is not None and _default_pid == os.getpid():
+        # Terminate first, and quietly: a group that is still running here
+        # has already outlived every ``atexit`` handler that could have
+        # dealt with it, and a warning emitted this late may not be
+        # displayed at all.  Reaping its workers still matters.
+        with suppress(Exception):
+            engine.terminate(timeout=1.0)
         engine.close(timeout=1.0)
 
 

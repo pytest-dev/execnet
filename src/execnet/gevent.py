@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import gevent  # noqa: F401  -- fail at import time when gevent is missing
 
+from ._errors import ActiveGroupsWarning
 from ._errors import DataFormatError
 from ._errors import DumpError
 from ._errors import HostNotFound
@@ -49,6 +50,7 @@ from .sync import ProtocolEngine
 from .sync import RSync
 
 __all__ = [
+    "ActiveGroupsWarning",
     "Channel",
     "DataFormatError",
     "DumpError",

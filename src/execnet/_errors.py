@@ -28,6 +28,21 @@ class HostNotFound(ConnectionError):
     """The remote side of a gateway could not be reached."""
 
 
+class ActiveGroupsWarning(UserWarning):
+    """A :class:`~execnet.ProtocolEngine` was closed with groups still live.
+
+    Closing terminates them rather than leaving their workers behind, but
+    it is doing the caller's job at the worst possible moment: at close
+    time there is nothing left to report a slow or stuck worker *to*, and
+    an engine closed from ``atexit`` may not get to display this warning at
+    all.  Terminate the groups where you can still see the result.
+
+    A ``UserWarning`` rather than a ``ResourceWarning`` on purpose: the
+    latter is ignored by default, and something that quietly kills worker
+    processes should not be quiet.
+    """
+
+
 class ForkedResourceError(OSError):
     """An execnet object was inherited by ``os.fork()`` and is dead here.
 

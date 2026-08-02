@@ -116,6 +116,10 @@ class TrioEngine:
         self._started = False
         self._callback_limiter: trio.CapacityLimiter | None = None
         self._startup_error: BaseException | None = None
+        #: engine-side groups currently running here, in start order.  Only
+        #: touched from the engine thread (a group registers itself as its
+        #: task starts and drops out as it ends), so it needs no lock.
+        self._groups: list[Any] = []
 
     def start(self) -> None:
         if self._started:
@@ -245,9 +249,56 @@ class TrioEngine:
             raise RuntimeError("TrioEngine nursery is not available")
         return await self._nursery.start(async_fn, *args)
 
-    def stop(self, timeout: float | None = 5.0) -> None:
-        if not self._started or self._portal is None or self._shutdown is None:
+    # -- the groups running here (engine thread only) --
+
+    def _register_group(self, group: Any) -> None:
+        self._groups.append(group)
+
+    def _forget_group(self, group: Any) -> None:
+        if group in self._groups:
+            self._groups.remove(group)
+
+    def live_groups(self) -> str:
+        """What is still running here, for a message; ``""`` when nothing is.
+
+        Reads a list the engine thread owns, from whichever thread is
+        closing.  Racy by construction and deliberately harmless: the worst
+        outcome is naming a gateway that finished terminating a moment ago.
+        """
+        ids = [
+            str(gateway.id)
+            for group in list(self._groups)
+            for gateway in list(group._gateways)
+        ]
+        if not ids:
+            return ""
+        return f"{len(self._groups)} group(s), gateways {', '.join(sorted(ids))}"
+
+    async def terminate_groups(self, timeout: float | None = None) -> None:
+        """Terminate every group running here, concurrently (engine loop).
+
+        Each group's own bounded contract applies -- termination frame,
+        grace, then kill -- so this ends in roughly ``timeout`` however many
+        groups there are, rather than in the sum of them.
+        """
+        groups = list(self._groups)
+        if not groups:
             return
+        async with trio.open_nursery() as nursery:
+            for group in groups:
+                nursery.start_soon(group.terminate, timeout)
+        for group in groups:
+            # lets each group's run task finish, which is what unregisters it
+            group.shutdown.set()
+
+    def stop(self, timeout: float | None = 5.0) -> bool:
+        """Cancel the root nursery and join the thread; True if it joined.
+
+        A thread that does not join is a leak worth reporting: the loop is
+        still running, and whatever wedged it is still holding it.
+        """
+        if not self._started or self._portal is None or self._shutdown is None:
+            return True
 
         def _set() -> None:
             assert self._shutdown is not None
@@ -257,9 +308,12 @@ class TrioEngine:
             self._portal.run_sync(_set)
         except Exception:
             pass
+        joined = True
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+            joined = not self._thread.is_alive()
         self._started = False
+        return joined
 
 
 def engine_call(
@@ -272,7 +326,7 @@ def engine_call(
 
     ``thread`` keeps the KI-deferred ``portal.run`` path.  Any other backend
     implies the caller may not own its OS thread -- a gevent hub runs every
-    other greenlet on it -- so the work becomes a engine task and the wait
+    other greenlet on it -- so the work becomes an engine task and the wait
     happens on a ``OneShot`` with that backend's wakener.
 
     The blocking surfaces all funnel through here: ``Group`` for gateway

@@ -57,6 +57,7 @@ from ._deploy import Deployed
 from ._deploy import Deployment
 from ._engine import ProtocolEngine
 from ._engine import default_engine
+from ._errors import ActiveGroupsWarning
 from ._errors import DataFormatError
 from ._errors import DumpError
 from ._errors import HostNotFound
@@ -72,6 +73,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 __all__ = [
+    "ActiveGroupsWarning",
     "AsyncChannel",
     "AsyncGateway",
     "AsyncGroup",
@@ -182,17 +184,22 @@ class _EngineBridge:
 class _EngineGroup(_TrioGroup):
     """Trio AsyncGroup living as a task on the engine nursery."""
 
-    def __init__(self, termination_timeout: float) -> None:
+    def __init__(self, termination_timeout: float, engine: Any) -> None:
         super().__init__(termination_timeout)
+        self.engine = engine
         self.shutdown = trio.Event()
         self.finished = trio.Event()
 
     async def run(self, task_status: trio.TaskStatus[_EngineGroup]) -> None:
+        # registered for exactly this task's lifetime, so closing the engine
+        # knows what it is about to take down
+        self.engine._register_group(self)
         try:
             async with self:
                 task_status.started(self)
                 await self.shutdown.wait()
         finally:
+            self.engine._forget_group(self)
             self.finished.set()
 
 
@@ -348,7 +355,7 @@ class AsyncGroup:
 
         async def start_group() -> _EngineGroup:
             # runs on the engine loop
-            group = _EngineGroup(self._termination_timeout)
+            group = _EngineGroup(self._termination_timeout, trio_engine)
             started: _EngineGroup = await trio_engine.start_task(group.run)
             return started
 
