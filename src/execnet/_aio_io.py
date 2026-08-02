@@ -109,8 +109,12 @@ class AsyncioProcess:
 
     def __init__(self, process: asyncio.subprocess.Process) -> None:
         self._process = process
-        self.stdin = process.stdin
-        self.stdout = process.stdout
+        # as ByteStreams, not raw reader/writer: the core writes a wheel to
+        # ``process.stdin`` with ``send_all`` and closes it with ``aclose``
+        self.stdin = AsyncioByteStream(None, process.stdin) if process.stdin else None
+        self.stdout = (
+            AsyncioByteStream(process.stdout, None) if process.stdout else None
+        )
 
     @property
     def pid(self) -> int:
@@ -140,7 +144,7 @@ def staple_process(process: AsyncioProcess) -> AsyncioByteStream:
     """One bidirectional stream over a process's stdin/stdout pair."""
     assert process.stdin is not None
     assert process.stdout is not None
-    return AsyncioByteStream(process.stdout, process.stdin)
+    return AsyncioByteStream(process.stdout._reader, process.stdin._writer)
 
 
 async def staple_fds(read_fd: int, write_fd: int) -> AsyncioByteStream:
