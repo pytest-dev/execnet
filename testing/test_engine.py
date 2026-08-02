@@ -237,8 +237,26 @@ class TestFork:
         group.terminate(timeout=5.0)
 
 
+def take_the_loop_away(engine: ProtocolEngine) -> None:
+    """Stop the loop without draining what is running on it.
+
+    What :meth:`ProtocolEngine.close` used to do unconditionally.  It now
+    terminates the groups first, which is the right default -- but an
+    engine can still lose its loop without a tidy shutdown, and what the
+    objects it served do afterwards is the same either way.  Doing it this
+    way here keeps these tests deterministic: a termination racing the
+    teardown decides whether a channel ends at a clean EOF or at a reset
+    connection, and that race is not what any of them is about.
+    """
+    trio_engine = engine._ensure_started()
+    with engine._lock:
+        engine._trio_engine = None
+        engine._closed = True
+    trio_engine.stop(timeout=5.0)
+
+
 class TestEngineDestruction:
-    """Closing an engine breaks what it served -- loudly, and without hanging.
+    """A loop that goes away breaks what it served -- loudly, without hanging.
 
     A gateway's protocol IO lives on the engine loop, so stopping that loop
     is not a resource being freed underneath a working object: it ends the
@@ -246,11 +264,9 @@ class TestEngineDestruction:
     call site rather than hang, deliver nothing silently, or quietly start
     a second loop thread that none of the existing gateways are on.
 
-    Each of these closes with a group still live, which is what the warning
-    is for; the contract around that is :class:`TestEngineShutdownContract`.
+    What :meth:`ProtocolEngine.close` does *about* that -- terminate first,
+    and say so -- is :class:`TestEngineShutdownContract`.
     """
-
-    pytestmark = pytest.mark.filterwarnings("ignore::execnet.ActiveGroupsWarning")
 
     def test_close_breaks_the_channels_it_served(self) -> None:
         engine = ProtocolEngine(name="execnet-engine-broken-channel")
@@ -260,7 +276,7 @@ class TestEngineDestruction:
         channel.send(1)
         assert channel.receive(TESTTIMEOUT) == 2
 
-        engine.close()
+        take_the_loop_away(engine)
 
         assert not gateway.hasreceiver()
         with pytest.raises(EOFError):
@@ -277,7 +293,7 @@ class TestEngineDestruction:
         gateway = group.makegateway("popen")
         assert gateway.remote_exec("channel.send(1)").receive(TESTTIMEOUT) == 1
 
-        engine.close()
+        take_the_loop_away(engine)
 
         with pytest.raises(OSError):
             gateway.newchannel()
@@ -292,7 +308,7 @@ class TestEngineDestruction:
         group = execnet.Group(engine=engine)
         group.makegateway("popen")
 
-        engine.close()
+        take_the_loop_away(engine)
 
         assert not engine.running
         with pytest.raises(RuntimeError, match="was closed"):
@@ -303,12 +319,6 @@ class TestEngineDestruction:
         assert "execnet-engine-broken-group" not in engine_thread_names()
         # cleaning up a broken group still returns
         group.terminate(timeout=5.0)
-
-    def test_closing_is_final_even_for_an_unused_engine(self) -> None:
-        engine = ProtocolEngine(name="execnet-engine-unused")
-        engine.close()
-        with pytest.raises(RuntimeError, match="was closed"):
-            execnet.Group(engine=engine).makegateway("popen")
 
     def test_aio_group_on_a_closed_engine_raises(self) -> None:
         engine = ProtocolEngine(name="execnet-engine-closed-aio")
@@ -334,7 +344,7 @@ class TestEngineDestruction:
         # everything the worker sent has arrived and is buffered by now
         channel.waitclose(TESTTIMEOUT)
 
-        engine.close()
+        take_the_loop_away(engine)
 
         received: list[object] = []
         with pytest.raises(OSError, match="engine loop"):

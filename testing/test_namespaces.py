@@ -2,10 +2,17 @@
 
 There is one namespace per concurrency library the caller drives execnet
 from: top-level ``execnet.*`` is an alias surface over ``execnet.sync``
-(threads), ``execnet.trio`` and ``execnet.aio`` expose the async-native core
-and its asyncio bridge, and ``execnet.gevent`` the greenlet-parking blocking
-surface.  Everything else in the package is private -- the pre-Trio module
-names survive only as warning shims.
+(threads), ``execnet.trio`` and ``execnet.aio`` await the same engine from
+their own loops, ``execnet.gevent`` parks greenlets, and
+``execnet.raw_trio`` embeds the core in the caller's own trio run with no
+engine at all.  Everything else in the package is private -- the pre-Trio
+module names survive only as warning shims.
+
+The surface tables below are the point of this module.  A namespace that
+quietly loses a verb -- ``execnet.gevent`` shipped without ``Deployment``
+for a while, and nothing noticed -- is a hole a test should have closed,
+and the facades' *deliberate* omissions are only credible if they are
+written down somewhere that fails when they change.
 """
 
 from __future__ import annotations
@@ -15,6 +22,7 @@ import pkgutil
 import subprocess
 import sys
 import warnings
+from typing import Any
 
 import pytest
 
@@ -219,3 +227,126 @@ def test_shim_rejects_unknown_attribute(shim: str) -> None:
         warnings.simplefilter("error", DeprecationWarning)
         with pytest.raises(AttributeError, match="no attribute 'nonexistent'"):
             getattr(module, "nonexistent")  # noqa: B009
+
+
+#: the verbs every namespace that talks to a worker must offer.  Kept as
+#: data because the failure mode is a namespace silently missing one, not a
+#: namespace getting one wrong.
+COMMON_NAMES = (
+    "DataFormatError",
+    "DumpError",
+    "HostNotFound",
+    "LoadError",
+    "RemoteError",
+    "TimeoutError",
+    "XSpec",
+)
+
+#: the deployment layer, which reaches a worker through a service and is
+#: therefore available from every surface that can hold a gateway
+DEPLOYMENT_NAMES = ("Deployed", "Deployment", "transfer")
+
+#: surfaces that put protocol IO on a ProtocolEngine, and so expose it
+ENGINE_NAMES = ("ActiveGroupsWarning", "ProtocolEngine")
+
+
+def _namespace(name: str) -> Any:
+    """Import a public namespace, skipping the one with a hard dependency."""
+    if name == "gevent":
+        pytest.importorskip("gevent")
+    return importlib.import_module(f"execnet.{name}")
+
+
+@pytest.mark.parametrize("name", COMMON_NAMES)
+@pytest.mark.parametrize("namespace", PUBLIC_NAMESPACES)
+def test_every_namespace_exports_the_common_names(namespace: str, name: str) -> None:
+    module = _namespace(namespace)
+    assert name in module.__all__, f"execnet.{namespace} is missing {name}"
+
+
+@pytest.mark.parametrize("name", DEPLOYMENT_NAMES)
+@pytest.mark.parametrize("namespace", PUBLIC_NAMESPACES)
+def test_every_namespace_can_deploy(namespace: str, name: str) -> None:
+    # execnet.gevent shipped without these while _deploy._facade already had
+    # a gevent parking path: the plumbing was there and the names were not.
+    # The async namespaces bind ``transfer`` to their own coroutine rather
+    # than the blocking one, which is the same verb either way.
+    module = _namespace(namespace)
+    assert name in module.__all__, f"execnet.{namespace} is missing {name}"
+
+
+@pytest.mark.parametrize("name", ENGINE_NAMES)
+@pytest.mark.parametrize("namespace", ["sync", "gevent", "aio", "trio"])
+def test_engine_backed_namespaces_expose_the_engine(namespace: str, name: str) -> None:
+    module = _namespace(namespace)
+    assert name in module.__all__, f"execnet.{namespace} is missing {name}"
+
+
+def test_raw_trio_has_no_engine() -> None:
+    # it does not have one: the gateways are tasks in the caller's nursery
+    for name in ENGINE_NAMES:
+        assert name not in execnet.raw_trio.__all__, name
+
+
+#: the facades' public member sets, pinned.  Adding to these is a decision;
+#: the point of writing them down is that it cannot happen by accident.
+FACADE_SURFACE = {
+    "AsyncGroup": {
+        "aclose",
+        "engine",
+        "makegateway",
+        "start",
+    },
+    "AsyncGateway": {
+        "id",
+        "remote_exec",
+        "remoteaddress",
+        "terminate",
+    },
+    "AsyncChannel": {
+        "aclose",
+        "id",
+        "isclosed",
+        "receive",
+        "send",
+        "send_eof",
+        "wait_closed",
+    },
+}
+
+#: what the raw surface has and a facade deliberately does not.  Channel
+#: ids come from an unlocked per-gateway counter that works only because
+#: one loop owns it, so a second allocator across the bridge would collide.
+RAW_ONLY = {
+    "AsyncGateway": {"_open_raw_channel", "open_channel", "_enqueue_frame"},
+}
+
+
+def _public_members(obj: type) -> set[str]:
+    return {
+        name
+        for name in dir(obj)
+        if not name.startswith("_") and not isinstance(getattr(obj, name, None), type)
+    }
+
+
+@pytest.mark.parametrize("namespace", ["aio", "trio"])
+@pytest.mark.parametrize("classname", sorted(FACADE_SURFACE))
+def test_the_facades_have_the_same_public_surface(
+    namespace: str, classname: str
+) -> None:
+    module = _namespace(namespace)
+    assert _public_members(getattr(module, classname)) == FACADE_SURFACE[classname]
+
+
+@pytest.mark.parametrize("namespace", ["aio", "trio"])
+@pytest.mark.parametrize("classname", sorted(RAW_ONLY))
+def test_the_facades_omit_what_does_not_cross_the_bridge(
+    namespace: str, classname: str
+) -> None:
+    module = _namespace(namespace)
+    facade = getattr(module, classname)
+    raw = getattr(execnet.raw_trio, classname)
+    for name in RAW_ONLY[classname]:
+        assert hasattr(raw, name), f"raw_trio.{classname} lost {name}"
+        assert not hasattr(facade, name), f"execnet.{namespace}.{classname} has {name}"

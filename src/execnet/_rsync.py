@@ -115,7 +115,7 @@ class RSync:
             await self._send_one(manifest, targets[0], service_targets[0])
             return
         async with trio.open_nursery() as nursery:
-            for target, service_target in zip(targets, service_targets):
+            for target, service_target in zip(targets, service_targets, strict=True):
                 nursery.start_soon(self._send_one, manifest, target, service_target)
 
     async def _send_one(

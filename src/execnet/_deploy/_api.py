@@ -121,7 +121,7 @@ class Deployment:
 
     ``name`` names the workspace.  Deployments sharing a name share a
     directory on the host, which is the point on a cluster: the second
-    gateway to a machine re-uses the environment the first one built, and
+    gateway to a machine reuses the environment the first one built, and
     only what changed is transferred.
     """
 
