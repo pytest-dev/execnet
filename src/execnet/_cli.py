@@ -238,12 +238,31 @@ def interpreter_info() -> dict[str, Any]:
 
     return {
         "execnet": version,
+        # Can this interpreter serve a worker at all?  The question a
+        # coordinator actually has, asked without naming an engine -- an
+        # install with no trio answers yes on Python 3.11+, where asyncio
+        # runs the protocol.  ``trio`` stays for a coordinator old enough to
+        # have asked that instead, and because knowing the version helps.
+        "worker": _engines() != [],
+        "engines": _engines(),
         "trio": trio_version,
         "python": ".".join(str(part) for part in sys.version_info[:3]),
         "executable": sys.executable,
         "platform": sys.platform,
         "protocols": _supported_protocols(),
     }
+
+
+def _engines() -> list[str]:
+    """Which async libraries this interpreter could run the protocol on."""
+    import importlib.util
+
+    found = []
+    if importlib.util.find_spec("trio") is not None:
+        found.append("trio")
+    if sys.version_info >= (3, 11):
+        found.append("asyncio")
+    return found
 
 
 def _supported_protocols() -> list[str]:

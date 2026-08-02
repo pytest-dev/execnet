@@ -170,13 +170,22 @@ def target_info(python: str) -> dict[str, Any] | None:
 
 
 def target_has_execnet(python: str) -> bool:
-    """Whether ``python`` can host a worker directly (execnet + trio present).
+    """Whether ``python`` can host a worker directly (execnet, and an engine).
 
     When true the worker is launched on that interpreter as-is (preserving
     ``sys.executable``); otherwise it must be uv-provisioned.
+
+    Asked through the neutral ``worker`` key rather than by looking for
+    trio: an install with no trio still serves a worker on Python 3.11+,
+    where asyncio runs the protocol.  ``trio`` is the fallback for a remote
+    old enough to predate the neutral key -- there it *was* the answer.
     """
     info = target_info(python)
-    return info is not None and info.get("trio") is not None
+    if info is None:
+        return False
+    if "worker" in info:
+        return bool(info["worker"])
+    return info.get("trio") is not None
 
 
 def _version_slug(version: str) -> str:

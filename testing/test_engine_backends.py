@@ -21,7 +21,6 @@ from typing import Any
 import pytest
 
 import execnet
-from execnet import _trio_engine
 from execnet._asyncio_engine import MIN_PYTHON
 from execnet._asyncio_engine import AsyncioEngine
 from execnet._engine import BACKENDS
@@ -246,11 +245,13 @@ class TestBackendSelection:
     def test_a_patched_process_falls_back_to_asyncio(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from execnet import _engine as engine_module
+
         # the one environment the trio engine has to refuse is exactly the
         # one asyncio does not care about, so execnet.gevent works there
         pytest.importorskip("gevent")
         monkeypatch.setattr(
-            _trio_engine, "gevent_patched_modules", lambda: ["select", "socket"]
+            engine_module, "gevent_patched_modules", lambda: ["select", "socket"]
         )
         if sys.version_info >= MIN_PYTHON:
             assert pick_backend() == "asyncio"

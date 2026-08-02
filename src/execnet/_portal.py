@@ -31,8 +31,6 @@ from collections.abc import Callable
 from typing import Any
 from typing import TypeVar
 
-import trio
-
 from ._boundary import Mailbox
 from ._boundary import OneShot
 from ._boundary import ThreadWakener
@@ -56,17 +54,21 @@ class LoopPortal:
     """Handle to a running trio loop, usable from foreign threads.
 
     Must be constructed on the loop's own thread (it captures the current
-    trio token).
+    trio token).  Imports trio itself, so a process with no trio can still
+    reach :class:`AsyncioPortal` from this module.
     """
 
     def __init__(self) -> None:
+        import trio
+
+        self._trio = trio
         self._token = trio.lowlevel.current_trio_token()
         self._pid = os.getpid()
 
     def is_loop_thread(self) -> bool:
         """Whether the calling thread is running this portal's loop."""
         try:
-            return trio.lowlevel.current_trio_token() is self._token
+            return bool(self._trio.lowlevel.current_trio_token() is self._token)
         except RuntimeError:
             return False
 
@@ -86,16 +88,18 @@ class LoopPortal:
         """Run ``await async_fn(*args)`` on the loop, blocking this thread."""
         self._check_process()
         try:
-            return trio.from_thread.run(async_fn, *args, trio_token=self._token)
-        except trio.RunFinishedError as exc:
+            return self._trio.from_thread.run(async_fn, *args, trio_token=self._token)
+        except self._trio.RunFinishedError as exc:
             raise LoopFinishedError(str(exc)) from None
 
     def run_sync(self, sync_fn: Callable[..., T], *args: Any) -> T:
         """Run ``sync_fn(*args)`` on the loop, blocking this thread."""
         self._check_process()
         try:
-            return trio.from_thread.run_sync(sync_fn, *args, trio_token=self._token)
-        except trio.RunFinishedError as exc:
+            return self._trio.from_thread.run_sync(
+                sync_fn, *args, trio_token=self._token
+            )
+        except self._trio.RunFinishedError as exc:
             raise LoopFinishedError(str(exc)) from None
 
     def post(self, sync_fn: Callable[..., object], *args: Any) -> None:
@@ -114,7 +118,7 @@ class LoopPortal:
         self._check_process()
         try:
             self._token.run_sync_soon(sync_fn, *args)
-        except trio.RunFinishedError as exc:
+        except self._trio.RunFinishedError as exc:
             raise LoopFinishedError(str(exc)) from None
 
 

@@ -36,7 +36,6 @@ from ._portal import OneShot
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 from ._trace import trace
-from ._trio_engine import TrioEngine
 from ._trio_gateway import RECEIVE_CHUNK
 from ._trio_gateway import AsyncGateway
 from ._trio_gateway import AsyncGroup
@@ -57,6 +56,10 @@ def _run_callback(callback: Callable[[Any], Any], data: bytes, channel: Any) -> 
 
 
 if TYPE_CHECKING:
+    #: either engine; only ever used as an annotation here, and importing
+    #: the trio one would make this module need trio
+    from typing import Any as Engine
+
     from ._gateway import Gateway
     from ._gateway_base import BaseGateway
     from ._multi import Group
@@ -145,7 +148,7 @@ class SyncBridgeGateway(AsyncGateway):
         *,
         id: str,
         sync_gateway: BaseGateway,
-        engine: TrioEngine,
+        engine: Engine,
     ) -> None:
         super().__init__(stream, id=id)
         self.sync_gateway = sync_gateway
@@ -452,9 +455,10 @@ class SyncBridgeGateway(AsyncGateway):
         if portal.is_loop_thread():
             return sync_fn()
         try:
-            return portal.run_sync(sync_fn)
+            result: T = portal.run_sync(sync_fn)
         except LoopFinishedError:
             return sync_fn()
+        return result
 
     def enqueue_message(self, message: Message) -> None:
         """Enqueue a frame; wait until written when safe to block.
@@ -530,11 +534,11 @@ class SyncBridgeGateway(AsyncGateway):
 
 
 async def start_session(
-    engine: TrioEngine, gateway: BaseGateway, io: ByteStream
+    engine: Engine, gateway: BaseGateway, io: ByteStream
 ) -> SyncBridgeGateway:
     """Serve ``gateway`` over ``io`` as a task on ``engine``.
 
-    A function rather than a :class:`TrioEngine` method because the session
+    A function rather than a :class:`Engine` method because the session
     it builds belongs to this layer: the engine offers a nursery to start
     long-lived tasks on and stays ignorant of what they are.
     """
@@ -567,14 +571,14 @@ class _TempIO:
 class FacadeAsyncGroup(AsyncGroup):
     """AsyncGroup owning the async side of a sync ``Group``.
 
-    Runs on the group's :class:`TrioEngine`.  Gateways come out as
+    Runs on the group's :class:`Engine`.  Gateways come out as
     :class:`SyncBridgeGateway` objects bound to freshly built sync
     ``Gateway`` facades, and the via / installvia flows go through the sync
     sync coordinator gateway (its dispatch is sync, so async channels cannot be
     on it).
     """
 
-    def __init__(self, group: Group, engine: TrioEngine) -> None:
+    def __init__(self, group: Group, engine: Engine) -> None:
         super().__init__()
         # built on the engine loop, so its vocabulary is available here --
         # the base class captures the same one when the group is entered
@@ -638,7 +642,7 @@ class FacadeAsyncGroup(AsyncGroup):
 
 def makegateway_trio(group: Group, spec: Any) -> Gateway:
     """Create a sync-facade Gateway for ``spec`` on the group's Trio engine."""
-    engine: TrioEngine = group._ensure_trio_engine()
+    engine: Engine = group._ensure_trio_engine()
     async_group: FacadeAsyncGroup = group._ensure_async_group()
     # e.g. a gevent app: only the calling greenlet parks while the gateway
     # comes up, not the whole hub.
@@ -775,7 +779,7 @@ def handle_start_socket(gateway: BaseGateway, channelid: int, data: bytes) -> No
     """Worker handler for ``Message.GATEWAY_START_SOCKET`` (on the engine thread)."""
     bind_host = loads_internal(data)
     assert isinstance(bind_host, str)
-    engine: TrioEngine = gateway._trio_exec.engine  # type: ignore[attr-defined]
+    engine: Engine = gateway._trio_exec.engine  # type: ignore[attr-defined]
     # The receiver runs on the engine thread, so schedule the async work directly.
     engine.start_soon(_start_socket_and_reply, gateway, channelid, bind_host)
 
@@ -889,5 +893,5 @@ def handle_start_sub(gateway: BaseGateway, channelid: int, data: bytes) -> None:
     """Worker handler for ``Message.GATEWAY_START_SUB`` (on the engine thread)."""
     request = loads_internal(data)
     assert isinstance(request, dict)
-    engine: TrioEngine = gateway._trio_exec.engine  # type: ignore[attr-defined]
+    engine: Engine = gateway._trio_exec.engine  # type: ignore[attr-defined]
     engine.start_soon(_start_sub_and_relay, gateway, channelid, request)

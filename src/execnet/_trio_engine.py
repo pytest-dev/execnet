@@ -15,7 +15,6 @@ account for at shutdown.
 
 from __future__ import annotations
 
-import sys
 import threading
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -26,27 +25,11 @@ import trio
 
 from ._boundary import WaitBackend
 from ._engine import DEFAULT_CALLBACK_THREADS
+from ._engine import gevent_patched_modules
 from ._portal import LoopPortal
 from ._portal import OneShot
 
 T = TypeVar("T")
-
-
-#: modules trio's cross-thread machinery needs the real versions of
-_GEVENT_SENSITIVE = ("select", "socket", "thread", "queue")
-
-
-def gevent_patched_modules() -> list[str]:
-    """Which modules the engine loop needs have been monkey-patched by gevent.
-
-    The engine loop is a trio program on its own OS thread, and trio reaches
-    for ``select.epoll``, real sockets, a real ``SimpleQueue`` and real
-    locks to talk to it.  ``gevent.monkey`` replaces those process-wide.
-    """
-    monkey = sys.modules.get("gevent.monkey")
-    if monkey is None:
-        return []
-    return [name for name in _GEVENT_SENSITIVE if monkey.is_module_patched(name)]
 
 
 def _check_gevent_not_patched() -> None:

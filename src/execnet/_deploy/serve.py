@@ -6,7 +6,7 @@ never imports it, and a worker that is never asked to receive anything
 never pays for it either.
 
 Both handlers keep their bodies synchronous and run them in a worker
-thread, reaching the channel through ``trio.from_thread``.  Receiving a
+thread, reaching the channel through a portal into the loop.  Receiving a
 tree is ``lstat``/``mkdir``/``chmod``/``utime``/``symlink`` and whole-file
 writes; building an environment is waiting on ``uv``.  Threading a loop
 through either would rewrite fiddly, well-tested logic into something
@@ -26,10 +26,9 @@ from hashlib import md5
 from pathlib import Path
 from typing import Any
 
-import trio
-
 from .._errors import geterrortext
 from .._trace import trace
+from .._trio_worker import _loop_portal
 from ._manifest import Entry
 from ._manifest import Manifest
 from ._manifest import Wanted
@@ -38,42 +37,45 @@ from ._manifest import Wanted
 class _ThreadChannel:
     """A channel's sync view, from a thread ``to_thread`` started.
 
-    ``trio.from_thread.run`` needs no token: the thread knows which run it
-    belongs to because that run started it.
+    Built on the loop and handed a portal into it, rather than relying on
+    trio's ability to find the run that spawned a thread: asyncio's thread
+    hop gives the thread no such back-reference, and this has to work on
+    both.
     """
 
-    def __init__(self, channel: Any) -> None:
+    def __init__(self, channel: Any, portal: Any) -> None:
         self._channel = channel
+        self._portal = portal
 
     def send(self, item: object) -> None:
-        trio.from_thread.run(self._channel.send, item)
+        self._portal.run(self._channel.send, item)
 
     def receive(self) -> Any:
-        return trio.from_thread.run(self._channel.receive)
+        return self._portal.run(self._channel.receive)
 
 
-#: how much of the worker's thread pool service bodies may hold at once.
-#: A quarter of it, because ``exec_capacity`` already claims half and
-#: reasons explicitly about leaving "the rest to the machinery that has to
-#: keep running while execs are in flight" -- services are that machinery,
-#: and they were not in that accounting.  Unbounded, they are not: 25
-#: concurrent transfers held 25 threads and pushed a 5ms ``remote_exec``
-#: out to 3.1 seconds, and a deployment with many roots does exactly that
-#: to its own worker.
-_LIMITER: trio.lowlevel.RunVar[trio.CapacityLimiter] = trio.lowlevel.RunVar(
-    "execnet_service_limiter"
-)
+def service_limiter(gateway: Any) -> Any:
+    """The bound on concurrent service bodies (call on the loop).
 
+    A quarter of the worker's thread budget, because ``exec_capacity``
+    already claims half and reasons explicitly about leaving "the rest to
+    the machinery that has to keep running while execs are in flight" --
+    services are that machinery, and they were not in that accounting.
+    Unbounded, they are not: 25 concurrent transfers held 25 threads and
+    pushed a 5ms ``remote_exec`` out to 3.1 seconds, and a deployment with
+    many roots does exactly that to its own worker.
 
-def service_limiter() -> trio.CapacityLimiter:
-    """The bound on concurrent service bodies (per run; call on the loop)."""
-    try:
-        return _LIMITER.get()
-    except LookupError:
-        total = trio.to_thread.current_default_thread_limiter().total_tokens
-        limiter = trio.CapacityLimiter(max(1, int(total // 4)))
-        _LIMITER.set(limiter)
-        return limiter
+    Kept on the *gateway* rather than in a per-run variable: the budget it
+    slices belongs to one loop, and the gateway is the thing every service
+    call site already has -- including a pure-async worker, which has a
+    gateway but no engine object to hang it on.
+    """
+    limiter = getattr(gateway, "_service_limiter", None)
+    if limiter is None:
+        aio = gateway._aio
+        limiter = aio.limiter(max(1, aio.thread_budget() // 4))
+        gateway._service_limiter = limiter
+    return limiter
 
 
 async def _serve(handler: Any, gateway: Any, channelid: int, request: Any) -> None:
@@ -84,20 +86,21 @@ async def _serve(handler: Any, gateway: Any, channelid: int, request: Any) -> No
     every gateway in the process with it.  The coordinator is waiting on
     this channel, so that is where the reason goes.
     """
+    aio = gateway._aio
     channel = gateway.open_channel(channelid)
     try:
-        await trio.to_thread.run_sync(
+        await aio.to_thread(
             handler,
-            _ThreadChannel(channel),
+            _ThreadChannel(channel, _loop_portal()),
             request,
             abandon_on_cancel=True,
-            limiter=service_limiter(),
+            limiter=service_limiter(gateway),
         )
-    except trio.Cancelled:
+    except aio.Cancelled:
         raise
     except BaseException as exc:
         trace(f"service on channel {channelid} failed: {exc!r}")
-        with trio.CancelScope(shield=True):
+        with aio.shielded():
             try:
                 await channel.aclose(geterrortext(exc))
             except Exception:  # the connection went away first

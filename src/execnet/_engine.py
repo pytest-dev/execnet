@@ -52,6 +52,23 @@ BACKENDS = {
 }
 
 
+#: modules trio's cross-thread machinery needs the real versions of
+_GEVENT_SENSITIVE = ("select", "socket", "thread", "queue")
+
+
+def gevent_patched_modules() -> list[str]:
+    """Which modules the engine loop needs have been monkey-patched by gevent.
+
+    The engine loop is a trio program on its own OS thread, and trio reaches
+    for ``select.epoll``, real sockets, a real ``SimpleQueue`` and real
+    locks to talk to it.  ``gevent.monkey`` replaces those process-wide.
+    """
+    monkey = sys.modules.get("gevent.monkey")
+    if monkey is None:
+        return []
+    return [name for name in _GEVENT_SENSITIVE if monkey.is_module_patched(name)]
+
+
 def pick_backend() -> str:
     """Which async library to run a loop on, given this process.
 
@@ -69,8 +86,6 @@ def pick_backend() -> str:
     ``backend=`` is checked at construction, since that only depends on the
     interpreter.
     """
-    from ._trio_engine import gevent_patched_modules
-
     trio_usable = importlib.util.find_spec("trio") is not None
     if trio_usable and not gevent_patched_modules():
         return "trio"
