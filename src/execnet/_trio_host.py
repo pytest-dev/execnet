@@ -2,13 +2,12 @@
 
 Coordinator and worker both run framed read/write loops here.
 Sync Channel/Gateway APIs talk to this engine via thread-safe queues and
-``trio.from_thread``.
+the engine's portal.
 """
 
 from __future__ import annotations
 
 import functools
-import math
 import queue as _queue
 import subprocess
 import sys
@@ -20,8 +19,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypeVar
 
-import trio
-
+from ._async import current_async
 from ._boundary import Flag
 from ._channel import ENDMARKER
 from ._channel import NO_ENDMARKER_WANTED
@@ -70,7 +68,7 @@ T = TypeVar("T")
 ssh_trio_args = ssh_transport_args
 
 
-async def adopt_socket(sock: int | Any) -> trio.SocketStream:
+async def adopt_socket(sock: int | Any) -> Any:
     """Worker side: wrap an inherited socket for the loop.
 
     Takes an fd or an already-built socket.  Rebuilding one from its fd
@@ -88,7 +86,7 @@ async def adopt_socket(sock: int | Any) -> trio.SocketStream:
 
     if isinstance(sock, int):
         sock = _socket.socket(fileno=sock)
-    return trio.SocketStream(trio.socket.from_stdlib_socket(sock))
+    return await current_async().wrap_socket(sock)
 
 
 class SyncIOHandle:
@@ -240,9 +238,7 @@ class SyncBridgeGateway(AsyncGateway):
             return
         gateway._trace("[trio-bridge] terminating execution")
         # May sleep/SIGINT; keep it off the Trio scheduling thread.
-        await trio.to_thread.run_sync(
-            gateway._terminate_execution, abandon_on_cancel=True
-        )
+        await self._aio.to_thread(gateway._terminate_execution, abandon_on_cancel=True)
 
     # -- sync session interface (any thread) --
 
@@ -341,14 +337,14 @@ class SyncBridgeGateway(AsyncGateway):
             mailbox = channel._mailbox
             if mailbox is None:
                 raise OSError(f"{channel!r} has callback already registered")
-            inbox_send, inbox_recv = trio.open_memory_channel[bytes](math.inf)
+            inbox_send, inbox_recv = self._aio.queue()
 
             def feed(data: bytes) -> None:
-                with suppress(trio.BrokenResourceError, trio.ClosedResourceError):
+                with suppress(*self._aio.STREAM_GONE):
                     inbox_send.send_nowait(data)
 
             def close_inbox() -> None:
-                with suppress(trio.ClosedResourceError):
+                with suppress(self._aio.ClosedResource):
                     inbox_send.close()
 
             # Drain items buffered before the switch into the task's inbox,
@@ -371,7 +367,7 @@ class SyncBridgeGateway(AsyncGateway):
 
             def stop() -> None:
                 # thread-safe: end the task's inbox from any thread (local close)
-                with suppress(LoopFinishedError, trio.ClosedResourceError):
+                with suppress(LoopFinishedError, self._aio.ClosedResource):
                     self.engine.portal.post(inbox_send.close)
 
             channel._consumer_stop = stop
@@ -394,7 +390,7 @@ class SyncBridgeGateway(AsyncGateway):
     async def _run_consumer(
         self,
         channel: Any,
-        inbox: trio.MemoryReceiveChannel[bytes],
+        inbox: Any,
         callback: Callable[[Any], Any],
         endmarker: Endmarker,
         done: Flag,
@@ -411,12 +407,12 @@ class SyncBridgeGateway(AsyncGateway):
         try:
             async for data in inbox:
                 try:
-                    await trio.to_thread.run_sync(
+                    await self._aio.to_thread(
                         functools.partial(_run_callback, callback, data, channel),
                         limiter=limiter,
                     )
                 except Exception as exc:
-                    # trio.Cancelled is a BaseException and propagates past
+                    # a cancellation is a BaseException and propagates past
                     # here (engine shutdown); only a real callback/deserialize
                     # failure closes the channel with the error.
                     self._consumer_failed(channel, exc)
@@ -424,13 +420,13 @@ class SyncBridgeGateway(AsyncGateway):
         finally:
             # Fire the endmarker and signal done even while the engine is
             # torn down, but never let a stuck callback hang shutdown forever.
-            with trio.CancelScope(shield=True):
+            with self._aio.shielded():
                 if endmarker is not NO_ENDMARKER_WANTED:
                     with (
-                        trio.move_on_after(CONSUMER_ENDMARKER_GRACE),
+                        self._aio.move_on_after(CONSUMER_ENDMARKER_GRACE),
                         suppress(BaseException),
                     ):
-                        await trio.to_thread.run_sync(
+                        await self._aio.to_thread(
                             functools.partial(callback, endmarker), limiter=limiter
                         )
                 done.set()
@@ -580,9 +576,12 @@ class FacadeAsyncGroup(AsyncGroup):
 
     def __init__(self, group: Group, engine: TrioEngine) -> None:
         super().__init__()
+        # built on the engine loop, so its vocabulary is available here --
+        # the base class captures the same one when the group is entered
+        self._aio = current_async()
         self.group = group
         self.engine = engine
-        self.shutdown = trio.Event()
+        self.shutdown = self._aio.event()
 
     def _make_gateway(self, stream: ByteStream, spec: Any) -> AsyncGateway:
         import execnet
@@ -614,7 +613,7 @@ class FacadeAsyncGroup(AsyncGroup):
             coordinator = self.group[spec.installvia]
             # Blocking sync channel receive on that coordinator: run in a
             # thread while this loop keeps dispatching its messages.
-            realhost, realport = await trio.to_thread.run_sync(
+            realhost, realport = await self._aio.to_thread(
                 start_socketserver_via, coordinator, abandon_on_cancel=True
             )
             return (realhost, realport), "%s:%d" % (realhost, realport)
@@ -622,7 +621,7 @@ class FacadeAsyncGroup(AsyncGroup):
         host_str, _, port_str = spec.socket.rpartition(":")
         return (host_str, int(port_str)), spec.socket
 
-    async def run(self, task_status: trio.TaskStatus[FacadeAsyncGroup]) -> None:
+    async def run(self, task_status: Any = None) -> None:
         """Own the group nursery as an engine task until :attr:`shutdown`.
 
         Registered with the engine for exactly this task's lifetime, so
@@ -706,7 +705,7 @@ def _spawn_socket_worker(sock: Any) -> subprocess.Popen[bytes]:
     return process
 
 
-async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> None:
+async def serve_socket_connection(stream: Any, *, reap: bool) -> None:
     """Hand an accepted socket to a fresh worker subprocess (server side).
 
     ``reap`` waits for the worker (loop server); when false the worker outlives
@@ -719,13 +718,13 @@ async def serve_socket_connection(stream: trio.SocketStream, *, reap: bool) -> N
     try:
         proc = _spawn_socket_worker(stream.socket)
     except BaseException:
-        with trio.CancelScope(shield=True), suppress(Exception):
+        with current_async().shielded(), suppress(Exception):
             await stream.aclose()
         raise
     # The child holds its own copy of the socket now; release ours.
     await stream.aclose()
     if reap:
-        await trio.to_thread.run_sync(proc.wait)
+        await current_async().to_thread(proc.wait)
 
 
 async def _start_socket_and_reply(
@@ -754,7 +753,7 @@ async def _start_socket_and_reply(
         )
         return
 
-    listeners = await trio.open_tcp_listeners(0, host=bind_host)
+    listeners = await current_async().open_tcp_listeners(0, host=bind_host)
     addr = listeners[0].socket.getsockname()
     gateway._send(Message.CHANNEL_DATA, channelid, dumps_internal((addr[0], addr[1])))
     gateway._send(Message.CHANNEL_CLOSE, channelid)
@@ -801,14 +800,15 @@ def start_socketserver_via(
 
 async def _run_delivery_step(argv: list[str], payload: bytes) -> None:
     """Run an out-of-band delivery command, feeding ``payload`` to its stdin."""
-    process = await trio.lowlevel.open_process(argv, stdin=subprocess.PIPE)
+    aio = current_async()
+    process = await aio.open_process(argv, stdin=subprocess.PIPE)
     try:
         assert process.stdin is not None
         await process.stdin.send_all(payload)
         await process.stdin.aclose()
         code = await process.wait()
     except BaseException:
-        with trio.CancelScope(shield=True), trio.move_on_after(5):
+        with aio.shielded(), aio.move_on_after(5):
             process.kill()
             await process.wait()
         raise
@@ -831,6 +831,7 @@ async def _start_sub_and_relay(
     wheel (dev-version ssh sub) is delivered first, over its own connection,
     so the relayed stream carries protocol bytes only.
     """
+    aio = current_async()
     from . import _provision
 
     def send_close_error(text: str) -> None:
@@ -854,7 +855,7 @@ async def _start_sub_and_relay(
         with suppress(RemoteError):
             async for data in raw:
                 await process.stdin.send_all(data)
-        with trio.move_on_after(5):
+        with aio.move_on_after(5):
             await process.stdin.aclose()
 
     async def sub_to_coordinator() -> None:
@@ -870,9 +871,9 @@ async def _start_sub_and_relay(
             gateway._send(Message.CHANNEL_CLOSE, channelid)
 
     try:
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(coordinator_to_sub)
-            nursery.start_soon(sub_to_coordinator)
+        async with aio.task_scope() as scope:
+            scope.start_soon(coordinator_to_sub)
+            scope.start_soon(sub_to_coordinator)
     except Exception as exc:
         # Do not let a relay failure crash the engine nursery; surface it on
         # the channel so the coordinator does not hang on the handshake.
@@ -880,7 +881,7 @@ async def _start_sub_and_relay(
         send_close_error(f"via sub-gateway relay failed: {exc}")
     finally:
         session._forget_channel(channelid)
-        with trio.move_on_after(5):
+        with aio.move_on_after(5):
             await process.wait()
 
 

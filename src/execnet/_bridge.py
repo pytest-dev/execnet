@@ -41,6 +41,7 @@ from typing import TypeVar
 
 import trio
 
+from ._async import current_async
 from ._errors import LoopFinishedError
 from ._trio_gateway import AsyncGroup as _TrioGroup
 
@@ -67,9 +68,11 @@ class EngineGroup(_TrioGroup):
 
     def __init__(self, termination_timeout: float, engine: TrioEngine) -> None:
         super().__init__(termination_timeout)
+        # built on the engine loop, like FacadeAsyncGroup
+        self._aio = current_async()
         self.engine = engine
-        self.shutdown = trio.Event()
-        self.finished = trio.Event()
+        self.shutdown = self._aio.event()
+        self.finished = self._aio.event()
 
     async def run(self, task_status: trio.TaskStatus[EngineGroup]) -> None:
         # registered for exactly this task's lifetime, so closing the engine
