@@ -350,6 +350,28 @@ instincts are actively wrong here.  Fix: derive from the builtin (itself an
 and it is the only change here that fixes a trap rather than sharpening a
 distinction.
 
+### What is actually pinned
+
+3.0 is unreleased, so the only constraints come from execnet 2.x's public
+error names and from what pytest-xdist catches -- and "xdist keeps working
+unmodified" is a stated goal of this release.  Grepped from the installed
+3.8.0 rather than recalled:
+
+| xdist site | what it needs |
+|---|---|
+| `remote.py:328,361` | `execnet.DumpError` exists, and the serializer probe raises it |
+| `looponfail.py:124` | `Channel.RemoteError` -- the *class attribute*, not the module name |
+| `workermanage.py:379` | `except OSError:` around `sendcommand("shutdown")` |
+
+The third is load-bearing: **a send to a dead peer must be an `OSError`**,
+or every xdist teardown starts raising.  So `ChannelClosed`/`GatewayGone`
+being `OSError` subclasses is a compatibility requirement, not a taste.
+
+execnet 2.1.1 exported `HostNotFound`, `RemoteError`, `TimeoutError`,
+`DumpError`, `LoadError` and `DataFormatError`.  Everything added during the
+3.0 cycle -- `ProtocolEngine`, `ForkedResourceError`, `LoopFinishedError`,
+`ActiveGroupsWarning` -- has never shipped and constrains nothing.
+
 ### The shape to land on
 
 ```
@@ -366,9 +388,17 @@ OSError
 ├── ConnectionError
 │   └── HostNotFound             the remote could not be reached
 ├── ChannelClosed                this channel is finished
-├── GatewayGone                  the connection is finished
+├── GatewayGone(OSError, EOFError)  the connection is finished
 └── ForkedResourceError          this object belongs to the parent process
 ```
+
+`GatewayGone` inherits from both on purpose.  A broken connection has always
+surfaced as `EOFError`, which is documented behaviour and not an accident,
+so narrowing `EOFError` to "the peer finished cleanly" would break 2.x-era
+code that catches it to mean "the connection died".  Inheriting from both
+means `except EOFError:` and `except OSError:` each still catch it, and the
+distinction becomes *available* without being taken away.  Verified legal:
+no layout conflict, both catches fire.
 
 `GatewayReceivedTerminate`, `LoopFinishedError` and `ActiveGroupsWarning`
 stay internal and unchanged.
@@ -384,11 +414,12 @@ connection fact worth retrying; the rest are API misuse and never will be.
 Both new `OSError` subclasses, so `except OSError` keeps catching what it
 catches now — nine `pytest.raises(OSError)` sites in the suite stay green.
 
-**`EOFError` narrows to "the peer finished cleanly".**  It is raised today
-both for that and for "the connection broke", which is also the one place
-the two engines still disagree (`TestEngineDestruction` pins trio's answer).
-A broken connection becomes `GatewayGone`; a clean end stays `EOFError`, and
-the divergence goes with the distinction.
+**`EOFError` gains a subclass rather than losing meaning.**  It is raised
+today both for "the peer finished cleanly" and for "the connection broke" --
+which is also the one place the two engines still disagree
+(`TestEngineDestruction` pins trio's answer).  A broken connection becomes
+`GatewayGone`, which *is* an `EOFError`, so the divergence gets a name
+without anything ceasing to be caught.
 
 **`RuntimeError` becomes `ExecnetStateError` where it means state.**  Fifty-
 one sites, most of them "engine closed", "group not started", "not on the
@@ -403,6 +434,33 @@ them may reach user code.**  One already did: `open_tcp_stream` translated a
 *connect* failure into `BrokenResource`, which silently lost `HostNotFound`
 until a test caught it.  Worth a test that asserts nothing from `_async`
 escapes the public surface, in the shape of the namespace-parity tests.
+
+### The one intentional break
+
+Two channel operations raise `OSError` today for API misuse rather than for
+a connection fact: closing a channel inside its own `remote_exec`
+(`_channel.py:264`) and calling `receive()` on a channel with a callback
+registered (`:366`).  These become `ExecnetStateError`, which is *not* an
+`OSError` -- that is the entire point, since a caller retrying on connection
+loss should not be retrying on their own bug.  It is a real change from 2.x
+and belongs in the changelog as one.  Nothing in xdist catches either.
+
+### Follow-up: what to remove once xdist ports
+
+Three accommodations exist only because released xdist reaches for them.
+Each is cheap, each is dead weight, and each should go in one commit once
+xdist has released a version that does not need it:
+
+* `execnet.dumps` -- the serializability probe.  Already tracked
+  (`execnet._XDIST_COMPAT`); replaced by `execnet.can_send`.
+* `Channel.RemoteError` / `Channel.TimeoutError` as class attributes.  The
+  module-level names are the API; these exist because `looponfail.py` writes
+  `self.channel.RemoteError`.
+* `GatewayGone`'s `EOFError` base.  Once nothing catches `EOFError` to mean
+  "the connection died", the type can say only what it means.
+
+None of them can be removed while "xdist keeps working unmodified" holds, so
+this is a 3.x item, not a 3.0 one.
 
 ### Order
 
