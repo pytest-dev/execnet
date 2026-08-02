@@ -88,9 +88,34 @@ class Carrier:
 
     Two halves with different rules.  :meth:`resolve` runs on the engine
     thread: thread-safe, never blocking, and never raising -- it is reached
-    from a trio entry-queue callback.  :meth:`wait` runs on the caller's
-    loop and is a normal awaitable there.
+    from an entry-queue callback.  :meth:`wait` runs on the caller's loop
+    and is a normal awaitable there.
+
+    A value that arrives with nobody left to take it is *salvaged* rather
+    than dropped, if the call supplied somewhere to put it.  That is what
+    keeps a cancelled ``receive`` from eating an item: the engine either
+    never took one, or took one that comes back.  Both the salvage decision
+    and the delivery run on the caller's loop thread, so they cannot race
+    each other however the cancel and the result interleave.
     """
+
+    #: where an unclaimed value goes, when the call named somewhere
+    _salvage: Callable[[Any], None] | None = None
+    #: set once the awaiter is gone; read by a delivery arriving afterwards
+    _abandoned = False
+
+    def set_salvage(self, salvage: Callable[[Any], None] | None) -> None:
+        self._salvage = salvage
+
+    def _give_up(self, result: Any, error: BaseException | None) -> None:
+        """Hand an unclaimed *value* to the salvage, if there is one.
+
+        An unclaimed *error* is dropped on purpose: it describes the
+        operation the caller just abandoned, and the next call will raise
+        its own.
+        """
+        if error is None and self._salvage is not None:
+            self._salvage(result)
 
     def resolve(self, result: Any, error: BaseException | None) -> None:
         """Deliver to the caller's loop (engine thread; must not raise)."""
@@ -121,7 +146,8 @@ class AsyncioCarrier(Carrier):
 
     def resolve(self, result: Any, error: BaseException | None) -> None:
         def deliver() -> None:
-            if self._future.cancelled():
+            if self._abandoned or self._future.cancelled():
+                self._give_up(result, error)
                 return
             if error is not None:
                 self._future.set_exception(error)
@@ -139,6 +165,12 @@ class AsyncioCarrier(Carrier):
         try:
             return await self._future
         except self._asyncio.CancelledError:
+            # the result may already be here (cancelled between delivery and
+            # this task being scheduled) or still on its way; mark it either
+            # way, so whichever of the two runs second does the salvaging
+            self._abandoned = True
+            if self._future.done() and not self._future.cancelled():
+                self._give_up(self._future.result(), None)
             on_cancel()
             raise
 
@@ -167,6 +199,8 @@ class TrioCarrier(Carrier):
             self._result = result
             self._error = error
             self._done.set()
+            if self._abandoned:
+                self._give_up(result, error)
 
         # the caller's run may already be over; nothing to deliver to then
         with suppress(trio.RunFinishedError):
@@ -185,6 +219,13 @@ class TrioCarrier(Carrier):
         try:
             await self._done.wait()
         except trio.Cancelled:
+            # trio delivers the cancel at the checkpoint even when the event
+            # is already set, so a result that arrived first is sitting right
+            # here unclaimed; one that has not arrived is salvaged by the
+            # delivery instead.
+            self._abandoned = True
+            if self._done.is_set():
+                self._give_up(self._result, self._error)
             on_cancel()
             raise
         return self._take()
@@ -204,14 +245,19 @@ class EngineBridge:
         async_fn: Callable[..., Awaitable[T]],
         *args: Any,
         shield: bool = False,
+        salvage: Callable[[Any], None] | None = None,
     ) -> T:
         """Run ``async_fn`` on the engine and await its result.
 
         Unless ``shield``, cancelling the await cancels the engine-side
-        operation too, so a cancelled ``receive`` does not usually consume
-        an item nobody will ever see.
+        operation too.  That cancel and the engine's work race, so an
+        operation that *consumes* something -- a ``receive`` -- passes a
+        ``salvage``: a value the engine had already produced goes there
+        instead of being dropped, and the caller loses nothing whichever
+        way the race went.
         """
         carrier = self.carrier()
+        carrier.set_salvage(salvage)
         scope = trio.CancelScope()
 
         async def runner() -> None:

@@ -300,3 +300,98 @@ class TestDeploymentValidation:
             other.close()
 
         run(main)
+
+
+class TestSalvage:
+    """A cancelled receive never costs an item, end to end.
+
+    :mod:`testing.test_bridge` covers the carrier's two orderings; what is
+    left to check is the wiring -- that a salvaged item reaches the
+    channel's slot and comes back out of the next ``receive`` in order, and
+    that it is still wrapped if it happens to be a channel.
+
+    The window is forced rather than raced for: the delivery and a cancel
+    are queued onto the caller's loop in that order, and its entry queue is
+    FIFO, so the receive is guaranteed to be cancelled with the engine's
+    item already in hand.
+    """
+
+    @staticmethod
+    def _cancel_as_the_engine_answers(
+        monkeypatch: pytest.MonkeyPatch, scope: trio.CancelScope
+    ) -> None:
+        """Cancel ``scope`` in the instant the engine hands back its result.
+
+        The cancel is queued *ahead* of the delivery, on a FIFO entry queue,
+        so the receiving task is cancelled with the engine's item already
+        produced and one callback away.  Queuing it behind the delivery
+        instead proves nothing: setting the event reschedules the waiting
+        task, and trio will not then deliver a cancel to a task that already
+        has a wakeup pending -- the receive simply succeeds.
+        """
+        from execnet import _bridge
+
+        token = trio.lowlevel.current_trio_token()
+        real = _bridge.TrioCarrier.resolve
+
+        def hooked(self: object, result: object, error: object) -> None:
+            token.run_sync_soon(scope.cancel)
+            real(self, result, error)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(_bridge.TrioCarrier, "resolve", hooked)
+
+    def test_an_item_taken_as_the_cancel_lands_comes_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def main() -> None:
+            async with execnet.trio.open_gateway() as gateway:
+                channel = await gateway.remote_exec(
+                    "channel.receive()\nfor i in range(3): channel.send(i)"
+                )
+                await channel.send("go")
+                with trio.CancelScope() as scope:
+                    self._cancel_as_the_engine_answers(monkeypatch, scope)
+                    await channel.receive()
+                assert scope.cancelled_caught
+                monkeypatch.undo()
+                assert channel._salvaged is not execnet.trio._NOTHING
+                # in order, and none of them missing
+                assert [await channel.receive() for _ in range(3)] == [0, 1, 2]
+
+        run(main)
+
+    def test_a_salvaged_channel_is_still_wrapped(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def main() -> None:
+            async with execnet.trio.open_gateway() as gateway:
+                channel = await gateway.remote_exec(
+                    """
+                    channel.receive()
+                    c = channel.gateway.newchannel()
+                    channel.send(c)
+                    c.send(42)
+                    """
+                )
+                await channel.send("go")
+                with trio.CancelScope() as scope:
+                    self._cancel_as_the_engine_answers(monkeypatch, scope)
+                    await channel.receive()
+                monkeypatch.undo()
+                passed = await channel.receive()
+                assert isinstance(passed, execnet.trio.AsyncChannel)
+                assert await passed.receive() == 42
+
+        run(main)
+
+    def test_an_uncancelled_receive_leaves_nothing_behind(self) -> None:
+        async def main() -> None:
+            async with execnet.trio.open_gateway() as gateway:
+                channel = await gateway.remote_exec(
+                    "for i in range(2): channel.send(i)"
+                )
+                assert await channel.receive() == 0
+                assert channel._salvaged is execnet.trio._NOTHING
+                assert await channel.receive() == 1
+
+        run(main)

@@ -19,15 +19,13 @@ operation runs as a task on that engine and resolves an asyncio future via
 ``loop.call_soon_threadsafe``.  No anyio port and no executor threads per
 call.
 
-Cancellation crosses the bridge.  Cancelling an awaited ``receive`` (say
-by ``asyncio.timeout``) cancels the engine-side operation too, so normally
-no item is consumed and dropped -- but the cancel can also land in the
-window after the engine took an item and before it reaches you, and that
-item is then lost.  Do not cancel a ``receive`` whose item you still need;
-the roadmap tracks closing the window.  Operations that must not tear
-halfway -- ``send``, ``send_eof``, ``aclose``, ``terminate`` -- are
-shielded instead: the ``CancelledError`` reaches you, but the operation
-still completes on the engine.
+Cancellation crosses the bridge, and loses nothing.  Cancelling an
+awaited ``receive`` (say by ``asyncio.timeout``) cancels the engine-side
+operation too; if the cancel lands after the engine already took an item,
+that item is kept and handed to your next ``receive`` rather than dropped.
+Operations that must not tear halfway -- ``send``, ``send_eof``,
+``aclose``, ``terminate`` -- are shielded instead: the ``CancelledError``
+reaches you, but the operation still completes on the engine.
 
 The error types are shared with :mod:`execnet.sync` and
 :mod:`execnet.trio`.  Items you send must already be simple builtin data
@@ -95,6 +93,10 @@ __all__ = [
 T = TypeVar("T")
 
 
+#: distinguishes "no salvaged item" from a salvaged ``None``
+_NOTHING = object()
+
+
 class AsyncChannel:
     """asyncio facade over a trio-native channel."""
 
@@ -104,6 +106,11 @@ class AsyncChannel:
     def __init__(self, bridge: AsyncioBridge, channel: _TrioChannel) -> None:
         self._bridge = bridge
         self._channel = channel
+        #: an item the engine produced for a receive that was cancelled
+        #: before it could be taken.  At most one: the engine-side receive
+        #: that produced it has finished, so nothing else was consumed
+        #: behind it and the next receive is still in order.
+        self._salvaged: Any = _NOTHING
 
     @property
     def id(self) -> int:
@@ -132,15 +139,24 @@ class AsyncChannel:
         received channel reference arrives as an
         :class:`~execnet.aio.AsyncChannel`.
 
-        Cancellable: the engine-side receive is cancelled too, so
-        ``asyncio.timeout`` is nearly equivalent to passing ``timeout``.
-        The exception is a cancel that arrives once the item is already in
-        flight to this coroutine -- it is dropped rather than put back.
+        Cancellable, and equivalent to passing ``timeout``: the engine-side
+        receive is cancelled too, and an item the engine had already taken
+        when the cancel landed is kept for the next call rather than
+        dropped.  Cancelling a receive never costs you an item.
         """
-        result = await self._bridge.call(self._channel.receive, timeout)
+        if self._salvaged is not _NOTHING:
+            result, self._salvaged = self._salvaged, _NOTHING
+        else:
+            result = await self._bridge.call(
+                self._channel.receive, timeout, salvage=self._stash
+            )
         if isinstance(result, _TrioChannel):
             return AsyncChannel(self._bridge, result)
         return result
+
+    def _stash(self, item: Any) -> None:
+        """Keep an item whose receive was cancelled before it arrived."""
+        self._salvaged = item
 
     async def send_eof(self) -> None:
         """Signal that no more items follow (peer keeps its send side)."""
