@@ -139,6 +139,37 @@ class TestDeploy:
         finally:
             worker.exit()
 
+    def test_the_workers_are_spawned_through_the_host_it_deployed_on(
+        self, project: pathlib.Path, group: execnet.Group, tmp_path: pathlib.Path
+    ) -> None:
+        """The usual shape: one connection per machine.
+
+        The gateway a deployment runs through stays on as the ``via`` host,
+        and the test workers are its local children rather than N more
+        connections to the same box.  Deploying first and running after is
+        also what keeps the two off each other -- the transfer is done with
+        that host's loop before it starts relaying.
+        """
+        deployment = Deployment(
+            project, roots=[project / "tests"], workspace=str(tmp_path / "ws")
+        )
+        host = group.makegateway("popen//id=viahost")
+        target = deployment.deploy(host)
+
+        workers = [
+            group.makegateway(f"via=viahost//{target.spec}//id=w{index}")
+            for index in range(3)
+        ]
+        for worker in workers:
+            channel = worker.remote_exec(
+                "import deployed_demo, os, sys\n"
+                "channel.send((deployed_demo.VALUE, sys.executable, os.getcwd()))"
+            )
+            value, executable, cwd = channel.receive(TESTTIMEOUT)
+            assert value == 42
+            assert executable == target.python
+            assert cwd == target.workspace
+
     def test_it_carries_what_the_wheel_does_not(
         self, project: pathlib.Path, group: execnet.Group, tmp_path: pathlib.Path
     ) -> None:
