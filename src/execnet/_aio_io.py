@@ -173,3 +173,91 @@ def _fdopen(fd: int, mode: str) -> Any:
 #: subprocess constants re-exported so the core can name them once
 DEVNULL = subprocess.DEVNULL
 PIPE = subprocess.PIPE
+
+
+class AsyncioListener:
+    """A listening socket, with the two methods the core uses.
+
+    Kept socket-level rather than built on ``asyncio.start_server``: the
+    core *accepts* connections one at a time (a dial-back, a one-shot
+    socket gateway) rather than handing the loop a callback, and it reads
+    ``listener.socket.getsockname()`` to report the bound address.
+    """
+
+    def __init__(self, sock: Any) -> None:
+        self.socket = sock
+
+    async def accept(self) -> AsyncioByteStream:
+        loop = asyncio.get_running_loop()
+        try:
+            conn, _ = await loop.sock_accept(self.socket)
+        except Exception as exc:
+            raise _translate(exc) from None
+        return await wrap_socket(conn)
+
+    async def aclose(self) -> None:
+        try:
+            self.socket.close()
+        except OSError:
+            pass
+
+
+async def open_tcp_listeners(
+    port: int, host: str | None = None
+) -> list[AsyncioListener]:
+    """Bind ``port`` on every address ``host`` resolves to."""
+    import socket as _socket
+
+    infos = _socket.getaddrinfo(
+        host, port, type=_socket.SOCK_STREAM, flags=_socket.AI_PASSIVE
+    )
+    listeners = []
+    for family, kind, proto, _canon, address in infos:
+        sock = _socket.socket(family, kind, proto)
+        try:
+            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            if family == _socket.AF_INET6 and hasattr(_socket, "IPV6_V6ONLY"):
+                sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, 1)
+            sock.setblocking(False)
+            sock.bind(address)
+            sock.listen(128)
+        except OSError:
+            sock.close()
+            continue
+        listeners.append(AsyncioListener(sock))
+    if not listeners:
+        raise OSError(f"could not bind {host or '*'}:{port}")
+    return listeners
+
+
+async def unix_listener(path: str) -> AsyncioListener:
+    """A listening unix socket at ``path``."""
+    import socket as _socket
+
+    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    sock.setblocking(False)
+    sock.bind(path)
+    sock.listen(1)
+    return AsyncioListener(sock)
+
+
+async def open_tcp_stream(host: str, port: int) -> AsyncioByteStream:
+    """Connect to ``host:port``."""
+    try:
+        reader, writer = await asyncio.open_connection(host, port)
+    except Exception as exc:
+        raise _translate(exc) from None
+    return AsyncioByteStream(reader, writer)
+
+
+async def serve_listeners(handler: Any, listeners: list[AsyncioListener]) -> None:
+    """Accept forever, one task per connection."""
+    async with asyncio.TaskGroup() as taskgroup:  # type: ignore[attr-defined]
+        for listener in listeners:
+
+            async def accept_loop(listener: AsyncioListener = listener) -> None:
+                while True:
+                    stream = await listener.accept()
+                    taskgroup.create_task(handler(stream))
+
+            taskgroup.create_task(accept_loop())
