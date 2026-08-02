@@ -678,7 +678,7 @@ def _run_worker(
 async def _make_fd_io(read_fd: int, write_fd: int) -> Any:
     from . import _trio_gateway
 
-    return _trio_gateway.staple_fd_stream(read_fd, write_fd)
+    return await _trio_gateway.staple_fd_stream(read_fd, write_fd)
 
 
 async def _serve_async_worker(stream: Any, id: str) -> None:
@@ -792,7 +792,7 @@ class StdioTransport:
 
         assert self._fds is not None, "prepare() first"
         read_fd, write_fd = self._fds
-        return staple_fd_stream(read_fd, write_fd)
+        return await staple_fd_stream(read_fd, write_fd)
 
 
 class ShareTransport:
@@ -875,7 +875,7 @@ class FdTransport:
 
         if len(self.fds) == 2:
             read_fd, write_fd = self.fds
-            return staple_fd_stream(read_fd, write_fd)
+            return await staple_fd_stream(read_fd, write_fd)
         return await _trio_host.adopt_socket(self.fds[0])
 
 

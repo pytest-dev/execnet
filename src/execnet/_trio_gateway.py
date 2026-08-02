@@ -1,4 +1,4 @@
-"""Trio-native gateway core: async dispatch loop and low-level raw channels.
+"""The gateway core: async dispatch loop and low-level raw channels.
 
 Async-first counterpart of the sync machinery in ``_channel`` /
 ``_gateway_base``: an
@@ -14,9 +14,12 @@ Two-level channel model:
   decides what the bytes mean.
 * ``AsyncChannel`` -- the serialized object API layered on a RawChannel.
 
-The code deliberately sticks to idioms an anyio backend can mirror later:
-a neutral ``ByteStream`` protocol, the sans-IO ``FrameDecoder``, and
-unbounded memory channels.
+Nothing here names an async library.  Everything the core needs from one
+is reached through :mod:`execnet._async` -- a task scope, a shield, two
+deadlines, an event, a queue, a thread hop, some streams, and a handful of
+exception types -- so this one implementation runs on trio or asyncio
+depending only on the loop it was built in.  Objects capture that choice
+once, as ``self._aio``, at construction.
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from typing import Any
 from typing import Protocol
 from typing import TypeVar
 
-import trio
+from ._async import current_async
 
 if TYPE_CHECKING:
     from typing_extensions import Self
@@ -77,7 +80,8 @@ async def provision_sync(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     version, and a half-written entry there is one every later gateway
     would pick up.
     """
-    return await trio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+    result: T = await current_async().to_thread(functools.partial(fn, *args, **kwargs))
+    return result
 
 
 class ByteStream(Protocol):
@@ -98,17 +102,16 @@ class ByteStream(Protocol):
     async def aclose(self) -> None: ...
 
 
-def staple_process_stream(process: trio.Process) -> ByteStream:
-    """One bidirectional stream over a Trio Process stdin/stdout pair."""
-    assert process.stdin is not None
-    assert process.stdout is not None
-    return trio.StapledStream(process.stdin, process.stdout)
+def staple_process_stream(process: Any) -> ByteStream:
+    """One bidirectional stream over a process's stdin/stdout pair."""
+    stream: ByteStream = current_async().staple_process(process)
+    return stream
 
 
 class ThreadedFdStream:
     """A :class:`ByteStream` over blocking fds, doing its IO in worker threads.
 
-    The Windows stand-in for ``trio.lowlevel.FdStream``, which is POSIX-only.
+    The Windows stand-in for the POSIX-only fd streams both backends offer.
     Trio *does* have Windows pipe streams, but they require handles opened in
     OVERLAPPED mode and register them with an IOCP -- and the stdio a process
     inherits from its parent is an ordinary synchronous pipe, so a worker
@@ -121,24 +124,26 @@ class ThreadedFdStream:
     """
 
     def __init__(self, read_fd: int, write_fd: int) -> None:
+        self._aio = current_async()
         self._read_fd: int | None = read_fd
         self._write_fd: int | None = write_fd
 
     async def receive_some(self, max_bytes: int | None = None) -> bytes:
         fd = self._read_fd
         if fd is None:
-            raise trio.ClosedResourceError("stream closed")
-        return await trio.to_thread.run_sync(
+            raise self._aio.ClosedResource("stream closed")
+        data: bytes = await self._aio.to_thread(
             os.read, fd, max_bytes or 65536, abandon_on_cancel=True
         )
+        return data
 
     async def send_all(self, data: bytes) -> None:
         fd = self._write_fd
         if fd is None:
-            raise trio.ClosedResourceError("stream closed")
+            raise self._aio.ClosedResource("stream closed")
         view = memoryview(data)
         while view:
-            written = await trio.to_thread.run_sync(os.write, fd, view)
+            written = await self._aio.to_thread(os.write, fd, view)
             view = view[written:]
 
     async def send_eof(self) -> None:
@@ -151,16 +156,15 @@ class ThreadedFdStream:
         fd, self._read_fd = self._read_fd, None
         if fd is not None:
             os.close(fd)
-        await trio.lowlevel.checkpoint()
+        await self._aio.checkpoint()
 
 
-def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
+async def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
     """One bidirectional stream over OS pipe fds (worker stdio pipes)."""
-    if not hasattr(trio.lowlevel, "FdStream"):  # Windows
+    if sys.platform == "win32":
         return ThreadedFdStream(read_fd, write_fd)
-    return trio.StapledStream(
-        trio.lowlevel.FdStream(write_fd), trio.lowlevel.FdStream(read_fd)
-    )
+    stream: ByteStream = await current_async().staple_fds(read_fd, write_fd)
+    return stream
 
 
 async def configure_worker(stream: ByteStream, spec: Any, what: str) -> dict[str, Any]:
@@ -180,13 +184,13 @@ async def configure_worker(stream: ByteStream, spec: Any, what: str) -> dict[str
     try:
         await send_config(stream, config)
         return await read_ready(stream, what)
-    except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
+    except current_async().STREAM_GONE as exc:
         error = EOFError(f"the worker went away during the {what} handshake: {exc}")
         raise error from exc
 
 
-async def open_popen_process(args: list[str]) -> trio.Process:
-    return await trio.lowlevel.open_process(
+async def open_popen_process(args: list[str]) -> Any:
+    return await current_async().open_process(
         args,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -258,6 +262,7 @@ class RawChannel:
 
     def __init__(self, gateway: AsyncGateway, id: int) -> None:
         self.gateway = gateway
+        self._aio = gateway._aio
         self.id = id
         self._closed = False  # no more sends (local aclose or remote close)
         self._sent_eof = False
@@ -267,9 +272,9 @@ class RawChannel:
         #: if it has not, the registry *is* the only thing holding what
         #: arrived, and a late binder has to find it there.
         self._handed_out = False
-        self._receive_closed = trio.Event()  # no more payloads will arrive
+        self._receive_closed = self._aio.event()  # no more payloads will arrive
         self._remote_error: RemoteError | None = None
-        self._payload_send, self._payloads = trio.open_memory_channel[bytes](math.inf)
+        self._payload_send, self._payloads = self._aio.queue()
         # Diversion hooks for a bound facade (sync channel): when set,
         # inbound payloads/closes route out of the loop instead of
         # buffering for receive_bytes.
@@ -298,9 +303,10 @@ class RawChannel:
         are drained; a peer close-with-error raises that ``RemoteError``.
         """
         try:
-            return await self._payloads.receive()
-        except (trio.EndOfChannel, trio.ClosedResourceError):
+            payload: bytes = await self._payloads.receive()
+        except self._aio.CHANNEL_EMPTY:
             raise self._pending_error() from None
+        return payload
 
     async def send_eof(self) -> None:
         """Signal that no more payloads follow (peer keeps its send side)."""
@@ -312,7 +318,7 @@ class RawChannel:
     async def aclose(self, error: str | None = None) -> None:
         """Close both directions; ``error`` reaches the peer as a RemoteError."""
         if self._closed:
-            await trio.lowlevel.checkpoint()
+            await self._aio.checkpoint()
             return
         self._closed = True
         self._payload_send.close()
@@ -362,7 +368,7 @@ class RawChannel:
         while True:
             try:
                 data = self._payloads.receive_nowait()
-            except (trio.WouldBlock, trio.EndOfChannel, trio.ClosedResourceError):
+            except self._aio.CHANNEL_UNUSABLE:
                 break
             on_payload(data)
         if self._pending_close is not None:
@@ -381,7 +387,7 @@ class RawChannel:
             return
         try:
             self._payload_send.send_nowait(data)
-        except (trio.BrokenResourceError, trio.ClosedResourceError):
+        except self._aio.STREAM_GONE:
             pass  # locally closed: drop, like the sync channel
 
     def _close_from_remote(self, error: RemoteError | None, *, sendonly: bool) -> None:
@@ -502,9 +508,9 @@ class AsyncChannel:
             data = await self._raw.receive_bytes()
         else:
             try:
-                with trio.fail_after(timeout):
+                with self._raw._aio.fail_after(timeout):
                     data = await self._raw.receive_bytes()
-            except trio.TooSlowError:
+            except self._raw._aio.TooSlow:
                 raise TimeoutError("no item after %r seconds" % timeout) from None
         return loads_internal(data, self)
 
@@ -579,19 +585,18 @@ class AsyncGateway:
     _service_spawn: Callable[..., None] | None = None
 
     def __init__(self, stream: ByteStream, *, id: str, _startcount: int = 1) -> None:
+        self._aio = current_async()
         self._stream = stream
         self.id = id
         self._channels: dict[int, RawChannel] = {}
         self._async_channels: dict[int, AsyncChannel] = {}
         self._channelfactory = _AsyncChannelFactory(self)
         self._count = _startcount
-        self._outbound_send, self._outbound = trio.open_memory_channel[
-            tuple[bytes, Callable[[BaseException | None], None] | None]
-        ](math.inf)
+        self._outbound_send, self._outbound = self._aio.queue()
         self._closed = False
         self._serve_started = False
-        self._writer_done = trio.Event()
-        self._done = trio.Event()
+        self._writer_done = self._aio.event()
+        self._done = self._aio.event()
 
     def __repr__(self) -> str:
         state = "closed" if self._closed else "open"
@@ -666,39 +671,38 @@ class AsyncGateway:
         if not self._closed:
             self._closed = True
             self._outbound_send.close()
-            with trio.move_on_after(5):
+            with self._aio.move_on_after(5):
                 await self._writer_done.wait()
-        with trio.CancelScope(shield=True), suppress(Exception):
+        with self._aio.shielded(), suppress(Exception):
             await self._stream.aclose()
         if self._serve_started:
             await self._done.wait()
         else:
             self._finish_channels()
 
-    async def _serve(
-        self, task_status: trio.TaskStatus[None] = trio.TASK_STATUS_IGNORED
-    ) -> None:
+    async def _serve(self, task_status: Any = None) -> None:
         """Run the reader and writer until EOF, termination, or ``aclose``."""
         self._serve_started = True
         try:
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(self._writer)
-                task_status.started()
+            async with self._aio.task_scope() as scope:
+                scope.start_soon(self._writer)
+                if task_status is not None:
+                    task_status.started()
                 await self._reader()
                 # Reader is done: let the writer flush queued frames
                 # (close replies), then stop it.
                 self._closed = True
                 self._outbound_send.close()
-                with trio.move_on_after(5):
+                with self._aio.move_on_after(5):
                     await self._writer_done.wait()
-                nursery.cancel_scope.cancel()
+                scope.cancel()
         finally:
             self._closed = True
             self._outbound_send.close()
             try:
                 await self._finalize()
             finally:
-                with trio.CancelScope(shield=True), suppress(Exception):
+                with self._aio.shielded(), suppress(Exception):
                     await self._stream.aclose()
                 self._done.set()
 
@@ -716,7 +720,7 @@ class AsyncGateway:
             while True:
                 try:
                     data = await self._stream.receive_some(RECEIVE_CHUNK)
-                except trio.BrokenResourceError as exc:
+                except self._aio.BrokenResource as exc:
                     # A peer that died abruptly *resets* a socket -- Windows
                     # reports WSAECONNRESET -- where a pipe would simply have
                     # reached EOF.  Same event, so report the same thing:
@@ -727,7 +731,7 @@ class AsyncGateway:
                         error.__cause__ = exc
                         self._error = error
                     return
-                except trio.ClosedResourceError as exc:
+                except self._aio.ClosedResource as exc:
                     # we closed it; not the peer going away
                     if not self._closed:
                         self._error = exc
@@ -757,7 +761,7 @@ class AsyncGateway:
                     raise
                 if on_written is not None:
                     on_written(None)
-        except (trio.BrokenResourceError, trio.ClosedResourceError, OSError) as exc:
+        except (*self._aio.STREAM_GONE, OSError) as exc:
             self._trace("writer failed", exc)
             if self._error is None:
                 self._error = exc
@@ -777,7 +781,7 @@ class AsyncGateway:
         while True:
             try:
                 _frame, on_written = self._outbound.receive_nowait()
-            except (trio.WouldBlock, trio.EndOfChannel, trio.ClosedResourceError):
+            except self._aio.CHANNEL_UNUSABLE:
                 return
             if on_written is not None:
                 on_written(exc)
@@ -872,7 +876,7 @@ class AsyncGateway:
             await self._outbound_send.send(
                 (Message(msgcode, channelid, data).pack(), None)
             )
-        except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
+        except self._aio.STREAM_GONE as exc:
             raise OSError("cannot send (already closed?)") from exc
 
     def _enqueue_frame(
@@ -888,7 +892,7 @@ class AsyncGateway:
         """
         try:
             self._outbound_send.send_nowait((frame, on_written))
-        except (trio.BrokenResourceError, trio.ClosedResourceError) as exc:
+        except self._aio.STREAM_GONE as exc:
             raise OSError("cannot send (already closed?)") from exc
 
     def _send_nowait(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
@@ -909,8 +913,8 @@ async def serve_gateway(
 ) -> AsyncIterator[AsyncGateway]:
     """Serve an :class:`AsyncGateway` over ``stream`` for the ``with`` body."""
     gateway = AsyncGateway(stream, id=id, _startcount=_startcount)
-    async with trio.open_nursery() as nursery:
-        await nursery.start(gateway._serve)
+    async with current_async().task_scope() as scope:
+        await scope.start(gateway._serve)
         try:
             yield gateway
         finally:
@@ -961,31 +965,29 @@ def vagrant_transport_args(spec: Any) -> list[str]:
 
 
 @asynccontextmanager
-async def _dialback_listener() -> AsyncIterator[tuple[str, trio.SocketListener]]:
+async def _dialback_listener() -> AsyncIterator[tuple[str, Any]]:
     """A private unix socket the worker will be forwarded back to."""
     import shutil
     import tempfile
 
+    aio = current_async()
     directory = tempfile.mkdtemp(prefix="execnet-dialback-")
     os.chmod(directory, 0o700)
     path = os.path.join(directory, "gw.sock")
-    sock = trio.socket.socket(trio.socket.AF_UNIX, trio.socket.SOCK_STREAM)
-    await sock.bind(path)
-    sock.listen(1)
-    listener = trio.SocketListener(sock)
+    listener = await aio.unix_listener(path)
     try:
         yield path, listener
     finally:
-        with trio.CancelScope(shield=True), suppress(Exception):
+        with aio.shielded(), suppress(Exception):
             await listener.aclose()
         shutil.rmtree(directory, ignore_errors=True)
 
 
 async def _accept_or_diagnose(
-    listener: trio.SocketListener,
-    process: trio.Process,
+    listener: Any,
+    process: Any,
     remoteaddress: str,
-) -> trio.SocketStream:
+) -> Any:
     """Await the worker's dial-back, or explain why it never came.
 
     With the stdio transport a dead ssh shows up as EOF on the protocol
@@ -993,24 +995,25 @@ async def _accept_or_diagnose(
     process exiting -- ssh's 255 still means "could not reach or
     authenticate the host".
     """
-    accepted: list[trio.SocketStream] = []
+    aio = current_async()
+    accepted: list[Any] = []
     exited: list[int] = []
 
-    async def accept(nursery: trio.Nursery) -> None:
+    async def accept(scope: Any) -> None:
         accepted.append(await listener.accept())
-        nursery.cancel_scope.cancel()
+        scope.cancel()
 
-    async def watch(nursery: trio.Nursery) -> None:
+    async def watch(scope: Any) -> None:
         exited.append(await process.wait())
-        nursery.cancel_scope.cancel()
+        scope.cancel()
 
-    with trio.move_on_after(SSH_CONNECT_TIMEOUT):
-        async with trio.open_nursery() as nursery:
-            nursery.start_soon(accept, nursery)
-            nursery.start_soon(watch, nursery)
+    with aio.move_on_after(SSH_CONNECT_TIMEOUT):
+        async with aio.task_scope() as scope:
+            scope.start_soon(accept, scope)
+            scope.start_soon(watch, scope)
     if accepted:
         return accepted[0]
-    with trio.CancelScope(shield=True), trio.move_on_after(5):
+    with aio.shielded(), aio.move_on_after(5):
         process.kill()
         await process.wait()
     if exited and exited[0] == 255:
@@ -1026,7 +1029,7 @@ async def _accept_or_diagnose(
     )
 
 
-async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
+async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, Any]:
     """Spawn an ssh/vagrant worker on the transport ``spec`` resolves to.
 
     ``transport=socket`` forwards a private unix socket to the remote with
@@ -1034,6 +1037,7 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     worker's stdin, stdout and stderr free for the code it runs.  The
     config travels on the dialled-back connection like everywhere else.
     """
+    aio = current_async()
     from . import _provision
 
     remoteaddress = spec.ssh or spec.vagrant_ssh
@@ -1063,12 +1067,12 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
         argv = _ssh_argv(spec, command, forward=(remote_sock, local_sock))
         # stdin closed, stdout/stderr inherited: the remote's stdio is the
         # user's now, and nothing of ours travels on it.
-        process = await trio.lowlevel.open_process(argv, stdin=subprocess.DEVNULL)
+        process = await aio.open_process(argv, stdin=subprocess.DEVNULL)
         try:
             stream = await _accept_or_diagnose(listener, process, remoteaddress)
             await configure_worker(stream, spec, "ssh")
         except BaseException:
-            with trio.CancelScope(shield=True), trio.move_on_after(5):
+            with aio.shielded(), aio.move_on_after(5):
                 process.kill()
                 await process.wait()
             raise
@@ -1085,15 +1089,16 @@ async def deliver_remote_wheel(spec: Any, wheel: Any) -> None:
     """
     from . import _provision
 
+    aio = current_async()
     argv = _ssh_argv(spec, _provision.wheel_delivery_command(wheel))
-    process = await trio.lowlevel.open_process(argv, stdin=subprocess.PIPE)
+    process = await aio.open_process(argv, stdin=subprocess.PIPE)
     try:
         assert process.stdin is not None
         await process.stdin.send_all(wheel.read_bytes())
         await process.stdin.aclose()
         code = await process.wait()
     except BaseException:
-        with trio.CancelScope(shield=True), trio.move_on_after(5):
+        with aio.shielded(), aio.move_on_after(5):
             process.kill()
             await process.wait()
         raise
@@ -1109,7 +1114,7 @@ async def connect_command_worker(
     spec: Any = None,
     *,
     remoteaddress: str | None = None,
-) -> tuple[ByteStream, trio.Process]:
+) -> tuple[ByteStream, Any]:
     """Spawn ``args`` and configure the worker over its stdio.
 
     The stdio transport: the config frame and the protocol share the one
@@ -1117,17 +1122,18 @@ async def connect_command_worker(
     a ``remoteaddress``, a handshake EOF plus exit code 255 (ssh could not
     reach or authenticate the host) becomes :class:`HostNotFound`.
     """
+    aio = current_async()
     process = await open_popen_process(args)
     try:
         stream = staple_process_stream(process)
         await configure_worker(stream, spec, "bootstrap")
     except BaseException as exc:
         host_not_found = False
-        with trio.CancelScope(shield=True):
+        with aio.shielded():
             if isinstance(exc, EOFError) and remoteaddress is not None:
-                with trio.move_on_after(5):
+                with aio.move_on_after(5):
                     host_not_found = await process.wait() == 255
-            with trio.move_on_after(5):
+            with aio.move_on_after(5):
                 process.kill()
                 await process.wait()
         if host_not_found:
@@ -1149,7 +1155,7 @@ def share_socket(sock: Any, pid: int) -> str:
     return base64.b64encode(sock.share(pid)).decode("ascii")
 
 
-async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
+async def _spawn_with_socket(spec: Any, theirs: Any) -> Any:
     """Spawn a worker owning ``theirs``, by whichever handoff this OS has.
 
     POSIX passes the fd itself.  Windows cannot -- ``subprocess`` refuses
@@ -1159,18 +1165,19 @@ async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
     stdin.  It is the one thing that cannot travel in the config frame,
     since it describes the very connection that frame would arrive on.
     """
+    aio = current_async()
     from . import _provision
 
     if not _provision.socket_share_required():
         args = await provision_sync(
             popen_worker_argv, spec, "--protocol-fd", str(theirs.fileno())
         )
-        return await trio.lowlevel.open_process(args, pass_fds=(theirs.fileno(),))
+        return await aio.open_process(args, pass_fds=(theirs.fileno(),))
 
     args = await provision_sync(
         popen_worker_argv, spec, "--protocol-share", local_config_on_stdin=True
     )
-    process = await trio.lowlevel.open_process(args, stdin=subprocess.PIPE)
+    process = await aio.open_process(args, stdin=subprocess.PIPE)
     try:
         assert process.stdin is not None
         await process.stdin.send_all(
@@ -1178,7 +1185,7 @@ async def _spawn_with_socket(spec: Any, theirs: Any) -> trio.Process:
         )
         await process.stdin.aclose()
     except BaseException:
-        with trio.CancelScope(shield=True), suppress(Exception):
+        with aio.shielded(), suppress(Exception):
             process.kill()
             await process.wait()
         raise
@@ -1192,7 +1199,7 @@ def dumps_config(config: dict[str, Any]) -> bytes:
     return json.dumps(config).encode("utf-8")
 
 
-async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
+async def connect_popen_worker(spec: Any) -> tuple[ByteStream, Any]:
     """Spawn a local worker for ``spec`` on its resolved transport.
 
     With ``transport=socket`` the protocol runs over an inherited
@@ -1200,6 +1207,7 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     ``print()`` reaches the terminal instead of being swallowed to keep the
     wire clean.  ``transport=stdio`` is the classic pipe pair.
     """
+    aio = current_async()
     from . import _provision
 
     transport = _provision.resolve_transport(
@@ -1225,13 +1233,13 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, trio.Process]:
     # handshake was tried, as a fix for a Windows share() race -- it fixed
     # nothing and bought exactly that hang.)
     theirs.close()
-    stream = trio.SocketStream(trio.socket.from_stdlib_socket(ours))
+    stream = await aio.wrap_socket(ours)
     try:
         await configure_worker(stream, spec, "bootstrap")
     except BaseException as exc:
-        with trio.CancelScope(shield=True):
+        with aio.shielded():
             status: int | None = None
-            with trio.move_on_after(5):
+            with aio.move_on_after(5):
                 process.kill()
                 status = await process.wait()
             await stream.aclose()
@@ -1254,17 +1262,19 @@ async def connect_socket_worker(
     the config frame reaches it exactly as it would any other worker -- the
     server neither reads it nor needs to know what is in it.
     """
+    aio = current_async()
     try:
-        stream = await trio.open_tcp_stream(*address)
+        stream = await aio.open_tcp_stream(*address)
     except OSError as exc:
         raise HostNotFound(remoteaddress) from exc
     try:
         await configure_worker(stream, spec, "socket")
     except BaseException:
-        with trio.CancelScope(shield=True), trio.move_on_after(5):
+        with aio.shielded(), aio.move_on_after(5):
             await stream.aclose()
         raise
-    return stream
+    connected: ByteStream = stream
+    return connected
 
 
 async def start_socketserver_via(
@@ -1297,9 +1307,11 @@ class AsyncGroup:
 
     def __init__(self, termination_timeout: float = 10.0) -> None:
         self._termination_timeout = termination_timeout
-        self._nursery: trio.Nursery | None = None
+        #: the loop's vocabulary, captured when the group is entered
+        self._aio: Any = None
+        self._scope: Any | None = None
         self._gateways: list[AsyncGateway] = []
-        self._processes: dict[AsyncGateway, trio.Process] = {}
+        self._processes: dict[AsyncGateway, Any] = {}
         # Monotonic, not len(self._gateways): terminate() empties that list,
         # and an id that comes round again names two different workers in one
         # session's traces (and in whatever the caller keyed on it).
@@ -1310,8 +1322,9 @@ class AsyncGroup:
         return f"<AsyncGroup {ids}>"
 
     async def __aenter__(self) -> Self:
-        self._nursery_manager = trio.open_nursery()
-        self._nursery = await self._nursery_manager.__aenter__()
+        self._aio = current_async()
+        self._scope = self._aio.task_scope()
+        await self._scope.__aenter__()
         return self
 
     async def __aexit__(
@@ -1325,12 +1338,13 @@ class AsyncGroup:
         # Shielded: cleanup stays bounded even under cancellation.
         terminate_error: BaseException | None = None
         try:
-            with trio.CancelScope(shield=True):
+            with self._aio.shielded():
                 await self.terminate(self._termination_timeout)
         except BaseException as error:
             terminate_error = error
-        self._nursery = None
-        suppress_body_exc = await self._nursery_manager.__aexit__(
+        scope, self._scope = self._scope, None
+        assert scope is not None
+        suppress_body_exc: bool | None = await scope.__aexit__(
             exc_type, exc_value, traceback
         )
         if terminate_error is not None:
@@ -1347,7 +1361,7 @@ class AsyncGroup:
         """
         from ._xspec import XSpec
 
-        if self._nursery is None:
+        if self._scope is None:
             raise RuntimeError(f"{self!r} is not entered")
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
@@ -1362,7 +1376,7 @@ class AsyncGroup:
         if spec.id is None:
             spec.id = "gw%d" % self._idcount
             self._idcount += 1
-        process: trio.Process | None = None
+        process: Any | None = None
         remoteaddress: str | None = None
         if spec.via:
             stream: ByteStream = await self._open_via_stream(spec)
@@ -1387,23 +1401,23 @@ class AsyncGroup:
         try:
             gateway = self._make_gateway(stream, spec)
             gateway.remoteaddress = remoteaddress
-            await self._nursery.start(gateway._serve)
+            await self._scope.start(gateway._serve)
         except BaseException:
-            with trio.CancelScope(shield=True):
+            with self._aio.shielded():
                 await self._abandon(stream, process)
             raise
         self._gateways.append(gateway)
         if process is not None:
             self._processes[gateway] = process
-            self._nursery.start_soon(self._reap_process, process)
+            self._scope.start_soon(self._reap_process, process)
         return gateway
 
-    async def _abandon(self, stream: ByteStream, process: trio.Process | None) -> None:
+    async def _abandon(self, stream: ByteStream, process: Any | None) -> None:
         """Drop a worker nobody took ownership of (best effort, bounded)."""
         with suppress(Exception):
             await stream.aclose()
         if process is not None:
-            with trio.move_on_after(5), suppress(Exception):
+            with self._aio.move_on_after(5), suppress(Exception):
                 process.kill()
                 await process.wait()
 
@@ -1414,7 +1428,7 @@ class AsyncGroup:
         """
         return AsyncGateway(stream, id=spec.id, _startcount=1)
 
-    async def _reap_process(self, process: trio.Process) -> None:
+    async def _reap_process(self, process: Any) -> None:
         # Prompt reaping for workers that exit on their own (no zombies).
         with suppress(Exception):
             await process.wait()
@@ -1470,9 +1484,9 @@ class AsyncGroup:
         for batch in (tunneled, spawned):
             if not batch:
                 continue
-            async with trio.open_nursery() as nursery:
+            async with self._aio.task_scope() as scope:
                 for gateway in batch:
-                    nursery.start_soon(self._terminate_one, gateway, timeout)
+                    scope.start_soon(self._terminate_one, gateway, timeout)
 
     async def _terminate_one(
         self, gateway: AsyncGateway, timeout: float | None
@@ -1482,11 +1496,11 @@ class AsyncGroup:
         process = self._processes.pop(gateway, None)
         if process is None:
             return
-        with trio.move_on_after(grace):
+        with self._aio.move_on_after(grace):
             await process.wait()
         if process.returncode is None:
             process.kill()
-            with trio.move_on_after(grace):
+            with self._aio.move_on_after(grace):
                 await process.wait()
 
 

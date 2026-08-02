@@ -178,9 +178,17 @@ class _TrioTaskScope:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool | None:
-        manager, self._manager = self._manager, None
-        self._nursery = None
-        exited: bool | None = await manager.__aexit__(exc_type, exc_value, traceback)
+        # the handles stay live until the scope has actually finished: a
+        # child running during teardown may still cancel the scope, which is
+        # how the core races an accept against a process exiting
+        manager = self._manager
+        try:
+            exited: bool | None = await manager.__aexit__(
+                exc_type, exc_value, traceback
+            )
+        finally:
+            self._manager = None
+            self._nursery = None
         return exited
 
     def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
@@ -442,7 +450,7 @@ class _AsyncioTaskScope:
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> bool:
-        group, self._group = self._group, None
+        group = self._group
         try:
             await group.__aexit__(exc_type, exc_value, traceback)
         except BaseExceptionGroup as raised:  # type: ignore[name-defined]  # noqa: F821
@@ -450,6 +458,8 @@ class _AsyncioTaskScope:
             if remaining is not None:
                 raise remaining from None
             return True
+        finally:
+            self._group = None
         return False
 
     def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
