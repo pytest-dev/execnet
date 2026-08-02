@@ -320,6 +320,98 @@ Still open:
 Doing this well is also what makes the Kubernetes goal tractable — a pod
 is just a remote with no shared filesystem and a short life.
 
+## Exceptions: what a caller should be able to catch
+
+Unreleased, so this is a design decision rather than a migration.  The goal
+is that the three questions a caller actually asks each have an answer they
+can `except` on, without string-matching:
+
+1. *did the other side fail?* — `RemoteError`
+2. *is the connection gone?* — `OSError`, and one subclass per reason
+3. *did I use the API wrong?* — not `OSError`
+
+Today the second and third are the same type, so a caller retrying on
+connection loss also retries on its own bugs.
+
+### The one outright bug
+
+`execnet.TimeoutError` **shadows the builtin without subclassing it**:
+
+```
+execnet.TimeoutError.__mro__  ->  TimeoutError, OSError, Exception
+execnet.TimeoutError is TimeoutError  ->  False
+except TimeoutError:  ->  does NOT catch it
+```
+
+A caller writing the obvious thing catches nothing; only `except OSError`
+works.  Since 3.11 `asyncio.TimeoutError` *is* the builtin, so async users'
+instincts are actively wrong here.  Fix: derive from the builtin (itself an
+`OSError`, so everything catching `OSError` today keeps working).  One line,
+and it is the only change here that fixes a trap rather than sharpening a
+distinction.
+
+### The shape to land on
+
+```
+Exception
+├── RemoteError                  the other side raised; .formatted is its traceback
+├── DataFormatError              this value cannot cross a channel
+│   ├── DumpError                ...on the way out
+│   └── LoadError                ...on the way in
+└── ExecnetStateError            you called this at the wrong time or place
+                                 (was: bare RuntimeError, 51 sites)
+
+OSError
+├── TimeoutError(builtins.TimeoutError)   nothing arrived in time
+├── ConnectionError
+│   └── HostNotFound             the remote could not be reached
+├── ChannelClosed                this channel is finished
+├── GatewayGone                  the connection is finished
+└── ForkedResourceError          this object belongs to the parent process
+```
+
+`GatewayReceivedTerminate`, `LoopFinishedError` and `ActiveGroupsWarning`
+stay internal and unchanged.
+
+### What moves, and why
+
+**`OSError` splits three ways.**  It currently means four unrelated things
+on a channel: the peer is gone (`_channel.py:413`), you already closed it
+(`:349`), you registered a callback so `receive` is unavailable (`:366`),
+and you called `close` inside a `remote_exec` (`:264`).  The first is a
+connection fact worth retrying; the rest are API misuse and never will be.
+`ChannelClosed`/`GatewayGone` name the first, `ExecnetStateError` the rest.
+Both new `OSError` subclasses, so `except OSError` keeps catching what it
+catches now — nine `pytest.raises(OSError)` sites in the suite stay green.
+
+**`EOFError` narrows to "the peer finished cleanly".**  It is raised today
+both for that and for "the connection broke", which is also the one place
+the two engines still disagree (`TestEngineDestruction` pins trio's answer).
+A broken connection becomes `GatewayGone`; a clean end stays `EOFError`, and
+the divergence goes with the distinction.
+
+**`RuntimeError` becomes `ExecnetStateError` where it means state.**  Fifty-
+one sites, most of them "engine closed", "group not started", "not on the
+engine thread", "already started".  A subclass of `RuntimeError`, so nothing
+that catches it today changes.
+
+### The rule the port made necessary
+
+`_async` defines `ClosedResource`, `BrokenResource`, `EndOfChannel` and
+`WouldBlock` as the neutral spelling of what a backend raises.  **None of
+them may reach user code.**  One already did: `open_tcp_stream` translated a
+*connect* failure into `BrokenResource`, which silently lost `HostNotFound`
+until a test caught it.  Worth a test that asserts nothing from `_async`
+escapes the public surface, in the shape of the namespace-parity tests.
+
+### Order
+
+The `TimeoutError` base first and alone — it is a bug fix, not a design
+change.  Then the `OSError` split, which is where the value is.  Then
+`ExecnetStateError`, which is mechanical.  Each is additive: every new type
+subclasses what is raised today, so the suite is a regression check rather
+than something to rewrite.
+
 ## A protocol test that crosses both engines
 
 Not built.  The port made every layer backend-agnostic and the suite runs
