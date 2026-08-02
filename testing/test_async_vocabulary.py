@@ -450,3 +450,123 @@ class TestAsyncioByteStreams:
             return "no error"
 
         assert asyncio.run(main()) == "broken"
+
+
+class TestIOVocabulary:
+    """The IO half, same names on both backends."""
+
+    def test_a_process_round_trips_through_its_stdio(self, backend: str) -> None:
+        async def main() -> bytes:
+            aio = current_async()
+            import subprocess
+
+            process = await aio.open_process(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdout.write(sys.stdin.read().upper())",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+            )
+            stream = aio.staple_process(process)
+            await stream.send_all(b"ping")
+            await stream.send_eof()
+            payload = await stream.receive_some(64)
+            await process.wait()
+            return bytes(payload)
+
+        assert run(backend, main) == b"PING"
+
+    def test_a_socket_pair_round_trips(self, backend: str) -> None:
+        async def main() -> bytes:
+            aio = current_async()
+            import socket
+
+            left_sock, right_sock = socket.socketpair()
+            left = await aio.wrap_socket(left_sock)
+            right = await aio.wrap_socket(right_sock)
+            try:
+                await left.send_all(b"pong")
+                return bytes(await right.receive_some(64))
+            finally:
+                await left.aclose()
+                await right.aclose()
+
+        assert run(backend, main) == b"pong"
+
+    def test_a_tcp_listener_accepts(self, backend: str) -> None:
+        async def main() -> bytes:
+            aio = current_async()
+            listeners = await aio.open_tcp_listeners(0, "localhost")
+            port = listeners[0].socket.getsockname()[1]
+            got: list[bytes] = []
+
+            async def client() -> None:
+                stream = await aio.open_tcp_stream("localhost", port)
+                await stream.send_all(b"dialed")
+                await stream.aclose()
+
+            async with aio.task_scope() as scope:
+                scope.start_soon(client)
+                accepted = await listeners[0].accept()
+                got.append(await accepted.receive_some(64))
+                await accepted.aclose()
+            for listener in listeners:
+                await listener.aclose()
+            return got[0]
+
+        assert run(backend, main) == b"dialed"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="AF_UNIX")
+    def test_a_unix_listener_accepts(self, backend: str) -> None:
+        async def main() -> bytes:
+            aio = current_async()
+            import os
+            import tempfile
+
+            directory = tempfile.mkdtemp(prefix="execnet-vocab-")
+            path = os.path.join(directory, "gw.sock")
+            listener = await aio.unix_listener(path)
+            got: list[bytes] = []
+
+            async def client() -> None:
+                import socket
+
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.connect(path)
+                stream = await aio.wrap_socket(sock)
+                await stream.send_all(b"dialed back")
+                await stream.aclose()
+
+            async with aio.task_scope() as scope:
+                scope.start_soon(client)
+                accepted = await listener.accept()
+                got.append(await accepted.receive_some(64))
+                await accepted.aclose()
+            await listener.aclose()
+            return got[0]
+
+        assert run(backend, main) == b"dialed back"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="POSIX fds")
+    def test_an_fd_pair_is_one_stream(self, backend: str) -> None:
+        async def main() -> bytes:
+            aio = current_async()
+            import os
+
+            read_fd, write_fd = os.pipe()
+            stream = await aio.staple_fds(read_fd, write_fd)
+            try:
+                await stream.send_all(b"through a pipe")
+                return bytes(await stream.receive_some(64))
+            finally:
+                await stream.aclose()
+
+        assert run(backend, main) == b"through a pipe"
+
+    def test_the_thread_budget_is_a_number(self, backend: str) -> None:
+        async def main() -> int:
+            return int(current_async().thread_budget())
+
+        assert run(backend, main) > 0

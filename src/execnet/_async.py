@@ -84,8 +84,10 @@ class TrioAsync:
     def limiter(self, total: int) -> Any:
         return self._trio.CapacityLimiter(total)
 
-    def default_thread_limiter(self) -> Any:
-        return self._trio.to_thread.current_default_thread_limiter()
+    def thread_budget(self) -> int:
+        """How many threads this loop will run at once."""
+        limiter = self._trio.to_thread.current_default_thread_limiter()
+        return int(limiter.total_tokens)
 
     def queue(self) -> tuple[Any, Any]:
         return self._trio.open_memory_channel[Any](float("inf"))
@@ -121,6 +123,40 @@ class TrioAsync:
 
     async def sleep_forever(self) -> None:
         await self._trio.sleep_forever()
+
+    # -- IO: the streams, processes and listeners the transports build --
+
+    async def open_process(self, argv: list[str], **kwargs: Any) -> Any:
+        return await self._trio.lowlevel.open_process(argv, **kwargs)
+
+    def staple_process(self, process: Any) -> Any:
+        return self._trio.StapledStream(process.stdin, process.stdout)
+
+    async def wrap_socket(self, sock: Any) -> Any:
+        return self._trio.SocketStream(self._trio.socket.from_stdlib_socket(sock))
+
+    async def staple_fds(self, read_fd: int, write_fd: int) -> Any:
+        return self._trio.StapledStream(
+            self._trio.lowlevel.FdStream(write_fd),
+            self._trio.lowlevel.FdStream(read_fd),
+        )
+
+    async def open_tcp_stream(self, host: str, port: int) -> Any:
+        return await self._trio.open_tcp_stream(host, port)
+
+    async def open_tcp_listeners(self, port: int, host: str | None = None) -> Any:
+        return await self._trio.open_tcp_listeners(port, host=host)
+
+    async def unix_listener(self, path: str) -> Any:
+        sock = self._trio.socket.socket(
+            self._trio.socket.AF_UNIX, self._trio.socket.SOCK_STREAM
+        )
+        await sock.bind(path)
+        sock.listen(1)
+        return self._trio.SocketListener(sock)
+
+    async def serve_listeners(self, handler: Any, listeners: Any) -> None:
+        await self._trio.serve_listeners(handler, listeners)
 
 
 class _TrioTaskScope:
@@ -194,17 +230,22 @@ class AsyncioAsync:
     def limiter(self, total: int) -> Any:
         return _Limiter(self._asyncio.Semaphore(total), total)
 
-    def default_thread_limiter(self) -> Any:
-        # asyncio's thread pool is the loop's executor and is not introspectable
-        # the way trio's limiter is; the core only reads ``total_tokens`` to
-        # size a share of it, so report the executor's own default.
+    def thread_budget(self) -> int:
+        """How many threads this loop will run at once.
+
+        asyncio builds its default executor lazily, so before the first
+        ``to_thread`` there is nothing to read and this falls back to the
+        same default CPython would have chosen.  Where execnet owns the loop
+        the engine installs an executor of a known size, and then this is
+        simply that number.
+        """
         import os
 
         executor = getattr(self._asyncio.get_running_loop(), "_default_executor", None)
         workers = getattr(executor, "_max_workers", None)
-        if workers is None:  # the executor is built lazily; use its own default
+        if workers is None:
             workers = min(32, (os.cpu_count() or 1) + 4)
-        return _Limiter(self._asyncio.Semaphore(workers), workers)
+        return int(workers)
 
     def queue(self) -> tuple[Any, Any]:
         shared = _Inbox(self._asyncio)
@@ -247,6 +288,48 @@ class AsyncioAsync:
 
     async def sleep_forever(self) -> None:
         await self._asyncio.Event().wait()
+
+    # -- IO: see :mod:`execnet._aio_io` for the implementations --
+
+    async def open_process(self, argv: list[str], **kwargs: Any) -> Any:
+        from ._aio_io import open_process
+
+        return await open_process(argv, **kwargs)
+
+    def staple_process(self, process: Any) -> Any:
+        from ._aio_io import staple_process
+
+        return staple_process(process)
+
+    async def wrap_socket(self, sock: Any) -> Any:
+        from ._aio_io import wrap_socket
+
+        return await wrap_socket(sock)
+
+    async def staple_fds(self, read_fd: int, write_fd: int) -> Any:
+        from ._aio_io import staple_fds
+
+        return await staple_fds(read_fd, write_fd)
+
+    async def open_tcp_stream(self, host: str, port: int) -> Any:
+        from ._aio_io import open_tcp_stream
+
+        return await open_tcp_stream(host, port)
+
+    async def open_tcp_listeners(self, port: int, host: str | None = None) -> Any:
+        from ._aio_io import open_tcp_listeners
+
+        return await open_tcp_listeners(port, host=host)
+
+    async def unix_listener(self, path: str) -> Any:
+        from ._aio_io import unix_listener
+
+        return await unix_listener(path)
+
+    async def serve_listeners(self, handler: Any, listeners: Any) -> None:
+        from ._aio_io import serve_listeners
+
+        await serve_listeners(handler, listeners)
 
 
 class ClosedResource(Exception):
