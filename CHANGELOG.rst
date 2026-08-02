@@ -193,44 +193,63 @@ series, once the consumers that need them have released without them.
 
 * One namespace per concurrency library you drive execnet from:
   ``execnet.sync`` (plain threads; the top-level ``execnet.*`` aliases),
-  ``execnet.trio``, ``execnet.aio`` and the new ``execnet.gevent``, whose blocking
-  waits park the calling greenlet instead of its OS thread (needs ``execnet[gevent]``).
+  ``execnet.trio``, ``execnet.aio``, the new ``execnet.gevent``, whose blocking
+  waits park the calling greenlet instead of its OS thread (needs
+  ``execnet[gevent]``), and ``execnet.raw_trio``.
 
-  ``execnet.trio`` is the only surface that runs gateways *directly*, as tasks in your
-  own nursery. The others drive a Trio host thread, so their blocking calls now raise
-  when made from inside a running asyncio or trio loop -- naming the namespace to use
-  instead -- rather than stalling that loop. Channels inside a worker are exempt:
-  exec'd code may run its own event loop and talk to its channel from within it.
+  Four of them put protocol IO on a shared ``execnet.ProtocolEngine`` and differ only
+  in how the caller waits for it, so the two blocking ones now raise when called from
+  inside a running asyncio or trio loop -- naming the namespace to use instead --
+  rather than stalling that loop. Channels inside a worker are exempt: exec'd code may
+  run its own event loop and talk to its channel from within it.
+
+  ``execnet.raw_trio`` is the exception, and the only surface that runs gateways
+  *directly*, as tasks in your own nursery. It is what ``execnet.trio`` was during
+  this release cycle; ``execnet.trio`` is now a facade over the engine, like the
+  others. The trade is a real one -- exact cancellation and no thread hop against a
+  caller loop that cannot stall the protocol, gateways that outlive the scope that
+  made them, and one engine shared with every other surface in the process. The
+  namespace reference has the table.
 * The ``execnet.portal`` namespace is gone. It exposed the ``Wakener`` protocol and the
   ``Mailbox``/``OneShot``/``LoopPortal`` primitives but not the registry needed to plug
   a ``Wakener`` in, and execnet does not offer third-party event-loop integration: a new
   concurrency library gets a namespace of its own, as gevent just did. The primitives
   are internal again.
-* Gateway groups share one Trio host thread per process instead of starting one each.
-  Pass ``execnet.Host()`` as ``Group(host=...)`` (or ``AsyncGroup(host=...)``) for an
-  isolated loop with deterministic teardown -- ``Host`` is a context manager and joins
-  its thread on exit, where the shared one stops at interpreter exit.
+* Gateway groups share one ``execnet.ProtocolEngine`` per process -- one OS thread
+  running a loop -- instead of starting a thread each. Pass an explicit one as
+  ``Group(engine=...)`` (or ``AsyncGroup(engine=...)``) for an isolated loop with
+  deterministic teardown: it is a context manager and joins its thread on exit, where
+  the shared one stops at interpreter exit.
 
-  Closing a host is final, and it *breaks* the groups, gateways and channels it
-  served rather than freeing a resource underneath them: their protocol IO has no
-  loop to run on any more, so channels reach EOF, sends raise, and the group refuses
-  to build new gateways instead of quietly starting a second loop thread that none of
-  its existing gateways are attached to.
+  ``ProtocolEngine.close()`` terminates the groups still running on it and warns
+  (``execnet.ActiveGroupsWarning``) that it had to. Their workers are real processes,
+  and once the loop that speaks to them is gone nothing else is going to reap them --
+  but close time is the worst moment to find a worker that will not go quietly, which
+  is what the warning is about. ``ProtocolEngine.terminate()`` is the same drain
+  without the shutdown, for callers who would rather do it where they can act on the
+  result.
+
+  Closing stays final, and the groups, gateways and channels it served are finished
+  with either way: their protocol IO has no loop to run on any more, so channels reach
+  EOF, sends raise, and the group refuses to build new gateways instead of quietly
+  starting a second loop thread that none of its existing gateways are attached to. An
+  engine whose thread does not join within the timeout now says so rather than
+  returning as though it had stopped one.
 * execnet objects do not survive ``os.fork()``, and now say so instead of blocking.
-  The host's loop thread is not duplicated into the child and the worker connections
+  The engine's loop thread is not duplicated into the child and the worker connections
   belong to the parent, but the parent loop's trio token still *accepts* work in the
   child -- so a forked child using an inherited group, gateway or channel (including
   the module-level ``execnet.makegateway``) used to wait forever for a reply nobody
-  would send. Every route to the host now checks which process it is in and raises,
+  would send. Every route to the engine now checks which process it is in and raises,
   naming the fork. Recovery is explicit and belongs to the child: build a new
-  ``Host`` and a new ``Group`` on it. A child that asks for the default host gets a
-  fresh one, and it no longer inherits the parent's atexit cleanup.
-* A host loop that cannot start now says why, immediately. It comes up on a thread
+  ``ProtocolEngine`` and a new ``Group`` on it. A child that asks for the default
+  engine gets a fresh one, and it no longer inherits the parent's atexit cleanup.
+* An engine loop that cannot start now says why, immediately. It comes up on a thread
   nobody is watching, so a ``trio.run`` that died at once left the caller waiting
   out the full 30s start timeout and then raising something generic, with the
   actual reason only on stderr. The failure is re-raised at the call site, and
   when ``gevent.monkey`` is what broke it, the message says so.
-* ``execnet.gevent`` requires a process that has **not** monkey-patched. The host
+* ``execnet.gevent`` requires a process that has **not** monkey-patched. The engine
   loop is a Trio program on its own OS thread and needs the real ``select`` (for
   ``epoll``), ``socket``, ``thread`` and ``queue``; ``gevent.monkey`` replaces
   those process-wide. Patching was never what made the namespace work -- its waits
@@ -246,7 +265,7 @@ series, once the consumers that need them have released without them.
   a failure in it (a cancellation, realistically) used to leave a worker nothing
   would ever terminate.
 * ``Group.terminate()`` and ``Gateway.join()`` join the calls that refuse to run
-  inside a running asyncio or trio loop. Both block on the host with no useful
+  inside a running asyncio or trio loop. Both block on the engine with no useful
   bound -- ``join()`` until the worker dies -- which is the stall the guard exists to
   turn into an error. Terminating a group with nothing in it stays allowed.
 * A spec's ``profile=``/``execmodel=`` value is no longer rewritten in place when it
@@ -273,7 +292,7 @@ series, once the consumers that need them have released without them.
   blocking wait parks on describes the *caller*, which is what choosing a namespace
   already says; a worker's own backend is derived from its profile.
 * ``execnet.aio`` now propagates cancellation. Cancelling an awaited ``receive`` (with
-  ``asyncio.timeout``, say) cancels the host-side operation, where it previously
+  ``asyncio.timeout``, say) cancels the engine-side operation, where it previously
   abandoned only the asyncio side and let the operation consume an item that was then
   discarded. ``send``, ``send_eof``, ``aclose`` and ``terminate`` are shielded instead,
   so they cannot tear halfway.
@@ -294,7 +313,7 @@ series, once the consumers that need them have released without them.
 
 * The documentation describes what execnet does now: worker profiles instead
   of threading models, the spec keys (including ``transport=`` and the stdio
-  dispositions), the namespaces, the host thread, the ``execnet`` command
+  dispositions), the namespaces, the protocol engine, the ``execnet`` command
   line, and a namespace reference for the async surfaces. ``tox -e docs``
   now also *runs* the doc examples -- they had claimed to be automatically
   tested while a ``pytest_plugins`` line in a non-top-level conftest made
@@ -329,9 +348,10 @@ series, once the consumers that need them have released without them.
 * The serializer dropped the retired ``PY2STRING`` and ``UNICODE`` opcodes and renamed
   ``PY3STRING`` to ``STRING``. Values dumped by execnet running on Python2 no longer
   load. Opcode bytes are unchanged for every type that survives.
-* The supported API is now exactly five namespaces: ``execnet`` (aliases of
-  ``execnet.sync``), ``execnet.sync``, ``execnet.trio``, ``execnet.aio`` and
-  ``execnet.gevent`` -- one per concurrency library you drive execnet from. The
+* The supported API is now exactly six namespaces: ``execnet`` (aliases of
+  ``execnet.sync``), ``execnet.sync``, ``execnet.trio``, ``execnet.raw_trio``,
+  ``execnet.aio`` and ``execnet.gevent`` -- one per concurrency library you drive
+  execnet from, plus the engine-free trio one. The
   pre-Trio modules ``execnet.gateway_base``, ``execnet.gateway``,
   ``execnet.multi``, ``execnet.rsync``, ``execnet.rsync_remote`` and ``execnet.xspec``
   were only ever reachable because ``import execnet`` pulled them in transitively; they
@@ -354,9 +374,14 @@ series, once the consumers that need them have released without them.
   released ``pytest-xdist`` keeps working; it is absent from ``__all__`` and from
   ``dir(execnet)``. It is scheduled for removal once xdist ports its probe to
   ``can_send``.
-* ``execnet.trio`` no longer exports ``ByteStream``, ``RawChannel``,
+* ``execnet.raw_trio`` no longer exports ``ByteStream``, ``RawChannel``,
   ``RawChannelStream`` or ``serve_gateway``; the raw-channel layer is internal routing
-  detail. No names were added to ``execnet.sync`` or ``execnet.aio``.
+  detail. ``open_raw_channel`` and ``enqueue_frame`` on its ``AsyncGateway`` are
+  underscored for the same reason, and the ``execnet.trio``/``execnet.aio`` facades
+  do not expose them at all: they hand out channel ids from an unlocked per-gateway
+  counter that only works because one loop owns it.
+* ``execnet.gevent`` gained ``Deployment``, ``Deployed`` and ``transfer``. The
+  deployment layer already had a gevent parking path; only the exports were missing.
 
 
 2.1.2 (2025-11-11)

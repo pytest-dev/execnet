@@ -25,8 +25,8 @@ what a waiting call does to the caller.
     are aliases into it, so ``import execnet`` is this surface.
 
 :mod:`execnet.trio`
-    The trio-native API: ``AsyncGroup``, ``AsyncGateway``, ``AsyncChannel``,
-    awaited inside your own ``trio.run``.
+    ``AsyncGroup``, ``AsyncGateway``, ``AsyncChannel``, awaited inside your
+    own ``trio.run``.
 
 :mod:`execnet.aio`
     The same three classes for asyncio, awaited inside your own event loop.
@@ -35,11 +35,18 @@ what a waiting call does to the caller.
     The blocking API again, except that every wait parks the calling
     *greenlet* rather than its OS thread.  Needs ``execnet[gevent]``.
 
-:mod:`execnet.trio` is the only surface that runs gateways *directly*, as
-tasks in your own nursery.  The other three run protocol IO on a Trio host
-thread (see `The host thread`_) and block the caller until it answers --
-which inside a running event loop would stall every task on it, so those
-calls raise ``RuntimeError`` naming the namespace to use instead.
+:mod:`execnet.raw_trio`
+    execnet embedded in your own trio run: the gateways are tasks in your
+    nursery and there is no engine at all.  See
+    :ref:`trio-or-raw-trio` for when to prefer it over
+    :mod:`execnet.trio`.
+
+:mod:`execnet.raw_trio` is the only surface that runs gateways *directly*,
+as tasks in your own nursery.  The others run protocol IO on a protocol
+engine (see `The protocol engine`_); the two blocking ones then block the
+caller until it answers, which inside a running event loop would stall
+every task on it, so those calls raise ``RuntimeError`` naming the
+namespace to use instead.
 
 ::
 
@@ -368,37 +375,47 @@ For example ``popen//stdin=devnull`` gives remote code an empty stdin while
 keeping its output visible.
 
 
-The host thread
+The protocol engine
 ====================================================================
 
 .. versionadded:: 3.0
 
-The blocking, asyncio and gevent surfaces have no event loop of their own to
-put gateways on, so protocol IO runs on a :class:`Host`: one OS thread
-running a Trio loop, shared by every group in the process and stopped at
-interpreter exit.  You need to know it exists in two cases: it is why a
-blocking call from inside a running event loop is an error, and it is what
-you pass when you want an isolated loop with deterministic teardown::
+Protocol IO runs on a :class:`ProtocolEngine`: one OS thread running a loop
+of its own, shared by every group in the process and stopped at interpreter
+exit.  Every surface uses it except :mod:`execnet.raw_trio`, which runs
+gateways as tasks in the caller's own trio nursery instead.
 
-    with execnet.Host() as host:
-        group = execnet.Group(host=host)
+You need to know it exists in three cases.  It is why a blocking call from
+inside a running event loop is an error.  It is what you pass when you want
+an isolated loop with deterministic teardown.  And it is what you close::
+
+    with execnet.ProtocolEngine() as engine:
+        group = execnet.Group(engine=engine)
         ...
         group.terminate()
     # the thread is joined here, rather than at interpreter exit
 
-Gateways served by a host must be terminated before it closes; closing does
-not terminate them for you -- it *breaks* them.  Their protocol IO no longer
-has a loop to run on, so their channels reach EOF, sending raises, and the
-groups they belong to refuse to make new gateways.  Closing is final: a host
-cannot be reopened, and a group whose host went away needs a new host and a
-new group rather than quietly getting a second loop thread that none of its
-gateways are attached to.  :mod:`execnet.trio` uses no host at all.
+Terminate your groups before closing, as above.  If you do not, closing
+does it for you and warns
+(:class:`~execnet.ActiveGroupsWarning`): the workers are real
+processes, and once the loop that speaks to them is gone nothing else is
+going to reap them.  The warning is because close time is the worst moment
+to discover a worker that will not go quietly -- there is nowhere left to
+report it.  :meth:`ProtocolEngine.terminate` is the same drain without the
+shutdown, for when you would rather do it where you can act on the result.
+
+What closing cannot do is keep those groups working.  Their protocol IO no
+longer has a loop to run on, so their channels reach EOF, sending raises,
+and the groups refuse to make new gateways.  Closing is final: an engine
+cannot be reopened, and a group whose engine went away needs a new engine
+and a new group rather than quietly getting a second loop thread that none
+of its gateways are attached to.
 
 ``os.fork()`` is the same situation arriving by surprise: the loop thread is
 not duplicated into the child and the worker connections belong to the
 parent, so every group, gateway and channel the child inherits is dead there
 and raises rather than waiting on a loop that will never run again.  A child
-that wants gateways of its own builds a new group -- and gets a fresh host
+that wants gateways of its own builds a new group -- and gets a fresh engine
 with it.
 
 

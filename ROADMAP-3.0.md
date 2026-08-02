@@ -91,24 +91,28 @@ give it a reader or say in the docs that it is informational.
 `set_execmodel` is advertised as supported API by `execnet.__all__` and
 `execnet.sync.__all__`.  Remove from both (it stays importable and
 warning) and update `test_top_level_all_matches_sync_surface`.
-`default_host` should leave `execnet.aio.__all__` too — it is exported
-only from `aio`, which reads as an asyncio concept when it is the
-opposite; isolation is `Host()`, sharing is the default.
 
-### 3. Underscore the engine methods on `trio.AsyncGateway`
+*Done* for the other half: `default_host` is `default_engine` and is no
+longer in any `__all__` — isolation is `ProtocolEngine()`, sharing is the
+default, and `Group.engine` reaches the shared one when you need it.
 
-`execnet.trio.AsyncGateway` *is* `_trio_gateway.AsyncGateway`, so
-`open_raw_channel` and `enqueue_frame` are public by accident — they are
-the routing layer `_trio_host`/`_trio_worker` drive.  Underscore both
-(every caller is ours), keep `open_channel` as the async `newchannel()`,
-and add a namespace test pinning the public method set.
+### 3. Underscore the engine methods on `trio.AsyncGateway` — *done*
+
+`execnet.raw_trio.AsyncGateway` *is* `_trio_gateway.AsyncGateway`, so
+`open_raw_channel` and `enqueue_frame` were public by accident — they are
+the routing layer `_trio_host`/`_trio_worker` drive.  Both are underscored
+now, `open_channel` stays as the async `newchannel()`, and
+`test_namespaces` pins the public method set of every surface.  The
+`execnet.trio`/`execnet.aio` facades do not expose any of them: the ids
+come from an unlocked per-gateway counter that only works because one loop
+owns it.
 
 ### 4. `execnet.gevent` and monkey-patching — decide what we claim
 
 The facade works in a process that uses gevent *without* monkey-patching,
 and its own promise holds there: blocking waits park the calling greenlet.
 It does **not** work once `gevent.monkey` has patched the modules trio
-reaches for from a side thread — which `TrioHost.start` now refuses
+reaches for from a side thread — which `TrioEngine.start` now refuses
 outright rather than failing somewhere inside trio.  Verified in every
 variant:
 
@@ -151,7 +155,7 @@ dependencies presented unpatched, install them in `sys.modules` while trio
 imports, then restore.  Verified end to end — loop start, `from_thread`
 run, `run_sync_soon`, `to_thread`, socketpair transport, `open_process`,
 and the hub keeps ticking throughout.  The price is a second `threading`
-in the process: the host thread does not appear in the application's
+in the process: the engine thread does not appear in the application's
 `threading.enumerate()`, `socket` identity splits in two (an
 `isinstance(sock, socket.socket)` on a socket from user code no longer
 means what it says, and `socket=`/`--protocol-share` take sockets from
@@ -166,7 +170,7 @@ about primitive identity.  Verified on a fully patched process, all six
 paths execnet needs (call in, post, executor callbacks, socket IO,
 `create_subprocess_exec`, hub not stalled), in **both** shapes: the loop
 on a real OS thread, and the loop as a *greenlet on the application's own
-hub* — no host thread at all, which is the shape `execnet.gevent` would
+hub* — no engine thread at all, which is the shape `execnet.gevent` would
 want anyway.
 
 So the options are now: keep the honest limitation and document it (where
@@ -179,7 +183,7 @@ Decide before 3.0, because it is what the namespace promises.
 
 Two futures get conflated and have different answers:
 
-- **A non-Trio engine** — the host thread runs `asyncio.run`, or execnet
+- **A non-Trio engine** — the engine thread runs `asyncio.run`, or execnet
   drops the hard `trio` dependency.  This is an internals port; the
   invariant that protects it is already recorded (neutral `ByteStream`,
   sans-IO `FrameDecoder`).  Tripwire: `aio.py` imports trio at module
@@ -190,17 +194,20 @@ Two futures get conflated and have different answers:
   item above): asyncio runs *unmodified* in a monkey-patched gevent
   process where trio cannot, on a thread or as a greenlet.  An asyncio
   engine would hand `execnet.gevent` the environment its users actually
-  have, and could drop the host thread there entirely.
+  have, and could drop the engine thread there entirely.
 - **A native asyncio surface** — `execnet.aio` running gateways on the
-  *caller's* loop with no host thread, symmetric with `execnet.trio`.
-  This one is visible in the API: `aio.AsyncGroup(host=)` and
-  `aio.AsyncGroup.host` would become meaningless.  `host=` is honest
-  today and can be deprecated later behind its `None` default; document
-  it as "which host thread serves this group", i.e. an
-  implementation-shaped knob rather than part of the asyncio model.
+  *caller's* loop with no engine, symmetric with `execnet.raw_trio`.
+  This one is visible in the API: `aio.AsyncGroup(engine=)` and
+  `aio.AsyncGroup.engine` would become meaningless there.  The shape to
+  copy already exists: `execnet.trio` (facade) and `execnet.raw_trio`
+  (native) are exactly this split for trio, and a `raw_aio` would be the
+  same move.  `engine=` is honest for the facade and stays.
 
-`Host` itself is already engine-neutral in name and members; only its
-docstring says Trio, which is accurate and would be a docs change.
+`ProtocolEngine` is engine-neutral in name and members; only its docstring
+says Trio, which is accurate and would be a docs change.  (It was called
+`Host` until "host" turned out to mean three different things in one public
+API — this class, the remote machine a deployment lands on, and the network
+address in `socket=HOST:PORT`.)
 
 ## Provisioning and workspaces: what the next xdist should stand on
 
@@ -231,7 +238,7 @@ What execnet should own instead, so xdist's version becomes a few calls:
    `Deployed.translate()` rewrites a path under one.  Directory roots land
    as their own basename under the workspace, file roots directly in it.
 3. **rsync as a first-class operation.**  *Done.*  `execnet.transfer` (and
-   the `transfer` service behind it) replaces it: async-native, host-run,
+   the `transfer` service behind it) replaces it: async-native, engine-run,
    concurrent across targets, and available on all four surfaces.  The
    deprecated `RSync` is a ~50-line adapter over the same driver, so there
    is one implementation; it goes when pytest-xdist stops subclassing it.
@@ -358,7 +365,8 @@ protocol is the expensive version of this.
   dropped"), and it is right about the common case: the cancel posts a
   scope cancel to the host, which usually lands before the item is taken.
   What it does not cover is the cancel arriving *after* the host task
-  produced the item — `_HostBridge.call` then sees `future.cancelled()` and
+  produced the item — `_bridge.EngineBridge.call` then sees a cancelled
+  carrier and
   drops the value it is holding.  Fixing it means being able to put the
   item back at the front of its channel, which the memory channel cannot
   do; the honest interim is to narrow the docstring.  Same shape as the

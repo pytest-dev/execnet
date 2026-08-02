@@ -204,7 +204,7 @@ class ProtocolEngine:
         """Terminate what is still running, then stop the loop and join.
 
         Groups still live at close time are terminated for you and warned
-        about (:class:`~execnet._errors.ActiveGroupsWarning`) -- their
+        about (:class:`~execnet.ActiveGroupsWarning`) -- their
         workers are real processes, and leaving them behind because the
         loop went away is never what anybody wanted.  Doing it yourself is
         still better: see :meth:`terminate`.

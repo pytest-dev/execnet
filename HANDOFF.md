@@ -57,27 +57,31 @@ answer to that frame (`_trio_worker._version_refusal`), so the coordinator
 gets the reason rather than an EOF; `EXECNET_IGNORE_VERSION_SKEW=1` in its
 environment or its config `env:` downgrades that to a warning.
 
-### Four namespaces, one per concurrency library you drive execnet from
+### Five namespaces, one per concurrency library you drive execnet from
 
 | namespace | what it is |
 |---|---|
 | `execnet` / `execnet.sync` | the blocking API, a facade over the engine; top level aliases into `sync` |
-| `execnet.trio` | trio-native `AsyncGroup`/`AsyncGateway`/`AsyncChannel`, awaited in your own `trio.run` |
-| `execnet.aio` | the same surface for asyncio, bridged per call onto the host loop |
+| `execnet.trio` | `AsyncGroup`/`AsyncGateway`/`AsyncChannel` awaited in your own `trio.run`, bridged per call onto the engine |
+| `execnet.aio` | the same surface for asyncio, the same bridge |
 | `execnet.gevent` | the sync surface with gevent-parking waits |
+| `execnet.raw_trio` | the engine-free one: gateways as tasks in *your* nursery |
 
-`trio`/`aio`/`gevent` load lazily via module `__getattr__`, so
-`import execnet` does not import an event loop (pinned by
-`testing/test_namespaces.py`).
+All of them load lazily via module `__getattr__`, so `import execnet` does
+not import an event loop (pinned by `testing/test_namespaces.py`, which also
+pins each surface's public member set — including what the facades
+deliberately do *not* have).
 
-A `Host` is one thread running one Trio loop; there is **one shared host
-per process**, `Group(host=...)` to override.  Starting stays lazy — the
-thread appears at the first gateway — but `Host.start()` is public, and
-entering a `Host` as a context manager calls it, so an application can
-choose where a broken environment (gevent patching, a loop that will not
-come up) reports itself.  Blocking calls made from
-inside a running event loop raise and name `execnet.aio` / `execnet.trio`
-— worker-side channels are exempt, since exec'd code may run its own loop.
+A `ProtocolEngine` is one thread running one loop; there is **one shared
+engine per process**, `Group(engine=...)` to override.  Starting stays lazy
+— the thread appears at the first gateway — but `ProtocolEngine.start()` is
+public, and entering one as a context manager calls it, so an application
+can choose where a broken environment (gevent patching, a loop that will not
+come up) reports itself.  `close()` terminates the groups still on it and
+warns; `terminate()` is that drain without the shutdown.  Blocking calls
+made from inside a running event loop raise and name `execnet.aio` /
+`execnet.trio` — worker-side channels are exempt, since exec'd code may run
+its own loop.
 
 ### The CLI is the launch contract
 
@@ -155,11 +159,13 @@ shape does not dictate the worker's.
 | `_handshake.py` | the `GATEWAY_CONFIG` exchange, both directions: blocking for the worker (it runs before there is a loop), async over `ByteStream` for the coordinator |
 | `_channel.py` / `_gateway_base.py` / `_errors.py` | sync `Channel`/`ChannelFactory`; `BaseGateway`/`WorkerGateway`; error types |
 | `_trio_gateway.py` | **the engine**: `ByteStream` Protocol, `RawChannel`/`AsyncChannel`, `AsyncGateway` (outbound queue of `(frame, on_written)`, `_finalize` hook), `AsyncGroup` (all transports, reapers, bounded terminate), `ThreadedFdStream`, stream/argv helpers |
-| `_trio_host.py` | `Host`'s loop thread, `SyncBridgeGateway`, `FacadeAsyncGroup`, `SyncIOHandle`, `RawTunnelStream`, the `GATEWAY_START_*` handlers |
+| `_trio_engine.py` | the loop thread itself: `TrioEngine` (start/stop, `call`, `start_soon`, `start_task`, the group registry) and `engine_call` |
+| `_trio_host.py` | what runs *on* it: `SyncBridgeGateway`, `FacadeAsyncGroup`, `SyncIOHandle`, `RawTunnelStream`, `start_session`, the `GATEWAY_START_*` handlers |
+| `_bridge.py` | `EngineBridge` + a `Carrier` per caller loop (asyncio, trio), `EngineGroup`, `targets_for_bridge` — what `execnet.trio` and `execnet.aio` are built out of |
 | `_trio_worker.py` | worker entry, `TrioWorkerExec` + exec strategies, `_dup_protocol_fds`, the transports (blocking `connect()` + async `open()`), `_version_refusal` |
 | `_boundary.py` / `_portal.py` | the (private) boundary kit: `Wakener`/`Mailbox`/`OneShot`/`Flag`, `LoopPortal` |
-| `_host.py` / `_gateway.py` / `_multi.py` | shared `Host`; sync `Gateway`; sync `Group` + `MultiChannel` |
-| `sync.py` / `trio.py` / `aio.py` / `gevent.py` | the four public namespaces |
+| `_engine.py` / `_gateway.py` / `_multi.py` | shared `ProtocolEngine`; sync `Gateway`; sync `Group` + `MultiChannel` |
+| `sync.py` / `trio.py` / `raw_trio.py` / `aio.py` / `gevent.py` | the five public namespaces |
 | `_cli.py` / `_socketserver.py` / `_provision.py` | the CLI, `execnet server`, uv provisioning + argv builders |
 | `_execmodel.py` | `WORKER_PROFILES`, `resolve_profile`, and the deprecated `ExecModel` xdist shim |
 | `_services.py` | the service seam: `GATEWAY_SERVICE` requests, a name→import-string registry resolved lazily, and `ServiceTarget` (the one thing the surfaces disagree about — where a channel id comes from) |
@@ -201,7 +207,7 @@ shape does not dictate the worker's.
   `portal.run` (KI-deferred) is only for management ops.
 - A killed worker is `EOFError` on every transport — a dead peer *resets*
   a socket where a pipe reaches EOF, and the reader maps that.
-- **Every `host.start_soon` entry point contains its own failures.**  These
+- **Every `engine.start_soon` entry point contains its own failures.**  These
   are tasks on the *root* nursery: an exception leaving one ends `trio.run`
   and takes the process's gateways with it — and in a worker the
   ExceptionGroup prints onto the user's stderr, which is theirs since 3.0.
@@ -213,8 +219,9 @@ shape does not dictate the worker's.
   run down, so one call losing a race with shutdown takes every gateway in
   the process with it — and tells the user to file a trio bug.  A posted
   callback reports through its `OneShot`/future instead.
-- A host that goes away breaks what it served, loudly.  `Host.close()` is
-  final (no second loop thread the existing gateways are not on), and
+- An engine that goes away breaks what it served, loudly.
+  `ProtocolEngine.close()` is final (no second loop thread the existing
+  gateways are not on), and
   nothing survives `os.fork()`: the parent loop's token still *accepts*
   work in a child, so `LoopPortal` and `BaseGateway._check_usable` compare
   pids and raise `ForkedResourceError` rather than let the child wait for a
@@ -257,8 +264,8 @@ shape does not dictate the worker's.
   *what* to launch runs subprocesses — an `execnet info` probe of a
   `python=` target (30s timeout) and a dev coordinator's `uv build`
   (seconds, cold) — and reads whole wheels off disk.  Inline, that stalls
-  the loop: the caller's own `trio.run` for `execnet.trio`, and for every
-  other surface the *shared* host, i.e. every gateway in the process
+  the loop: the caller's own `trio.run` for `execnet.raw_trio`, and for every
+  other surface the *shared* engine, i.e. every gateway in the process
   including other groups'.  Every call site goes through
   `_trio_gateway.provision_sync`; measured at 0.76s before, pinned by
   `test_provisioning_does_not_stall_the_loop`.  The hop is deliberately
@@ -285,12 +292,12 @@ shape does not dictate the worker's.
 
 - A socket worker that cannot be spawned must not hang the coordinator.
   It is spawned by the *server*, so the exception dies there while the
-  coordinator waits for a handshake byte.  A host that cannot hand a
+  coordinator waits for a handshake byte.  A machine that cannot hand a
   socket over refuses *before replying with an address* — the last moment
   a reason can reach the coordinator — and a spawn that fails anyway
   closes the connection so the wait ends.
 - A failed socket gateway must not kill the gateway it was requested
-  through.  It runs as a task on that coordinator's host; letting it
+  through.  It runs as a task on that coordinator's engine; letting it
   propagate cost the coordinator too, which is how one unsupported
   gateway became 51 errors.
 - `_check_usable` (fork, then event loop) runs *before* the channel-state
