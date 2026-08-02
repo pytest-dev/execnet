@@ -320,6 +320,25 @@ Still open:
 Doing this well is also what makes the Kubernetes goal tractable — a pod
 is just a remote with no shared filesystem and a short life.
 
+## A protocol test that crosses both engines
+
+Not built.  The port made every layer backend-agnostic and the suite runs
+green on each engine *separately*, which is not the same as the two talking
+to each other — and the wire is exactly where a difference would hide,
+because nothing about a frame says which library wrote it.
+
+The shape: start a trio `execnet server` and an asyncio one, each on its own
+thread in one process, then chain gateways through them with `via=` in a
+nested loop — a trio coordinator through an asyncio relay to a trio worker,
+and every other permutation — sending payloads through the whole chain.
+What it would catch: framing or half-close differences, a transport that
+only ever gets exercised same-engine, and the EOF-versus-reset behaviour the
+two stream implementations report differently.
+
+Worth doing before anyone relies on a mixed fleet, which the deployment
+story makes likely: a coordinator on whatever the developer has, workers on
+whatever the pods have.
+
 ## Kubernetes: test runs in a cluster over the protocol
 
 The goal is to drive a test run across pods in a Kubernetes cluster using
