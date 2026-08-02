@@ -181,14 +181,52 @@ Decide before 3.0, because it is what the namespace promises.
 
 ## What pins us to Trio
 
+**Measured, and less than it looked.**  The engine seam is built and has a
+second implementation: `ProtocolEngine(backend="asyncio")` runs
+`_asyncio_engine.AsyncioEngine` on `asyncio.TaskGroup` (3.11+, refused
+below that — no backport; 3.10 is EOL in October 2026), meeting the same
+contract as `TrioEngine` and pinned by the same parametrized suite.  What
+is *not* ported is the core: `_trio_gateway` still uses nurseries, cancel
+scopes and memory channels directly, so an asyncio engine refuses to build
+gateways rather than failing inside trio.
+
+What the port needs, from an inventory of all 190-odd trio call sites:
+
+- ~34 of the core's 86 are stream/process/listener construction behind the
+  already-neutral `ByteStream` — four methods to implement, not a rewrite.
+- ~60% of the rest have direct equivalents (`from_thread` →
+  `run_coroutine_threadsafe`, `CapacityLimiter` → `Semaphore`,
+  `open_memory_channel(inf)` → `Queue`, `checkpoint` → `sleep(0)`).
+- ~26 sites are the exception vocabulary, wanting an execnet-owned set
+  mapped per backend.  `LoopFinishedError` is the first of these.
+- 3 sites need `nursery.start()`, which `TaskGroup` lacks;
+  `AsyncioEngine.start_task` already builds it with trio's semantics.
+- The 19 shielded cleanup sites are the *cheapest* part, not the riskiest:
+  trio is level-triggered so the shield is mandatory there, asyncio is
+  edge-triggered and cleanup after catching `CancelledError` simply runs.
+  Verified under a `TaskGroup` aborting, `asyncio.timeout` and `wait_for`
+  — none of which cancel a second time.  Keep the invariant that the engine
+  cancels once and then waits out a grace, and `shielded()` is faithful on
+  both.
+
+Cancellation *precision* is no longer load-bearing anywhere: only `receive`
+could lose something, and salvage handles that at the bridge rather than by
+being precise.  The neutral vocabulary a ported core would be written
+against is about a dozen names — task scope, shield, timeout, event,
+limiter, inbox, to_thread, portal, checkpoint, byte stream, error set, run.
+
+The prize is the worker, not the coordinator: with a stdlib engine a worker
+runs on bare Python, which removes most of what `_provision` exists to
+arrange.  It also fixes `execnet.gevent`, whose documented limitation is
+trio's rather than execnet's (asyncio runs unmodified in a monkey-patched
+process — measured, see the gevent item above).
+
 Two futures get conflated and have different answers:
 
 - **A non-Trio engine** — the engine thread runs `asyncio.run`, or execnet
-  drops the hard `trio` dependency.  This is an internals port; the
-  invariant that protects it is already recorded (neutral `ByteStream`,
-  sans-IO `FrameDecoder`).  Tripwire: `aio.py` imports trio at module
-  level for `trio.CancelScope`, so `execnet.aio.trio` is the trio module
-  and an asyncio-only install could not import `execnet.aio` today.
+  drops the hard `trio` dependency.  Half done: the engine is swappable,
+  the core is not.  The remaining tripwire is that `_bridge` imports trio
+  at module level, so `execnet.aio` still cannot be imported without it.
 
   It has a second payoff, measured rather than assumed (see the gevent
   item above): asyncio runs *unmodified* in a monkey-patched gevent

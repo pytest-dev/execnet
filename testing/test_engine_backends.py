@@ -226,7 +226,7 @@ class TestBackendSelection:
         # refused when the engine is built, not at start(): the Python
         # version is a fact nothing a caller does later can change
         monkeypatch.setattr(sys, "version_info", (3, 10, 12))
-        with pytest.raises(RuntimeError, match="3.11 or newer"):
+        with pytest.raises(RuntimeError, match=r"3\.11 or newer"):
             ProtocolEngine(backend="asyncio")
         with pytest.raises(RuntimeError, match="does not carry a backport"):
             AsyncioEngine()

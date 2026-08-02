@@ -124,8 +124,8 @@ class ProtocolEngine:
     ``backend`` picks which async library the loop is: ``"trio"`` (the
     default) or ``"asyncio"``.  **The protocol core only runs on trio
     today** -- an asyncio engine starts, runs tasks and stops, but refuses
-    to build gateways, because :mod:`execnet._trio_gateway` has not been
-    ported through the seam yet.  It exists so that the seam is a real,
+    to build gateways, because the protocol core has not been ported
+    through the seam yet.  It exists so that the seam is a real,
     tested boundary rather than an intention.  The asyncio backend needs
     Python 3.11 for ``TaskGroup``; an older interpreter is refused here,
     when the engine is built.
