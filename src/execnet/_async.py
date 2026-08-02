@@ -30,12 +30,15 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from contextlib import contextmanager
+from types import TracebackType
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from typing_extensions import Self
 
 T = TypeVar("T")
 
@@ -128,15 +131,21 @@ class _TrioTaskScope:
         self._manager: Any = None
         self._nursery: Any = None
 
-    async def __aenter__(self) -> _TrioTaskScope:
+    async def __aenter__(self) -> Self:
         self._manager = self._trio.open_nursery()
         self._nursery = await self._manager.__aenter__()
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> Any:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
         manager, self._manager = self._manager, None
         self._nursery = None
-        return await manager.__aexit__(*exc_info)
+        exited: bool | None = await manager.__aexit__(exc_type, exc_value, traceback)
+        return exited
 
     def start_soon(self, async_fn: Callable[..., Any], *args: Any) -> None:
         self._nursery.start_soon(async_fn, *args)
@@ -189,15 +198,12 @@ class AsyncioAsync:
         # asyncio's thread pool is the loop's executor and is not introspectable
         # the way trio's limiter is; the core only reads ``total_tokens`` to
         # size a share of it, so report the executor's own default.
-        import concurrent.futures
+        import os
 
-        workers = getattr(
-            self._asyncio.get_running_loop()._default_executor,  # type: ignore[attr-defined]
-            "_max_workers",
-            None,
-        )
-        if workers is None:
-            workers = min(32, (concurrent.futures.thread.os.cpu_count() or 1) + 4)
+        executor = getattr(self._asyncio.get_running_loop(), "_default_executor", None)
+        workers = getattr(executor, "_max_workers", None)
+        if workers is None:  # the executor is built lazily; use its own default
+            workers = min(32, (os.cpu_count() or 1) + 4)
         return _Limiter(self._asyncio.Semaphore(workers), workers)
 
     def queue(self) -> tuple[Any, Any]:
@@ -273,7 +279,7 @@ class _Limiter:
     async def __aenter__(self) -> None:
         await self._semaphore.acquire()
 
-    async def __aexit__(self, *exc_info: Any) -> None:
+    async def __aexit__(self, *exc_info: object) -> None:
         self._semaphore.release()
 
 
@@ -308,14 +314,19 @@ class _Deadline:
         self._expired = True
         self._task.cancel()
 
-    def __enter__(self) -> _Deadline:
+    def __enter__(self) -> Self:
         self._task = self._asyncio.current_task()
         self._cancelling = self._task.cancelling()
         loop = self._asyncio.get_running_loop()
         self._handle = loop.call_later(self._seconds, self._fire)
         return self
 
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
         self._handle.cancel()
         if not self._expired or exc_type is None:
             return False
@@ -337,16 +348,21 @@ class _AsyncioTaskScope:
         self._asyncio = asyncio_module
         self._group: Any = None
 
-    async def __aenter__(self) -> _AsyncioTaskScope:
+    async def __aenter__(self) -> Self:
         self._group = self._asyncio.TaskGroup()
         await self._group.__aenter__()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool:
         group, self._group = self._group, None
         try:
             await group.__aexit__(exc_type, exc_value, traceback)
-        except BaseExceptionGroup as raised:  # noqa: F821
+        except BaseExceptionGroup as raised:  # type: ignore[name-defined]  # noqa: F821
             _, remaining = raised.split(_Shutdown)
             if remaining is not None:
                 raise remaining from None
@@ -398,7 +414,7 @@ class TaskStatus:
         self._event.set()
 
     def is_set(self) -> bool:
-        return self._event.is_set()
+        return bool(self._event.is_set())
 
     async def wait(self) -> Any:
         await self._event.wait()
