@@ -29,6 +29,7 @@ from ._serialize import loads_internal
 from ._trace import trace
 
 if TYPE_CHECKING:
+    from . import _trio_engine
     from . import _trio_host
     from ._channel import Channel
     from ._execmodel import ExecModel
@@ -379,7 +380,7 @@ class TrioWorkerExec:
 
     def __init__(
         self,
-        engine: _trio_host.TrioEngine,
+        engine: _trio_engine.TrioEngine,
         gateway: WorkerGateway,
         strategy: Any,
     ) -> None:
@@ -614,7 +615,7 @@ class _WorkerIOStub:
 
 
 def _build_worker_gateway(
-    engine: _trio_host.TrioEngine,
+    engine: _trio_engine.TrioEngine,
     id: str,
     model: ExecModel,
     wait: WaitBackend = "thread",
@@ -641,19 +642,21 @@ def _build_worker_gateway(
 
 
 def _run_worker(
-    engine: _trio_host.TrioEngine,
+    engine: _trio_engine.TrioEngine,
     io: Any,
     id: str,
     model: ExecModel,
     wait: WaitBackend = "thread",
 ) -> None:
     """Attach ``io`` as the gateway session and serve until shutdown."""
+    from . import _trio_host
+
     gateway, trio_exec = _build_worker_gateway(engine, id, model, wait)
 
     async def _start() -> _trio_host.SyncBridgeGateway:
         # The bridge attaches itself to the gateway before serving starts,
         # so inbound messages can reply through gateway._send right away.
-        return await engine.start_session(gateway, io)
+        return await _trio_host.start_session(engine, gateway, io)
 
     engine.call(_start)
 
@@ -1020,9 +1023,9 @@ def serve_worker(
         trio.run(main)
         os._exit(0)
 
-    from . import _trio_host
+    from . import _trio_engine
 
-    engine = _trio_host.TrioEngine(name=f"execnet-trio-worker-{id}")
+    engine = _trio_engine.TrioEngine(name=f"execnet-trio-worker-{id}")
     engine.start()
     io = engine.call(transport.open)
     _run_worker(engine, io, id, get_execmodel(profile), wait)

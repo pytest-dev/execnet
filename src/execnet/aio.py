@@ -55,14 +55,14 @@ import trio
 
 from ._deploy import Deployed
 from ._deploy import Deployment
+from ._engine import ProtocolEngine
+from ._engine import default_engine
 from ._errors import DataFormatError
 from ._errors import DumpError
 from ._errors import HostNotFound
 from ._errors import LoadError
 from ._errors import RemoteError
 from ._errors import TimeoutError
-from ._engine import ProtocolEngine
-from ._engine import default_engine
 from ._trio_gateway import AsyncChannel as _TrioChannel
 from ._trio_gateway import AsyncGateway as _TrioGateway
 from ._trio_gateway import AsyncGroup as _TrioGroup
@@ -349,8 +349,7 @@ class AsyncGroup:
         async def start_group() -> _EngineGroup:
             # runs on the engine loop
             group = _EngineGroup(self._termination_timeout)
-            assert trio_engine._nursery is not None
-            started: _EngineGroup = await trio_engine._nursery.start(group.run)
+            started: _EngineGroup = await trio_engine.start_task(group.run)
             return started
 
         self._bridge = bridge
