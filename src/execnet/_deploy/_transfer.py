@@ -103,9 +103,7 @@ async def send_manifest(
     way to learn that nobody is coming back.
     """
     source = os.fspath(source)
-    channel = await target.open(
-        SERVICE, {"destination": destination, "delete": delete}
-    )
+    channel = await target.open(SERVICE, {"destination": destination, "delete": delete})
     try:
         await channel.send(manifest.dump())
         wanted = Wanted.load(await channel.receive())

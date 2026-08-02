@@ -139,9 +139,7 @@ class TestServiceSeam:
         del _services._REGISTRY["test.thing"]
 
 
-def _request(
-    gateway: execnet.Gateway, name: str, request: object
-) -> Callable[[], Any]:
+def _request(gateway: execnet.Gateway, name: str, request: object) -> Callable[[], Any]:
     """Make a raw service request from the blocking surface, for tests."""
     from execnet._deploy._facade import run_blocking
 
@@ -170,13 +168,19 @@ class TestTransfer:
 
         sent: list[str] = []
         execnet.transfer(
-            gateway, tree, str(destination), progress=lambda path, size: sent.append(path)
+            gateway,
+            tree,
+            str(destination),
+            progress=lambda path, size: sent.append(path),
         )
         assert sent == []
 
         (tree / "top.txt").write_text("changed")
         execnet.transfer(
-            gateway, tree, str(destination), progress=lambda path, size: sent.append(path)
+            gateway,
+            tree,
+            str(destination),
+            progress=lambda path, size: sent.append(path),
         )
         assert sent == ["top.txt"]
         assert (destination / "top.txt").read_text() == "changed"
@@ -193,7 +197,10 @@ class TestTransfer:
 
         sent: list[str] = []
         execnet.transfer(
-            gateway, tree, str(destination), progress=lambda path, size: sent.append(path)
+            gateway,
+            tree,
+            str(destination),
+            progress=lambda path, size: sent.append(path),
         )
         assert sent == []
 
@@ -282,9 +289,7 @@ class TestTrioSurface:
 
         trio.run(main)
 
-    def test_cancelling_a_transfer_leaves_the_gateway_usable(
-        self, tmp_path
-    ) -> None:
+    def test_cancelling_a_transfer_leaves_the_gateway_usable(self, tmp_path) -> None:
         source = tmp_path / "source"
         source.mkdir()
         for index in range(40):
@@ -293,9 +298,7 @@ class TestTrioSurface:
         async def main() -> None:
             async with execnet.trio.open_gateway("popen") as gateway:
                 with trio.move_on_after(0.05):
-                    await execnet.trio.transfer(
-                        gateway, source, str(tmp_path / "dest")
-                    )
+                    await execnet.trio.transfer(gateway, source, str(tmp_path / "dest"))
                 channel = await gateway.remote_exec("channel.send(1)")
                 assert await channel.receive() == 1
 

@@ -216,13 +216,21 @@ Three steps in the one order that works: a frozen environment
 (``uv sync --frozen`` from the project's own lockfile, so the remote
 resolves nothing), the artifact (a wheel built here and installed there,
 rather than a source tree), and everything a test run needs that the wheel
-does not contain -- tests, ``conftest.py``, fixture data -- rsynced into
-the workspace.
+does not contain -- tests, ``conftest.py``, fixture data -- transferred
+into the workspace.
 
-Both halves travel over the gateway's own protocol: the transfer is
-``RSync``, and the install is a ``GATEWAY_DEPLOY`` request the worker
-serves.  No second connection and no second set of credentials, which is
-what lets the same code reach a container or a pod.
+Both halves travel over the gateway's own protocol, as ``transfer`` and
+``deploy`` services.  No second connection and no second set of
+credentials, which is what lets the same code reach a container or a pod.
+
+The driver is async and runs on the host, so the blocking API is a facade
+that parks the way its surface parks and ``execnet.trio``/``execnet.aio``
+get the same operations awaited directly.  It also means a fan-out is
+concurrent: one wheel build, one task per host.  A transfer sends one
+manifest of the whole tree rather than a message per directory, the target
+replies with what it is missing (plus a digest for anything whose size
+matches but whose timestamp does not, which is what makes re-sending an
+unchanged tree nearly free), and bodies follow in 1 MiB chunks.
 
 :class:`execnet.Deployed` reports where things landed, because the remote
 layout is a provisioning fact and the caller knows only local paths.
@@ -261,17 +269,30 @@ ExceptionGroup onto the user's stderr.  That goes for every
 ``host.start_soon`` entry point; the socket and via handlers do the same.
 
 Infrastructure that used to be expressed by ``remote_exec``-ing source is
-now native protocol messages handled on the target's host:
-``GATEWAY_START_SOCKET`` (``installvia=`` -- bind a one-shot listener and
-reply with its address), ``GATEWAY_START_SUB`` (``via=`` -- spawn a
-sub-worker and relay its protocol over the request channel) and
-``GATEWAY_RSYNC`` (receive an rsync into a directory).  rsync was the last
-thing execnet shipped its own source over the wire to do; as a service it
-also claims no exec slot, and works against a ``profile=trio`` worker,
-which rejects sync sources.  Its receiver body stays synchronous and runs
-in a worker thread, reaching its channel through ``trio.from_thread`` --
-rsync is file IO, and threading a loop through every ``lstat`` and
-``chmod`` would buy nothing.  A sub-gateway
+now protocol messages handled on the target's host: ``GATEWAY_START_SOCKET``
+(``installvia=`` -- bind a one-shot listener and reply with its address),
+``GATEWAY_START_SUB`` (``via=`` -- spawn a sub-worker and relay its
+protocol over the request channel), and ``GATEWAY_SERVICE``.
+
+That last one is deliberately generic.  Its payload is ``(name, request)``;
+the worker looks the name up in ``execnet._services``, which maps names to
+import strings and imports one when a request for it arrives.  The core
+knows nothing else -- no opcode per feature, no dispatch table naming one,
+no import of one.  ``execnet._deploy`` (transfers and deployments) is
+built entirely on that seam, which is also how a package outside execnet
+would add a service::
+
+    execnet._services.register("myco.thing", "myco.execnet_thing:serve")
+
+on both ends.  A worker asked for a service it does not have says so on
+the request's channel, since that is almost always a version skew.
+
+Service bodies stay synchronous and run in a worker thread, reaching their
+channel through ``trio.from_thread``.  Receiving a tree is ``lstat``,
+``mkdir``, ``chmod`` and whole-file writes; building an environment is
+waiting on ``uv``.  Threading a loop through either would rewrite fiddly
+logic for a thread each -- a real cost, since that thread comes from the
+same budget exec placement rations.  A sub-gateway
 that fails to start must not take its coordinator down with it, and a
 failure that cannot be reported must still close the connection, so the
 requesting side sees EOF instead of waiting for a handshake reply nobody

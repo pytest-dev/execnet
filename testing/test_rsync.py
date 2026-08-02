@@ -344,3 +344,91 @@ class TestRsyncIsAProtocolService:
         with pytest.raises(execnet.RemoteError):
             rsync.send()
         assert gw1.remote_exec("channel.send(1)").receive() == 1
+
+
+class TestXdistContract:
+    """What pytest-xdist actually does to RSync, as a local tripwire.
+
+    ``xdist.workermanage.HostRSync`` subclasses ``execnet.RSync``, overrides
+    ``filter`` and the *private* ``_report_send_file``, reads ``_sourcedir``
+    and ``_verbose``, and calls ``add_target(gateway, relative_path,
+    finishedcallback=..., delete=True)``.  Its own suite is the real
+    tripwire and only runs in CI; this is the shape of it, here, so a
+    reimplementation finds out before CI does.
+    """
+
+    class HostRSyncLike(RSync):
+        """A stand-in for xdist's subclass, doing what it does."""
+
+        def __init__(self, sourcedir, *, ignores=(), verbose=True) -> None:
+            self._ignores = [str(item) for item in ignores]
+            super().__init__(sourcedir=pathlib.Path(sourcedir), verbose=verbose)
+            self.reported: list[str] = []
+
+        def filter(self, path) -> bool:
+            name = pathlib.Path(path).name
+            return name not in self._ignores
+
+        def add_target_host(self, gateway, finished=None) -> None:
+            remotepath = os.path.basename(self._sourcedir)
+            super().add_target(
+                gateway, remotepath, finishedcallback=finished, delete=True
+            )
+
+        def _report_send_file(self, gateway, modified_rel_path) -> None:
+            # xdist reads gateway.spec.chdir here -- so this must be handed
+            # the sync Gateway facade, not anything from the async core
+            if self._verbose > 0:
+                path = os.path.basename(self._sourcedir) + "/" + modified_rel_path
+                self.reported.append(f"{gateway.spec}:{gateway.spec.chdir} <= {path}")
+
+    def test_the_xdist_shape_works(self, dirs: _dirs, tmp_path) -> None:
+        source = dirs.source
+        source.joinpath("keep.txt").write_text("keep")
+        source.joinpath("skip.pyc").write_text("skip")
+        source.joinpath("sub").mkdir()
+        source.joinpath("sub", "nested.txt").write_text("nested")
+
+        # a relative destination, resolved against the worker's chdir --
+        # which is how xdist places a synced root
+        workdir = tmp_path / "remote-cwd"
+        workdir.mkdir()
+        group = execnet.Group()
+        try:
+            gateway = group.makegateway(f"popen//chdir={workdir}")
+            finished: list[bool] = []
+            rsync = self.HostRSyncLike(source, ignores=["skip.pyc"])
+            rsync.add_target_host(gateway, finished=lambda: finished.append(True))
+            rsync.send()
+
+            landed = workdir / source.name
+            assert (landed / "keep.txt").read_text() == "keep"
+            assert (landed / "sub" / "nested.txt").read_text() == "nested"
+            assert not (landed / "skip.pyc").exists()
+            assert finished == [True]
+            assert any("keep.txt" in line for line in rsync.reported)
+            assert all("skip.pyc" not in line for line in rsync.reported)
+        finally:
+            group.terminate(timeout=30.0)
+
+    def test_delete_prunes_the_remote_root(self, dirs: _dirs, tmp_path) -> None:
+        # xdist passes delete=True: a file removed locally must go remotely
+        source = dirs.source
+        source.joinpath("gone.txt").write_text("here for now")
+        workdir = tmp_path / "remote-cwd"
+        workdir.mkdir()
+        group = execnet.Group()
+        try:
+            gateway = group.makegateway(f"popen//chdir={workdir}")
+            rsync = self.HostRSyncLike(source, verbose=False)
+            rsync.add_target_host(gateway)
+            rsync.send()
+            assert (workdir / source.name / "gone.txt").exists()
+
+            source.joinpath("gone.txt").unlink()
+            rsync = self.HostRSyncLike(source, verbose=False)
+            rsync.add_target_host(gateway)
+            rsync.send()
+            assert not (workdir / source.name / "gone.txt").exists()
+        finally:
+            group.terminate(timeout=30.0)

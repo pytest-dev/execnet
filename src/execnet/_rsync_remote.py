@@ -1,4 +1,11 @@
-"""
+"""The pre-3.0 rsync receiver, kept only for its deprecated module name.
+
+execnet no longer drives this: :class:`execnet.RSync` and
+:func:`execnet.transfer` both speak the ``transfer`` service
+(:mod:`execnet._deploy`), which needs no source shipped to a worker.  The
+body below still works if it is ``remote_exec``-ed by hand, which is what
+``execnet.rsync_remote`` used to be for, and goes when that shim does.
+
 (c) 2006-2013, Armin Rigo, Holger Krekel, Maciej Fijalkowski
 """
 
