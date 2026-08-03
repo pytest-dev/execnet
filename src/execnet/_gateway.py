@@ -17,6 +17,7 @@ from ._gateway_base import BaseGateway
 from ._message import IO
 from ._message import Message
 from ._multi import Group
+from ._serialize import Payload
 from ._serialize import dumps_internal
 from ._xspec import XSpec
 
@@ -111,7 +112,7 @@ class Gateway(BaseGateway):
     def remote_exec(
         self,
         source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-        **kwargs: object,
+        **kwargs: Payload,
     ) -> Channel:
         """Return channel object and connect it to a remote
         execution thread where the given ``source`` executes.
@@ -148,7 +149,7 @@ class Gateway(BaseGateway):
 
 
 class RInfo:
-    def __init__(self, kwargs) -> None:
+    def __init__(self, kwargs: dict[str, Payload]) -> None:
         self.__dict__.update(kwargs)
 
     def __repr__(self) -> str:

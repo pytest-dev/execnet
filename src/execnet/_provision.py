@@ -29,7 +29,11 @@ import sys
 import tempfile
 from functools import cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 from typing import Any
+
+if TYPE_CHECKING:
+    from ._xspec import XSpec
 
 _RELEASED_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -107,7 +111,7 @@ def ssh_dialback_available() -> bool:
     return hasattr(_socket, "AF_UNIX") and not sys.platform.startswith("win")
 
 
-def resolve_transport(spec: Any, *, available: bool = True) -> str:
+def resolve_transport(spec: XSpec, *, available: bool = True) -> str:
     """The transport for ``spec``: explicit if given, else the best available.
 
     ``available`` is the caller's capability for *its* kind of gateway --
@@ -116,7 +120,7 @@ def resolve_transport(spec: Any, *, available: bool = True) -> str:
     Asking for a transport that cannot work is an error at makegateway time,
     rather than a hang once nobody connects.
     """
-    requested: str | None = getattr(spec, "transport", None)
+    requested: str | None = spec.transport
     if requested is None:
         return "socket" if available else "stdio"
     if requested not in TRANSPORTS:
@@ -350,7 +354,7 @@ def coordinator_requirement() -> str:
     return f"execnet=={execnet.__version__}"
 
 
-def worker_config(spec: Any) -> dict[str, Any]:
+def worker_config(spec: XSpec) -> dict[str, Any]:
     """The worker config for ``spec`` (the whole 'spec thing'), as a dict.
 
     Every launcher builds this and every worker is configured by it,
@@ -434,7 +438,7 @@ def _extra_with_tokens(profile: str | None) -> list[str]:
 
 
 def uv_worker_argv(
-    spec: Any, *protocol: str, local_config_on_stdin: bool = False
+    spec: XSpec, *protocol: str, local_config_on_stdin: bool = False
 ) -> list[str]:
     """``uv run`` argv to launch the Trio worker locally (wheel path is local)."""
     return [
@@ -446,7 +450,7 @@ def uv_worker_argv(
     ]
 
 
-def worker_profile(spec: Any) -> str:
+def worker_profile(spec: XSpec) -> str:
     """The profile ``spec``'s worker will run, as provisioning needs it."""
     from ._execmodel import effective_profile
 
@@ -509,7 +513,7 @@ def _remote_shell_command(
     )
 
 
-def ssh_remote_command(spec: Any, *protocol: str) -> str:
+def ssh_remote_command(spec: XSpec, *protocol: str) -> str:
     """Remote shell command launching the worker over ssh.
 
     Released coordinator -> ``uv run --with execnet==<ver> …``.  Dev
@@ -527,7 +531,7 @@ def ssh_remote_command(spec: Any, *protocol: str) -> str:
     return _remote_shell_command(spec.python, worker_profile(spec), *protocol, **kwargs)
 
 
-def ssh_wheel(spec: Any) -> Path | None:
+def ssh_wheel(spec: XSpec) -> Path | None:
     """The wheel this coordinator must deliver before launching, if any."""
     return provisioning_wheel()
 
@@ -569,7 +573,7 @@ def vagrant_ssh_argv(
     return args
 
 
-def spawn_request(spec: Any) -> dict[str, Any]:
+def spawn_request(spec: XSpec) -> dict[str, Any]:
     """Payload for ``GATEWAY_START_SUB``: ask a via coordinator to spawn a sub-worker.
 
     Carries the sub-spec essentials plus provisioning material when the sub

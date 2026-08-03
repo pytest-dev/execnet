@@ -86,6 +86,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from ._serialize import Payload
+
 __all__ = [
     "ActiveGroupsWarning",
     "AsyncChannel",
@@ -141,7 +143,7 @@ class AsyncChannel:
         """Return True if the channel is closed for sending."""
         return self._channel.isclosed()
 
-    async def send(self, item: object) -> None:
+    async def send(self, item: Payload) -> None:
         """Serialize ``item`` and send it to the other side.
 
         Shielded: the wait is uncancellable, so the item is sent rather
@@ -219,7 +221,7 @@ class AsyncGateway:
     async def remote_exec(
         self,
         source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-        **kwargs: object,
+        **kwargs: Payload,
     ) -> AsyncChannel:
         """Connect a new channel to remote execution of ``source``.
 

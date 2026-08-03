@@ -16,8 +16,12 @@ from __future__ import annotations
 import os
 import stat
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 from typing import Literal
 from typing import NamedTuple
+
+if TYPE_CHECKING:
+    from .._serialize import Payload
 
 #: what a path is, as far as a transfer cares
 Kind = Literal["dir", "file", "link"]
@@ -48,7 +52,7 @@ class Manifest(NamedTuple):
     def files(self) -> dict[str, Entry]:
         return {entry.path: entry for entry in self.entries if entry.kind == "file"}
 
-    def dump(self) -> list[tuple[object, ...]]:
+    def dump(self) -> list[tuple[Payload, ...]]:
         """As plain builtins, for the wire."""
         return [tuple(entry) for entry in self.entries]
 
@@ -150,7 +154,7 @@ class Wanted(NamedTuple):
     paths: tuple[str, ...]
     checksums: dict[str, bytes]
 
-    def dump(self) -> tuple[object, ...]:
+    def dump(self) -> tuple[Payload, ...]:
         return (list(self.paths), self.checksums)
 
     @classmethod

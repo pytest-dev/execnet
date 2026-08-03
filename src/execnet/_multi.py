@@ -37,6 +37,7 @@ from ._xspec import XSpec
 
 if TYPE_CHECKING:
     from ._gateway import Gateway
+    from ._serialize import Payload
 
 
 class Group:
@@ -360,7 +361,7 @@ class MultiChannel:
     def __contains__(self, chan: Channel) -> bool:
         return chan in self._channels
 
-    def send_each(self, item: object) -> None:
+    def send_each(self, item: Payload) -> None:
         for ch in self._channels:
             ch.send(item)
 

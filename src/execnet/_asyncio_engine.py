@@ -43,6 +43,7 @@ from collections.abc import Callable
 from typing import Any
 from typing import TypeVar
 
+from ._boundary import Wakener
 from ._engine import DEFAULT_CALLBACK_THREADS
 from ._errors import LoopFinishedError
 from ._portal import AsyncioPortal
@@ -229,7 +230,7 @@ class AsyncioEngine:
         self,
         async_fn: Callable[..., Awaitable[T]],
         *args: Any,
-        wakener: Any = None,
+        wakener: Wakener | None = None,
     ) -> OneShot[T]:
         """Run ``async_fn`` as an engine task, resolving a :class:`OneShot`."""
         result: OneShot[T] = OneShot(wakener)

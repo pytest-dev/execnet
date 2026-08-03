@@ -13,11 +13,15 @@ import linecache
 import textwrap
 import types
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ._serialize import Payload
 
 
 def normalize_exec_source(
     source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-    kwargs: dict[str, object],
+    kwargs: dict[str, Payload],
 ) -> tuple[str, str | None, str | None]:
     """Return ``(source, file_name, call_name)`` for a CHANNEL_EXEC payload."""
     call_name = None

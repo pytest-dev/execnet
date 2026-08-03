@@ -28,6 +28,7 @@ from ._errors import GatewayGone
 from ._errors import RemoteError
 from ._errors import TimeoutError
 from ._message import Message
+from ._serialize import Payload
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 
@@ -331,7 +332,7 @@ class Channel:
         if error:
             raise error
 
-    def send(self, item: object) -> None:
+    def send(self, item: Payload) -> None:
         """Sends the given item to the other side of the channel.
 
         The item must be a simple Python type and will be

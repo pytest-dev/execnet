@@ -28,10 +28,14 @@ from ._serialize import loads_internal
 from ._trace import trace
 
 if TYPE_CHECKING:
+    import socket
+
     from . import _trio_engine
     from . import _trio_host
     from ._channel import Channel
     from ._execmodel import ExecModel
+    from ._handshake import BlockingChannel
+    from ._trio_gateway import ByteStream
 
 ExecItem = tuple[Any, ...]
 
@@ -788,14 +792,13 @@ class Transport(Protocol):
     def prepare(self) -> None:
         """Synchronous fd bookkeeping, before anything reads or writes."""
 
-    def connect(self) -> Any:
+    def connect(self) -> BlockingChannel:
         """Make the byte channel exist; blocking, no loop yet.
 
-        Returns a :class:`~execnet._handshake.BlockingChannel` the config
-        handshake runs over.
+        The config handshake runs over what this returns.
         """
 
-    async def open(self) -> Any:
+    async def open(self) -> ByteStream:
         """The protocol ByteStream, ready for the Message protocol."""
 
 
@@ -816,11 +819,11 @@ class StdioTransport:
     def prepare(self) -> None:
         self._fds = _dup_protocol_fds()
 
-    def connect(self) -> Any:
+    def connect(self) -> BlockingChannel:
         assert self._fds is not None, "prepare() first"
         return _FdChannel(*self._fds)
 
-    async def open(self) -> Any:
+    async def open(self) -> ByteStream:
         from ._trio_gateway import staple_fd_stream
 
         assert self._fds is not None, "prepare() first"
@@ -864,14 +867,14 @@ class ShareTransport:
             )
         self._blob = base64.b64decode(raw)
 
-    def connect(self) -> Any:
+    def connect(self) -> BlockingChannel:
         import socket as _socket
 
         assert self._blob is not None, "adopt() first"
         self._sock = _socket.fromshare(self._blob)  # type: ignore[attr-defined]
         return _SocketChannel(self._sock)
 
-    async def open(self) -> Any:
+    async def open(self) -> ByteStream:
         from . import _trio_host
 
         # hand over the socket itself, not its fd: fromshare() already knows
@@ -891,7 +894,7 @@ class FdTransport:
     def prepare(self) -> None:
         pass
 
-    def connect(self) -> Any:
+    def connect(self) -> BlockingChannel:
         if len(self.fds) == 2:
             return _FdChannel(*self.fds)
         (fd,) = self.fds
@@ -902,7 +905,7 @@ class FdTransport:
             )
         return _FdChannel(fd, fd)
 
-    async def open(self) -> Any:
+    async def open(self) -> ByteStream:
         from . import _trio_host
         from ._trio_gateway import staple_fd_stream
 
@@ -922,11 +925,12 @@ def parse_address(address: str) -> tuple[str, Any]:
     return "tcp", (host or "localhost", int(port))
 
 
-async def _socket_stream(sock: Any) -> Any:
+async def _socket_stream(sock: socket.socket) -> ByteStream:
     """Wrap an already-connected stdlib socket for the loop."""
     from ._async import current_async
 
-    return await current_async().wrap_socket(sock)
+    stream: ByteStream = await current_async().wrap_socket(sock)
+    return stream
 
 
 class ConnectTransport:
@@ -946,7 +950,7 @@ class ConnectTransport:
     def prepare(self) -> None:
         pass
 
-    def connect(self) -> Any:
+    def connect(self) -> BlockingChannel:
         import socket as _socket
 
         if self.kind == "unix":
@@ -957,7 +961,7 @@ class ConnectTransport:
         self._sock = sock
         return _SocketChannel(sock)
 
-    async def open(self) -> Any:
+    async def open(self) -> ByteStream:
         return await _socket_stream(self._sock)
 
 
@@ -977,7 +981,7 @@ class ListenTransport:
     def prepare(self) -> None:
         pass
 
-    def connect(self) -> Any:
+    def connect(self) -> BlockingChannel:
         import socket as _socket
 
         if self.kind == "unix":
@@ -997,7 +1001,7 @@ class ListenTransport:
         self._sock = sock
         return _SocketChannel(sock)
 
-    async def open(self) -> Any:
+    async def open(self) -> ByteStream:
         return await _socket_stream(self._sock)
 
 

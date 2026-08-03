@@ -45,6 +45,8 @@ from ._async import current_async
 if TYPE_CHECKING:
     from typing_extensions import Self
 
+    from ._xspec import XSpec
+
 from ._errors import GatewayReceivedTerminate
 from ._errors import HostNotFound
 from ._errors import RemoteError
@@ -56,6 +58,7 @@ from ._handshake import send_config
 from ._message import FrameDecoder
 from ._message import Message
 from ._message import gateway_info
+from ._serialize import Payload
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 from ._trace import trace
@@ -167,7 +170,9 @@ async def staple_fd_stream(read_fd: int, write_fd: int) -> ByteStream:
     return stream
 
 
-async def configure_worker(stream: ByteStream, spec: Any, what: str) -> dict[str, Any]:
+async def configure_worker(
+    stream: ByteStream, spec: XSpec | None, what: str
+) -> dict[str, Any]:
     """Configure the worker on ``stream`` and wait until it is serving.
 
     One ``GATEWAY_CONFIG`` frame out, one back (:mod:`execnet._handshake`).
@@ -198,7 +203,7 @@ async def open_popen_process(args: list[str]) -> Any:
 
 
 def popen_module_args(
-    spec: Any, *protocol: str, local_config_on_stdin: bool = False
+    spec: XSpec, *protocol: str, local_config_on_stdin: bool = False
 ) -> list[str]:
     """Launch the Trio worker as a module: ``python -m execnet worker``.
 
@@ -212,13 +217,13 @@ def popen_module_args(
     """
     from . import _provision
 
-    if getattr(spec, "python", None):
+    if spec.python:
         interpreter = _provision.shell_split_path(spec.python)
     else:
         interpreter = [sys.executable]
 
     args = [*interpreter, "-u"]
-    if getattr(spec, "dont_write_bytecode", False):
+    if spec.dont_write_bytecode:
         args.append("-B")
     args += ["-m", "execnet", "worker", *protocol]
     if local_config_on_stdin:
@@ -227,7 +232,7 @@ def popen_module_args(
 
 
 def popen_worker_argv(
-    spec: Any, *protocol: str, local_config_on_stdin: bool = False
+    spec: XSpec, *protocol: str, local_config_on_stdin: bool = False
 ) -> list[str]:
     """Argv for a popen worker: direct module launch, or uv-provisioned.
 
@@ -487,7 +492,7 @@ class AsyncChannel:
         """Return True if the channel is closed for sending."""
         return self._raw._closed
 
-    async def send(self, item: object) -> None:
+    async def send(self, item: Payload) -> None:
         """Serialize ``item`` and send it to the other side.
 
         The item must be a simple Python type; OSError is raised when the
@@ -641,7 +646,7 @@ class AsyncGateway:
     async def remote_exec(
         self,
         source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-        **kwargs: object,
+        **kwargs: Payload,
     ) -> AsyncChannel:
         """Connect a new channel to remote execution of ``source``.
 
@@ -926,7 +931,7 @@ SSH_CONNECT_TIMEOUT = 60.0
 
 
 def _ssh_argv(
-    spec: Any, command: str, forward: tuple[str, str] | None = None
+    spec: XSpec, command: str, forward: tuple[str, str] | None = None
 ) -> list[str]:
     """ssh/vagrant argv running ``command``, optionally with a ``-R`` forward.
 
@@ -948,7 +953,7 @@ def _ssh_argv(
     )
 
 
-def ssh_transport_args(spec: Any) -> list[str]:
+def ssh_transport_args(spec: XSpec) -> list[str]:
     """ssh argv for a stdio-transport ssh worker."""
     from . import _provision
 
@@ -956,7 +961,7 @@ def ssh_transport_args(spec: Any) -> list[str]:
     return _ssh_argv(spec, _provision.ssh_remote_command(spec))
 
 
-def vagrant_transport_args(spec: Any) -> list[str]:
+def vagrant_transport_args(spec: XSpec) -> list[str]:
     """vagrant-ssh argv for a stdio-transport vagrant_ssh worker."""
     from . import _provision
 
@@ -1029,7 +1034,7 @@ async def _accept_or_diagnose(
     )
 
 
-async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, Any]:
+async def connect_ssh_worker(spec: XSpec) -> tuple[ByteStream, Any]:
     """Spawn an ssh/vagrant worker on the transport ``spec`` resolves to.
 
     ``transport=socket`` forwards a private unix socket to the remote with
@@ -1079,7 +1084,7 @@ async def connect_ssh_worker(spec: Any) -> tuple[ByteStream, Any]:
     return stream, process
 
 
-async def deliver_remote_wheel(spec: Any, wheel: Any) -> None:
+async def deliver_remote_wheel(spec: XSpec, wheel: Any) -> None:
     """Ship ``wheel`` to the remote over its own connection, before launching.
 
     Out of band on purpose: the protocol stream never carries a payload, so
@@ -1111,7 +1116,7 @@ async def deliver_remote_wheel(spec: Any, wheel: Any) -> None:
 
 async def connect_command_worker(
     args: list[str],
-    spec: Any = None,
+    spec: XSpec | None = None,
     *,
     remoteaddress: str | None = None,
 ) -> tuple[ByteStream, Any]:
@@ -1155,7 +1160,7 @@ def share_socket(sock: Any, pid: int) -> str:
     return base64.b64encode(sock.share(pid)).decode("ascii")
 
 
-async def _spawn_with_socket(spec: Any, theirs: Any) -> Any:
+async def _spawn_with_socket(spec: XSpec, theirs: Any) -> Any:
     """Spawn a worker owning ``theirs``, by whichever handoff this OS has.
 
     POSIX passes the fd itself.  Windows cannot -- ``subprocess`` refuses
@@ -1199,7 +1204,7 @@ def dumps_config(config: dict[str, Any]) -> bytes:
     return json.dumps(config).encode("utf-8")
 
 
-async def connect_popen_worker(spec: Any) -> tuple[ByteStream, Any]:
+async def connect_popen_worker(spec: XSpec) -> tuple[ByteStream, Any]:
     """Spawn a local worker for ``spec`` on its resolved transport.
 
     With ``transport=socket`` the protocol runs over an inherited
@@ -1254,7 +1259,7 @@ async def connect_popen_worker(spec: Any) -> tuple[ByteStream, Any]:
 
 
 async def connect_socket_worker(
-    address: tuple[str, int], remoteaddress: str, spec: Any = None
+    address: tuple[str, int], remoteaddress: str, spec: XSpec | None = None
 ) -> ByteStream:
     """Connect to a running socketserver and configure the worker it spawns.
 
@@ -1351,7 +1356,7 @@ class AsyncGroup:
             raise terminate_error
         return suppress_body_exc
 
-    async def makegateway(self, spec: str | Any = "popen") -> AsyncGateway:
+    async def makegateway(self, spec: str | XSpec = "popen") -> AsyncGateway:
         """Create a gateway for ``spec`` served on the group's nursery.
 
         All transport types are supported: popen (including uv-provisioned
@@ -1421,11 +1426,13 @@ class AsyncGroup:
                 process.kill()
                 await process.wait()
 
-    def _make_gateway(self, stream: ByteStream, spec: Any) -> AsyncGateway:
+    def _make_gateway(self, stream: ByteStream, spec: XSpec) -> AsyncGateway:
         """Construct the gateway object for a freshly connected stream.
 
         Overridden by the sync facade to build bridge gateways instead.
         """
+        # settled by makegateway before it dispatches to any transport
+        assert spec.id is not None
         return AsyncGateway(stream, id=spec.id, _startcount=1)
 
     async def _reap_process(self, process: Any) -> None:
@@ -1433,14 +1440,14 @@ class AsyncGroup:
         with suppress(Exception):
             await process.wait()
 
-    async def _resolve_socket_address(self, spec: Any) -> tuple[tuple[str, int], str]:
+    async def _resolve_socket_address(self, spec: XSpec) -> tuple[tuple[str, int], str]:
         """``((host, port), remoteaddress)`` for a ``socket=`` spec.
 
         ``installvia=`` asks that group member to start a one-shot
         socketserver first.  The sync facade overrides this to talk to its
         sync coordinator gateway.
         """
-        if getattr(spec, "installvia", None):
+        if spec.installvia:
             coordinator = self._gateway_by_id(spec.installvia)
             realhost, realport = await start_socketserver_via(coordinator)
             return (realhost, realport), "%s:%d" % (realhost, realport)
@@ -1448,11 +1455,13 @@ class AsyncGroup:
         host_str, _, port_str = spec.socket.rpartition(":")
         return (host_str, int(port_str)), spec.socket
 
-    async def _open_via_stream(self, spec: Any) -> ByteStream:
+    async def _open_via_stream(self, spec: XSpec) -> ByteStream:
         """Ask the ``spec.via`` coordinator to spawn a sub-worker; tunnel over a
         raw channel (each payload one whole sub-protocol frame)."""
         from . import _provision
 
+        # only reached for a spec that named a via= coordinator
+        assert spec.via is not None
         coordinator = self._gateway_by_id(spec.via)
         raw = coordinator._open_raw_channel()
         request = await provision_sync(_provision.spawn_request, spec)
@@ -1505,7 +1514,7 @@ class AsyncGroup:
 
 
 @asynccontextmanager
-async def open_gateway(spec: str | Any = "popen") -> AsyncIterator[AsyncGateway]:
+async def open_gateway(spec: str | XSpec = "popen") -> AsyncIterator[AsyncGateway]:
     """Spawn one worker for ``spec`` and serve an AsyncGateway to it.
 
     Runs inside the caller's own trio run -- no host thread involved.
