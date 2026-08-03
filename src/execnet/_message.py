@@ -17,6 +17,7 @@ from typing import Protocol
 
 if TYPE_CHECKING:
     from ._execmodel import ExecModel
+    from ._serialize import Payload
 
 
 class WriteIO(Protocol):
@@ -134,7 +135,7 @@ class Message:
         return f"<Message {name} channel={self.channelid} lendata={len(self.data)}>"
 
 
-def gateway_info() -> dict[str, object]:
+def gateway_info() -> dict[str, Payload]:
     """Payload for ``Message.GATEWAY_INFO``: sys/env facts about this side.
 
     Answered natively by the dispatch loop -- an info request never

@@ -24,6 +24,7 @@ from execnet import _serialize
 from execnet._channel import ChannelFactory
 from execnet._execmodel import ExecModel
 from execnet._message import Message
+from execnet._serialize import Payload
 
 skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
@@ -35,12 +36,12 @@ skip_win_pypy = pytest.mark.xfail(
 # not part of the public API -- see the docs, "Sending objects over a channel".
 @pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])
 class TestSerializeAPI:
-    def test_serializer_api(self, val: object) -> None:
+    def test_serializer_api(self, val: Payload) -> None:
         dumped = _serialize.dumps(val)
         val2 = _serialize.loads(dumped)
         assert val == val2
 
-    def test_mmap(self, tmp_path: Path, val: object) -> None:
+    def test_mmap(self, tmp_path: Path, val: Payload) -> None:
         mmap = pytest.importorskip("mmap").mmap
         p = tmp_path / "data.bin"
 

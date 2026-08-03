@@ -56,6 +56,8 @@ def _run_callback(callback: Callable[[Any], Any], data: bytes, channel: Any) -> 
 
 
 if TYPE_CHECKING:
+    import socket
+
     #: either engine; only ever used as an annotation here, and importing
     #: the trio one would make this module need trio
     from typing import Any as Engine
@@ -63,6 +65,7 @@ if TYPE_CHECKING:
     from ._gateway import Gateway
     from ._gateway_base import BaseGateway
     from ._multi import Group
+    from ._xspec import XSpec
 
 T = TypeVar("T")
 
@@ -71,7 +74,7 @@ T = TypeVar("T")
 ssh_trio_args = ssh_transport_args
 
 
-async def adopt_socket(sock: int | Any) -> Any:
+async def adopt_socket(sock: int | socket.socket) -> ByteStream:
     """Worker side: wrap an inherited socket for the loop.
 
     Takes an fd or an already-built socket.  Rebuilding one from its fd
@@ -89,7 +92,8 @@ async def adopt_socket(sock: int | Any) -> Any:
 
     if isinstance(sock, int):
         sock = _socket.socket(fileno=sock)
-    return await current_async().wrap_socket(sock)
+    stream: ByteStream = await current_async().wrap_socket(sock)
+    return stream
 
 
 class SyncIOHandle:
@@ -587,9 +591,11 @@ class FacadeAsyncGroup(AsyncGroup):
         self.engine = engine
         self.shutdown = self._aio.event()
 
-    def _make_gateway(self, stream: ByteStream, spec: Any) -> AsyncGateway:
+    def _make_gateway(self, stream: ByteStream, spec: XSpec) -> AsyncGateway:
         import execnet
 
+        # both settled by makegateway before it dispatches to any transport
+        assert spec.profile is not None and spec.id is not None
         sync_gw = execnet.Gateway(_TempIO(get_execmodel(spec.profile)), spec)
         # the caller's concurrency library, inherited from the facade
         sync_gw._wait_backend = self.group._wait_backend
@@ -597,9 +603,11 @@ class FacadeAsyncGroup(AsyncGroup):
             stream, id=spec.id, sync_gateway=sync_gw, engine=self.engine
         )
 
-    async def _open_via_stream(self, spec: Any) -> ByteStream:
+    async def _open_via_stream(self, spec: XSpec) -> ByteStream:
         from . import _provision
 
+        # only reached for a spec that named a via= coordinator
+        assert spec.via is not None
         coordinator = self.group[spec.via]
         session = coordinator._trio_session
         assert isinstance(session, SyncBridgeGateway)
@@ -612,8 +620,8 @@ class FacadeAsyncGroup(AsyncGroup):
         await configure_worker(io, spec, "via")
         return io
 
-    async def _resolve_socket_address(self, spec: Any) -> tuple[tuple[str, int], str]:
-        if getattr(spec, "installvia", None):
+    async def _resolve_socket_address(self, spec: XSpec) -> tuple[tuple[str, int], str]:
+        if spec.installvia:
             coordinator = self.group[spec.installvia]
             # Blocking sync channel receive on that coordinator: run in a
             # thread while this loop keeps dispatching its messages.
@@ -640,7 +648,7 @@ class FacadeAsyncGroup(AsyncGroup):
             self.engine._forget_group(self)
 
 
-def makegateway_trio(group: Group, spec: Any) -> Gateway:
+def makegateway_trio(group: Group, spec: XSpec) -> Gateway:
     """Create a sync-facade Gateway for ``spec`` on the group's Trio engine."""
     engine: Engine = group._ensure_trio_engine()
     async_group: FacadeAsyncGroup = group._ensure_async_group()
@@ -648,6 +656,8 @@ def makegateway_trio(group: Group, spec: Any) -> Gateway:
     # comes up, not the whole hub.
     bridge = group.engine_call(engine, async_group.makegateway, spec)
     assert isinstance(bridge, SyncBridgeGateway)
+    # makegateway settled the profile on its way through
+    assert spec.profile is not None
     gw: Gateway = bridge.sync_gateway  # type: ignore[assignment]
     gw._io = SyncIOHandle(
         get_execmodel(spec.profile),

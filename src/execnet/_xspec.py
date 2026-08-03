@@ -41,7 +41,7 @@ class XSpec:
 
     def __init__(self, string: str) -> None:
         self._spec = string
-        self.env = {}
+        self.env: dict[str, str | bool] = {}
         for keyvalue in string.split("//"):
             i = keyvalue.find("=")
             value: str | bool

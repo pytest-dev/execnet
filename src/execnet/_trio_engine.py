@@ -24,6 +24,7 @@ from typing import TypeVar
 import trio
 
 from ._boundary import WaitBackend
+from ._boundary import Wakener
 from ._engine import DEFAULT_CALLBACK_THREADS
 from ._engine import gevent_patched_modules
 from ._portal import LoopPortal
@@ -172,7 +173,7 @@ class TrioEngine:
         self,
         async_fn: Callable[..., Awaitable[T]],
         *args: Any,
-        wakener: Any = None,
+        wakener: Wakener | None = None,
     ) -> OneShot[T]:
         """Run ``async_fn`` as an engine task, resolving a :class:`OneShot`.
 

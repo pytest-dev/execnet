@@ -22,6 +22,7 @@ from execnet import _errors
 from execnet import _trio_gateway
 from execnet._errors import RemoteError
 from execnet._message import Message
+from execnet._serialize import Payload
 from execnet._serialize import dumps_internal
 from execnet._serialize import loads_internal
 from execnet._trio_gateway import AsyncChannel
@@ -29,6 +30,7 @@ from execnet._trio_gateway import AsyncGateway
 from execnet._trio_gateway import AsyncGroup
 from execnet._trio_gateway import ThreadedFdStream
 from execnet._trio_gateway import open_gateway
+from execnet._xspec import XSpec
 
 
 @asynccontextmanager
@@ -212,7 +214,15 @@ def test_mid_frame_eof_is_an_error() -> None:
 
 
 def test_channel_serializes_builtin_items() -> None:
-    items = [42, "text", b"bytes", [1, 2], ("a", 1), {"key": [True, None]}, {1, 2}]
+    items: list[Payload] = [
+        42,
+        "text",
+        b"bytes",
+        [1, 2],
+        ("a", 1),
+        {"key": [True, None]},
+        {1, 2},
+    ]
 
     async def main() -> None:
         async with gateway_pair() as (left, right):
@@ -498,7 +508,7 @@ class TestAsyncGroup:
         spawned: list[trio.Process] = []
         connect = _trio_gateway.connect_popen_worker
 
-        async def spy(spec: object) -> tuple[object, trio.Process]:
+        async def spy(spec: XSpec) -> tuple[object, trio.Process]:
             stream, process = await connect(spec)
             spawned.append(process)
             return stream, process

@@ -16,14 +16,68 @@ from collections.abc import Callable
 from io import BytesIO
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Protocol
+from typing import TypeAlias
+from typing import cast
 
 from ._errors import DumpError
 from ._errors import LoadError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from collections.abc import Sequence
+    from collections.abc import Set as AbstractSet
+
+    from typing_extensions import TypeIs
+
     from ._channel import Channel
-    from ._gateway_base import BaseGateway
     from ._message import ReadIO
+    from ._trio_gateway import AsyncChannel
+
+#: Everything execnet's wire format can carry, as one recursive alias.
+#:
+#: Deliberately spelled with the *abstract* containers rather than
+#: ``list``/``dict``/``set``.  Those are invariant, so ``list[int]`` would
+#: not satisfy ``list[Payload]`` and every honest ``channel.send([1, 2])``
+#: would be an error -- the strict version is unusable as an argument type.
+#: The abstract ones are covariant in their elements, so ordinary concrete
+#: containers pass.
+#:
+#: The cost is a little over-acceptance: ``range`` is a ``Sequence[int]``
+#: and ``memoryview`` a ``Sequence`` too, and neither has a wire
+#: representation.  What this is for is the large class of mistakes --
+#: functions, sockets, arbitrary instances -- and those it does catch.
+#: :func:`can_send` remains the runtime answer.
+Payload: TypeAlias = (
+    "None | bool | int | float | complex | str | bytes"
+    " | Sequence[Payload] | AbstractSet[Payload] | Mapping[Any, Payload]"
+    " | Channel | AsyncChannel"
+)
+
+
+class ChannelFactory(Protocol):
+    """Rebuilds the channel a wire ``CHANNEL`` opcode names."""
+
+    def new(self, id: int, /) -> Any: ...
+
+
+class FactoryOwner(Protocol):
+    """A gateway: it owns the factory for its own channel ids."""
+
+    @property
+    def _channelfactory(self) -> ChannelFactory: ...
+
+
+class ChannelLike(Protocol):
+    """A channel -- sync or async -- which names the gateway that owns one.
+
+    Spelled as a protocol rather than a ``Channel | AsyncChannel`` union to
+    keep the promise in this module's docstring: the channel layer depends
+    on the serializer and never the other way round.
+    """
+
+    @property
+    def gateway(self) -> FactoryOwner: ...
 
 
 def bchr(n: int) -> bytes:
@@ -75,17 +129,21 @@ class Unserializer:
     def __init__(
         self,
         stream: ReadIO,
-        channel_or_gateway: Channel | BaseGateway | None = None,
+        channel_or_gateway: ChannelLike | FactoryOwner | None = None,
     ) -> None:
         # A channel -- sync or trio-native -- resolves through its gateway; a
         # gateway is already the right object.  Duck-typed so the serializer
         # stays independent of the channel layer.
-        gw: Any = getattr(channel_or_gateway, "gateway", channel_or_gateway)
         self.stream = stream
-        if gw is None:
-            self.channelfactory = None
-        else:
-            self.channelfactory = gw._channelfactory
+        self.channelfactory: ChannelFactory | None = None
+        if channel_or_gateway is not None:
+            # the two shapes cannot be told apart statically, which is the
+            # point: neither name is imported here
+            owner = cast(
+                "FactoryOwner",
+                getattr(channel_or_gateway, "gateway", channel_or_gateway),
+            )
+            self.channelfactory = owner._channelfactory
 
     def load(self, versioned: bool = False) -> Any:
         if versioned:
@@ -234,7 +292,7 @@ class Unserializer:
     num2func[opcode.CHANNEL] = load_channel
 
 
-def dumps(obj: object) -> bytes:
+def dumps(obj: Payload) -> bytes:
     """Serialize the given obj to a bytestring.
 
     The obj and all contained objects must be of a builtin
@@ -267,16 +325,18 @@ def load(io: ReadIO) -> Any:
     return Unserializer(io).load(versioned=True)
 
 
-def loads_internal(bytestring: bytes, channelfactory=None) -> Any:
+def loads_internal(
+    bytestring: bytes, channel_or_gateway: ChannelLike | FactoryOwner | None = None
+) -> Any:
     io = BytesIO(bytestring)
-    return Unserializer(io, channelfactory).load()
+    return Unserializer(io, channel_or_gateway).load()
 
 
-def dumps_internal(obj: object) -> bytes:
+def dumps_internal(obj: Payload) -> bytes:
     return _Serializer().save(obj)  # type: ignore[return-value]
 
 
-def can_send(obj: object) -> bool:
+def can_send(obj: object) -> TypeIs[Payload]:
     """Whether ``obj`` can cross a channel as-is.
 
     True for execnet's simple builtin wire data -- ``None``, ``bool``,
