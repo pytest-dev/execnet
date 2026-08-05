@@ -46,6 +46,7 @@ from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import TypeVar
+from typing import cast
 
 from ._bridge import AsyncioBridge
 from ._bridge import AsyncioCarrier
@@ -139,7 +140,7 @@ class AsyncChannel:
         """
         await self._bridge.call(self._channel.send, item, shield=True)
 
-    async def receive(self, timeout: float | None = None) -> Any:
+    async def receive(self, timeout: float | None = None) -> Payload:
         """Receive the next item sent from the other side.
 
         EOFError once the peer closed or sent EOF, RemoteError for a peer
@@ -160,9 +161,9 @@ class AsyncChannel:
             )
         if isinstance(result, _TrioChannel):
             return AsyncChannel(self._bridge, result)
-        return result
+        return cast("Payload", result)
 
-    def _stash(self, item: Any) -> None:
+    def _stash(self, item: Payload) -> None:
         """Keep an item whose receive was cancelled before it arrived."""
         self._salvaged = item
 
@@ -181,7 +182,7 @@ class AsyncChannel:
     def __aiter__(self) -> AsyncChannel:
         return self
 
-    async def __anext__(self) -> Any:
+    async def __anext__(self) -> Payload:
         try:
             return await self.receive()
         except EOFError:

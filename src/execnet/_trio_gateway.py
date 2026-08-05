@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
 from typing import TypeVar
+from typing import cast
 
 from ._async import current_async
 
@@ -502,7 +503,7 @@ class AsyncChannel:
             raise OSError(f"cannot send to {self!r}")
         await self._raw.send_bytes(dumps_internal(item))
 
-    async def receive(self, timeout: float | None = None) -> Any:
+    async def receive(self, timeout: float | None = None) -> Payload:
         """Receive the next item sent from the other side.
 
         Raises EOFError once the peer closed or sent EOF, a RemoteError for
@@ -537,7 +538,7 @@ class AsyncChannel:
     def __aiter__(self) -> AsyncChannel:
         return self
 
-    async def __anext__(self) -> Any:
+    async def __anext__(self) -> Payload:
         try:
             return await self.receive()
         except EOFError:
@@ -852,7 +853,7 @@ class AsyncGateway:
         assert self._service_spawn is not None
         from . import _services
 
-        name, request = loads_internal(data)
+        name, request = cast("tuple[str, Payload]", loads_internal(data))
         try:
             handler = _services.resolve(name)
         except LookupError as exc:
@@ -1293,7 +1294,7 @@ async def start_socketserver_via(
     await gateway._send(
         Message.GATEWAY_START_SOCKET, channel.id, dumps_internal(bind_host)
     )
-    realhost, realport = await channel.receive()
+    realhost, realport = cast("tuple[str, int]", await channel.receive())
     await channel.wait_closed()
     if not realhost or realhost in ("0.0.0.0", "::"):
         realhost = "localhost"

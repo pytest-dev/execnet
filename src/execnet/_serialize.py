@@ -32,7 +32,6 @@ if TYPE_CHECKING:
 
     from ._channel import Channel
     from ._message import ReadIO
-    from ._trio_gateway import AsyncChannel
 
 #: Everything execnet's wire format can carry, as one recursive alias.
 #:
@@ -51,7 +50,7 @@ if TYPE_CHECKING:
 Payload: TypeAlias = (
     "None | bool | int | float | complex | str | bytes"
     " | Sequence[Payload] | AbstractSet[Payload] | Mapping[Any, Payload]"
-    " | Channel | AsyncChannel"
+    " | ChannelRef"
 )
 
 
@@ -59,6 +58,21 @@ class ChannelFactory(Protocol):
     """Rebuilds the channel a wire ``CHANNEL`` opcode names."""
 
     def new(self, id: int, /) -> Any: ...
+
+
+class ChannelRef(Protocol):
+    """A channel of any surface; sending one transfers a reference by id.
+
+    Structural on ``id`` alone because that is the whole of what
+    ``save_Channel`` writes, and because there is no one channel class to
+    name: the sync ``Channel``, the async core's ``AsyncChannel`` and the
+    two facade wrappers around it share no base.  ``_Serializer`` reaches
+    them the same way -- it dispatches on the class *name* -- so matching
+    on shape here says exactly what the wire format already does.
+    """
+
+    @property
+    def id(self) -> int: ...
 
 
 class FactoryOwner(Protocol):
@@ -145,12 +159,12 @@ class Unserializer:
             )
             self.channelfactory = owner._channelfactory
 
-    def load(self, versioned: bool = False) -> Any:
+    def load(self, versioned: bool = False) -> Payload:
         if versioned:
             ver = self.stream.read(1)
             if ver != DUMPFORMAT_VERSION:
                 raise LoadError("wrong dumpformat version %r" % ver)
-        self.stack: list[object] = []
+        self.stack: list[Payload] = []
         try:
             while True:
                 opcode = self.stream.read(1)
@@ -307,7 +321,7 @@ def dump(byteio, obj: object) -> None:
     _Serializer(write=byteio.write).save(obj, versioned=True)
 
 
-def loads(bytestring: bytes) -> Any:
+def loads(bytestring: bytes) -> Payload:
     """Deserialize the given bytestring to an object.
 
     If the bytestring was dumped with an incompatible protocol
@@ -317,7 +331,7 @@ def loads(bytestring: bytes) -> Any:
     return load(BytesIO(bytestring))
 
 
-def load(io: ReadIO) -> Any:
+def load(io: ReadIO) -> Payload:
     """Derserialize an object form the specified stream.
 
     Behaviour is otherwise the same as with ``loads``
@@ -327,7 +341,7 @@ def load(io: ReadIO) -> Any:
 
 def loads_internal(
     bytestring: bytes, channel_or_gateway: ChannelLike | FactoryOwner | None = None
-) -> Any:
+) -> Payload:
     io = BytesIO(bytestring)
     return Unserializer(io, channel_or_gateway).load()
 

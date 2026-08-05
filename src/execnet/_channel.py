@@ -355,7 +355,7 @@ class Channel:
             raise ChannelClosed(f"cannot send to {self!r}")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
-    def receive(self, timeout: float | None = None) -> Any:
+    def receive(self, timeout: float | None = None) -> Payload:
         """Receive a data item that was sent from the other side.
 
         timeout: None [default] blocked waiting. A positive number
@@ -377,10 +377,10 @@ class Channel:
         else:
             return loads_internal(x, self)
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[Payload]:
         return self
 
-    def next(self) -> Any:
+    def next(self) -> Payload:
         try:
             return self.receive()
         except EOFError:

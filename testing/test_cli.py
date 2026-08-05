@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 from typing import Any
+from typing import cast
 
 import pytest
 
@@ -435,7 +436,7 @@ class TestTransportSelection:
             channel = gateway.remote_exec(
                 "import sys; channel.send(sys.argv)",
             )
-            argv = channel.receive(TESTTIMEOUT)
+            argv = cast("list[str]", channel.receive(TESTTIMEOUT))
             assert expected in argv
         finally:
             group.terminate(timeout=5.0)
@@ -662,7 +663,7 @@ class TestSocketWorkerSpawnFailure:
         code, channelid, data = sent[0]
         assert code == Message.CHANNEL_CLOSE_ERROR
         assert channelid == 7
-        assert "cannot hand an accepted socket" in loads_internal(data)
+        assert "cannot hand an accepted socket" in cast("str", loads_internal(data))
 
 
 class TestSocketWorkerConfig:

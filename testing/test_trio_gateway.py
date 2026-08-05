@@ -13,6 +13,7 @@ import sys
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import cast
 
 import pytest
 import trio
@@ -143,7 +144,9 @@ def test_status_reply_travels_on_raw_channel() -> None:
         async with gateway_pair() as (left, _right):
             channel = left._open_raw_channel()
             await left._send(Message.STATUS, channel.id)
-            status = loads_internal(await channel.receive_bytes())
+            status = cast(
+                "dict[str, Payload]", loads_internal(await channel.receive_bytes())
+            )
             assert status["execmodel"] == "trio"
             assert status["numexecuting"] == 0
             # the peer closes the status channel after the reply
@@ -281,7 +284,7 @@ def test_channel_objects_travel_over_the_wire() -> None:
             right_carrier = right.open_channel(carrier.id)
             extra = left.open_channel()
             await carrier.send({"reply-to": extra})
-            received = await right_carrier.receive()
+            received = cast("dict[str, AsyncChannel]", await right_carrier.receive())
             remote_extra = received["reply-to"]
             assert remote_extra.id == extra.id
             await remote_extra.send("over the transferred channel")
@@ -340,14 +343,14 @@ class TestPopenAsyncGateway:
     def test_concurrent_remote_execs(self) -> None:
         async def main() -> None:
             async with open_gateway() as gateway:
-                results = []
+                results: list[int] = []
 
                 async def run_one(value: int) -> None:
                     channel = await gateway.remote_exec(
                         "channel.send(channel.receive() * 10)"
                     )
                     await channel.send(value)
-                    results.append(await channel.receive())
+                    results.append(cast("int", await channel.receive()))
 
                 async with trio.open_nursery() as nursery:
                     for value in range(5):

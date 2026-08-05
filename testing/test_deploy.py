@@ -18,6 +18,7 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from typing import Any
+from typing import cast
 
 import pytest
 
@@ -133,7 +134,7 @@ class TestDeploy:
                 "import deployed_demo, sys\n"
                 "channel.send((deployed_demo.VALUE, sys.executable))"
             )
-            value, executable = channel.receive(TESTTIMEOUT)
+            value, executable = cast("tuple[int, str]", channel.receive(TESTTIMEOUT))
             assert value == 42
             assert executable == target.python
         finally:
@@ -165,7 +166,9 @@ class TestDeploy:
                 "import deployed_demo, os, sys\n"
                 "channel.send((deployed_demo.VALUE, sys.executable, os.getcwd()))"
             )
-            value, executable, cwd = channel.receive(TESTTIMEOUT)
+            value, executable, cwd = cast(
+                "tuple[int, str, str]", channel.receive(TESTTIMEOUT)
+            )
             assert value == 42
             assert executable == target.python
             assert cwd == target.workspace

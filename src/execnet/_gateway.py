@@ -10,6 +10,7 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 from ._channel import Channel
 from ._exec_source import normalize_exec_source
@@ -88,7 +89,7 @@ class Gateway(BaseGateway):
         if update or not hasattr(self, "_cache_rinfo"):
             channel = self.newchannel()
             self._send(Message.GATEWAY_INFO, channel.id)
-            self._cache_rinfo = RInfo(channel.receive())
+            self._cache_rinfo = RInfo(cast("dict[str, Payload]", channel.receive()))
             # the other side didn't actually instantiate a channel
             # so we just delete the internal id/channel mapping
             self._channelfactory._local_close(channel.id)
@@ -103,7 +104,7 @@ class Gateway(BaseGateway):
         """Obtain information about the remote execution status."""
         channel = self.newchannel()
         self._send(Message.STATUS, channel.id)
-        statusdict = channel.receive()
+        statusdict = cast("dict[str, Payload]", channel.receive())
         # the other side didn't actually instantiate a channel
         # so we just delete the internal id/channel mapping
         self._channelfactory._local_close(channel.id)

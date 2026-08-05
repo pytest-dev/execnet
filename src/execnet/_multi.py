@@ -366,18 +366,18 @@ class MultiChannel:
             ch.send(item)
 
     @overload
-    def receive_each(self, withchannel: Literal[False] = ...) -> list[Any]:
+    def receive_each(self, withchannel: Literal[False] = ...) -> list[Payload]:
         pass
 
     @overload
-    def receive_each(self, withchannel: Literal[True]) -> list[tuple[Channel, Any]]:
+    def receive_each(self, withchannel: Literal[True]) -> list[tuple[Channel, Payload]]:
         pass
 
     def receive_each(
         self, withchannel: bool = False
-    ) -> list[tuple[Channel, Any]] | list[Any]:
+    ) -> list[tuple[Channel, Payload]] | list[Payload]:
         assert not hasattr(self, "_queue")
-        l: list[object] = []
+        l: list[Any] = []
         for ch in self._channels:
             obj = ch.receive()
             if withchannel:

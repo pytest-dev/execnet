@@ -8,6 +8,7 @@ sources are rejected before they can starve the loop.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 import pytest
 import trio as trio_lib
@@ -61,7 +62,7 @@ class TestSyncCoordinator:
             )
             """
         )
-        active, on_main = channel.receive(TESTTIMEOUT)
+        active, on_main = cast("tuple[int, bool]", channel.receive(TESTTIMEOUT))
         assert on_main
         # The profile itself needs no threads -- exec'd sources are tasks on
         # the loop.  The *transport* may: adopting inherited stdio has no

@@ -25,6 +25,7 @@ from collections.abc import Callable
 from collections.abc import Sequence
 from hashlib import md5
 from typing import TYPE_CHECKING
+from typing import cast
 
 from .._async import current_async
 from ._manifest import Filter
@@ -107,7 +108,7 @@ async def send_manifest(
     channel = await target.open(SERVICE, {"destination": destination, "delete": delete})
     try:
         await channel.send(manifest.dump())
-        wanted = Wanted.load(await channel.receive())
+        wanted = Wanted.load(cast("tuple[object, ...]", await channel.receive()))
         for path in wanted.paths:
             local = os.path.join(source, *path.split("/"))
             body = await aio.to_thread(

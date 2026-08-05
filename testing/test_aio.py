@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable
 from typing import Any
 from typing import TypeVar
+from typing import cast
 
 import pytest
 
@@ -39,7 +40,7 @@ def test_open_gateway_iteration() -> None:
             channel = await gateway.remote_exec(
                 "for i in range(4): channel.send(i * 2)"
             )
-            return [item async for item in channel]
+            return [cast("int", item) async for item in channel]
 
     assert run(main()) == [0, 2, 4, 6]
 

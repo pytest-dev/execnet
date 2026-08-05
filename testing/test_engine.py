@@ -16,6 +16,7 @@ import sys
 import threading
 import warnings
 from collections.abc import Callable
+from typing import cast
 
 import pytest
 import trio
@@ -377,8 +378,11 @@ class TestEngineShutdownContract:
         engine = ProtocolEngine(name="execnet-engine-terminating-close")
         group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
-        pid = gateway.remote_exec("import os; channel.send(os.getpid())").receive(
-            TESTTIMEOUT
+        pid = cast(
+            "int",
+            gateway.remote_exec("import os; channel.send(os.getpid())").receive(
+                TESTTIMEOUT
+            ),
         )
 
         with pytest.warns(execnet.ActiveGroupsWarning, match="still running"):
@@ -403,8 +407,11 @@ class TestEngineShutdownContract:
         engine = ProtocolEngine(name="execnet-engine-drained")
         group = execnet.Group(engine=engine)
         gateway = group.makegateway("popen")
-        pid = gateway.remote_exec("import os; channel.send(os.getpid())").receive(
-            TESTTIMEOUT
+        pid = cast(
+            "int",
+            gateway.remote_exec("import os; channel.send(os.getpid())").receive(
+                TESTTIMEOUT
+            ),
         )
 
         engine.terminate(timeout=5.0)
