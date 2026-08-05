@@ -10,6 +10,7 @@ import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 from ._channel import Channel
 from ._exec_source import normalize_exec_source
@@ -18,6 +19,7 @@ from ._message import IO
 from ._message import Message
 from ._multi import Group
 from ._serialize import Payload
+from ._serialize import SendPayload
 from ._serialize import dumps_internal
 from ._xspec import XSpec
 
@@ -88,7 +90,9 @@ class Gateway(BaseGateway):
         if update or not hasattr(self, "_cache_rinfo"):
             channel = self.newchannel()
             self._send(Message.GATEWAY_INFO, channel.id)
-            self._cache_rinfo = RInfo(channel.receive())
+            self._cache_rinfo = RInfo(
+                cast("dict[str, Payload[Channel]]", channel.receive())
+            )
             # the other side didn't actually instantiate a channel
             # so we just delete the internal id/channel mapping
             self._channelfactory._local_close(channel.id)
@@ -103,7 +107,7 @@ class Gateway(BaseGateway):
         """Obtain information about the remote execution status."""
         channel = self.newchannel()
         self._send(Message.STATUS, channel.id)
-        statusdict = channel.receive()
+        statusdict = cast("dict[str, Payload[Channel]]", channel.receive())
         # the other side didn't actually instantiate a channel
         # so we just delete the internal id/channel mapping
         self._channelfactory._local_close(channel.id)
@@ -112,7 +116,7 @@ class Gateway(BaseGateway):
     def remote_exec(
         self,
         source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-        **kwargs: Payload,
+        **kwargs: SendPayload,
     ) -> Channel:
         """Return channel object and connect it to a remote
         execution thread where the given ``source`` executes.
@@ -149,7 +153,7 @@ class Gateway(BaseGateway):
 
 
 class RInfo:
-    def __init__(self, kwargs: dict[str, Payload]) -> None:
+    def __init__(self, kwargs: dict[str, Payload[Channel]]) -> None:
         self.__dict__.update(kwargs)
 
     def __repr__(self) -> str:

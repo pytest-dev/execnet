@@ -10,6 +10,8 @@ expose stays unexposed.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 import trio
 
@@ -49,7 +51,7 @@ class TestTheSurface:
                 channel = await gateway.remote_exec(
                     "for i in range(4): channel.send(i * 2)"
                 )
-                return [item async for item in channel]
+                return [cast("int", item) async for item in channel]
 
         assert run(main) == [0, 2, 4, 6]
 
@@ -98,7 +100,7 @@ class TestTheSurface:
                 ]
                 for index, channel in enumerate(channels):
                     await channel.send(index + 1)
-                return [await channel.receive() for channel in channels]
+                return [cast("int", await channel.receive()) for channel in channels]
 
         assert run(main) == [2, 4]
 

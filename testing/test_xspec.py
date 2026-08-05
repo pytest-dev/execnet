@@ -6,6 +6,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
 from test_gateway import TESTTIMEOUT
@@ -286,7 +287,7 @@ class TestMakegateway:
             channel = gw.remote_exec(
                 "import os; channel.send((os.getcwd(), os.environ.get('SPECVAR')))"
             )
-            cwd, var = channel.receive(TESTTIMEOUT)
+            cwd, var = cast("tuple[str, str]", channel.receive(TESTTIMEOUT))
             assert Path(cwd).resolve() == tmp_path.resolve()
             assert var == "here"
         finally:

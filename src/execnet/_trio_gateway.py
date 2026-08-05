@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Protocol
 from typing import TypeVar
+from typing import cast
 
 from ._async import current_async
 
@@ -59,6 +60,7 @@ from ._message import FrameDecoder
 from ._message import Message
 from ._message import gateway_info
 from ._serialize import Payload
+from ._serialize import SendPayload
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 from ._trace import trace
@@ -492,7 +494,7 @@ class AsyncChannel:
         """Return True if the channel is closed for sending."""
         return self._raw._closed
 
-    async def send(self, item: Payload) -> None:
+    async def send(self, item: SendPayload) -> None:
         """Serialize ``item`` and send it to the other side.
 
         The item must be a simple Python type; OSError is raised when the
@@ -502,7 +504,7 @@ class AsyncChannel:
             raise OSError(f"cannot send to {self!r}")
         await self._raw.send_bytes(dumps_internal(item))
 
-    async def receive(self, timeout: float | None = None) -> Any:
+    async def receive(self, timeout: float | None = None) -> Payload[AsyncChannel]:
         """Receive the next item sent from the other side.
 
         Raises EOFError once the peer closed or sent EOF, a RemoteError for
@@ -537,7 +539,7 @@ class AsyncChannel:
     def __aiter__(self) -> AsyncChannel:
         return self
 
-    async def __anext__(self) -> Any:
+    async def __anext__(self) -> Payload[AsyncChannel]:
         try:
             return await self.receive()
         except EOFError:
@@ -646,7 +648,7 @@ class AsyncGateway:
     async def remote_exec(
         self,
         source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-        **kwargs: Payload,
+        **kwargs: SendPayload,
     ) -> AsyncChannel:
         """Connect a new channel to remote execution of ``source``.
 
@@ -852,7 +854,7 @@ class AsyncGateway:
         assert self._service_spawn is not None
         from . import _services
 
-        name, request = loads_internal(data)
+        name, request = cast("tuple[str, Payload]", loads_internal(data))
         try:
             handler = _services.resolve(name)
         except LookupError as exc:
@@ -1293,7 +1295,7 @@ async def start_socketserver_via(
     await gateway._send(
         Message.GATEWAY_START_SOCKET, channel.id, dumps_internal(bind_host)
     )
-    realhost, realport = await channel.receive()
+    realhost, realport = cast("tuple[str, int]", await channel.receive())
     await channel.wait_closed()
     if not realhost or realhost in ("0.0.0.0", "::"):
         realhost = "localhost"

@@ -16,12 +16,12 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ._serialize import Payload
+    from ._serialize import SendPayload
 
 
 def normalize_exec_source(
     source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-    kwargs: dict[str, Payload],
+    kwargs: dict[str, SendPayload],
 ) -> tuple[str, str | None, str | None]:
     """Return ``(source, file_name, call_name)`` for a CHANNEL_EXEC payload."""
     call_name = None

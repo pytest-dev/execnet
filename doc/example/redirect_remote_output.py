@@ -21,13 +21,17 @@ outchan = gw.remote_exec(
 """
 ).receive()
 
+# receive() promises this gateway's own channel type, so a plain isinstance
+# is enough to get at the channel's methods
+assert isinstance(outchan, execnet.Channel)
+
 
 # note: callbacks execute in receiver thread!
 def write(data):
     print("received:", repr(data))
 
 
-outchan.setcallback(write)  # type: ignore[attr-defined]
+outchan.setcallback(write)
 
 gw.remote_exec(
     """
