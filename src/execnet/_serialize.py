@@ -15,49 +15,31 @@ import struct
 from collections.abc import Callable
 from io import BytesIO
 from typing import TYPE_CHECKING
-from typing import Any
 from typing import Protocol
 from typing import TypeAlias
+from typing import TypeVar
 from typing import cast
 
 from ._errors import DumpError
 from ._errors import LoadError
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
     from collections.abc import Sequence
     from collections.abc import Set as AbstractSet
 
     from typing_extensions import TypeIs
 
+    # PEP 696 defaults; type-only, so no runtime dependency is added
+    from typing_extensions import TypeVar as DefaultedTypeVar
+
     from ._channel import Channel
     from ._message import ReadIO
 
-#: Everything execnet's wire format can carry, as one recursive alias.
-#:
-#: Deliberately spelled with the *abstract* containers rather than
-#: ``list``/``dict``/``set``.  Those are invariant, so ``list[int]`` would
-#: not satisfy ``list[Payload]`` and every honest ``channel.send([1, 2])``
-#: would be an error -- the strict version is unusable as an argument type.
-#: The abstract ones are covariant in their elements, so ordinary concrete
-#: containers pass.
-#:
-#: The cost is a little over-acceptance: ``range`` is a ``Sequence[int]``
-#: and ``memoryview`` a ``Sequence`` too, and neither has a wire
-#: representation.  What this is for is the large class of mistakes --
-#: functions, sockets, arbitrary instances -- and those it does catch.
-#: :func:`can_send` remains the runtime answer.
-Payload: TypeAlias = (
-    "None | bool | int | float | complex | str | bytes"
-    " | Sequence[Payload] | AbstractSet[Payload] | Mapping[Any, Payload]"
-    " | ChannelRef"
-)
 
-
-class ChannelFactory(Protocol):
-    """Rebuilds the channel a wire ``CHANNEL`` opcode names."""
-
-    def new(self, id: int, /) -> Any: ...
+KeyT_co = TypeVar("KeyT_co", covariant=True)
+ValueT_co = TypeVar("ValueT_co", covariant=True)
+#: which surface's channel a factory builds
+ChannelT_co = TypeVar("ChannelT_co", covariant=True)
 
 
 class ChannelRef(Protocol):
@@ -75,14 +57,42 @@ class ChannelRef(Protocol):
     def id(self) -> int: ...
 
 
-class FactoryOwner(Protocol):
+if TYPE_CHECKING:
+    #: which surface's channel a payload carries; see :data:`Payload`.
+    #: Defaulted (PEP 696) so a bare ``Payload`` is the permissive form
+    #: rather than an implicit ``Any`` -- but say :data:`SendPayload` where
+    #: that is what you mean.  Type-only: it is never a ``Protocol`` base,
+    #: so unlike the others above it need not exist at runtime.
+    ChannelT = DefaultedTypeVar("ChannelT", default=ChannelRef)
+
+
+class PayloadMapping(Protocol[KeyT_co, ValueT_co]):
+    """The dict half of the wire format: something whose items can be walked.
+
+    Not ``Mapping``, whose key parameter is invariant -- ``dict[str, int]``
+    does not satisfy ``Mapping[Payload, Payload]``, so spelling it that way
+    would reject the most ordinary thing anyone sends.  Covariant in both,
+    which is sound here because ``save_dict`` only ever reads: ``.items()``
+    is the whole of what it touches.
+    """
+
+    def items(self) -> AbstractSet[tuple[KeyT_co, ValueT_co]]: ...
+
+
+class ChannelFactory(Protocol[ChannelT_co]):
+    """Rebuilds the channel a wire ``CHANNEL`` opcode names."""
+
+    def new(self, id: int, /) -> ChannelT_co: ...
+
+
+class FactoryOwner(Protocol[ChannelT_co]):
     """A gateway: it owns the factory for its own channel ids."""
 
     @property
-    def _channelfactory(self) -> ChannelFactory: ...
+    def _channelfactory(self) -> ChannelFactory[ChannelT_co]: ...
 
 
-class ChannelLike(Protocol):
+class ChannelLike(Protocol[ChannelT_co]):
     """A channel -- sync or async -- which names the gateway that owns one.
 
     Spelled as a protocol rather than a ``Channel | AsyncChannel`` union to
@@ -91,7 +101,47 @@ class ChannelLike(Protocol):
     """
 
     @property
-    def gateway(self) -> FactoryOwner: ...
+    def gateway(self) -> FactoryOwner[ChannelT_co]: ...
+
+
+#: Everything execnet's wire format can carry, as one recursive alias.
+#:
+#: Generic in the channel it carries, because a channel reference means a
+#: different class on every surface.  Unparameterised -- ``Payload`` -- it
+#: is the permissive :class:`ChannelRef`, which is what *sending* wants:
+#: any surface's channel may be sent from any other.  Parameterised, it is
+#: what *receiving* wants, since a gateway's factory only ever builds
+#: channels of its own surface, so ``Channel.receive`` says
+#: ``Payload[Channel]`` and the sync channel comes back with its own
+#: methods reachable behind an ``isinstance``.
+#:
+#: Deliberately spelled with the *abstract* containers rather than
+#: ``list``/``dict``/``set``.  Those are invariant, so ``list[int]`` would
+#: not satisfy ``list[Payload]`` and every honest ``channel.send([1, 2])``
+#: would be an error -- the strict version is unusable as an argument type.
+#: The abstract ones are covariant in their elements, so ordinary concrete
+#: containers pass.
+#:
+#: The cost is a little over-acceptance: ``range`` is a ``Sequence[int]``
+#: and ``memoryview`` a ``Sequence`` too, and neither has a wire
+#: representation.  What this is for is the large class of mistakes --
+#: functions, sockets, arbitrary instances -- and those it does catch.
+#: :func:`can_send` remains the runtime answer.
+Payload: TypeAlias = (
+    "None | bool | int | float | complex | str | bytes"
+    " | Sequence[Payload[ChannelT]] | AbstractSet[Payload[ChannelT]]"
+    " | PayloadMapping[Payload[ChannelT], Payload[ChannelT]] | ChannelT"
+)
+
+#: What may be *sent*: a payload carrying a channel of any surface.
+#:
+#: The counterpart to a parameterised :data:`Payload`, and the asymmetry is
+#: the point.  A gateway will happily serialize any surface's channel, so
+#: the send side asks only for :class:`ChannelRef`; a gateway's factory
+#: only ever builds channels of its own surface, so each ``receive``
+#: promises that concrete class instead.  Round trips still work, since a
+#: ``Payload[Channel]`` satisfies ``SendPayload``.
+SendPayload: TypeAlias = "Payload[ChannelRef]"
 
 
 def bchr(n: int) -> bytes:
@@ -143,23 +193,25 @@ class Unserializer:
     def __init__(
         self,
         stream: ReadIO,
-        channel_or_gateway: ChannelLike | FactoryOwner | None = None,
+        channel_or_gateway: ChannelLike[ChannelRef]
+        | FactoryOwner[ChannelRef]
+        | None = None,
     ) -> None:
         # A channel -- sync or trio-native -- resolves through its gateway; a
         # gateway is already the right object.  Duck-typed so the serializer
         # stays independent of the channel layer.
         self.stream = stream
-        self.channelfactory: ChannelFactory | None = None
+        self.channelfactory: ChannelFactory[ChannelRef] | None = None
         if channel_or_gateway is not None:
             # the two shapes cannot be told apart statically, which is the
             # point: neither name is imported here
             owner = cast(
-                "FactoryOwner",
+                "FactoryOwner[ChannelRef]",
                 getattr(channel_or_gateway, "gateway", channel_or_gateway),
             )
             self.channelfactory = owner._channelfactory
 
-    def load(self, versioned: bool = False) -> Payload:
+    def load(self, versioned: bool = False) -> Payload[ChannelT]:
         if versioned:
             ver = self.stream.read(1)
             if ver != DUMPFORMAT_VERSION:
@@ -180,7 +232,7 @@ class Unserializer:
         except _Stop:
             if len(self.stack) != 1:
                 raise LoadError("internal unserialization error") from None
-            return self.stack.pop(0)
+            return cast("Payload[ChannelT]", self.stack.pop(0))
         else:
             raise LoadError("didn't get STOP")
 
@@ -306,7 +358,7 @@ class Unserializer:
     num2func[opcode.CHANNEL] = load_channel
 
 
-def dumps(obj: Payload) -> bytes:
+def dumps(obj: SendPayload) -> bytes:
     """Serialize the given obj to a bytestring.
 
     The obj and all contained objects must be of a builtin
@@ -321,7 +373,7 @@ def dump(byteio, obj: object) -> None:
     _Serializer(write=byteio.write).save(obj, versioned=True)
 
 
-def loads(bytestring: bytes) -> Payload:
+def loads(bytestring: bytes) -> Payload[ChannelT]:
     """Deserialize the given bytestring to an object.
 
     If the bytestring was dumped with an incompatible protocol
@@ -331,7 +383,7 @@ def loads(bytestring: bytes) -> Payload:
     return load(BytesIO(bytestring))
 
 
-def load(io: ReadIO) -> Payload:
+def load(io: ReadIO) -> Payload[ChannelT]:
     """Derserialize an object form the specified stream.
 
     Behaviour is otherwise the same as with ``loads``
@@ -340,17 +392,20 @@ def load(io: ReadIO) -> Payload:
 
 
 def loads_internal(
-    bytestring: bytes, channel_or_gateway: ChannelLike | FactoryOwner | None = None
-) -> Payload:
+    bytestring: bytes,
+    channel_or_gateway: ChannelLike[ChannelRef]
+    | FactoryOwner[ChannelRef]
+    | None = None,
+) -> Payload[ChannelT]:
     io = BytesIO(bytestring)
     return Unserializer(io, channel_or_gateway).load()
 
 
-def dumps_internal(obj: Payload) -> bytes:
+def dumps_internal(obj: SendPayload) -> bytes:
     return _Serializer().save(obj)  # type: ignore[return-value]
 
 
-def can_send(obj: object) -> TypeIs[Payload]:
+def can_send(obj: object) -> TypeIs[SendPayload]:
     """Whether ``obj`` can cross a channel as-is.
 
     True for execnet's simple builtin wire data -- ``None``, ``bool``,
@@ -506,8 +561,8 @@ class _Serializer:
         self._write(opcode.CHANNEL)
         self._write_int4(channel.id)
 
-    def save_AsyncChannel(self, channel: Any) -> None:
-        # trio-native channel (execnet._trio_gateway); same wire opcode,
-        # duck-typed here to avoid importing the async core.
+    def save_AsyncChannel(self, channel: ChannelRef) -> None:
+        # any surface's async channel -- the core's or either facade's --
+        # since dispatch is by class name; same wire opcode as the sync one
         self._write(opcode.CHANNEL)
         self._write_int4(channel.id)

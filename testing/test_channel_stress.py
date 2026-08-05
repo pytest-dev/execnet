@@ -25,7 +25,7 @@ from hypothesis import given  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
 from execnet import Gateway  # noqa: E402
-from execnet._serialize import Payload  # noqa: E402
+from execnet._serialize import SendPayload  # noqa: E402
 
 # High --stress levels replay one test many times; lift the per-test timeout
 # well above the default so that only a real hang (bounded by TESTTIMEOUT on
@@ -104,7 +104,7 @@ class TestCallbackStress:
     )
     @given(data=st.lists(payload_strategy, min_size=1, max_size=40))
     def test_callback_channel_kept_alive_then_collected(
-        self, gw: Gateway, data: list[Payload]
+        self, gw: Gateway, data: list[SendPayload]
     ) -> None:
         collected: list[int] = []
         channel = gw.remote_exec(_echo, items=data)

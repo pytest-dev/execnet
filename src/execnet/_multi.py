@@ -38,6 +38,7 @@ from ._xspec import XSpec
 if TYPE_CHECKING:
     from ._gateway import Gateway
     from ._serialize import Payload
+    from ._serialize import SendPayload
 
 
 class Group:
@@ -361,42 +362,43 @@ class MultiChannel:
     def __contains__(self, chan: Channel) -> bool:
         return chan in self._channels
 
-    def send_each(self, item: Payload) -> None:
+    def send_each(self, item: SendPayload) -> None:
         for ch in self._channels:
             ch.send(item)
 
     @overload
-    def receive_each(self, withchannel: Literal[False] = ...) -> list[Payload]:
+    def receive_each(self, withchannel: Literal[False] = ...) -> list[Payload[Channel]]:
         pass
 
     @overload
-    def receive_each(self, withchannel: Literal[True]) -> list[tuple[Channel, Payload]]:
+    def receive_each(
+        self, withchannel: Literal[True]
+    ) -> list[tuple[Channel, Payload[Channel]]]:
         pass
 
     def receive_each(
         self, withchannel: bool = False
-    ) -> list[tuple[Channel, Payload]] | list[Payload]:
+    ) -> list[tuple[Channel, Payload[Channel]]] | list[Payload[Channel]]:
         assert not hasattr(self, "_queue")
-        l: list[Any] = []
-        for ch in self._channels:
-            obj = ch.receive()
-            if withchannel:
-                l.append((ch, obj))
-            else:
-                l.append(obj)
-        return l
+        if withchannel:
+            return [(ch, ch.receive()) for ch in self._channels]
+        return [ch.receive() for ch in self._channels]
 
-    def make_receive_queue(self, endmarker: Endmarker = NO_ENDMARKER_WANTED):
+    def make_receive_queue(
+        self, endmarker: Endmarker = NO_ENDMARKER_WANTED
+    ) -> queue.Queue[tuple[Channel, object]]:
+        # ``object`` rather than a payload: the queue also carries the
+        # endmarker, which is whatever the caller chose to be delivered last
         try:
             return self._queue  # type: ignore[has-type]
         except AttributeError:
-            self._queue: queue.Queue[tuple[Channel, Any]] | None = None
+            # built up front, not on the first channel: a group with no
+            # members still has to hand back a queue rather than None
+            self._queue: queue.Queue[tuple[Channel, object]] = queue.Queue()
             for ch in self._channels:
-                if self._queue is None:
-                    self._queue = queue.Queue()
 
-                def putreceived(obj, channel: Channel = ch) -> None:
-                    self._queue.put((channel, obj))  # type: ignore[union-attr]
+                def putreceived(obj: object, channel: Channel = ch) -> None:
+                    self._queue.put((channel, obj))
 
                 ch.setcallback(putreceived, endmarker=endmarker)
             return self._queue

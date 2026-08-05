@@ -8,25 +8,22 @@ showcasing features of the channel object:
 
 """
 
-from typing import cast
-
 import execnet
 
 gw = execnet.makegateway()
 
-# receive() is typed as the wire format, which knows a channel only as a
-# reference; the cast says which end of it this source sends back
-outchan = cast(
-    "execnet.Channel",
-    gw.remote_exec(
-        """
+outchan = gw.remote_exec(
+    """
     import sys
     outchan = channel.gateway.newchannel()
     sys.stdout = outchan.makefile("w")
     channel.send(outchan)
 """
-    ).receive(),
-)
+).receive()
+
+# receive() promises this gateway's own channel type, so a plain isinstance
+# is enough to get at the channel's methods
+assert isinstance(outchan, execnet.Channel)
 
 
 # note: callbacks execute in receiver thread!

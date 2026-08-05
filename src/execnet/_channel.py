@@ -29,6 +29,7 @@ from ._errors import RemoteError
 from ._errors import TimeoutError
 from ._message import Message
 from ._serialize import Payload
+from ._serialize import SendPayload
 from ._serialize import dumps_internal
 from ._serialize import loads_internal
 
@@ -332,7 +333,7 @@ class Channel:
         if error:
             raise error
 
-    def send(self, item: Payload) -> None:
+    def send(self, item: SendPayload) -> None:
         """Sends the given item to the other side of the channel.
 
         The item must be a simple Python type and will be
@@ -355,7 +356,7 @@ class Channel:
             raise ChannelClosed(f"cannot send to {self!r}")
         self.gateway._send(Message.CHANNEL_DATA, self.id, dumps_internal(item))
 
-    def receive(self, timeout: float | None = None) -> Payload:
+    def receive(self, timeout: float | None = None) -> Payload[Channel]:
         """Receive a data item that was sent from the other side.
 
         timeout: None [default] blocked waiting. A positive number
@@ -377,10 +378,10 @@ class Channel:
         else:
             return loads_internal(x, self)
 
-    def __iter__(self) -> Iterator[Payload]:
+    def __iter__(self) -> Iterator[Payload[Channel]]:
         return self
 
-    def next(self) -> Payload:
+    def next(self) -> Payload[Channel]:
         try:
             return self.receive()
         except EOFError:

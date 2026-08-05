@@ -21,7 +21,7 @@ from typing import Literal
 from typing import NamedTuple
 
 if TYPE_CHECKING:
-    from .._serialize import Payload
+    from .._serialize import SendPayload
 
 #: what a path is, as far as a transfer cares
 Kind = Literal["dir", "file", "link"]
@@ -52,7 +52,7 @@ class Manifest(NamedTuple):
     def files(self) -> dict[str, Entry]:
         return {entry.path: entry for entry in self.entries if entry.kind == "file"}
 
-    def dump(self) -> list[tuple[Payload, ...]]:
+    def dump(self) -> list[tuple[SendPayload, ...]]:
         """As plain builtins, for the wire."""
         return [tuple(entry) for entry in self.entries]
 
@@ -154,7 +154,7 @@ class Wanted(NamedTuple):
     paths: tuple[str, ...]
     checksums: dict[str, bytes]
 
-    def dump(self) -> tuple[Payload, ...]:
+    def dump(self) -> tuple[SendPayload, ...]:
         return (list(self.paths), self.checksums)
 
     @classmethod

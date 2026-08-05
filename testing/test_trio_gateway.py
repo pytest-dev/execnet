@@ -24,6 +24,7 @@ from execnet import _trio_gateway
 from execnet._errors import RemoteError
 from execnet._message import Message
 from execnet._serialize import Payload
+from execnet._serialize import SendPayload
 from execnet._serialize import dumps_internal
 from execnet._serialize import loads_internal
 from execnet._trio_gateway import AsyncChannel
@@ -217,7 +218,7 @@ def test_mid_frame_eof_is_an_error() -> None:
 
 
 def test_channel_serializes_builtin_items() -> None:
-    items: list[Payload] = [
+    items: list[SendPayload] = [
         42,
         "text",
         b"bytes",

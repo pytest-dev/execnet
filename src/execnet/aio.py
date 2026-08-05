@@ -74,6 +74,7 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
     from ._serialize import Payload
+    from ._serialize import SendPayload
 
 __all__ = [
     "ActiveGroupsWarning",
@@ -132,7 +133,7 @@ class AsyncChannel:
         """Return True if the channel is closed for sending."""
         return self._channel.isclosed()
 
-    async def send(self, item: Payload) -> None:
+    async def send(self, item: SendPayload) -> None:
         """Serialize ``item`` and send it to the other side.
 
         Shielded: cancelling raises in the caller but the item is still
@@ -140,7 +141,7 @@ class AsyncChannel:
         """
         await self._bridge.call(self._channel.send, item, shield=True)
 
-    async def receive(self, timeout: float | None = None) -> Payload:
+    async def receive(self, timeout: float | None = None) -> Payload[AsyncChannel]:
         """Receive the next item sent from the other side.
 
         EOFError once the peer closed or sent EOF, RemoteError for a peer
@@ -161,9 +162,9 @@ class AsyncChannel:
             )
         if isinstance(result, _TrioChannel):
             return AsyncChannel(self._bridge, result)
-        return cast("Payload", result)
+        return cast("Payload[AsyncChannel]", result)
 
-    def _stash(self, item: Payload) -> None:
+    def _stash(self, item: Payload[AsyncChannel]) -> None:
         """Keep an item whose receive was cancelled before it arrived."""
         self._salvaged = item
 
@@ -182,7 +183,7 @@ class AsyncChannel:
     def __aiter__(self) -> AsyncChannel:
         return self
 
-    async def __anext__(self) -> Payload:
+    async def __anext__(self) -> Payload[AsyncChannel]:
         try:
             return await self.receive()
         except EOFError:
@@ -210,7 +211,7 @@ class AsyncGateway:
     async def remote_exec(
         self,
         source: str | types.FunctionType | Callable[..., object] | types.ModuleType,
-        **kwargs: Payload,
+        **kwargs: SendPayload,
     ) -> AsyncChannel:
         """Connect a new channel to remote execution of ``source``.
 
