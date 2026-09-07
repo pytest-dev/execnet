@@ -39,12 +39,12 @@ class RSync:
             tuple[
                 Channel,
                 (
-                    None
-                    | tuple[Literal["send"], tuple[list[str], bytes]]
+                    tuple[Literal["send"], tuple[list[str], bytes]]
                     | tuple[Literal["list_done"], None]
                     | tuple[Literal["ack"], str]
                     | tuple[Literal["links"], None]
                     | tuple[Literal["done"], None]
+                    | None
                 ),
             ]
         ] = Queue()
