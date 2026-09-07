@@ -49,7 +49,7 @@ class XSpec:
             else:
                 setattr(self, key, value)
 
-    def __getattr__(self, name: str) -> None | bool | str:
+    def __getattr__(self, name: str) -> bool | str | None:
         if name[0] == "_":
             raise AttributeError(name)
         return None
