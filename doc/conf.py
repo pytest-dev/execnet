@@ -110,6 +110,9 @@ nitpick_ignore = [
     ("py:class", "XSpec"),
     ("py:class", "execnet._bridge.AsyncioBridge"),
     ("py:class", "execnet._bridge.TrioBridge"),
+    # the wire-format aliases stay private; annotations name them anyway
+    ("py:class", "Payload"),
+    ("py:class", "SendPayload"),
 ]
 
 # -- Options for HTML output --------------------------------------------------
