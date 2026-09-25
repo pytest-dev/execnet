@@ -135,7 +135,7 @@ class BaseGateway:
         """
         session = self._trio_session
         if session is None:
-            raise OSError(f"cannot set callback on {channel!r}: no active session")
+            raise GatewayGone(f"cannot set callback on {channel!r}: no active session")
         session.attach_consumer(channel, callback, endmarker)
 
     def _terminate_execution(self) -> None:

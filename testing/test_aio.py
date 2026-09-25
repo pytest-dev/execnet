@@ -101,7 +101,7 @@ def test_multiple_gateways_and_send_each() -> None:
 def test_group_not_entered() -> None:
     async def main() -> None:
         group = execnet.aio.AsyncGroup()
-        with pytest.raises(RuntimeError, match="not started"):
+        with pytest.raises(execnet.ExecnetStateError, match="not started"):
             await group.makegateway("popen")
 
     run(main())
@@ -168,7 +168,7 @@ def test_group_start_and_aclose_explicitly() -> None:
         finally:
             await group.aclose()
         await group.aclose()  # idempotent
-        with pytest.raises(RuntimeError, match="not started"):
+        with pytest.raises(execnet.ExecnetStateError, match="not started"):
             await group.makegateway("popen")
 
     run(main())

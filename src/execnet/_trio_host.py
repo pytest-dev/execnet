@@ -24,9 +24,12 @@ from ._boundary import Flag
 from ._channel import ENDMARKER
 from ._channel import NO_ENDMARKER_WANTED
 from ._channel import Endmarker
+from ._errors import ExecnetStateError
+from ._errors import GatewayGone
 from ._errors import GatewayReceivedTerminate
 from ._errors import LoopFinishedError
 from ._errors import RemoteError
+from ._errors import TimeoutError
 from ._execmodel import ExecModel
 from ._execmodel import get_execmodel
 from ._message import FrameDecoder
@@ -337,13 +340,13 @@ class SyncBridgeGateway(AsyncGateway):
                 # Fail before touching the channel -- a half-switched channel
                 # loses its buffered items, refuses receive(), and leaves
                 # waitclose() waiting for a consumer that will never run.
-                raise OSError(
+                raise GatewayGone(
                     f"cannot set callback on {channel!r}: the engine loop has"
                     " stopped, so nothing can deliver to it"
                 )
             mailbox = channel._mailbox
             if mailbox is None:
-                raise OSError(f"{channel!r} has callback already registered")
+                raise ExecnetStateError(f"{channel!r} has callback already registered")
             inbox_send, inbox_recv = self._aio.queue()
 
             def feed(data: bytes) -> None:
@@ -488,21 +491,21 @@ class SyncBridgeGateway(AsyncGateway):
 
         with self._send_lock:
             if self._send_closed:
-                raise OSError("cannot send (already closed?)")
+                raise GatewayGone("cannot send (already closed?)")
             try:
                 # Through the portal even from the engine thread so every
                 # send lands in one global FIFO order.
                 self.engine.portal.post(post)
             except LoopFinishedError:
-                raise OSError("cannot send (already closed?)") from None
+                raise GatewayGone("cannot send (already closed?)") from None
         if ack is None:
             return
         try:
             error = ack.wait(timeout=120.0)
         except TimeoutError:
-            raise OSError("cannot send (write timed out)") from None
+            raise TimeoutError("cannot send (write timed out)") from None
         if error is not None:
-            raise OSError("cannot send (already closed?)") from error
+            raise GatewayGone("cannot send (already closed?)") from error
 
     def post_message(self, message: Message) -> None:
         """Best-effort non-waiting send (Channel.__del__ during GC)."""
@@ -515,7 +518,7 @@ class SyncBridgeGateway(AsyncGateway):
         try:
             self.engine.portal.post(post)
         except LoopFinishedError:
-            raise OSError("cannot send (already closed?)") from None
+            raise GatewayGone("cannot send (already closed?)") from None
 
     def request_close_write(self) -> None:
         with self._send_lock:

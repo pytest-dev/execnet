@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from ._errors import ActiveGroupsWarning
+from ._errors import ExecnetStateError
 from ._errors import forked_error
 
 if TYPE_CHECKING:
@@ -152,7 +153,7 @@ def check_not_in_event_loop(what: str) -> None:
     loop = _running_event_loop()
     if loop is None:
         return
-    raise RuntimeError(
+    raise ExecnetStateError(
         f"{what} blocks the calling thread and you are inside a running"
         f" {loop} event loop, which would stall every task on it."
         f" Use {_SURFACE_FOR_LOOP[loop]} instead, or run this in a"
@@ -246,7 +247,7 @@ class ProtocolEngine:
         """The started :class:`~execnet._trio_engine.TrioEngine` (internal)."""
         with self._lock:
             if self._closed:
-                raise RuntimeError(
+                raise ExecnetStateError(
                     f"{self!r} was closed: the loop thread is gone, and with it"
                     " every gateway and channel it served. Closing is final --"
                     " build a new ProtocolEngine (and a new Group on it)"
@@ -338,7 +339,7 @@ class ProtocolEngine:
         """Refuse an operation that would have the loop wait for itself."""
         trio_engine = self._trio_engine
         if trio_engine is not None and trio_engine._on_engine_thread():
-            raise RuntimeError(
+            raise ExecnetStateError(
                 f"{what} was called from {self!r}'s own loop thread, where it"
                 " would wait for that loop to finish work it is itself"
                 " running. Call it from the thread that owns the engine."

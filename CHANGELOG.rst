@@ -210,13 +210,22 @@ series, once the consumers that need them have released without them.
   keeps working -- pytest-xdist swallows exactly that around its shutdown send.
   ``GatewayGone`` is *also* an ``EOFError``, because that is how a broken
   connection has always surfaced; the distinction becomes available without
-  anything ceasing to be caught.
+  anything ceasing to be caught. A connection that is lost rather than
+  terminated is reported as ``GatewayGone`` by ``receive`` too, on every
+  surface -- ``execnet``, ``execnet.gevent``, ``execnet.trio``,
+  ``execnet.aio`` and ``execnet.raw_trio`` alike.
 
-  One deliberate break: two channel operations raised ``OSError`` for API
-  misuse -- closing a channel inside its own ``remote_exec``, and calling
-  ``receive()`` on a channel that has a callback registered. Both are
-  ``ExecnetStateError`` now, which is a ``RuntimeError`` and *not* an
-  ``OSError``. That is the point of the split.
+  ``ExecnetStateError`` is what calling something at the wrong time or place
+  raises: using a group that was never started or started twice, blocking
+  from inside a running event loop or from the engine's own loop thread, or
+  using an engine after it was closed. These were plain ``RuntimeError``,
+  which ``ExecnetStateError`` subclasses, so nothing that catches them changes.
+
+  One deliberate break: three channel operations raised ``OSError`` for API
+  misuse -- closing a channel inside its own ``remote_exec``, calling
+  ``receive()`` on a channel that has a callback registered, and registering
+  a second callback. All three are ``ExecnetStateError`` now, which is a
+  ``RuntimeError`` and *not* an ``OSError``. That is the point of the split.
 
 * **What crosses a channel is typed.** Values sent and received were ``object``
   and ``Any``; they now name execnet's wire format -- ``None``, ``bool``,

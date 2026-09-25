@@ -35,6 +35,7 @@ from ._boundary import Mailbox
 from ._boundary import OneShot
 from ._boundary import ThreadWakener
 from ._boundary import Wakener
+from ._errors import ExecnetStateError
 from ._errors import LoopFinishedError
 from ._errors import forked_error
 
@@ -164,7 +165,7 @@ class AsyncioPortal:
         """Run ``await async_fn(*args)`` on the loop, blocking this thread."""
         self._check_process()
         if self.is_loop_thread():
-            raise RuntimeError(
+            raise ExecnetStateError(
                 "this is a blocking function; call it from a thread that is"
                 " not running this loop"
             )

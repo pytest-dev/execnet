@@ -48,6 +48,9 @@ if TYPE_CHECKING:
 
     from ._xspec import XSpec
 
+from ._errors import ChannelClosed
+from ._errors import ExecnetStateError
+from ._errors import GatewayGone
 from ._errors import GatewayReceivedTerminate
 from ._errors import HostNotFound
 from ._errors import RemoteError
@@ -87,6 +90,17 @@ async def provision_sync(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     """
     result: T = await current_async().to_thread(functools.partial(fn, *args, **kwargs))
     return result
+
+
+def _gone(message: str, cause: BaseException) -> GatewayGone:
+    """The connection ended: what a receive or send on it reports.
+
+    The backend's own exception stays attached as the cause, but never
+    reaches a caller as the error itself.
+    """
+    error = GatewayGone(message)
+    error.__cause__ = cause
+    return error
 
 
 class ByteStream(Protocol):
@@ -300,7 +314,7 @@ class RawChannel:
         the sync ``Channel.send`` contract.
         """
         if self._closed or self._sent_eof:
-            raise OSError(f"cannot send to {self!r}")
+            raise ChannelClosed(f"cannot send to {self!r}")
         await self.gateway._send(Message.CHANNEL_DATA, self.id, data)
 
     async def receive_bytes(self) -> bytes:
@@ -318,7 +332,7 @@ class RawChannel:
     async def send_eof(self) -> None:
         """Signal that no more payloads follow (peer keeps its send side)."""
         if self._closed or self._sent_eof:
-            raise OSError(f"cannot send EOF to {self!r}")
+            raise ChannelClosed(f"cannot send EOF to {self!r}")
         self._sent_eof = True
         await self.gateway._send(Message.CHANNEL_LAST_MESSAGE, self.id)
 
@@ -501,7 +515,7 @@ class AsyncChannel:
         channel or gateway is closed.
         """
         if self.isclosed():
-            raise OSError(f"cannot send to {self!r}")
+            raise ChannelClosed(f"cannot send to {self!r}")
         await self._raw.send_bytes(dumps_internal(item))
 
     async def receive(self, timeout: float | None = None) -> Payload[AsyncChannel]:
@@ -628,7 +642,7 @@ class AsyncGateway:
         dispatch loop already routed data to it.
         """
         if self._closed:
-            raise OSError(f"connection already closed: {self!r}")
+            raise GatewayGone(f"connection already closed: {self!r}")
         if id is None:
             id = self._count
             self._count += 2
@@ -734,14 +748,12 @@ class AsyncGateway:
                     # callers test for EOFError, and an endmarker callback
                     # must fire either way.
                     if not self._closed:
-                        error = EOFError(f"connection closed: {exc}")
-                        error.__cause__ = exc
-                        self._error = error
+                        self._error = _gone(f"connection closed: {exc}", exc)
                     return
                 except self._aio.ClosedResource as exc:
                     # we closed it; not the peer going away
                     if not self._closed:
-                        self._error = exc
+                        self._error = _gone("connection closed by this side", exc)
                     return
                 if not data:
                     decoder.close()  # raises EOFError on a mid-frame EOF
@@ -753,7 +765,7 @@ class AsyncGateway:
             self._trace("received GATEWAY_TERMINATE")
         except EOFError as exc:
             self._trace("EOF without prior gateway termination message")
-            self._error = exc
+            self._error = exc if isinstance(exc, GatewayGone) else _gone(str(exc), exc)
 
     async def _writer(self) -> None:
         error: BaseException | None = None
@@ -771,7 +783,7 @@ class AsyncGateway:
         except (*self._aio.STREAM_GONE, OSError) as exc:
             self._trace("writer failed", exc)
             if self._error is None:
-                self._error = exc
+                self._error = _gone(f"connection lost while writing: {exc}", exc)
         else:
             # Queue closed and drained: signal write-EOF to the peer.
             with suppress(Exception):
@@ -784,7 +796,9 @@ class AsyncGateway:
             self._writer_done.set()
 
     def _fail_pending_writes(self, error: BaseException | None) -> None:
-        exc = error if error is not None else OSError("cannot send (already closed?)")
+        exc = (
+            error if error is not None else GatewayGone("cannot send (already closed?)")
+        )
         while True:
             try:
                 _frame, on_written = self._outbound.receive_nowait()
@@ -884,7 +898,7 @@ class AsyncGateway:
                 (Message(msgcode, channelid, data).pack(), None)
             )
         except self._aio.STREAM_GONE as exc:
-            raise OSError("cannot send (already closed?)") from exc
+            raise GatewayGone("cannot send (already closed?)") from exc
 
     def _enqueue_frame(
         self,
@@ -900,7 +914,7 @@ class AsyncGateway:
         try:
             self._outbound_send.send_nowait((frame, on_written))
         except self._aio.STREAM_GONE as exc:
-            raise OSError("cannot send (already closed?)") from exc
+            raise GatewayGone("cannot send (already closed?)") from exc
 
     def _send_nowait(self, msgcode: int, channelid: int = 0, data: bytes = b"") -> None:
         """Enqueue a frame from a dispatch handler (sync, inline on the loop)."""
@@ -1369,7 +1383,7 @@ class AsyncGroup:
         from ._xspec import XSpec
 
         if self._scope is None:
-            raise RuntimeError(f"{self!r} is not entered")
+            raise ExecnetStateError(f"{self!r} is not entered")
         if not isinstance(spec, XSpec):
             spec = XSpec(spec)
         if spec.profile is None:

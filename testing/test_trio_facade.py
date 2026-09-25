@@ -107,7 +107,7 @@ class TestTheSurface:
     def test_group_not_started(self) -> None:
         async def main() -> None:
             group = execnet.trio.AsyncGroup()
-            with pytest.raises(RuntimeError, match="not started"):
+            with pytest.raises(execnet.ExecnetStateError, match="not started"):
                 await group.makegateway("popen")
 
         run(main)
@@ -124,7 +124,7 @@ class TestTheSurface:
             finally:
                 await group.aclose()
             await group.aclose()  # idempotent
-            with pytest.raises(RuntimeError, match="not started"):
+            with pytest.raises(execnet.ExecnetStateError, match="not started"):
                 await group.makegateway("popen")
 
         run(main)

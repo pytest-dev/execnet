@@ -142,3 +142,95 @@ class TestTheInternalBoundary:
                 group.makegateway("socket=localhost:1")
         finally:
             group.terminate(timeout=10.0)
+
+
+DIES = "import os; os._exit(3)"
+
+
+class TestEverySurfaceRaisesTheSameThing:
+    """The types above are only worth catching if every surface raises them.
+
+    The sync channel got them first; the async core behind ``execnet.trio``
+    and ``execnet.aio`` raised a bare ``OSError`` for the same events, so
+    ``except execnet.ChannelClosed`` caught nothing there.
+    """
+
+    def test_sync_send_after_eof_is_channelclosed(self) -> None:
+        group = execnet.Group()
+        try:
+            channel = group.makegateway("popen").remote_exec("channel.receive()")
+            channel.close()
+            with pytest.raises(execnet.ChannelClosed):
+                channel.send(1)
+        finally:
+            group.terminate(timeout=10.0)
+
+    def test_sync_receive_from_a_dead_worker_is_gatewaygone(self) -> None:
+        group = execnet.Group()
+        try:
+            channel = group.makegateway("popen").remote_exec(DIES)
+            with pytest.raises(execnet.GatewayGone):
+                channel.receive(TESTTIMEOUT)
+        finally:
+            group.terminate(timeout=10.0)
+
+    def test_sync_second_callback_is_misuse(self) -> None:
+        group = execnet.Group()
+        try:
+            channel = group.makegateway("popen").remote_exec("channel.receive()")
+            channel.setcallback(lambda item: None)
+            with pytest.raises(execnet.ExecnetStateError):
+                channel.setcallback(lambda item: None)
+            channel.send(None)
+        finally:
+            group.terminate(timeout=10.0)
+
+    def test_blocking_from_inside_an_event_loop_is_misuse(self) -> None:
+        import asyncio
+
+        async def main() -> None:
+            with pytest.raises(execnet.ExecnetStateError):
+                execnet.Group().makegateway("popen")
+
+        asyncio.run(main())
+
+    def test_trio_facade(self) -> None:
+        import trio
+
+        import execnet.trio
+
+        async def main() -> None:
+            with pytest.raises(execnet.ExecnetStateError):
+                await execnet.trio.AsyncGroup().makegateway("popen")
+            with trio.fail_after(TESTTIMEOUT * 2):
+                async with execnet.trio.AsyncGroup() as group:
+                    gateway = await group.makegateway("popen")
+                    channel = await gateway.remote_exec("channel.receive()")
+                    await channel.send_eof()
+                    with pytest.raises(execnet.ChannelClosed):
+                        await channel.send(1)
+                    dying = await gateway.remote_exec(DIES)
+                    with pytest.raises(execnet.GatewayGone):
+                        await dying.receive(TESTTIMEOUT)
+
+        trio.run(main)
+
+    def test_aio_facade(self) -> None:
+        import asyncio
+
+        import execnet.aio
+
+        async def main() -> None:
+            with pytest.raises(execnet.ExecnetStateError):
+                await execnet.aio.AsyncGroup().makegateway("popen")
+            async with execnet.aio.AsyncGroup() as group:
+                gateway = await group.makegateway("popen")
+                channel = await gateway.remote_exec("channel.receive()")
+                await channel.send_eof()
+                with pytest.raises(execnet.ChannelClosed):
+                    await channel.send(1)
+                dying = await gateway.remote_exec(DIES)
+                with pytest.raises(execnet.GatewayGone):
+                    await dying.receive(TESTTIMEOUT)
+
+        asyncio.run(asyncio.wait_for(main(), TESTTIMEOUT * 2))

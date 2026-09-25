@@ -18,6 +18,7 @@ from typing import Any
 from typing import TypeVar
 
 from .._engine import check_not_in_event_loop
+from .._errors import GatewayGone
 from .._services import ServiceTarget
 
 if TYPE_CHECKING:
@@ -49,7 +50,7 @@ def run_blocking(
 
     sessions = [gateway._trio_session for gateway in gateways]
     if any(session is None for session in sessions):
-        raise OSError("a gateway with no connection cannot be worked on")
+        raise GatewayGone("a gateway with no connection cannot be worked on")
     engines = {id(session.engine) for session in sessions}
     if len(engines) > 1:
         raise ValueError(

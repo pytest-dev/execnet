@@ -33,6 +33,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
 
+from ._errors import GatewayGone
 from ._message import Message
 from ._serialize import dumps_internal
 
@@ -140,7 +141,7 @@ class ServiceTarget:
         """A target for a blocking-surface ``Gateway``."""
         session = gateway._trio_session
         if session is None:
-            raise OSError(f"{gateway!r} has no connection to run a service on")
+            raise GatewayGone(f"{gateway!r} has no connection to run a service on")
         return cls(session, gateway._channelfactory.allocate_id)
 
     def __repr__(self) -> str:

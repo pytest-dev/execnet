@@ -267,7 +267,7 @@ class AsyncGroup:
     async def start(self) -> None:
         """Bring the engine up and start the group task on it."""
         if self._group is not None:
-            raise RuntimeError(f"{self!r} is already started")
+            raise ExecnetStateError(f"{self!r} is already started")
         trio_engine = await start_engine(self._engine, AsyncioCarrier())
         bridge = AsyncioBridge(trio_engine)
 
@@ -315,7 +315,7 @@ class AsyncGroup:
         """
         group, bridge = self._group, self._bridge
         if group is None or bridge is None:
-            raise RuntimeError(f"{self!r} is not started")
+            raise ExecnetStateError(f"{self!r} is not started")
         gateway = await bridge.call(group.makegateway, spec)
         return AsyncGateway(bridge, gateway)
 

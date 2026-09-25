@@ -41,6 +41,7 @@ from typing import TypeVar
 
 from ._async import current_async
 from ._async import for_backend
+from ._errors import ExecnetStateError
 from ._errors import LoopFinishedError
 from ._trio_gateway import AsyncGroup as _TrioGroup
 
@@ -276,7 +277,7 @@ class EngineBridge:
                     result = await async_fn(*args)
             except self._aio.Cancelled:
                 # engine shutdown: the nursery cancel must propagate
-                carrier.resolve(None, RuntimeError(ENGINE_GONE))
+                carrier.resolve(None, ExecnetStateError(ENGINE_GONE))
                 raise
             except BaseException as exc:
                 carrier.resolve(None, exc)
@@ -289,14 +290,14 @@ class EngineBridge:
             try:
                 self._engine.start_soon(runner)
             except BaseException as exc:
-                error = RuntimeError(ENGINE_GONE)
+                error = ExecnetStateError(ENGINE_GONE)
                 error.__cause__ = exc
                 carrier.resolve(None, error)
 
         try:
             self._engine.portal.post(spawn)
         except LoopFinishedError:
-            raise RuntimeError("the execnet engine is not running") from None
+            raise ExecnetStateError("the execnet engine is not running") from None
 
         def cancel_engine_side() -> None:
             with suppress(LoopFinishedError):
