@@ -165,7 +165,7 @@ class FrameDecoder:
     def __init__(self) -> None:
         self._buffer = bytearray()
 
-    def feed(self, data: bytes) -> Iterator[Message]:
+    def feed(self, data: bytes | bytearray) -> Iterator[Message]:
         self._buffer += data
         return self._parse()
 
