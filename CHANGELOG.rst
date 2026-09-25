@@ -218,6 +218,26 @@ series, once the consumers that need them have released without them.
   ``ExecnetStateError`` now, which is a ``RuntimeError`` and *not* an
   ``OSError``. That is the point of the split.
 
+* **What crosses a channel is typed.** Values sent and received were ``object``
+  and ``Any``; they now name execnet's wire format -- ``None``, ``bool``,
+  ``int``, ``float``, ``complex``, ``str``, ``bytes``, nested sequences, sets
+  and dicts of those, and channels -- so passing something unsendable is a
+  type error where it enters rather than a ``DumpError`` on the wire.
+  ``execnet.can_send`` narrows to it, so
+  ``channel.send(value if execnet.can_send(value) else repr(value))``
+  type-checks. Nothing changes at runtime.
+
+  This breaks type-checking, not code. ``Channel.send``,
+  ``Gateway.remote_exec(**kwargs)`` and ``MultiChannel.send_each`` no longer
+  accept ``object``-typed values, and ``Channel.receive``, channel iteration
+  and ``MultiChannel.receive_each`` no longer return ``Any``: a caller that
+  uses a received value as a concrete type needs a ``cast`` naming what its
+  ``remote_exec`` source sends back, or an ``isinstance`` check. A received
+  channel is typed as its own surface's channel class, so an ``isinstance``
+  check reaches its methods without a cast.
+* ``MultiChannel.make_receive_queue()`` on a group with no channels returned
+  ``None`` instead of a queue.
+
 * One namespace per concurrency library you drive execnet from:
   ``execnet.sync`` (plain threads; the top-level ``execnet.*`` aliases),
   ``execnet.trio``, ``execnet.aio``, the new ``execnet.gevent``, whose blocking
