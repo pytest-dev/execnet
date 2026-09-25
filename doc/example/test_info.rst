@@ -89,19 +89,21 @@ A local subprocess gateway has the same working directory as the instantiatior::
 Get information from remote SSH account
 ---------------------------------------
 
-Use simple execution to obtain information from remote environments::
+Use simple execution to obtain information from remote environments
+(this one needs an account you can actually reach, so it is not run as
+part of the test suite)::
 
   >>> import execnet, os
-  >>> gw = execnet.makegateway("ssh=codespeak.net")
+  >>> gw = execnet.makegateway("ssh=wyvern")             # doctest: +SKIP
   >>> channel = gw.remote_exec("""
   ...     import sys, os
   ...     channel.send((sys.platform, tuple(sys.version_info), os.getpid()))
-  ... """)
-  >>> platform, version_info, remote_pid = channel.receive()
-  >>> platform
-  'linux2'
-  >>> version_info
-  (2, 6, 6, 'final', 0)
+  ... """)                                               # doctest: +SKIP
+  >>> platform, version_info, remote_pid = channel.receive()   # doctest: +SKIP
+  >>> platform                                           # doctest: +SKIP
+  'linux'
+  >>> version_info                                       # doctest: +SKIP
+  (3, 13, 1, 'final', 0)
 
 Use a callback instead of receive() and wait for completion
 -------------------------------------------------------------
@@ -117,8 +119,10 @@ Set a channel callback to immediately react on incoming data::
     >>> l
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, None]
 
-Note that the callback function will execute in the receiver thread
-so it should not block on IO or long to execute.
+Items reach the callback in order, one at a time per channel, each call on
+a thread from a bounded pool -- so a callback that blocks holds up its own
+channel and, with enough of them, that pool, but never the protocol loop
+that every gateway in the process shares.
 
 Sending channels over channels
 ------------------------------------------------------
@@ -169,18 +173,32 @@ all incoming requests in the global name space and
 sends back the results.
 
 
+.. _socket-server:
+
 Instantiate gateways through sockets
 -----------------------------------------------------
 
-.. _`socketserver.py`: https://raw.githubusercontent.com/pytest-dev/execnet/main/src/execnet/script/socketserver.py
+In cases where you do not have SSH-access to a machine you need a
+bootstrapping-point that listens on a socket.  execnet ships one as the
+``execnet server`` command; run it on the target machine::
 
-In cases where you do not have SSH-access to a machine
-you need to download a small version-independent standalone
-`socketserver.py`_ script to provide a remote bootstrapping-point.
-You do not need to install the execnet package remotely.
-Simply run the script like this::
+    execnet server :8888   # bind to all IPs, port 8888
 
-    python socketserver.py :8888   # bind to all IPs, port 8888
+If execnet is not installed there, uv_ can fetch and run it in one step
+without leaving anything behind::
+
+    uvx --from execnet execnet server :8888
+
+.. _uv: https://docs.astral.sh/uv/
+
+.. versionchanged:: 2.2
+   This used to be the ``execnet-socketserver`` console script, which still
+   works and forwards here with a ``DeprecationWarning``.
+
+The server accepts connections in a loop and serves each one in its own
+worker subprocess; pass ``--once`` to serve a single connection and exit.
+Passing port ``0`` binds an ephemeral port -- the bound address is printed
+on the first line of output either way.
 
 You can then instruct execnet on your local machine to bootstrap
 itself into the remote socket endpoint::
@@ -190,5 +208,48 @@ itself into the remote socket endpoint::
 
 That's it, you can now use the gateway object just like
 a popen- or SSH-based one.
+
+.. warning::
+
+    The socket server performs no authentication and its traffic is not
+    encrypted -- anyone who can reach the port can execute code on that
+    machine.  Bind it to a trusted network only, or tunnel it over SSH.
+
+Keeping the socket server running
++++++++++++++++++++++++++++++++++
+
+``execnet server`` is an ordinary long-running process, so restarts and
+boot-time startup are the job of your platform's service manager.
+
+On Linux, a systemd unit does it::
+
+    # /etc/systemd/system/execnet-server.service
+    [Unit]
+    Description=execnet socket server
+
+    [Service]
+    ExecStart=/usr/local/bin/execnet server :8888
+    Restart=always
+
+    [Install]
+    WantedBy=multi-user.target
+
+On Windows, wrap the console command with a service host such as NSSM_ or
+WinSW_.  Use ``where execnet`` to find the installed ``execnet.exe`` (it
+lives in the ``Scripts`` directory of the environment it was installed
+into), then::
+
+    nssm install ExecNetServer C:\path\to\Scripts\execnet.exe server :8888
+    nssm set ExecNetServer Start SERVICE_AUTO_START
+    net start ExecNetServer
+
+NSSM restarts the process if it exits.  Note that ``sc.exe create`` on its own
+is not enough: it expects a binary that implements the Windows service control
+protocol, which a plain console program does not.  If you would rather not
+install a service host, a Task Scheduler task with an *At startup* trigger
+works too.
+
+.. _NSSM: https://nssm.cc/
+.. _WinSW: https://github.com/winsw/winsw
 
 .. include:: test_ssh_fileserver.rst

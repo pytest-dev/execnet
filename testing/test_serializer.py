@@ -9,8 +9,9 @@ import pytest
 
 import execnet
 
-# We use the execnet folder in order to avoid triggering a missing apipkg.
-pyimportdir = os.fspath(Path(execnet.__file__).parent)
+# The package parent: the serializer is imported as execnet._serialize
+# (it needs its sibling execnet._errors; only stdlib beyond that).
+pyimportdir = os.fspath(Path(execnet.__file__).parent.parent)
 
 
 class PythonWrapper:
@@ -24,7 +25,7 @@ class PythonWrapper:
             f"""
 import sys
 sys.path.insert(0, {pyimportdir!r})
-import gateway_base as serializer
+import execnet._serialize as serializer
 sys.stdout = sys.stdout.detach()
 sys.stdout.write(serializer.dumps_internal({obj_rep}))
 """
@@ -40,7 +41,7 @@ sys.stdout.write(serializer.dumps_internal({obj_rep}))
             rf"""
 import sys
 sys.path.insert(0, {pyimportdir!r})
-import gateway_base as serializer
+import execnet._serialize as serializer
 from io import BytesIO
 data = {data!r}
 io = BytesIO(data)
@@ -125,6 +126,26 @@ def test_long(load, dump) -> None:
     assert v == really_big
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2147483647",  # int4 max: short path
+        "-2147483648",  # int4 min: short path
+        "2147483648",  # just over max: long path
+        "-2147483649",  # just under min: long path (used to crash in struct.pack)
+        "9223372036854775807324234",
+        "-9223372036854775807324234",
+    ],
+)
+def test_int_boundaries(value, dump, load) -> None:
+    # regression: negative ints below the signed int4 minimum must take the
+    # arbitrary-precision long path instead of overflowing the 4-byte pack.
+    p = dump(value)
+    tp, v = load(p)
+    assert tp == "int"
+    assert v == value
+
+
 def test_bytes(dump, load) -> None:
     p = dump("b'hi'")
     tp, v = load(p)
@@ -166,6 +187,7 @@ def test_tuple_nested_with_empty_in_between(dump, load) -> None:
     assert s == "(1, (), 3)"
 
 
-def test_py2_string_loads() -> None:
-    """Regression test for #267."""
-    assert execnet.loads(b"\x02M\x00\x00\x00\x01aQ") == b"a"
+def test_py2_string_opcode_is_retired() -> None:
+    """The py2 ``str`` opcode ``M`` is gone; only Python2 ever emitted it."""
+    with pytest.raises(execnet.DataFormatError, match="unknown opcode"):
+        execnet._serialize.loads(b"\x02M\x00\x00\x00\x01aQ")

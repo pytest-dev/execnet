@@ -31,5 +31,6 @@ repos:
     -   id: mypy
         additional_dependencies:
           - pytest
+          - trio
+          - hypothesis
           - types-pywin32
-          - types-gevent

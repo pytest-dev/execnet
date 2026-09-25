@@ -2,11 +2,6 @@
    :align: right
 
 
-.. warning::
-
-    execnet currently is in maintenance-only mode, mostly because it is still the backend
-    of the pytest-xdist plugin. Do not use in new projects.
-
 Python_ is a mature dynamic language whose interpreters can interact with
 all major computing platforms today.
 
@@ -28,25 +23,31 @@ a minimal and fast API targeting the following uses:
 Features
 ------------------
 
-* Automatic bootstrapping: no manual remote installation.
+* Automatic bootstrapping: a worker environment that lacks execnet is
+  provisioned with uv_, so there is no manual remote installation -- and no
+  source of our own is ever shipped over the wire.
 
 * Safe and simple serialization of Python builtin
-  types for sending/receiving structured data messages.
-  (New in 1.1) execnet offers a new :ref:`dumps/loads <dumps/loads>`
-  API which allows cross-interpreter compatible serialization
-  of Python builtin types.
+  types for sending/receiving structured data messages;
+  see :ref:`sending objects over a channel <serialization>`.
+  Encoding rich objects is the caller's job (execnet stays
+  builtin-types-only).
 
 * Flexible communication: synchronous send/receive as well as
   callback/queue mechanisms supported
 
 * Easy creation, handling and termination of multiple processes
 
-* Well tested interactions between CPython 2.5-2.7, CPython-3.3, Jython 2.5.1
-  and PyPy interpreters.
+* One :doc:`namespace <api>` per concurrency library you drive it from:
+  threads, trio, asyncio or gevent.
+
+* Tested against CPython 3.10+ and PyPy 3.
 
 * Fully interoperable between Windows and Unix-ish systems.
 
 * Many tested :doc:`examples`
+
+.. _uv: https://docs.astral.sh/uv/
 
 Known uses
 -------------------
@@ -59,9 +60,6 @@ Known uses
   project to launch computation processes through ssh.  He also
   compares `disco and execnet`_ in a subsequent post.
 
-* Ronny Pfannschmidt uses it for his `anyvc`_ VCS-abstraction project
-  to bridge the Python2/Python3 version gap.
-
 * Sysadmins and developers are using it for ad-hoc custom scripting
 
 .. _`quora`: http://quora.com
@@ -71,15 +69,14 @@ Known uses
 .. _`distributed testing`: https://pypi.python.org/pypi/pytest-xdist
 .. _`Distributed NTLK with execnet`: http://streamhacker.com/2009/11/29/distributed-nltk-execnet/
 .. _`disco and execnet`: http://streamhacker.com/2009/12/14/execnet-disco-distributed-nltk/
-.. _`anyvc`: http://bitbucket.org/RonnyPfannschmidt/anyvc/
 
 Project status
 --------------------------
 
-The project is currently in **maintenance-only mode**, with PRs fixing bugs being gracefully accepted.
-
-Currently there are no plans to improve the project further, being maintained mostly because it is
-used as backend of the popular `pytest-xdist <https://github.com/pytest-dev/pytest-xdist>`__ plugin.
+``execnet`` is the backend of the popular `pytest-xdist
+<https://github.com/pytest-dev/pytest-xdist>`__ plugin, which is both what
+keeps it maintained and the compatibility bar every change is held to.
+Bug reports and PRs are welcome; see :doc:`support`.
 
 ``execnet`` was conceived originally by `Holger Krekel`_ and is licensed under the MIT license
 since version 1.2.
