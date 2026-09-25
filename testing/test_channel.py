@@ -327,6 +327,7 @@ class TestChannelFile:
         channel = gw.remote_exec("pass")
         f = channel.makefile()
         assert not f.isatty()
+        assert f.encoding == "utf-8"
         channel.waitclose(TESTTIMEOUT)
         with pytest.raises(IOError):
             f.write(b"hello")
