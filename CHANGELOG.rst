@@ -28,10 +28,13 @@ series, once the consumers that need them have released without them.
   ``python -m execnet worker ...`` for a direct interpreter launch and
   ``execnet worker ...`` under ``uv run``; both are the same CLI.
   ``execnet-socketserver`` still works and forwards to ``execnet server``
-  with a ``DeprecationWarning``. ``execnet info`` reports version, trio
-  availability and supported transports as JSON, and replaces the
-  ``import execnet, trio`` probe used to decide whether a ``python=``
-  interpreter can host a worker directly.
+  with a ``DeprecationWarning``. ``execnet info`` reports as JSON the execnet
+  version, whether this interpreter can serve a worker (``worker``) and on
+  which engines (``engines``), the trio version, Python, executable, platform
+  and supported protocols. It replaces the ``import execnet, trio`` probe used
+  to decide whether a ``python=`` interpreter can host a worker directly; a
+  coordinator falls back to the ``trio`` key for a remote that predates
+  ``worker``.
 * The protocol no longer has to be the worker's stdin/stdout. A new
   ``transport=socket|stdio`` spec key selects, and ``socket`` is the default
   for every worker execnet spawns itself: an inherited socketpair for
@@ -282,10 +285,26 @@ series, once the consumers that need them have released without them.
   two meet the same contract -- start, a portal, one door to the root task scope, the
   group registry, a stop that joins -- and are tested against the same suite.
 
-  **Only the trio engine can host gateways.** The protocol core is still written
-  against trio directly, so a group built on an asyncio engine is refused with a
-  message saying what is missing. The backend exists so that the boundary between
-  execnet and the async library under it is a tested one rather than an intention.
+  Both run the whole protocol, coordinator and worker alike: the protocol core
+  reaches its async library only through a small neutral layer. An engine picks
+  trio when it is installed and asyncio otherwise; ``backend=`` overrides that.
+
+* **trio is an extra where asyncio can run the protocol.** Nothing extra is
+  required on Python 3.11 and newer; ``execnet[trio]`` asks for trio anywhere,
+  and an install that has it keeps using it. Python 3.10 has no
+  ``asyncio.TaskGroup``, so trio stays a requirement there.
+* New ``execnet.Deployment`` puts a project on a host *before* any worker runs
+  against it: a frozen ``uv`` environment, the project's own wheel installed into
+  it, and the files the wheel does not carry. It hands back ``execnet.Deployed``,
+  whose ``translate()`` maps a local path to where it landed. New
+  ``execnet.transfer`` sends a tree to a host, only what differs. Both run as a
+  service inside the worker, so no source is shipped, and both are available on
+  every namespace.
+* ``RSync`` is deprecated and now an adapter over ``execnet.transfer``; the old
+  source-shipped receiver is gone. ``filter``, ``delete``, the progress hook and
+  ``finishedcallback`` behave as before. ``callback`` receives the gateway rather
+  than a channel, and fires when a file is sent rather than when the far side
+  confirms it -- the new protocol has no per-file acknowledgement.
 
 * Gateway groups share one ``execnet.ProtocolEngine`` per process -- one OS thread
   running a loop -- instead of starting a thread each. Pass an explicit one as
