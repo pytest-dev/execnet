@@ -316,3 +316,61 @@ def test_safe_terminate_does_not_hang_when_kill_blocks(
     assert kill_started.is_set()
     assert other_killed == [1]
     release_kill.set()
+
+
+@pytest.mark.timeout(10)
+def test_safe_terminate_reports_kill_that_ignores(
+    execmodel: ExecModel,
+) -> None:
+    """Regression for #429: a kill that does not release the termfunc is
+    reported through the return value instead of being silently discarded."""
+    if execmodel.backend not in ("thread", "main_thread_only"):
+        pytest.xfail(
+            "execution model %r does not support task count" % execmodel.backend
+        )
+    entered = execmodel.Event()
+    release = execmodel.Event()
+
+    def term() -> None:
+        entered.set()
+        release.wait()
+
+    def kill() -> None:
+        pass  # ignores the kill, leaving the termfunc running
+
+    try:
+        result = safe_terminate(execmodel, 0.2, [(term, kill)])
+    finally:
+        release.set()
+
+    assert entered.is_set()
+    assert result is False
+
+
+@pytest.mark.timeout(10)
+def test_safe_terminate_joins_when_kill_releases(
+    execmodel: ExecModel,
+) -> None:
+    """Regression for #429: a working kill lets every worker be observed to
+    finish, so safe_terminate returns success with no abandoned threads."""
+    if execmodel.backend not in ("thread", "main_thread_only"):
+        pytest.xfail(
+            "execution model %r does not support task count" % execmodel.backend
+        )
+    entered = execmodel.Event()
+    release = execmodel.Event()
+    finished = execmodel.Event()
+
+    def term() -> None:
+        entered.set()
+        release.wait()
+        finished.set()
+
+    def kill() -> None:
+        release.set()
+
+    result = safe_terminate(execmodel, 1, [(term, kill)])
+
+    assert entered.is_set()
+    assert result is True
+    assert finished.is_set()  # joined before returning, no stragglers

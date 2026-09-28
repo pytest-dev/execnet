@@ -337,12 +337,17 @@ def safe_terminate(
     execmodel: ExecModel,
     timeout: float | None,
     list_of_paired_functions: Sequence[TermKillPair],
-) -> None:
+) -> bool:
     """Run terminate/kill pairs in parallel with a hard wait bound.
 
-    Each termfunc is given ``timeout``.  If it does not finish, killfunc runs.
+    Each termfunc is given ``timeout``.  If it does not finish, killfunc runs,
+    after which the termfunc gets one more ``timeout`` to finish, so a kill
+    that releases it lets the worker be joined rather than abandoned.
     Waiting for the worker pool is also bounded so a stuck kill cannot hang
     the caller forever (see issues #43 / #221).
+
+    Returns whether all workers finished within the bounds; ``False`` means
+    some termfunc is still running and its thread was abandoned.
     """
     workerpool = WorkerPool(execmodel)
 
@@ -350,8 +355,16 @@ def safe_terminate(
         termreply = workerpool.spawn(termfunc)
         try:
             termreply.get(timeout=timeout)
+            return
         except OSError:
             killfunc()
+        # The kill should release the termfunc; observe it finishing so the
+        # worker is joined instead of abandoned (issue #429).  A kill that
+        # does not release it is reported through the waitall result below.
+        try:
+            termreply.waitfinish(timeout=timeout)
+        except OSError:
+            pass
 
     replylist = [
         workerpool.spawn(termkill, termfunc, killfunc)
@@ -366,7 +379,7 @@ def safe_terminate(
             # termkill still running (typically stuck in killfunc).
             continue
         reply.get()  # propagate worker exceptions, if any
-    workerpool.waitall(timeout=wait_timeout)
+    return workerpool.waitall(timeout=wait_timeout)
 
 
 default_group = Group()
