@@ -19,7 +19,7 @@ jobs:
     - uses: actions/checkout@v7
 
     - name: Build and Check Package
-      uses: hynek/build-and-inspect-python-package@v2.18
+      uses: hynek/build-and-inspect-python-package@v3.0.1
 
   deploy:
     needs: package
