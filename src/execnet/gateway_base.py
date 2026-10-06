@@ -1079,6 +1079,8 @@ class ChannelFile:
 
 
 class ChannelFileWrite(ChannelFile):
+    encoding = "utf-8"
+
     def write(self, out: bytes) -> None:
         self.channel.send(out)
 
