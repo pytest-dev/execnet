@@ -208,7 +208,7 @@ class Group:
         trace(f"=== atexit cleanup {self!r} ===")
         self.terminate(timeout=1.0)
 
-    def terminate(self, timeout: float | None = None) -> None:
+    def terminate(self, timeout: float | None = None) -> bool:
         """Trigger exit of member gateways and wait for termination
         of member gateways and associated subprocesses.
 
@@ -217,7 +217,12 @@ class Group:
 
         Timeout defaults to None meaning open-ended waiting and no kill
         attempts.
+
+        Returns whether all member gateways finished within the bounds;
+        ``False`` means some gateway is still running and its thread was
+        abandoned.
         """
+        all_finished = True
         while self:
             vias: set[str] = set()
             for gw in self:
@@ -235,15 +240,19 @@ class Group:
                 trace("Gateways did not come down after timeout: %r" % gw)
                 gw._io.kill()
 
-            safe_terminate(
-                self.execmodel,
-                timeout,
-                [
-                    (partial(join_wait, gw), partial(kill, gw))
-                    for gw in self._gateways_to_join
-                ],
+            all_finished = (
+                safe_terminate(
+                    self.execmodel,
+                    timeout,
+                    [
+                        (partial(join_wait, gw), partial(kill, gw))
+                        for gw in self._gateways_to_join
+                    ],
+                )
+                and all_finished
             )
             self._gateways_to_join[:] = []
+        return all_finished
 
     def remote_exec(
         self,
@@ -370,8 +379,9 @@ def safe_terminate(
         workerpool.spawn(termkill, termfunc, killfunc)
         for termfunc, killfunc in list_of_paired_functions
     ]
-    # Allow term timeout plus a kill attempt; never block indefinitely.
-    wait_timeout = None if timeout is None else timeout * 2
+    # Allow term timeout, a kill attempt and one more term timeout after the
+    # kill; never block indefinitely.
+    wait_timeout = None if timeout is None else timeout * 3
     for reply in replylist:
         try:
             reply.waitfinish(timeout=wait_timeout)
