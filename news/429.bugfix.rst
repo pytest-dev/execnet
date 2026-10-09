@@ -1,0 +1,1 @@
+``safe_terminate`` now waits for a terminated worker once more after the kill attempt, so a released worker is joined instead of abandoned, and returns whether all workers finished within the bounds. ``Group.terminate()`` propagates that result to its callers.
