@@ -140,9 +140,9 @@ class ThreadExecModel(ExecModel):
         return socket
 
     def get_ident(self) -> int:
-        import _thread
+        import threading
 
-        return _thread.get_ident()
+        return threading.get_ident()
 
     def sleep(self, delay: float) -> None:
         import time
@@ -150,9 +150,10 @@ class ThreadExecModel(ExecModel):
         time.sleep(delay)
 
     def start(self, func, args=()) -> None:
-        import _thread
+        import threading
 
-        _thread.start_new_thread(func, args)
+        t = threading.Thread(target=func, args=args, daemon=True)
+        t.start()
 
     def fdopen(self, fd, mode, bufsize=1, closefd=True):
         import os
