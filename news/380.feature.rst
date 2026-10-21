@@ -1,0 +1,1 @@
+Add support for Python 3.13 and 3.14, and drop EOL 3.8 and 3.9.
