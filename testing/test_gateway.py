@@ -130,6 +130,9 @@ class TestBasicGateway:
         )
 
         monkeypatch.syspath_prepend(tmp_path)
+        # The test is parametrized; drop the module cached by a previous run,
+        # whose source file has since been removed.
+        monkeypatch.delitem(sys.modules, "remote", raising=False)
         import remote  # type: ignore[import-not-found]
 
         ch = gw.remote_exec(remote)
