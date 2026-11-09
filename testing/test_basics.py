@@ -29,7 +29,9 @@ skip_win_pypy = pytest.mark.xfail(
 )
 
 
-@pytest.mark.parametrize("val", ["123", 42, [1, 2, 3], ["23", 25]])
+@pytest.mark.parametrize(
+    "val", ["123", 42, [1, 2, 3], ["23", 25], 2**31, -(2**31) - 1, 10**30, -(10**30)]
+)
 class TestSerializeAPI:
     def test_serializer_api(self, val: object) -> None:
         dumped = execnet.dumps(val)

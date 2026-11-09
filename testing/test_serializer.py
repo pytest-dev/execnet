@@ -125,6 +125,15 @@ def test_long(load, dump) -> None:
     assert v == really_big
 
 
+def test_negative_long(load, dump) -> None:
+    # anything below the 4-byte range must take the long path, like big positives do
+    really_small = "-9223372036854775807324234"
+    p = dump(really_small)
+    tp, v = load(p)
+    assert tp == "int"
+    assert v == really_small
+
+
 def test_bytes(dump, load) -> None:
     p = dump("b'hi'")
     tp, v = load(p)
