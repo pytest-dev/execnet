@@ -77,39 +77,44 @@ def load(py3: PythonWrapper):
     return py3.load
 
 
-# (expression evaluated by the dumping interpreter, loaded type name, loaded repr)
+# expression evaluated by the dumping interpreter, loaded type name, loaded repr
 roundtrip_expectations = [
-    ("4", "int", "4"),
-    ("-4", "int", "-4"),
-    ("2**31 - 1", "int", "2147483647"),
-    ("-(2**31)", "int", "-2147483648"),
-    ("2**31", "int", "2147483648"),
-    ("-(2**31) - 1", "int", "-2147483649"),
-    ("9223372036854775807324234", "int", "9223372036854775807324234"),
-    ("-9223372036854775807324234", "int", "-9223372036854775807324234"),
-    ("3.25", "float", "3.25"),
-    ("(1.78+3.25j)", "complex", "(1.78+3.25j)"),
-    ("True", "bool", "True"),
-    ("None", "NoneType", "None"),
-    ("b'hi'", "bytes", "b'hi'"),
-    ("'xyz'", "str", "'xyz'"),
-    ("u'hi'", "str", "'hi'"),
-    ("[1, 2, 3]", "list", "[1, 2, 3]"),
-    ("(1, 2, 3)", "tuple", "(1, 2, 3)"),
-    ("(1, (), 3)", "tuple", "(1, (), 3)"),
-    ("{(1, 2, 3): 32}", "dict", "{(1, 2, 3): 32}"),
-    # a single element, multi-element set order is not part of the format
-    ("{1}", "set", "{1}"),
-    ("set()", "set", "set()"),
-    ("frozenset((1, 2, 3))", "frozenset", "frozenset({1, 2, 3})"),
+    pytest.param("4", "int", "4", id="int"),
+    pytest.param("-4", "int", "-4", id="negative-int"),
+    pytest.param("2**31 - 1", "int", "2147483647", id="int32-max"),
+    pytest.param("-(2**31)", "int", "-2147483648", id="int32-min"),
+    pytest.param("2**31", "int", "2147483648", id="above-int32-max"),
+    pytest.param("-(2**31) - 1", "int", "-2147483649", id="below-int32-min"),
+    pytest.param(
+        "9223372036854775807324234", "int", "9223372036854775807324234", id="big-int"
+    ),
+    pytest.param(
+        "-9223372036854775807324234",
+        "int",
+        "-9223372036854775807324234",
+        id="big-negative-int",
+    ),
+    pytest.param("3.25", "float", "3.25", id="float"),
+    pytest.param("(1.78+3.25j)", "complex", "(1.78+3.25j)", id="complex"),
+    pytest.param("True", "bool", "True", id="bool"),
+    pytest.param("None", "NoneType", "None", id="none"),
+    pytest.param("b'hi'", "bytes", "b'hi'", id="bytes"),
+    pytest.param("'xyz'", "str", "'xyz'", id="str"),
+    pytest.param("u'hi'", "str", "'hi'", id="unicode-prefix-str"),
+    pytest.param("[1, 2, 3]", "list", "[1, 2, 3]", id="list"),
+    pytest.param("(1, 2, 3)", "tuple", "(1, 2, 3)", id="tuple"),
+    pytest.param("(1, (), 3)", "tuple", "(1, (), 3)", id="tuple-nested-empty"),
+    pytest.param("{(1, 2, 3): 32}", "dict", "{(1, 2, 3): 32}", id="dict-tuple-key"),
+    # one element only: multi-element set order is not part of the format
+    pytest.param("{1}", "set", "{1}", id="set-single"),
+    pytest.param("set()", "set", "set()", id="set-empty"),
+    pytest.param(
+        "frozenset((1, 2, 3))", "frozenset", "frozenset({1, 2, 3})", id="frozenset"
+    ),
 ]
 
 
-@pytest.mark.parametrize(
-    ["expr", "tp_name", "expected"],
-    roundtrip_expectations,
-    ids=[expr for expr, _, _ in roundtrip_expectations],
-)
+@pytest.mark.parametrize(["expr", "tp_name", "expected"], roundtrip_expectations)
 def test_roundtrip(expr: str, tp_name: str, expected: str, dump, load) -> None:
     tp, v = load(dump(expr))
     assert tp == tp_name
