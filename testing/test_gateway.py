@@ -4,6 +4,7 @@ mostly functional tests of gateways.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import pathlib
 import shutil
@@ -11,6 +12,7 @@ import signal
 import sys
 from collections.abc import Callable
 from textwrap import dedent
+from types import ModuleType
 
 import pytest
 
@@ -30,6 +32,21 @@ skip_win_pypy = pytest.mark.xfail(
     condition=hasattr(sys, "pypy_version_info") and sys.platform.startswith("win"),
     reason="failing on Windows on PyPy (#63)",
 )
+
+
+def import_fresh(path: pathlib.Path) -> ModuleType:
+    """Execute the file at path as a new module object.
+
+    The module is not put into sys.modules and sys.path is untouched, so every
+    call gets a module whose __file__ is the given path. A plain ``import``
+    would hand later tests the module cached by an earlier one, whose file
+    may be gone.
+    """
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class TestBasicGateway:
@@ -112,7 +129,7 @@ class TestBasicGateway:
         assert name == 2
 
     def test_remote_exec_module_is_removed(
-        self, gw: Gateway, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+        self, gw: Gateway, tmp_path: pathlib.Path
     ) -> None:
         remotetest = tmp_path / "remote.py"
         remotetest.write_text(
@@ -129,8 +146,8 @@ class TestBasicGateway:
             )
         )
 
-        monkeypatch.syspath_prepend(tmp_path)
-        import remote  # type: ignore[import-not-found]
+        remote = import_fresh(remotetest)
+        assert remote.__file__ == str(remotetest)
 
         ch = gw.remote_exec(remote)
         # simulate sending the code to a remote location that does not have
@@ -145,10 +162,7 @@ class TestBasicGateway:
         assert result is True
 
     def test_remote_exec_module_with_traceback(
-        self,
-        gw: Gateway,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
+        self, gw: Gateway, tmp_path: pathlib.Path
     ) -> None:
         remotetestpy = tmp_path / "remotetest.py"
         remotetestpy.write_text(
@@ -163,14 +177,13 @@ class TestBasicGateway:
             )
         )
 
-        monkeypatch.syspath_prepend(tmp_path)
-        import remotetest  # type: ignore[import-not-found]
+        remotetest = import_fresh(remotetestpy)
 
         ch = gw.remote_exec(remotetest)
         try:
             ch.receive()
         except execnet.gateway_base.RemoteError as e:
-            assert 'remotetest.py", line 3, in run_me' in str(e)
+            assert f'{remotetestpy}", line 3, in run_me' in str(e)
             assert "ValueError: me" in str(e)
         finally:
             ch.close()
@@ -179,7 +192,7 @@ class TestBasicGateway:
         try:
             ch.receive()
         except execnet.gateway_base.RemoteError as e:
-            assert 'remotetest.py", line 3, in run_me' in str(e)
+            assert f'{remotetestpy}", line 3, in run_me' in str(e)
             assert "ValueError: me" in str(e)
         finally:
             ch.close()
