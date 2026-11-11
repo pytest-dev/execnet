@@ -1,0 +1,1 @@
+Integers below ``-2**31`` are now serialized through the long-integer path instead of failing with ``struct.error``.
