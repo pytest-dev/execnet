@@ -38,6 +38,7 @@ classifiers = [
 [project.optional-dependencies]
 testing = [
     "pre-commit",
+    "hypothesis",
     "pytest>8.0",
     "pytest-timeout",
     "tox",

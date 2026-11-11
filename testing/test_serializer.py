@@ -77,93 +77,43 @@ def load(py3: PythonWrapper):
     return py3.load
 
 
-simple_tests = [
-    # expected before/after repr
-    ("int", "4"),
-    ("float", "3.25"),
-    ("complex", "(1.78+3.25j)"),
-    ("list", "[1, 2, 3]"),
-    ("tuple", "(1, 2, 3)"),
-    ("dict", "{(1, 2, 3): 32}"),
+# (expression evaluated by the dumping interpreter, loaded type name, loaded repr)
+roundtrip_expectations = [
+    ("4", "int", "4"),
+    ("-4", "int", "-4"),
+    ("2**31 - 1", "int", "2147483647"),
+    ("-(2**31)", "int", "-2147483648"),
+    ("2**31", "int", "2147483648"),
+    ("-(2**31) - 1", "int", "-2147483649"),
+    ("9223372036854775807324234", "int", "9223372036854775807324234"),
+    ("-9223372036854775807324234", "int", "-9223372036854775807324234"),
+    ("3.25", "float", "3.25"),
+    ("(1.78+3.25j)", "complex", "(1.78+3.25j)"),
+    ("True", "bool", "True"),
+    ("None", "NoneType", "None"),
+    ("b'hi'", "bytes", "b'hi'"),
+    ("'xyz'", "str", "'xyz'"),
+    ("u'hi'", "str", "'hi'"),
+    ("[1, 2, 3]", "list", "[1, 2, 3]"),
+    ("(1, 2, 3)", "tuple", "(1, 2, 3)"),
+    ("(1, (), 3)", "tuple", "(1, (), 3)"),
+    ("{(1, 2, 3): 32}", "dict", "{(1, 2, 3): 32}"),
+    # a single element, multi-element set order is not part of the format
+    ("{1}", "set", "{1}"),
+    ("set()", "set", "set()"),
+    ("frozenset((1, 2, 3))", "frozenset", "frozenset({1, 2, 3})"),
 ]
 
 
-@pytest.mark.parametrize(["tp_name", "repr"], simple_tests)
-def test_simple(tp_name, repr, dump, load) -> None:
-    p = dump(repr)
-    tp, v = load(p)
+@pytest.mark.parametrize(
+    ["expr", "tp_name", "expected"],
+    roundtrip_expectations,
+    ids=[expr for expr, _, _ in roundtrip_expectations],
+)
+def test_roundtrip(expr: str, tp_name: str, expected: str, dump, load) -> None:
+    tp, v = load(dump(expr))
     assert tp == tp_name
-    assert v == repr
-
-
-def test_set(load, dump) -> None:
-    p = dump("set((1, 2, 3))")
-
-    tp, v = load(p)
-    assert tp == "set"
-    # assert v == "{1, 2, 3}" # ordering prevents this assertion
-    assert v.startswith("{") and v.endswith("}")
-    assert "1" in v and "2" in v and "3" in v
-    p = dump("set()")
-    tp, v = load(p)
-    assert tp == "set"
-    assert v == "set()"
-
-
-def test_frozenset(load, dump):
-    p = dump("frozenset((1, 2, 3))")
-    tp, v = load(p)
-    assert tp == "frozenset"
-    assert v == "frozenset({1, 2, 3})"
-
-
-def test_long(load, dump) -> None:
-    really_big = "9223372036854775807324234"
-    p = dump(really_big)
-    tp, v = load(p)
-    assert tp == "int"
-    assert v == really_big
-
-
-def test_bytes(dump, load) -> None:
-    p = dump("b'hi'")
-    tp, v = load(p)
-    assert tp == "bytes"
-    assert v == "b'hi'"
-
-
-def test_str(dump, load) -> None:
-    p = dump("'xyz'")
-    tp, s = load(p)
-    assert tp == "str"
-    assert s == "'xyz'"
-
-
-def test_unicode(load, dump) -> None:
-    p = dump("u'hi'")
-    tp, s = load(p)
-    assert tp == "str"
-    assert s == "'hi'"
-
-
-def test_bool(dump, load) -> None:
-    p = dump("True")
-    tp, s = load(p)
-    assert s == "True"
-    assert tp == "bool"
-
-
-def test_none(dump, load) -> None:
-    p = dump("None")
-    _tp, s = load(p)
-    assert s == "None"
-
-
-def test_tuple_nested_with_empty_in_between(dump, load) -> None:
-    p = dump("(1, (), 3)")
-    tp, s = load(p)
-    assert tp == "tuple"
-    assert s == "(1, (), 3)"
+    assert v == expected
 
 
 def test_py2_string_loads() -> None:
