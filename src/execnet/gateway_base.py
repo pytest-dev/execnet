@@ -1337,6 +1337,7 @@ def bchr(n: int) -> bytes:
 DUMPFORMAT_VERSION = bchr(2)
 
 FOUR_BYTE_INT_MAX = 2147483647
+FOUR_BYTE_INT_MIN = -2147483648
 
 FLOAT_FORMAT = "!d"
 FLOAT_FORMAT_SIZE = struct.calcsize(FLOAT_FORMAT)
@@ -1693,7 +1694,7 @@ class _Serializer:
         self._write(bytes_)
 
     def _save_integral(self, i: int, short_op: bytes, long_op: bytes) -> None:
-        if i <= FOUR_BYTE_INT_MAX:
+        if FOUR_BYTE_INT_MIN <= i <= FOUR_BYTE_INT_MAX:
             self._write(short_op)
             self._write_int4(i)
         else:
@@ -1715,9 +1716,12 @@ class _Serializer:
         self._write(struct.pack(COMPLEX_FORMAT, cpx.real, cpx.imag))
 
     def _write_int4(
-        self, i: int, error: str = "int must be less than %i" % (FOUR_BYTE_INT_MAX,)
+        self,
+        i: int,
+        error: str = "int must be within [%i, %i]"
+        % (FOUR_BYTE_INT_MIN, FOUR_BYTE_INT_MAX),
     ) -> None:
-        if i > FOUR_BYTE_INT_MAX:
+        if not FOUR_BYTE_INT_MIN <= i <= FOUR_BYTE_INT_MAX:
             raise DumpError(error)
         self._write(struct.pack("!i", i))
 
