@@ -78,6 +78,8 @@ class TestBasicGateway:
 
     @flakytest
     def test_gateway_status_busy(self, gw: Gateway) -> None:
+        if gw.spec.execmodel == "main_thread_only":
+            pytest.skip("main_thread_only rejects concurrent remote_exec")
         numchannels = gw.remote_status().numchannels
         ch1 = gw.remote_exec("channel.send(1); channel.receive()")
         ch2 = gw.remote_exec("channel.receive()")
