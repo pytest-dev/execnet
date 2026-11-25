@@ -1,9 +1,4 @@
-2.2.0 (UNRELEASED)
-------------------
-
-* `#380 <https://github.com/pytest-dev/execnet/pull/380>`__: Add support for Python 3.13 and 3.14, and drop EOL 3.8 and 3.9.
-
-* `#429 <https://github.com/pytest-dev/execnet/issues/429>`__: ``safe_terminate`` now waits for a terminated worker once more after the kill attempt, so a released worker is joined instead of abandoned, and returns whether all workers finished within the bounds instead of discarding the wait result. ``Group.terminate()`` now propagates that result to its callers.
+.. towncrier release notes start
 
 2.1.2 (2025-11-11)
 ------------------

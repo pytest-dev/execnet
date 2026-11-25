@@ -9,9 +9,9 @@ Version
 
 ``main`` should always be green and a potential release candidate. ``execnet`` follows
 semantic versioning, so given that the current version is ``X.Y.Z``, to find the next version number
-one needs to look at the ``CHANGELOG.rst`` file:
+one needs to look at the fragments in the ``news/`` directory:
 
-- If there any new feature, then we must make a new **minor** release: next
+- If there any new feature (``news/*.feature.rst``), then we must make a new **minor** release: next
   release will be ``X.Y+1.0``.
 
 - Otherwise it is just a **bug fix** release: ``X.Y.Z+1``.
@@ -24,7 +24,9 @@ To publish a new release ``X.Y.Z``, the steps are as follows:
 
 #. Create a new branch named ``release-X.Y.Z`` from the latest ``main``.
 
-#. Update the ``CHANGELOG.rst`` file with the new release information.
+#. Build the changelog from the ``news/`` fragments, which also removes them::
+
+     uvx towncrier build --yes --version X.Y.Z
 
 #. Commit and push the branch to ``upstream`` and open a PR.
 
