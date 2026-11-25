@@ -858,13 +858,7 @@ class Channel:
             # but it's never damaging to send too many CHANNEL_CLOSE messages
             # however, if the other side triggered a close already, we
             # do not send back a closed message.
-            if not self._receiveclosed.is_set():
-                put = self.gateway._send
-                if error is not None:
-                    put(Message.CHANNEL_CLOSE_ERROR, self.id, dumps_internal(error))
-                else:
-                    put(Message.CHANNEL_CLOSE, self.id)
-                self._trace("sent channel close message")
+            send_close = not self._receiveclosed.is_set()
             if isinstance(error, RemoteError):
                 self._remoteerrors.append(error)
             self._closed = True  # --> "closed"
@@ -872,7 +866,16 @@ class Channel:
             queue = self._items
             if queue is not None:
                 queue.put(ENDMARKER)
+            # Unregister before telling the other side, so that once the peer
+            # sees the close, this side no longer knows the channel id (#374).
             self.gateway._channelfactory._no_longer_opened(self.id)
+            if send_close:
+                put = self.gateway._send
+                if error is not None:
+                    put(Message.CHANNEL_CLOSE_ERROR, self.id, dumps_internal(error))
+                else:
+                    put(Message.CHANNEL_CLOSE, self.id)
+                self._trace("sent channel close message")
 
     def waitclose(self, timeout: float | None = None) -> None:
         """Wait until this channel is closed (or the remote side
@@ -1210,6 +1213,8 @@ class BaseGateway:
 
 
 class WorkerGateway(BaseGateway):
+    _executetask_complete: Event | None = None
+
     def _local_schedulexec(self, channel: Channel, sourcetask: bytes) -> None:
         if self._execpool.execmodel.backend == "main_thread_only":
             assert self._executetask_complete is not None
@@ -1279,6 +1284,20 @@ class WorkerGateway(BaseGateway):
         item: tuple[Channel, tuple[str, str | None, str | None, dict[str, object]]],
     ) -> None:
         try:
+            self._executetask(item)
+        finally:
+            if self._executetask_complete is not None:
+                # Indicate that this task has finished executing, meaning
+                # that there is no possibility of it triggering a deadlock
+                # for the next spawn call. This must also happen when the
+                # task failed, or the worker rejects every later task.
+                self._executetask_complete.set()
+
+    def _executetask(
+        self,
+        item: tuple[Channel, tuple[str, str | None, str | None, dict[str, object]]],
+    ) -> None:
+        try:
             channel, (source, file_name, call_name, kwargs) = item
             loc: dict[str, Any] = {"channel": channel, "__name__": "__channelexec__"}
             self._trace(f"execution starts[{channel.id}]: {repr(source)[:50]}")
@@ -1306,11 +1325,6 @@ class WorkerGateway(BaseGateway):
                 channel.close(errortext)
                 return
         channel.close()
-        if self._executetask_complete is not None:
-            # Indicate that this task has finished executing, meaning
-            # that there is no possibility of it triggering a deadlock
-            # for the next spawn call.
-            self._executetask_complete.set()
 
 
 #

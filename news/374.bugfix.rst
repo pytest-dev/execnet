@@ -1,0 +1,1 @@
+``Channel.close()`` now unregisters the channel id before sending the close message, so the peer can no longer observe a closed channel whose id is still registered on the closing side. With the ``main_thread_only`` execmodel, a ``remote_exec`` task that raised no longer causes every later ``remote_exec`` on that worker to be rejected as concurrent.

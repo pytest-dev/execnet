@@ -148,21 +148,26 @@ def gw(
     execmodel: ExecModel,
     group: execnet.Group,
 ) -> Gateway:
+    # Cache per transport *and* execmodel: the remote execmodel is fixed when
+    # the gateway is created, so sharing one gateway across execmodels would
+    # run e.g. main_thread_only tests on a thread worker.
+    gwid = f"{request.param}-{execmodel.backend}"
     try:
-        return group[request.param]
+        return group[gwid]
     except KeyError:
         if request.param == "popen":
-            gw = group.makegateway("popen//id=popen//execmodel=%s" % execmodel.backend)
+            gw = group.makegateway(f"popen//id={gwid}//execmodel={execmodel.backend}")
         elif request.param == "socket":
             # if execmodel.backend != "thread":
             #    pytest.xfail(
             #        "cannot set remote non-thread execmodel for sockets")
             pname = "sproxy1"
             if pname not in group:
-                proxygw = group.makegateway("popen//id=%s" % pname)
+                group.makegateway("popen//id=%s" % pname)
+            proxygw = group[pname]
             # assert group['proxygw'].remote_status().receiving
             gw = group.makegateway(
-                f"socket//id=socket//installvia={pname}//execmodel={execmodel.backend}"
+                f"socket//id={gwid}//installvia={pname}//execmodel={execmodel.backend}"
             )
             # TODO(typing): Clarify this assignment.
             gw.proxygw = proxygw  # type: ignore[attr-defined]
@@ -171,11 +176,12 @@ def gw(
             sshhost = request.getfixturevalue("specssh").ssh
             # we don't use execmodel.backend here
             # but you can set it when specifying the ssh spec
-            gw = group.makegateway(f"ssh={sshhost}//id=ssh")
+            gw = group.makegateway(f"ssh={sshhost}//id={gwid}")
         elif request.param == "proxy":
-            group.makegateway("popen//id=proxy-transport")
+            if "proxy-transport" not in group:
+                group.makegateway("popen//id=proxy-transport")
             gw = group.makegateway(
-                "popen//via=proxy-transport//id=proxy//execmodel=%s" % execmodel.backend
+                f"popen//via=proxy-transport//id={gwid}//execmodel={execmodel.backend}"
             )
         else:
             assert 0, f"unknown execmodel: {request.param}"
